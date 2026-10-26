@@ -23,3 +23,10 @@ test('the prompt names each mass by colour and side, and leaves npcs out', () =>
   expect(prompt).toContain('the #665544 area: wet planks, open floor to walk on');
   expect(prompt).not.toContain('net-mender');
 });
+
+test('a brief look replaces the short one, and a missing look is an issue', async () => {
+  const { briefIssues } = await import('../src/scene/brief.ts');
+  const brief = { looks: { boat: 'a clinker-built rowing boat with flaking blue paint' }, alive: [] };
+  expect(paintPrompt(world, place, layout, brief)).toContain('flaking blue paint');
+  expect(briefIssues(brief, place, layout)).toEqual(['no look for planks']);
+});
