@@ -5,5 +5,6 @@ import './story.ts';
 import './layout.ts';
 import './paint.ts';
 import './masks.ts';
+import './derive.ts';
 import './build.ts';
 import './play.ts';
