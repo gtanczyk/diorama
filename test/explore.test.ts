@@ -3,7 +3,7 @@ import type { Geometry } from '../src/play/geometry.ts';
 import { classify, fixGrid, positions } from '../src/qa/explore.ts';
 import type { ProbeHit } from '../src/qa/probe.ts';
 
-const hit = (patch: Partial<ProbeHit> = {}): ProbeHit => ({ x: 600, y: 700, drawn: 5000, hidden: 0, overNearer: {}, hiddenByFarther: {}, feetIn: [], off: 0, ...patch });
+const hit = (patch: Partial<ProbeHit> = {}): ProbeHit => ({ x: 600, y: 700, drawn: 5000, hidden: 0, overNearer: {}, hiddenByFarther: {}, overBox: {}, feetIn: [], off: 0, ...patch });
 
 test('classify: stray pixels pass, real overlaps fail and name the thing', () => {
   expect(classify(hit()).issues).toEqual([]);
@@ -15,6 +15,7 @@ test('classify: stray pixels pass, real overlaps fail and name the thing', () =>
   expect(classify(hit({ off: 0.5 })).issues).toEqual(['clipped']);
   expect(classify(hit({ hidden: 4900 })).issues).toEqual(['invisible']);
   expect(classify(hit({ hiddenByFarther: { wall: 200 } })).issues).toEqual(['hidden-in-front']);
+  expect(classify(hit({ overBox: { lantern: 300 } }))).toMatchObject({ issues: ['over-box'], worst: 'lantern' });
 });
 
 const W = 1200, H = 896, CELL = 8;

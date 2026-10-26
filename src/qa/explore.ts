@@ -12,7 +12,7 @@ import { gridOf } from '../scene/verify.ts';
 import { reach, roomy } from '../scene/walk.ts';
 import type { ProbeHit } from './probe.ts';
 
-export const ISSUES = ['feet-inside', 'drawn-over', 'hidden-in-front', 'clipped', 'invisible'] as const;
+export const ISSUES = ['feet-inside', 'drawn-over', 'over-box', 'hidden-in-front', 'clipped', 'invisible'] as const;
 export type Issue = (typeof ISSUES)[number];
 export type Checked = ProbeHit & { issues: Issue[]; worst?: string };
 
@@ -40,10 +40,13 @@ export function classify(hit: ProbeHit): Checked {
   const hidden = Object.entries(hit.hiddenByFarther).filter(([, n]) => n >= Math.max(150, hit.drawn * 0.01));
   if (hit.feetIn.length) issues.push('feet-inside');
   if (over.length) issues.push('drawn-over');
+  // A box-only thing can't hide him, so standing where its box would overlap him looks wrong either way.
+  const boxed = Object.entries(hit.overBox ?? {}).filter(([, n]) => some(n));
+  if (boxed.length) issues.push('over-box');
   if (hidden.length) issues.push('hidden-in-front');
   if (hit.off > 0.3) issues.push('clipped');
   if (hit.drawn > 0 && hit.hidden > 0.85 * hit.drawn) issues.push('invisible');
-  const worst = hit.feetIn[0] ?? over.sort((a, b) => b[1] - a[1])[0]?.[0] ?? hidden.sort((a, b) => b[1] - a[1])[0]?.[0];
+  const worst = hit.feetIn[0] ?? over.sort((a, b) => b[1] - a[1])[0]?.[0] ?? boxed.sort((a, b) => b[1] - a[1])[0]?.[0] ?? hidden.sort((a, b) => b[1] - a[1])[0]?.[0];
   return { ...hit, issues, ...(worst && { worst }) };
 }
 

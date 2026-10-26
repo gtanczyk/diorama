@@ -15,6 +15,8 @@ export type ProbeHit = {
   overNearer: Record<string, number>;
   /** Hidden hero pixels under a thing whose floor line is behind his feet: he should be in front of it. */
   hiddenByFarther: Record<string, number>;
+  /** Hero pixels inside the box of a thing with only a box for a mask, while his feet are behind its bottom. */
+  overBox: Record<string, number>;
   /** Things whose floor footprint holds his feet: he would stand inside them. */
   feetIn: string[];
   /** Share of his height above the top of the frame or of his width outside its sides. */
@@ -57,6 +59,8 @@ export const PROBE_JS = String.raw`async ({ placeKey, positions }) => {
     return { key: h.thing.key, bits: h.mask.bits, box: h.thing.box, base, solid: h.thing.kind === 'standing' };
   });
 
+  // Standing things known only by a box: nobody should be drawn inside the box while behind its bottom.
+  const boxes = place.hots.filter((h) => h.thing.coarse && h.thing.kind === 'standing').map((h) => ({ key: h.thing.key, box: h.thing.box }));
   const person = (y) => Math.max(8, g.scale.pxPerY * (y - g.scale.horizonY));
   const region = (x0, y0, x1, y1) => ctx.getImageData(x0, y0, x1 - x0, y1 - y0).data;
   game.hero.x = -5000; game.hero.y = H - 1;
@@ -76,7 +80,7 @@ export const PROBE_JS = String.raw`async ({ placeKey, positions }) => {
     place.cuts = []; game.render();
     const bare = region(x0, y0, x1, y1);
     place.cuts = cuts;
-    const hit = { x, y, drawn: 0, hidden: 0, overNearer: {}, hiddenByFarther: {}, feetIn: [], off: Math.round(off * 100) / 100 };
+    const hit = { x, y, drawn: 0, hidden: 0, overNearer: {}, hiddenByFarther: {}, overBox: {}, feetIn: [], off: Math.round(off * 100) / 100 };
     const rw = x1 - x0;
     for (let py = y0; py < y1; py++) {
       // The shadow under his feet is not him.
@@ -88,6 +92,9 @@ export const PROBE_JS = String.raw`async ({ placeKey, positions }) => {
         hit.drawn++;
         const back = Math.abs(occluded[r] - empty[f]) + Math.abs(occluded[r + 1] - empty[f + 1]) + Math.abs(occluded[r + 2] - empty[f + 2]) < 12;
         if (back) hit.hidden++;
+        for (const b of boxes) {
+          if (px >= b.box[0] && px < b.box[2] && py >= b.box[1] && py < b.box[3] && y < b.box[3] - 4) hit.overBox[b.key] = (hit.overBox[b.key] ?? 0) + 1;
+        }
         for (const t of things) {
           if (px < t.box[0] || px >= t.box[2] || py < t.box[1] || py >= t.box[3] || !t.bits[py * W + px]) continue;
           const base = t.base(px);

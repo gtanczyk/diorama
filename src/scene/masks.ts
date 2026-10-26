@@ -3,15 +3,16 @@
 // asked again with the box; if that fails too the box itself is the mask, marked coarse.
 // Floors: SAM by name and by the box of Spark's cells; the candidate that agrees best with the
 // cells wins; with none close enough the cells are the floor, marked coarse.
-import { maskArea, type Mask } from '../image/mask.ts';
-import { clampRect, dilate, intersect, maskBox, maskIou, polygonMask, rectArea, rectIou, rectMask, unionAll, withoutSpecks, type Rect } from '../image/raster.ts';
+import sharp from 'sharp';
+import { emptyMask, maskArea, type Mask } from '../image/mask.ts';
+import { clampRect, components, dilate, intersect, subtract, maskBox, maskIou, polygonMask, rectArea, rectIou, rectMask, unionAll, withoutSpecks, type Rect } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import { SAM_MAX_BOXES, samFind, type Box, type Found } from '../meta/sam.ts';
 import type { Place } from '../world/schema.ts';
 import { FRAME, type Layout } from './layout.ts';
 import { cellsBox, cellsMask, GRID, type Kind, type Spots } from './locate.ts';
 
-export type MaskSource = 'sam-text' | 'sam-box' | 'spark-box' | 'layout-box' | 'spark-cells' | 'layout';
+export type MaskSource = 'sam-text' | 'sam-box' | 'colour-cut' | 'spark-box' | 'layout-box' | 'spark-cells' | 'layout';
 
 export type ThingMask = { key: string; kind: Kind; phrase: string; source: MaskSource; coarse: boolean; px: number; box: Rect; mask: Mask };
 export type FloorMask = { key: string; source: MaskSource; coarse: boolean; px: number; iouCells: number; iouLayout: number; mask: Mask };
@@ -51,6 +52,68 @@ export function hollowFault(mask: Mask, [x0, y0, x1, y1]: Rect): string | undefi
   if (covered < 0.25) return `covers only ${Math.round(covered * 100)}% of the middle of its box`;
 }
 
+/**
+ * The last try before a plain box: inside the box, the pixels whose colour stands out from a ring
+ * just outside it (the floor or wall around the thing), as one solid blob.
+ */
+export function colourCut(rgb: Buffer, box: Rect, ring = 12): Mask | undefined {
+  const [x0, y0, x1, y1] = clampRect(box, W, H);
+  const [ox0, oy0, ox1, oy1] = clampRect([x0 - ring, y0 - ring, x1 + ring, y1 + ring], W, H);
+  const sum = [0, 0, 0];
+  const sq = [0, 0, 0];
+  let n = 0;
+  for (let y = oy0; y < oy1; y++) {
+    for (let x = ox0; x < ox1; x++) {
+      if (x >= x0 && x < x1 && y >= y0 && y < y1) continue;
+      for (let c = 0; c < 3; c++) {
+        const v = rgb[(y * W + x) * 3 + c];
+        sum[c] += v;
+        sq[c] += v * v;
+      }
+      n++;
+    }
+  }
+  if (n === 0) return undefined;
+  const mean = sum.map((v) => v / n);
+  const spread = Math.sqrt(sq.reduce((t, v, c) => t + v / n - mean[c] ** 2, 0));
+  const limit = Math.max(40, 2 * spread);
+  const raw = emptyMask(W, H);
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = y * W + x;
+      const d = Math.hypot(rgb[i * 3] - mean[0], rgb[i * 3 + 1] - mean[1], rgb[i * 3 + 2] - mean[2]);
+      if (d > limit) raw.bits[i] = 1;
+    }
+  }
+  const blob = components(dilate(dilate(raw, 2), -2))[0];
+  if (!blob) return undefined;
+  // Fill holes: whatever inside the box the outside can't reach is part of the thing.
+  const outside = emptyMask(W, H);
+  const stack: number[] = [];
+  for (let x = x0; x < x1; x++) stack.push(y0 * W + x, (y1 - 1) * W + x);
+  for (let y = y0; y < y1; y++) stack.push(y * W + x0, y * W + x1 - 1);
+  while (stack.length) {
+    const i = stack.pop()!;
+    const x = i % W;
+    const y = Math.floor(i / W);
+    if (x < x0 || x >= x1 || y < y0 || y >= y1 || outside.bits[i] || blob.bits[i]) continue;
+    outside.bits[i] = 1;
+    stack.push(i - 1, i + 1, i - W, i + W);
+  }
+  const solid = rectMask(W, H, [x0, y0, x1, y1]);
+  const filled = subtract(solid, outside);
+  const share = maskArea(filled) / Math.max(1, rectArea([x0, y0, x1, y1]));
+  return share > 0.15 && share < 0.92 ? filled : undefined;
+}
+
+/** A single SAM match near a misplaced box: similar size, centre within twice the box's size. */
+export function loneMatch(found: Rect, box: Rect): boolean {
+  const ratio = rectArea(found) / Math.max(1, rectArea(box));
+  const size = Math.max(box[2] - box[0], box[3] - box[1]);
+  const dist = Math.hypot((found[0] + found[2] - box[0] - box[2]) / 2, (found[1] + found[3] - box[1] - box[3]) / 2);
+  return ratio > 0.25 && ratio < 4 && dist < 2 * size;
+}
+
 /** The instances that belong to the thing: the one nearest its box, plus any others mostly inside it. */
 export function pickInstances(found: Found[], prior: Rect): Mask | undefined {
   if (found.length === 0) return undefined;
@@ -83,19 +146,29 @@ export async function maskThings(memo: Memo, place: Place, layout: Layout, spots
   const tried = await Promise.all(painted.map(async (t) => {
     const spot = spots[t.key];
     const sparkBox = spot.box && clampRect(spot.box, W, H);
-    const prior = sparkBox && rectArea(sparkBox) > 0 ? sparkBox : layoutBox(layout, t.key)!;
-    let found = await samFind(memo, { label: `mask:${place.key}/${t.key}`, image: painting, prompt: spot.phrase });
-    // SAM often knows the head noun when it misses the whole phrase ("brass oil can" -> "can").
-    const head = spot.phrase.trim().split(/\s+/).at(-1)!;
-    if (!pickInstances(found, prior) && head !== spot.phrase.trim()) {
-      found = await samFind(memo, { label: `mask:${place.key}/${t.key}~${head}`, image: painting, prompt: head });
+    let prior = sparkBox && rectArea(sparkBox) > 0 ? sparkBox : layoutBox(layout, t.key)!;
+    // The phrase, Spark's other name for it, then the head noun: SAM often knows "can" when it misses "brass oil can".
+    const phrases = [...new Set([spot.phrase, spot.also, spot.phrase.trim().split(/\s+/).at(-1)].filter((p): p is string => !!p?.trim()))];
+    let mask: Mask | undefined;
+    let lone: Found | undefined;
+    for (const [i, phrase] of phrases.entries()) {
+      const found = await samFind(memo, { label: `mask:${place.key}/${t.key}${i ? `~${phrase}` : ''}`, image: painting, prompt: phrase });
+      mask = pickInstances(found, prior);
+      if (mask) break;
+      if (found.length === 1 && !lone) lone = found[0];
     }
-    const mask = pickInstances(found, prior);
-    const fault = mask ? thingMaskFault(mask, prior) : `SAM found no "${spot.phrase}"`;
-    return { t, spot, prior, fromSpark: prior === sparkBox, mask, fault };
+    // Spark's box can sit beside the thing. One SAM match of the right size close by is the thing.
+    if (!mask && lone && sparkBox && loneMatch(fromBox(lone.box), sparkBox)) {
+      log(`${t.key}: Spark's box misses it; took SAM's only match nearby`);
+      mask = withoutSpecks(lone.mask, Math.max(60, maskArea(lone.mask) * 0.03));
+      prior = fromBox(lone.box);
+    }
+    const fault = mask ? thingMaskFault(mask, prior) : `SAM found no "${phrases.join('" or "')}"`;
+    return { t, spot, prior, fromSpark: !!sparkBox && prior !== layoutBox(layout, t.key), mask, fault };
   }));
 
   const retry = tried.filter((r) => r.fault);
+  const pixels = await sharp(painting).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer();
   const boxed = await samBoxes(memo, `mask-box:${place.key}`, painting, retry.map((r) => clampRect(r.prior, W, H)));
   return tried.map((r) => {
     const base = { key: r.t.key, kind: r.spot.kind, phrase: r.spot.phrase };
@@ -109,9 +182,17 @@ export async function maskThings(memo: Memo, place: Place, layout: Layout, spots
         mask = withoutSpecks(byBox, Math.max(60, maskArea(byBox) * 0.03));
         source = 'sam-box';
       } else {
-        mask = rectMask(W, H, r.prior);
-        source = r.fromSpark ? 'spark-box' : 'layout-box';
-        log(`${r.t.key}: ${boxFault}; the ${source} is its mask (coarse)`);
+        const cut = colourCut(pixels, r.prior);
+        const cutFault = cut ? thingMaskFault(cut, r.prior) ?? hollowFault(cut, r.prior) : 'nothing stands out from its surroundings';
+        if (cut && !cutFault) {
+          mask = cut;
+          source = 'colour-cut';
+          log(`${r.t.key}: ${boxFault}; cut it out of its box by colour`);
+        } else {
+          mask = rectMask(W, H, r.prior);
+          source = r.fromSpark ? 'spark-box' : 'layout-box';
+          log(`${r.t.key}: ${boxFault}; colour cut: ${cutFault}; the ${source} is its mask (coarse)`);
+        }
       }
     }
     return { ...base, source, coarse: source === 'spark-box' || source === 'layout-box', px: maskArea(mask!), box: maskBox(mask!)!, mask: mask! };

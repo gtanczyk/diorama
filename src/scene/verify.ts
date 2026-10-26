@@ -66,6 +66,7 @@ export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates:
       // A prop can stay a thing to look at; exits, items and people must be usable.
       (thing.role === 'prop' ? flags : errors).push(finding);
     }
+    if (notes.things[thing.key]?.source === 'colour-cut') flags.push({ code: 'COLOUR_CUT', key: thing.key, detail: 'SAM missed it; its mask was cut out of its box by colour' });
     if (t.coarse && thing.role !== 'npc') flags.push({ code: 'COARSE_MASK', key: thing.key, detail: `mask is a ${notes.things[thing.key]?.source ?? 'box'}, so it hides no one` });
   }
 

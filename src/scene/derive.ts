@@ -3,7 +3,7 @@
 // standing thing, minus each standing thing's footprint. Then the grid is joined up, the hero's
 // size is measured, and every thing gets a spot to stand at.
 import { emptyMask, type Mask } from '../image/mask.ts';
-import { maskBox, polygonMask, subtract, union, unionAll } from '../image/raster.ts';
+import { dilate, maskBox, polygonMask, subtract, union, unionAll } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import type { Geometry } from '../play/geometry.ts';
 import type { Place } from '../world/schema.ts';
@@ -110,7 +110,13 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     // Muse moves floors away from the layout, so the ground between them is fair game too, at a price.
     return ground.bits[p] ? 1 : planned.bits[p] ? 3 : y >= groundTop ? 6 : Infinity;
   };
-  const startCell = nearestRoomy(grid, W / 2, H - 40);
+  // The start is clear of every thing (by about a hero's width), so nobody begins standing in a lamp.
+  const nearThings = dilate(unionAll(W, H, things.map((t) => t.mask)), 24);
+  const clear = roomy(grid).map((v, i) => {
+    const [x, y] = grid.centre(i).map(Math.floor);
+    return v && !nearThings.bits[Math.min(H - 1, y) * W + Math.min(W - 1, x)] ? 1 : 0;
+  });
+  let startCell = nearestRoomy(grid, W / 2, H - 40, clear) ?? nearestRoomy(grid, W / 2, H - 40);
   if (startCell === undefined) throw new Error(`${place.key}: no walkable floor at all`);
   const joined = connect(grid, startCell, cost);
   if (joined.reopened) flag(`opened ${joined.reopened} cells to join the floor up`);
@@ -160,7 +166,8 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   });
   if (framed) {
     log(`closed ${framed} cells at the frame edge, where the hero would be cut off`);
-    const again = connect(grid, nearestRoomy(grid, ...grid.centre(startCell)) ?? startCell, cost);
+    startCell = nearestRoomy(grid, ...grid.centre(startCell), clear.map((v, i) => v & grid.open[i])) ?? nearestRoomy(grid, ...grid.centre(startCell)) ?? startCell;
+    const again = connect(grid, startCell, cost);
     for (const island of again.stranded) flag(`${island.length} walkable cells can't be reached from the start after the frame gate`);
   }
 

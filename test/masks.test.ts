@@ -48,3 +48,19 @@ test('a floor candidate is clipped near the marked cells and scored against them
   expect(wide.iou).toBeLessThan(0.3);
   expect(maskArea(wide.mask)).toBeLessThan(W * H / 4);
 });
+
+test('colour cut: a dark thing on light floor comes out as one solid blob, holes filled', async () => {
+  const { colourCut, loneMatch } = await import('../src/scene/masks.ts');
+  const rgb = Buffer.alloc(W * H * 3, 200);
+  // A dark ring-shaped thing (a hole in the middle that is floor-coloured) in 300..500 x 300..500.
+  for (let y = 320; y < 480; y++) for (let x = 330; x < 470; x++) {
+    const inner = x > 380 && x < 420 && y > 380 && y < 420;
+    if (!inner) rgb.fill(40, (y * W + x) * 3, (y * W + x) * 3 + 3);
+  }
+  const cut = colourCut(rgb, [300, 300, 500, 500])!;
+  expect(maskArea(cut)).toBe(140 * 160);
+  expect(colourCut(Buffer.alloc(W * H * 3, 200), [300, 300, 500, 500])).toBeUndefined();
+  expect(loneMatch([520, 300, 720, 500], [300, 300, 500, 500])).toBe(true);
+  expect(loneMatch([900, 300, 1100, 500], [300, 300, 500, 500])).toBe(false);
+  expect(loneMatch([300, 300, 320, 320], [300, 300, 500, 500])).toBe(false);
+});

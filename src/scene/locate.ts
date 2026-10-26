@@ -20,6 +20,8 @@ const Spot = z.object({
   kind: z.enum(KINDS),
   /** A two or three word noun phrase SAM can search for ("rowing boat"). */
   phrase: z.string().min(2),
+  /** Another way to name it, tried when the first finds nothing ("street lantern" for "lamp post"). */
+  also: z.string().optional(),
 });
 export const Spots = z.record(z.string(), Spot);
 export type Spots = z.infer<typeof Spots>;
@@ -35,11 +37,13 @@ export async function locateThings(memo: Memo, place: Place, brief: Brief, paint
   walk-on = people walk on it (rug, path, bridge, stairs, jetty)
   flat = lies flat and cannot be walked on (water, a pond, a hole)
 - phrase: two or three plain words naming what is painted, for an image search ("rowing boat", "oil can")
+- also: another short name for it, in case the first finds nothing ("street lantern" for "lamp post")
 
 Things:
 ${painted.map((t) => `- ${t.key}: ${brief.looks[t.key] ?? t.looks}`).join('\n')}
 
-Reply with JSON only: {"<key>": {"box": [0, 0, 0, 0], "kind": "standing", "phrase": "..."}}`;
+Reply with JSON only: {"<key>": {"box": [0, 0, 0, 0], "kind": "standing", "phrase": "...", "also": "..."}}`;
+  // A grid drawn over the painting did not make the boxes tighter (tried on foghorn), so the painting goes in plain.
   const spots = Spots.parse(await askSparkJson(memo, { label: `locate:${place.key}`, prompt, images: [painting] }));
   const missing = painted.filter((t) => !spots[t.key]).map((t) => t.key);
   if (missing.length) throw new Error(`locate ${place.key}: Spark skipped ${missing.join(', ')}`);
