@@ -1,10 +1,10 @@
 // The story gate: every name must exist in the world, every ending must be reachable, and no
 // reachable state may cut the player off from all endings. Finds a shortest route to each ending too.
 import type { World } from '../world/schema.ts';
-import { actions, apply, describe, pickInteraction, startState, stateKey, type State } from './engine.ts';
+import { actions, apply, describe, pickInteraction, startState, stateKey, type Action, type State } from './engine.ts';
 import { Story } from './schema.ts';
 
-export type Route = { ending: string; steps: string[] };
+export type Route = { ending: string; steps: string[]; actions: Action[] };
 export type StoryReport = { issues: string[]; states: number; routes: Route[] };
 
 const MAX_STATES = 200_000;
@@ -73,7 +73,7 @@ export function checkStory(world: World, raw: unknown): StoryReport & { story?: 
   if (nameIssues.length) return { issues: nameIssues, states: 0, routes: [] };
 
   const start = startState(world);
-  const seen = new Map<string, { state: State; from?: string; via?: string }>([[stateKey(start), { state: start }]]);
+  const seen = new Map<string, { state: State; from?: string; via?: Action }>([[stateKey(start), { state: start }]]);
   const edges = new Map<string, string[]>();
   const queue = [stateKey(start)];
   const fired = new Set<number>();
@@ -86,22 +86,23 @@ export function checkStory(world: World, raw: unknown): StoryReport & { story?: 
       if (action.kind === 'do') fired.add(pickInteraction(story, state, action));
       const nextKey = stateKey(step.state);
       out.push(nextKey);
-      if (!seen.has(nextKey)) { seen.set(nextKey, { state: step.state, from: key, via: describe(action) }); queue.push(nextKey); }
+      if (!seen.has(nextKey)) { seen.set(nextKey, { state: step.state, from: key, via: action }); queue.push(nextKey); }
     }
     edges.set(key, out);
   }
   const issues: string[] = [];
   if (seen.size >= MAX_STATES) issues.push(`more than ${MAX_STATES} states; the story is too loose to check`);
 
-  const routeTo = (key: string) => {
-    const steps: string[] = [];
-    for (let at = seen.get(key); at?.from; at = seen.get(at.from)) steps.unshift(at.via!);
-    return steps;
+  const actionsTo = (key: string) => {
+    const out: Action[] = [];
+    for (let at = seen.get(key); at?.from; at = seen.get(at.from)) out.unshift(at.via!);
+    return out;
   };
+  const routeTo = (key: string) => actionsTo(key).map(describe);
   const routes: Route[] = [];
   for (const ending of story.endings) {
     const hit = [...seen.entries()].find(([, v]) => v.state.ending === ending.key);
-    if (hit) routes.push({ ending: ending.key, steps: routeTo(hit[0]) });
+    if (hit) routes.push({ ending: ending.key, steps: routeTo(hit[0]), actions: actionsTo(hit[0]) });
     else issues.push(`ending "${ending.key}" cannot be reached`);
   }
 

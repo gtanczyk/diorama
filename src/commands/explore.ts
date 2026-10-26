@@ -10,8 +10,8 @@ import { defineCommand, takeOption } from '../registry.ts';
 import { WorldFiles } from '../world/files.ts';
 import { serveWorld } from './play.ts';
 
-type Browser = { newPage(o?: object): Promise<Page>; close(): Promise<void> };
-type Page = {
+export type Browser = { newPage(o?: object): Promise<Page>; close(): Promise<void> };
+export type Page = {
   goto(url: string): Promise<unknown>;
   waitForFunction(js: string, arg?: unknown, o?: object): Promise<unknown>;
   evaluate<T>(js: string, arg?: unknown): Promise<T>;
@@ -19,7 +19,7 @@ type Page = {
 };
 
 /** Playwright is not a dependency: the explorer is a QA tool, and the browser is large. */
-async function chromium(): Promise<{ launch(o?: object): Promise<Browser> }> {
+export async function chromium(): Promise<{ launch(o?: object): Promise<Browser> }> {
   try {
     return ((await import('playwright' as string)) as { chromium: never }).chromium;
   } catch {

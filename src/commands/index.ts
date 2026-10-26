@@ -2,6 +2,7 @@
 import './doctor.ts';
 import './world.ts';
 import './story.ts';
+import './playthrough.ts';
 import './layout.ts';
 import './paint.ts';
 import './masks.ts';
