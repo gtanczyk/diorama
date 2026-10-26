@@ -124,7 +124,31 @@ function inside(a: number[], b: number[]): number {
 /** How far the water texture reaches past the water's edge: more than the flow ever moves it in one cycle. */
 export const WATER_PAD = 64;
 
-export type Water = { tex: Buffer; mask: Buffer; box: [number, number, number, number]; phrase: string };
+/** The way the water flows on screen, a unit vector (downstream); [0, 0] for still water. */
+export type Flow = [number, number];
+export type Water = { tex: Buffer; mask: Buffer; box: [number, number, number, number]; phrase: string; flow: Flow };
+
+const FlowAnswer = z.object({
+  flows: z.boolean(),
+  from: z.tuple([z.number(), z.number()]).optional(),
+  to: z.tuple([z.number(), z.number()]).optional(),
+});
+
+/**
+ * Which way the water runs on screen. A river or canal runs along its banks, so it is a line on the picture,
+ * often into the depth (down the frame toward the viewer, or up toward a far bridge), not just sideways.
+ * Spark reads it as an upstream and a downstream point; a lake, a harbour basin or the sea stays still.
+ */
+export async function flowOf(memo: Memo, place: Place, backdrop: Buffer, box: [number, number, number, number]): Promise<Flow> {
+  const prompt = `This is a painted game scene, ${FRAME.width}x${FRAME.height} px. There is ${place.key.replace(/-/g, ' ')} water in the box x ${box[0]}..${box[2]}, y ${box[1]}..${box[3]}.
+Which way does the water run? A river or a canal runs along its banks: follow the channel, which may lead into the depth of the picture (toward a far bridge or arch, or toward the viewer), not only left or right. Pick the more natural direction; when nothing shows it, water runs toward the viewer.
+Answer with JSON only: {"flows": true, "from": [x, y], "to": [x, y]}, two points on the water in px, "from" upstream and "to" downstream, far apart along the channel. For still water (a pond, a lake, a harbour basin, the open sea) answer {"flows": false}.`;
+  const a = FlowAnswer.parse(await askSparkJson(memo, { label: `water-flow:${place.key}`, prompt, images: [backdrop] }));
+  if (!a.flows || !a.from || !a.to) return [0, 0];
+  const [dx, dy] = [a.to[0] - a.from[0], a.to[1] - a.from[1]];
+  const len = Math.hypot(dx, dy);
+  return len < 1 ? [0, 0] : [Math.round((dx / len) * 1000) / 1000, Math.round((dy / len) * 1000) / 1000];
+}
 
 /**
  * The water of a place (a river, a canal, the sea) for the runtime to set flowing: its pixels, carried past
@@ -144,7 +168,8 @@ export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer, not
   }
   if (!mask) return undefined;
   const [mx0, my0, mx1, my1] = boxOf(mask);
-  const box: [number, number, number, number] = [Math.max(0, mx0 - WATER_PAD), my0, Math.min(W, mx1 + WATER_PAD), my1];
+  // Carried past the edges on all sides: water running into the depth also moves up and down the frame.
+  const box: [number, number, number, number] = [Math.max(0, mx0 - WATER_PAD), Math.max(0, my0 - WATER_PAD), Math.min(W, mx1 + WATER_PAD), Math.min(H, my1 + WATER_PAD)];
   const rgb = new Uint8Array(await sharp(backdrop).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer());
   // Everything in the box that is not water gets the water's colours, row by row from the nearest water.
   const reach = emptyMask(W, H);
@@ -156,5 +181,9 @@ export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer, not
   // The page cuts with the mask's alpha (destination-in), so it is white with the water as alpha.
   const alpha = await sharp(await maskToPng(dilate(mask, -2))).blur(2).extract(region).extractChannel(0).toBuffer();
   const soft = await sharp({ create: { width: region.width, height: region.height, channels: 3, background: '#ffffff' } }).joinChannel(alpha).png().toBuffer();
-  return { tex, mask: soft, box, phrase };
+  const flow = await flowOf(memo, place, backdrop, [mx0, my0, mx1, my1]).catch((error) => {
+    console.log(`  ${place.key}: flow direction unknown, left to right (${error instanceof Error ? error.message.slice(0, 120) : error})`);
+    return [1, 0] as Flow;
+  });
+  return { tex, mask: soft, box, phrase, flow };
 }

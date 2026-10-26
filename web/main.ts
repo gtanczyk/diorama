@@ -51,7 +51,7 @@ type Place = {
   edge: Float32Array;
   /** The far view as flats: the sky drawn still, then each flat (farthest first) at its own disparity. */
   /** Water set flowing: a texture over box (reaching past the banks), its soft mask, a canvas to compose in. */
-  water?: { tex: HTMLImageElement; mask: HTMLImageElement; box: [number, number, number, number]; canvas: HTMLCanvasElement };
+  water?: { tex: HTMLImageElement; mask: HTMLImageElement; box: [number, number, number, number]; flow: [number, number]; canvas: HTMLCanvasElement };
   far?: { sky?: HTMLImageElement; flats: Array<{ img: HTMLImageElement; box: [number, number, number, number]; d: number }> };
   hots: Hot[];
   cuts: Cut[];
@@ -256,7 +256,7 @@ class Game {
     const w = entry.layers?.water;
     if (backdrop && w && !params.has('still')) {
       const [tex, mask] = await Promise.all([loadImage(files(w.tex)), loadImage(files(w.mask))].map((p) => p.catch(() => undefined)));
-      if (tex && mask) water = { tex, mask, box: w.box, canvas: Object.assign(document.createElement('canvas'), { width: w.box[2] - w.box[0], height: w.box[3] - w.box[1] }) };
+      if (tex && mask) water = { tex, mask, box: w.box, flow: w.flow ?? [1, 0], canvas: Object.assign(document.createElement('canvas'), { width: w.box[2] - w.box[0], height: w.box[3] - w.box[1] }) };
     }
     const maskOf = (p?: string) => (p ? loadBits(dir(p), g.frame.width, g.frame.height).catch(() => undefined) : Promise.resolve(undefined));
     const byPath = new Map<string, Promise<Bits | undefined>>();
@@ -731,13 +731,17 @@ class Game {
 
   /**
    * The water flows: two copies of its texture drift downstream, each fading in and out half a cycle apart, so
-   * their sum always weighs one and no copy is seen jumping back. Near rows drift faster than far ones. The result is cut to the water's soft mask and slides with the bank behind.
+   * their sum always weighs one and no copy is seen jumping back. They drift along the flow Spark read (into the
+   * depth too), near rows faster than far ones. The result is cut to the water's soft mask and slides with the
+   * bank behind.
    */
   private drawWater(p: Parallax) {
     const water = this.place.water;
     if (!water) return;
     const { g, edge } = this.place;
     const [x0, y0, x1, y1] = water.box;
+    const [ux, uy] = water.flow;
+    if (!ux && !uy) return;
     const w = x1 - x0;
     const c = water.canvas.getContext('2d')!;
     c.globalCompositeOperation = 'source-over';
@@ -751,11 +755,12 @@ class Game {
       c.globalAlpha = k === 0 ? 1 : alpha;
       for (let y = y0; y < y1; y += STRIP) {
         // By the row's place within the water, not the floor depth: a river near the horizon would barely move.
-        // At most the texture's reach past the banks per cycle.
+        // At most the texture's reach past the banks per cycle, so a shifted strip never runs out of texture.
         const near = (y - y0) / Math.max(1, y1 - y0);
-        const travel = Math.min(2 * WATER_PAD - 4, FLOW * (0.4 + 0.6 * near) * PERIOD);
-        const dx = (ph - 0.5) * travel;
-        c.drawImage(water.tex, 0, y - y0, w, STRIP, dx, y - y0, w, STRIP);
+        const travel = Math.min(2 * WATER_PAD - 4, FLOW * (0.4 + 0.6 * near) * PERIOD) * (ph - 0.5);
+        // Running into the depth, a strip shows the water from further up (or down) the channel.
+        const sy = Math.min(y1 - y0 - STRIP, Math.max(0, y - y0 - uy * travel));
+        c.drawImage(water.tex, 0, sy, w, STRIP, ux * travel, y - y0, w, STRIP);
       }
     }
     c.globalAlpha = 1;

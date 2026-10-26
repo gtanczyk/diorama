@@ -61,7 +61,7 @@ defineCommand({
       if (water) {
         files.write(at('layers', 'water.jpg'), water.tex);
         files.write(at('layers', 'water-mask.png'), water.mask);
-        console.log(`  ${place.key}: flowing ${water.phrase}`);
+        console.log(`  ${place.key}: ${water.phrase} ${water.flow[0] || water.flow[1] ? `flowing [${water.flow}]` : 'still'}`);
       }
       if (far || water) {
         if (far) {
@@ -72,7 +72,7 @@ defineCommand({
         files.write(at('layers.json'), {
           sky: far ? 'layers/sky.png' : null,
           flats: (far?.flats ?? []).map((f, i) => ({ phrase: f.phrase, file: `layers/${i}.png`, box: f.box, px: f.px })),
-          ...(water && { water: { tex: 'layers/water.jpg', mask: 'layers/water-mask.png', box: water.box } }),
+          ...(water && { water: { tex: 'layers/water.jpg', mask: 'layers/water-mask.png', box: water.box, flow: water.flow } }),
         });
       }
     }));

@@ -136,8 +136,8 @@ export function backEdge(g: Geometry, smooth = 7): Float32Array {
 export type Layers = {
   sky: string | null;
   flats: Array<{ file: string; box: [number, number, number, number] }>;
-  /** Water to set flowing: an opaque texture over `box` (carried past the banks) and its soft mask. */
-  water?: { tex: string; mask: string; box: [number, number, number, number] };
+  /** Water to set flowing: an opaque texture over `box` (carried past the banks), its soft mask, and which way it runs on screen (unit vector; [0, 0] still; left to right when missing). */
+  water?: { tex: string; mask: string; box: [number, number, number, number]; flow?: [number, number] };
 };
 
 /**
