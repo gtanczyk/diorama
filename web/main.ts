@@ -31,11 +31,14 @@ export type SpriteInfo = {
   cols: number; rows: number; frames: number; width: number; height: number;
   /** Feet at (cell width / 2, cell height * feetAt); the figure is about `px` tall. */
   feetAt: number; px: number;
+  /** Walk facings the story's routes use (none for an NPC). */
   facings: Record<string, { sheet: string; yaw: number; iou?: number[]; stand?: number }>;
-  /** Talking sheets, same grid: frame 0 listens, 1..7 are gestures. */
-  talk?: Record<string, { sheet: string; yaw: number }>;
+  /** Talking sheets, same grid, usually one: cell i shows gestures[i] (cell 0 listens). */
+  talk?: Record<string, { sheet: string; yaw: number; gestures?: string[] }>;
+  /** The gesture the story gives each line this character says; a line not listed is said listening. */
+  lines?: Record<string, string>;
 };
-type Sheet = { yaw: number; stand: number; img: HTMLImageElement };
+type Sheet = { yaw: number; stand: number; img: HTMLImageElement; gestures: string[] };
 type Figure = { img: HTMLImageElement; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
 /** y: the floor row the cut stands on, which sets how far it slides with parallax. */
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number; y: number };
@@ -137,9 +140,7 @@ class Game {
   private figures = new Map<string, Figure>();
   /** phase counts walk cycles; it only advances with distance walked, so feet keep pace with the floor. */
   hero = { x: 0, y: 0, path: [] as Point[], facing: 1, phase: 0, yaw: Math.PI / 2, figure: undefined as Figure | undefined };
-  speech: { text: string; until: number; who?: string } | null = null;
-  /** The talk frame the speaker holds now (1..7), and until when. */
-  private gesture = { frame: 1, until: 0 };
+  speech: { text: string; until: number; who?: string; from: number } | null = null;
   state!: State;
   /** The inventory item the next click uses. */
   holding: string | undefined;
@@ -173,8 +174,10 @@ class Game {
       }
       if (cast.sprites && params.get('model') !== '1') {
         const { dir, info } = cast.sprites;
-        const sheets = (list: Array<{ sheet: string; yaw: number; stand?: number }>) => Promise.all(list.map(async (f) => ({ yaw: f.yaw, stand: f.stand ?? 0, img: await loadImage(files(`${dir}/${f.sheet}`)) })));
-        figure.sprites = { info, sheets: await sheets(Object.values(info.facings)), talk: await sheets(Object.values(info.talk ?? {})).catch(() => []) };
+        const sheets = (list: Array<{ sheet: string; yaw: number; stand?: number; gestures?: string[] }>) =>
+          Promise.all(list.map(async (f) => ({ yaw: f.yaw, stand: f.stand ?? 0, gestures: f.gestures ?? ['listen'], img: await loadImage(files(`${dir}/${f.sheet}`)) })));
+        const [walk, talk] = await Promise.all([sheets(Object.values(info.facings ?? {})), sheets(Object.values(info.talk ?? {})).catch(() => [])]);
+        if (walk.length || talk.length) figure.sprites = { info, sheets: walk, talk };
       }
       // A 3D figure needs WebGL; without it (or if the model fails) the 2D rig or cut-out stays.
       else if (cast.model && params.get('model') !== '0') {
@@ -472,8 +475,7 @@ class Game {
     // A voiced line stays up until it has been said.
     const voiced = this.data.sound?.lines?.[text]?.seconds ?? 0;
     const seconds = Math.max(2.2 + text.length * 0.045, voiced + 0.5);
-    this.speech = { text, until: this.time + seconds, who };
-    this.gesture.until = 0;
+    this.speech = { text, until: this.time + seconds, who, from: this.time };
     this.emit('say', { text });
     return new Promise((resolve) => {
       const done = this.speech;
@@ -547,12 +549,6 @@ class Game {
     const hero = this.hero;
     const step = dt / 0.3;
     this.dark = this.darkTarget > this.dark ? Math.min(this.darkTarget, this.dark + step) : Math.max(this.darkTarget, this.dark - step);
-    if (this.speech?.who && this.time > this.gesture.until) {
-      // A new gesture about every 0.45 s, never the same one twice in a row.
-      // Picked from the frame count, not Math.random, so capture runs come out the same every time.
-      const next = 1 + (((this.frame + 1) * 2654435761) >>> 0) % 6;
-      this.gesture = { frame: next >= this.gesture.frame ? next + 1 : next, until: this.time + 0.45 };
-    }
     if (this.speech && this.time > this.speech.until) {
       this.speech = null;
       this.emit('silent', {});
@@ -946,12 +942,12 @@ class Game {
         // The nearest painted facing; the left-facing ones are the right ones mirrored.
         const a = Math.atan2(Math.sin(yaw), Math.cos(yaw));
         const nearest = (list: Sheet[], to: number) => list.reduce((best, s) => (Math.abs(s.yaw - to) < Math.abs(best.yaw - to) ? s : best));
-        // Talking: there is no front talk sheet, so a figure facing the viewer talks three-quarter.
-        const talking = talk && !walking && sprites.talk.length > 0;
-        const sheet = talking ? nearest(sprites.talk, Math.max(Math.PI / 4, Math.abs(a))) : nearest(sprites.sheets, Math.abs(a));
+        // A figure with no walk sheets (an NPC) always stands on its talk sheet, listening when it isn't speaking.
+        const onTalk = sprites.talk.length > 0 && ((talk && !walking) || sprites.sheets.length === 0);
+        const sheet = onTalk ? nearest(sprites.talk, Math.abs(a)) : nearest(sprites.sheets, Math.abs(a));
         const { cols, rows, frames, feetAt, px } = sprites.info;
         const [cw, ch] = [sheet.img.width / cols, sheet.img.height / rows];
-        const i = talking ? (talk === 'speak' ? this.gesture.frame : 0) : walking ? Math.floor((((phase % 1) + 1) % 1) * frames) % frames : sheet.stand;
+        const i = onTalk ? (talk === 'speak' ? this.gestureCell(sheet, sprites.info) : 0) : walking ? Math.floor((((phase % 1) + 1) % 1) * frames) % frames : sheet.stand;
         const s = h / px;
         if (a < 0) c.scale(-1, 1);
         c.drawImage(sheet.img, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch, (-cw / 2) * s, -ch * feetAt * s, cw * s, ch * s);
@@ -994,6 +990,18 @@ class Game {
     const half = paint(ctx);
     ctx.restore();
     return [x - half - 2 + sx, y - h * 1.04 - bob - 2 + sy, x + half + 2 + sx, y + Math.max(3, h * 0.04) + sy];
+  }
+
+  /**
+   * The talk cell for the line being said: listening for its first moment, then the story's gesture for that
+   * line, easing back to listening now and then so a long line has a rhythm.
+   */
+  private gestureCell(sheet: Sheet, info: SpriteInfo): number {
+    const speech = this.speech;
+    const cell = speech ? sheet.gestures.indexOf(info.lines?.[speech.text] ?? 'listen') : -1;
+    if (!speech || cell <= 0) return 0;
+    const t = this.time - speech.from;
+    return t < 0.3 || (t - 0.3) % 1.5 > 1.0 ? 0 : cell;
   }
 
   /** Whether `key` is speaking a line now, or listening in a conversation (between lines, both listen). */
