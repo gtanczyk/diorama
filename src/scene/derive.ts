@@ -15,7 +15,8 @@ import { PERSON_M, probePoints, scaleFrom, sparkPeople, type Sample, type Scale 
 import { CELL, connect, gridFromPixels, nearestRoomy, reach, roomy, type Grid } from './walk.ts';
 
 export type ThingIn = { key: string; kind: Kind; source: MaskSource; coarse: boolean; mask: Mask };
-export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors: Mask[]; painting: Buffer };
+/** `plates`: things that have a clean plate (plates/<key>.png), for the runtime to hide them once taken. */
+export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors: Mask[]; painting: Buffer; plates?: string[] };
 export type Derived = { geometry: Geometry; grid: Grid; blobs: Blob[]; footprint: Mask; probes: Sample[] };
 
 const { width: W, height: H } = FRAME;
@@ -188,7 +189,7 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     const under = thing.kind === 'on-top' && own[0] ? support(own[0]) : undefined;
     const baseY = under ? under.baseY : own.length ? Math.max(...own.map((b) => b.baseY)) : box[3];
     const stand = thing.kind === 'walk-on' || thing.kind === 'flat' ? spot(cx, (box[1] + box[3]) / 2) : spot(cx, baseY + 14);
-    return { key: t.key, role: t.role, kind: thing.kind, box, mask: `masks/${t.key}.png`, stand, ...(thing.coarse && { coarse: true }) };
+    return { key: t.key, role: t.role, kind: thing.kind, box, mask: `masks/${t.key}.png`, stand, ...(thing.coarse && { coarse: true }), ...(input.plates?.includes(t.key) && { plate: `plates/${t.key}.png` }) };
   });
   for (const t of geoThings) {
     // Npcs stand where the layout put them; wall things (a ship at sea) may be far from any floor.

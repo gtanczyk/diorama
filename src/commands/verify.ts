@@ -1,7 +1,8 @@
 // diorama verify <slug> [place...]: verify.json per place; exits 1 when a place has errors.
+import fs from 'node:fs';
 import { Geometry } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
-import { verifyPlace, type MaskNotes } from '../scene/verify.ts';
+import { verifyPlace, type MaskNotes, type PlateNotes } from '../scene/verify.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
@@ -15,7 +16,8 @@ defineCommand({
     for (const place of world.places.filter((p) => only.length === 0 || only.includes(p.key))) {
       const at = (...parts: string[]) => files.place(place.key, ...parts);
       const geometry = Geometry.parse(files.readJson(at('geometry.json')));
-      const verdict = verifyPlace(place, geometry, files.readJson(at('masks.json')) as MaskNotes);
+      const plates = (fs.existsSync(at('plates.json')) ? files.readJson(at('plates.json')) : {}) as PlateNotes;
+      const verdict = verifyPlace(place, geometry, files.readJson(at('masks.json')) as MaskNotes, plates);
       files.write(at('verify.json'), verdict);
       if (!verdict.ok) failed++;
       console.log(`${place.key}: ${verdict.ok ? 'ok' : `${verdict.errors.length} error(s)`}, ${verdict.flags.length} flag(s)`);

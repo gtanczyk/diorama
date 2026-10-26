@@ -26,7 +26,10 @@ export function gridOf(g: Pick<Geometry, 'walk' | 'zone'>): Grid {
   return grid;
 }
 
-export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes): Verdict {
+/** plates.json: whether SAM still finds the thing on its plate. */
+export type PlateNotes = Record<string, { stillThere: boolean }>;
+
+export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates: PlateNotes = {}): Verdict {
   const errors: Finding[] = [];
   const flags: Finding[] = [];
   const grid = gridOf(g);
@@ -90,6 +93,10 @@ export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes): Verdic
       if (y - personPx(g, y) < -0.3 * personPx(g, y)) clipped++;
     });
     if (clipped > 0.05 * open) flags.push({ code: 'HEAD_OFF_FRAME', detail: `${clipped} cells put over 30% of the hero above the frame` });
+  }
+
+  for (const [key, p] of Object.entries(plates)) {
+    if (p.stillThere) flags.push({ code: 'PLATE_NOT_CLEAN', key, detail: 'SAM still finds it on its plate; taking it may leave it painted' });
   }
 
   for (const line of g.flagged ?? []) flags.push({ code: 'DERIVE', detail: line });

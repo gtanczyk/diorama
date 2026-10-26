@@ -22,6 +22,12 @@ npx -y github:gtanczyk/diorama doctor   # one live call to each model
 
 Model answers are kept by a hash of their inputs under each world's memo folder, so rerunning a step with the same inputs is free.
 
+## Checking a world
+
+`diorama build` ends with `verify`, which writes `verify.json` per place and prints which places are playable and what was flagged on the way. Every step also leaves a picture to look at: `masks/overlay.png` (what SAM found) and `walk.png` (where the hero can walk, footprints, floor lines and his size at a few depths).
+
+`diorama explore <slug>` puts the hero on every part of each floor in the real play page and checks each frame; it needs Playwright with Chromium (`npm i -D playwright && npx playwright install chromium`). `--fix` closes the floor where he looked wrong.
+
 ## Status
 
 Work in progress; see the commit log.

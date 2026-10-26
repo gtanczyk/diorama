@@ -57,7 +57,8 @@ defineCommand({
       const painting = fs.readFileSync(at('painting.png'));
       const things = await Promise.all(Object.entries(made.things).map(async ([key, t]) => ({ ...t, key, mask: await maskFromPng(fs.readFileSync(at('masks', `${key}.png`))) })));
       const floors = await Promise.all(layout.floors.map(async (f) => maskFromPng(fs.readFileSync(at('masks', 'floors', `${f.key}.png`)))));
-      const out = await derive(files.memo, { place, layout, things, floors, painting }, (line) => console.log(`  ${place.key}: ${line}`));
+      const plates = fs.existsSync(at('plates')) ? fs.readdirSync(at('plates')).filter((f) => f.endsWith('.png')).map((f) => f.slice(0, -4)) : [];
+      const out = await derive(files.memo, { place, layout, things, floors, painting, plates }, (line) => console.log(`  ${place.key}: ${line}`));
       const geometry = Geometry.parse(out.geometry);
       files.write(at('geometry.json'), geometry);
       files.write(at('walk.png'), await walkPicture(painting, geometry, out.footprint));
