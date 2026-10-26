@@ -41,7 +41,13 @@ export function worldData(files: WorldFiles) {
       return [key, { image: `cast/${f}`, ...(rig ? { rig, parts: `cast/${key}` } : {}) }];
     }));
   const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
-  return { slug: files.slug, world, places, cast, story };
+  // changes/<i>.png per place: how story.changes[i] looks once it holds.
+  const changes: Record<string, string> = {};
+  (story?.changes ?? []).forEach((c, i) => {
+    const file = `places/${c.place}/changes/${i}.png`;
+    if (fs.existsSync(files.path(file))) changes[i] = file;
+  });
+  return { slug: files.slug, world, places, cast, story, changes };
 }
 
 export async function bundle(forShip = false): Promise<string> {

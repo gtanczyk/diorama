@@ -49,6 +49,10 @@ export function storyNameIssues(world: World, story: Story): string[] {
     thingIn(`lock on ${lock.via}`, lock.place, lock.via, 'exit');
     checkWhen(`lock on ${lock.via}`, lock.until);
   }
+  story.changes.forEach((c, i) => {
+    thingIn(`change ${i + 1} (${c.thing})`, c.place, c.thing);
+    checkWhen(`change ${i + 1} (${c.thing})`, c.when);
+  });
   for (const d of story.dialogues) {
     const where = `dialogue with ${d.npc}`;
     thingIn(where, d.place, d.npc, 'npc');

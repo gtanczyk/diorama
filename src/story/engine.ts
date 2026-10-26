@@ -168,3 +168,8 @@ export function hiddenThings(story: Story, state: State): { place: string; thing
   return state.spent.map((i) => story.interactions[i]).filter((it) => it.verb === 'take' && it.do.some((e) => 'give' in e))
     .map((it) => ({ place: it.place, thing: it.thing }));
 }
+
+/** Indexes into story.changes whose condition holds in this state: the runtime draws their plates. */
+export function activeChanges(story: Story, state: State): number[] {
+  return story.changes.flatMap((c, i) => (holds(state, c.when) ? [i] : []));
+}

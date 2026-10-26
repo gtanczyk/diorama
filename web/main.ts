@@ -2,7 +2,7 @@
 import { hiddenRuns, personPx, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
-import { actions, apply, hiddenThings, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
+import { actions, activeChanges, apply, hiddenThings, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 
@@ -13,6 +13,8 @@ type Data = {
   /** Figure per hero or NPC key: a cut-out image, and its rig when `diorama cast` could cut it into parts. */
   cast: Record<string, { image: string; rig?: Rig; parts?: string }>;
   story: Story | null;
+  /** Index into story.changes → the painting as it looks once that change holds. */
+  changes?: Record<string, string>;
 };
 
 type Bits = { bits: Uint8Array; area: number };
@@ -384,6 +386,25 @@ class Game {
     });
   }
 
+  private changeImgs = new Map<number, HTMLImageElement | null>();
+
+  /** Images of the story changes that hold now in this place; each loads on first use. */
+  changed(): HTMLImageElement[] {
+    const story = this.data.story;
+    if (!story || !this.data.changes) return [];
+    const out: HTMLImageElement[] = [];
+    for (const i of activeChanges(story, this.state)) {
+      if (story.changes[i].place !== this.place.key || !this.data.changes[i]) continue;
+      if (!this.changeImgs.has(i)) {
+        this.changeImgs.set(i, null);
+        void loadImage(files(this.data.changes[i])).then((img) => this.changeImgs.set(i, img)).catch(() => undefined);
+      }
+      const img = this.changeImgs.get(i);
+      if (img) out.push(img);
+    }
+    return out;
+  }
+
   /** Things of this place the story has carried off: drawn from their clean plate, not clickable, hiding no one. */
   gone(): Set<string> {
     const story = this.data.story;
@@ -456,6 +477,8 @@ class Game {
       ctx.fillStyle = '#20232a';
       ctx.fillRect(0, 0, W, H);
     }
+    // What the story has changed here (a beacon lit): each change is the thing as it looks after, transparent elsewhere.
+    for (const img of this.changed()) ctx.drawImage(img, 0, 0, W, H);
     const gone = this.gone();
     for (const hot of this.place.hots) {
       if (!hot.plate || !gone.has(hot.thing.key)) continue;

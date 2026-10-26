@@ -33,3 +33,15 @@ export async function plateFor(memo: Memo, place: Place, thing: { key: string; p
   const left = found.reduce((px, f) => px + maskArea(intersect(f.mask, thing.mask)), 0);
   return { thing: thing.key, png, iou, stillThere: iou > 0.4 || left > 0.4 * maskArea(thing.mask) };
 }
+
+/** For a thing the story changes (a beacon lit): the thing as it looks after, transparent elsewhere, so several
+ * changes in one place stack. Light may spill, so the area is wide. */
+export async function changePlate(memo: Memo, place: Place, thing: { key: string; phrase: string; mask: Mask }, painting: Buffer, looks: string): Promise<Buffer> {
+  const prompt = `Change only the ${thing.phrase} in this painting: it is now ${looks}. Add the light it casts on what is right around it. Leave everything else exactly as it is, same style. No people, no text.`;
+  const edited = await museEdit(memo, { label: `change:${place.key}/${thing.key}:${looks}`, prompt, images: [painting] });
+  const { width: W, height: H } = FRAME;
+  const alpha = await sharp(await maskToPng(dilate(thing.mask, 48))).blur(14).extractChannel(0).raw().toBuffer();
+  const rgba = await sharp(edited).resize(W, H, { fit: 'fill' }).ensureAlpha().raw().toBuffer();
+  for (let i = 0; i < W * H; i++) rgba[i * 4 + 3] = alpha[i];
+  return sharp(rgba, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer();
+}

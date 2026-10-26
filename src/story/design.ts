@@ -21,6 +21,7 @@ const EXAMPLE = `{
     "npc": "<thing key with role npc>", "place": "<place>", "when": [], "start": "<line key>",
     "lines": [{ "key": "kebab-key", "says": "what the npc says", "choices": [{ "text": "what the hero answers", "when": [], "do": [], "next": "<line key or leave out to end>" }] }]
   }],
+  "changes": [{ "place": "<place>", "thing": "<thing key>", "when": ["<fact>"], "looks": "how it looks once changed, a few words" }],
   "endings": [{ "key": "kebab-key", "title": "short", "text": "two sentences" }]
 }`;
 
@@ -35,6 +36,7 @@ Write story.json for it. Rules:
 - Clicking picks the first interaction listed for that thing, verb and item whose condition holds, so list special cases before the plain one.
 - Every thing should answer "look". Every item thing has a "take" with "once": true and gives the item.
 - Unlock with a flag set when the problem is solved, not with "has:item", so the player is never locked out after giving the item away.
+- When solving something visibly changes a thing (a fire lit, a gate open, a lamp glowing), add a change for it; the painting is updated when its condition holds. At least one change.
 - No ending may be reachable in fewer than ${MIN_STEPS} clicks; each ending needs a solved puzzle.
 - Every ending must be reachable, and from any state the player must still be able to reach an ending.
 - Text is English, short and specific to this world. No names from existing films, books, games or brands.

@@ -53,6 +53,8 @@ export const Story = z.object({
   locks: z.array(z.object({ place: Slug, via: Slug, until: When, say: z.string().min(1) })).default([]),
   interactions: z.array(Interaction),
   dialogues: z.array(Dialogue).default([]),
+  /** A thing that looks different once its condition holds (a beacon burning, a gate open): a plate painted over it. */
+  changes: z.array(z.object({ place: Slug, thing: Slug, when: z.array(Fact).min(1), looks: z.string().min(3) })).default([]),
   endings: z.array(z.object({ key: Slug, title: z.string().min(1), text: z.string().min(1) })).min(1),
 });
 

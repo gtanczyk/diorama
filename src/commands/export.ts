@@ -33,6 +33,7 @@ defineCommand({
       }
       for (const occ of entry.geometry?.occluders ?? []) if (occ.mask) await copy(`places/${key}/${occ.mask}`);
     }
+    for (const [i, rel] of Object.entries(data.changes)) data.changes[i] = await copy(rel); // transparent around the thing, so PNG
     for (const figure of Object.values(data.cast)) {
       await copy(figure.image);
       for (const part of figure.rig?.parts ?? []) await copy(`${figure.parts}/${part.file}`);
