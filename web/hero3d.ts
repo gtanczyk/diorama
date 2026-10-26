@@ -93,6 +93,13 @@ export class Figure3D {
     return f;
   }
 
+  /** Untextured: plain grey clay, so a guide shows only the form and the pose. */
+  plain() {
+    this.holder.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = new THREE.MeshStandardMaterial({ color: 0xb4b4b4, metalness: 0, roughness: 1 });
+    });
+  }
+
   private constructor(paint: number) {
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, alpha: true, antialias: true, preserveDrawingBuffer: true, premultipliedAlpha: false });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;

@@ -4,13 +4,15 @@ import fs from 'node:fs';
 import { gestureIndex } from '../play/gestures.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { planSprites, type CharacterPlan } from '../model/plan.ts';
-import { cutSheet, FACINGS, onGrey, paintSheet, renderGuides, SHEET, TRACED, type Facing } from '../model/sprites.ts';
+import { cutSheet, FACINGS, flatGuide, onGrey, paintSheet, renderGuides, SHEET, TRACED, type Facing } from '../model/sprites.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
 
 const LEGS_OK = 0.6;
-// Below this mean pose IoU a walk take has frames facing the wrong way (drawn takes keep 0.8 or more).
-const POSE_OK = 0.75;
+// Below this mean pose IoU a walk take has frames facing the wrong way or legs that hardly walk.
+const POSE_OK = 0.85;
+// Walk takes painted again at most, while the best one is traced or left the pose.
+const RETAKES = 4;
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
 defineCommand({
@@ -53,17 +55,25 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
   const out = (name: string) => files.path('cast', key, 'sprites', name);
 
   // Walking: the first facing (the profile when it is used) is painted first; the others also see it,
-  // so patches and colours stay the same. Muse sometimes hands the guide back with a filter over it
+  // so patches and colours stay the same. Muse often hands the textured guide back with a filter over it
   // (mean `same` above TRACED): that sheet looks like the 3D render, and as the first facing it passes the
-  // look on to every other facing, so a traced take is painted again, at most twice. A frame whose legs
-  // do not follow the guide makes the walk skip: with --tries, more takes, and the whole take whose legs
-  // follow best wins (frames mixed from several takes do not match, and the take that traces the guide
-  // closest is the stiffest).
+  // look on to every other facing. So a take that is traced or left the pose is painted again, up to
+  // RETAKES times, and the first drawn take that keeps the pose wins. Retakes cycle through three guides,
+  // because no one of them works for every facing (foghorn, 3 takes each): over a grey clay figure Muse
+  // draws the back view every time but turns the three-quarter back into a profile; over flat colour
+  // blocks it keeps the pose about half the time; over the textured render it traces about 3 takes in 4.
+  // A frame whose legs do not follow the guide makes the walk skip: with --tries, more takes, and the
+  // whole take whose legs follow best wins (frames mixed from several takes do not match).
   const facings: Record<string, { sheet: string; yaw: number; stand: number; iou: number[]; legs: number[]; same: number[] }> = {};
   if (plan.walk.length) {
     const guides = await renderGuides(modelDir, plan.walk);
-    const grey: Record<string, Buffer> = {};
-    for (const f of plan.walk) files.write(out(`guide-${f}.png`), (grey[f] = await onGrey(guides[f])));
+    const clay = await renderGuides(modelDir, plan.walk, undefined, true);
+    const shown: Record<string, Buffer[]> = {};
+    for (const f of plan.walk) {
+      const grey = await onGrey(guides[f]);
+      files.write(out(`guide-${f}.png`), grey);
+      shown[f] = [grey, await onGrey(clay[f]), await flatGuide(grey)];
+    }
     const first: Facing = plan.walk.includes('right') ? 'right' : plan.walk[0];
     const refsFor = (f: Facing, painted?: Buffer) => [f.startsWith('back') ? view('back') : view('front'), painted ?? view('right')];
     const painted: Record<string, Buffer> = {};
@@ -72,7 +82,8 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
       const takes: Take[] = [];
       let n = take;
       const another = async () => {
-        const p = await paintSheet(files.memo, key, f, looks, grey[f], refs, n);
+        const p = await paintSheet(files.memo, key, f, looks, shown[f][(n - take) % shown[f].length], refs, n);
+        // Always measured against the textured guide: that is the look a traced sheet keeps.
         takes.push({ ...(await cutSheet(guides[f], p)), painted: p, n: n++ });
       };
       const traced = (t: Take) => mean(t.same) > TRACED;
@@ -84,14 +95,14 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
         return traced(a) ? (mean(b.same) < mean(a.same) ? b : a) : (mean(b.legs) > mean(a.legs) ? b : a);
       });
       await another();
-      for (let t = 1; t <= 2 && rank(pick()) < 2; t++) await another();
+      for (let t = 1; t <= RETAKES && rank(pick()) < 2; t++) await another();
       for (let t = 1; t < tries && Math.min(...pick().legs) < LEGS_OK; t++) await another();
       const best = pick();
       painted[f] = best.painted;
       files.write(out(`painted-${f}.png`), best.painted);
       files.write(out(`${f}.png`), best.sheet);
       facings[f] = { sheet: `${f}.png`, yaw: FACINGS[f], stand: best.stand, iou: best.iou, legs: best.legs, same: best.same };
-      console.log(`${key} walk ${f}: take ${best.n + 1} (${takes.length} painted), pose IoU ${mean(best.iou).toFixed(3)}, legs ${mean(best.legs).toFixed(3)} (worst ${Math.min(...best.legs)}), same ${mean(best.same).toFixed(3)}${traced(best) ? '  <- Muse kept the 3D look, try --take' : mean(best.iou) < POSE_OK ? '  <- frames left the pose, try --take' : ''}`);
+      console.log(`${key} walk ${f}: take ${best.n + 1} (${['textured', 'clay', 'flat'][(best.n - take) % 3]} guide, ${takes.length} painted), pose IoU ${mean(best.iou).toFixed(3)}, legs ${mean(best.legs).toFixed(3)} (worst ${Math.min(...best.legs)}), same ${mean(best.same).toFixed(3)}${traced(best) ? '  <- Muse kept the 3D look, try --take' : mean(best.iou) < POSE_OK ? '  <- frames left the pose, try --take' : ''}`);
     };
     await walk(first, [view('front'), view('right')]);
     await Promise.all(plan.walk.filter((f) => f !== first).map((f) => walk(f, refsFor(f, painted[first]))));
