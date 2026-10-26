@@ -19,11 +19,13 @@
     "@meta-sam/parser": "^0.1.0",
     "esbuild": "^0.25.0",
     "sharp": "^0.33.5",
+    "three": "^0.170.0",
     "tsx": "^4.19.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/three": "^0.170.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }

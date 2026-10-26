@@ -1,0 +1,92 @@
+// Reads the bind-pose shape of a skinned glTF binary: vertex positions in scene space and triangles.
+// Enough for measuring a silhouette; the runtime loads the file itself with three.js.
+
+type Node = { mesh?: number; skin?: number; children?: number[]; matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[] };
+type Accessor = { bufferView: number; byteOffset?: number; componentType: number; count: number; type: string };
+type Gltf = {
+  nodes: Node[];
+  meshes: { primitives: { attributes: Record<string, number>; indices?: number }[] }[];
+  accessors: Accessor[];
+  bufferViews: { byteOffset?: number; byteStride?: number; byteLength: number }[];
+};
+
+export type Shape = { positions: Float32Array; triangles: Uint32Array };
+
+type M4 = number[];
+const identity = (): M4 => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+function multiply(a: M4, b: M4): M4 {
+  const o = new Array(16).fill(0);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k];
+  return o;
+}
+function local(n: Node): M4 {
+  if (n.matrix) return n.matrix;
+  const [x, y, z, w] = n.rotation ?? [0, 0, 0, 1];
+  const [sx, sy, sz] = n.scale ?? [1, 1, 1];
+  const [tx, ty, tz] = n.translation ?? [0, 0, 0];
+  // Column-major T * R * S.
+  return [
+    (1 - 2 * (y * y + z * z)) * sx, 2 * (x * y + z * w) * sx, 2 * (x * z - y * w) * sx, 0,
+    2 * (x * y - z * w) * sy, (1 - 2 * (x * x + z * z)) * sy, 2 * (y * z + x * w) * sy, 0,
+    2 * (x * z + y * w) * sz, 2 * (y * z - x * w) * sz, (1 - 2 * (x * x + y * y)) * sz, 0,
+    tx, ty, tz, 1,
+  ];
+}
+
+function readAccessor(gltf: Gltf, bin: Buffer, index: number): Float32Array | Uint32Array {
+  const a = gltf.accessors[index];
+  const view = gltf.bufferViews[a.bufferView];
+  const width = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[a.type] ?? 1;
+  const size = { 5126: 4, 5125: 4, 5123: 2, 5121: 1 }[a.componentType] ?? 4;
+  const stride = view.byteStride ?? width * size;
+  const start = (view.byteOffset ?? 0) + (a.byteOffset ?? 0);
+  const out = a.componentType === 5126 ? new Float32Array(a.count * width) : new Uint32Array(a.count * width);
+  for (let i = 0; i < a.count; i++) for (let j = 0; j < width; j++) {
+    const at = start + i * stride + j * size;
+    out[i * width + j] = a.componentType === 5126 ? bin.readFloatLE(at) : a.componentType === 5125 ? bin.readUInt32LE(at) : a.componentType === 5123 ? bin.readUInt16LE(at) : bin.readUInt8(at);
+  }
+  return out;
+}
+
+/** The first mesh in the file (the skinned one when there is a skin), in scene space. */
+export function readShape(glb: Buffer): Shape {
+  if (glb.readUInt32LE(0) !== 0x46546c67) throw new Error('not a glTF binary');
+  const jsonLength = glb.readUInt32LE(12);
+  const gltf = JSON.parse(glb.subarray(20, 20 + jsonLength).toString('utf8')) as Gltf;
+  const binStart = 20 + jsonLength;
+  const bin = glb.subarray(binStart + 8, binStart + 8 + glb.readUInt32LE(binStart));
+  const parent = new Map<number, number>();
+  gltf.nodes.forEach((n, i) => n.children?.forEach((c) => parent.set(c, i)));
+  const nodeIndex = gltf.nodes.findIndex((n) => n.mesh !== undefined && n.skin !== undefined) >= 0
+    ? gltf.nodes.findIndex((n) => n.mesh !== undefined && n.skin !== undefined)
+    : gltf.nodes.findIndex((n) => n.mesh !== undefined);
+  if (nodeIndex < 0) throw new Error('no mesh in the file');
+  let world = identity();
+  for (let i: number | undefined = nodeIndex; i !== undefined; i = parent.get(i)) world = multiply(local(gltf.nodes[i]), world);
+  const positions: number[] = [];
+  const triangles: number[] = [];
+  for (const prim of gltf.meshes[gltf.nodes[nodeIndex].mesh!].primitives) {
+    const base = positions.length / 3;
+    const p = readAccessor(gltf, bin, prim.attributes.POSITION) as Float32Array;
+    for (let i = 0; i < p.length; i += 3) {
+      const [x, y, z] = [p[i], p[i + 1], p[i + 2]];
+      positions.push(world[0] * x + world[4] * y + world[8] * z + world[12], world[1] * x + world[5] * y + world[9] * z + world[13], world[2] * x + world[6] * y + world[10] * z + world[14]);
+    }
+    const idx = prim.indices !== undefined ? readAccessor(gltf, bin, prim.indices) : Uint32Array.from({ length: p.length / 3 }, (_, i) => i);
+    for (const k of idx) triangles.push(base + k);
+  }
+  return { positions: Float32Array.from(positions), triangles: Uint32Array.from(triangles) };
+}
+
+/** Feet at y 0, height 1, centred on x and z: the hero-unit space the runtime projects views in. */
+export function normalise({ positions, triangles }: Shape): Shape {
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < positions.length; i++) {
+    lo[i % 3] = Math.min(lo[i % 3], positions[i]);
+    hi[i % 3] = Math.max(hi[i % 3], positions[i]);
+  }
+  const h = hi[1] - lo[1];
+  const centre = [(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2];
+  return { positions: positions.map((v, i) => (v - centre[i % 3]) / h), triangles };
+}
