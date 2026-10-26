@@ -993,7 +993,8 @@ class Game {
     const half = paint(c);
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.globalCompositeOperation = 'source-in';
-    c.fillStyle = '#000';
+    // Painted shadows are cool, not black: a deep blue reads like the shade the painter used.
+    c.fillStyle = '#121830';
     c.fillRect(0, 0, sc.width, sc.height);
     c.globalCompositeOperation = 'source-over';
     const [dx, dy] = light.dir;
@@ -1003,9 +1004,9 @@ class Game {
     ctx.translate(x, y);
     // (u, v) in the figure (v up is negative) goes to (u - ux * v, -uy * v): a head at v = -h lands at h * (ux, uy).
     ctx.transform(1, 0, -ux, -uy, 0, 0);
-    ctx.globalAlpha = Math.min(1, alpha);
-    // Softer the farther it reaches, like a real penumbra.
-    ctx.filter = `blur(${Math.max(1, h * 0.012 * (1 + light.length)).toFixed(1)}px)`;
+    ctx.globalAlpha = Math.min(0.85, alpha * 1.35);
+    // A little softer the farther it reaches, like a real penumbra, but as crisp as the painted ones.
+    ctx.filter = `blur(${Math.max(0.6, h * 0.004 * (1 + light.length)).toFixed(1)}px)`;
     ctx.drawImage(sc, 0, 0, w, hh, -ox, -oy, w, hh);
     ctx.restore();
     const [hx, hy] = [x + ux * h * 1.15, y + uy * h * 1.15];
