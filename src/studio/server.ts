@@ -15,6 +15,7 @@ import { redact } from '../secrets.ts';
 import { Slug } from '../world/schema.ts';
 import { Events, type StudioEvent } from './events.ts';
 import { Jobs } from './jobs.ts';
+import { History } from './history.ts';
 import { handleMcp } from './mcp.ts';
 
 export const STUDIO_WEB = fileURLToPath(new URL('../../studio/', import.meta.url));
@@ -77,7 +78,7 @@ class WorldWatch {
   private changed(name: string) {
     const file = name.split(path.sep).join('/');
     if (file === 'memo/calls.jsonl') return this.tailCalls();
-    if (file.startsWith('memo/') || file.endsWith('.tmp')) return;
+    if (file.startsWith('memo/') || file.startsWith('studio/') || file.endsWith('.tmp')) return;
     clearTimeout(this.pending.get(file));
     this.pending.set(file, setTimeout(() => {
       this.pending.delete(file);
@@ -116,7 +117,14 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
   const agentToken = randomBytes(32).toString('base64url');
   const cookie = randomBytes(32).toString('base64url');
   const events = new Events();
-  const jobs = new Jobs(events, { cwd: opts.cwd, bin: opts.bin });
+  const jobs = new Jobs(events, {
+    cwd: opts.cwd,
+    bin: opts.bin,
+    beforeStart: (job) => {
+      const dir = path.join(root, job.world);
+      if (fs.existsSync(dir)) events.publish('history.snapshot', { world: job.world, id: new History(dir).snapshot(job.label, job.by).id });
+    },
+  });
   const watches = new Map<string, WorldWatch>();
   let app: Promise<string> | null = null;
   let port = 0;

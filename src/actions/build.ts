@@ -4,7 +4,8 @@ import path from 'node:path';
 import { z } from 'zod';
 import { STEPS } from '../commands/build.ts';
 import { Slug } from '../world/schema.ts';
-import { defineAction } from './registry.ts';
+import { agentBlocked } from '../studio/locks.ts';
+import { ActionError, defineAction } from './registry.ts';
 
 const Step = z.enum(STEPS);
 
@@ -20,6 +21,8 @@ defineAction({
   }),
   job: true,
   async run({ slug, idea, from, to, places }, ctx) {
+    const blocked = agentBlocked(path.join(ctx.root, slug), ctx.by);
+    if (blocked) throw new ActionError(423, blocked);
     const fresh = !fs.existsSync(path.join(ctx.root, slug, 'world.json'));
     if (fresh && !idea && (!from || from === 'world')) throw new Error(`${slug} is a new world: give it an idea`);
     // An existing world picks up at the first step it has not finished.
@@ -38,6 +41,8 @@ defineAction({
   job: true,
   async run({ slug, step }, ctx) {
     if (step === 'world') throw new Error('the world step makes a new world: use world_build with an idea');
+    const blocked = agentBlocked(path.join(ctx.root, slug), ctx.by);
+    if (blocked) throw new ActionError(423, blocked);
     return ctx.jobs.start(slug, ['build', slug, '--from', step, '--to', step], step, ctx.by);
   },
 });

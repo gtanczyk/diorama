@@ -30,7 +30,13 @@ export class Jobs {
   private readonly waiters = new Map<string, Array<(job: Job) => void>>();
 
   /** echo: also print the job's output (the CLI runs jobs in the foreground). */
-  constructor(private readonly events: Events, private readonly opts: { cwd?: string; echo?: boolean; bin?: string } = {}) {}
+  /** beforeStart runs as a job leaves the queue (the Studio snapshots the world there, for undo). */
+  constructor(private readonly events: Events, private readonly opts: { cwd?: string; echo?: boolean; bin?: string; beforeStart?: (job: Job) => void } = {}) {}
+
+  /** Whether a job for this world is running or waiting. */
+  busy(world: string): Job | undefined {
+    return this.all.find((j) => j.world === world && (j.state === 'running' || j.state === 'queued'));
+  }
 
   start(world: string, args: string[], label: string, by: string): Job {
     const job: Job = { id: randomBytes(4).toString('hex'), world, label, args, by, state: 'queued', queuedAt: new Date().toISOString(), tail: [] };
@@ -86,6 +92,11 @@ export class Jobs {
     if (this.all.some((j) => j.world === world && j.state === 'running')) return;
     const job = this.all.find((j) => j.world === world && j.state === 'queued');
     if (!job) return;
+    try {
+      this.opts.beforeStart?.(job);
+    } catch (error) {
+      this.events.publish('log', { world, job: job.id, stream: 'err', line: `snapshot failed: ${error instanceof Error ? error.message : error}` });
+    }
     job.state = 'running';
     job.startedAt = new Date().toISOString();
     this.events.publish('job.start', { world, job: { ...job } });
