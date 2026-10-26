@@ -24,3 +24,4 @@ import './reel.ts';
 import './setup.ts';
 import './action.ts';
 import './studio.ts';
+import './mcp.ts';

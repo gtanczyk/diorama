@@ -53,6 +53,16 @@ defineAction({
 });
 
 defineAction({
+  name: 'job_wait',
+  reads: true,
+  description: 'Wait for a job to end (or up to timeoutSeconds, default 120) and return it with its last output lines and the step it reached.',
+  input: z.object({ id: z.string().min(1), timeoutSeconds: z.number().int().min(1).max(600).optional() }),
+  async run({ id, timeoutSeconds }, ctx) {
+    return ctx.jobs.wait(id, (timeoutSeconds ?? 120) * 1000);
+  },
+});
+
+defineAction({
   name: 'job_cancel',
   description: 'Stop a running or queued job.',
   input: z.object({ id: z.string().min(1) }),

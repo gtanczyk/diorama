@@ -19,6 +19,7 @@
     "@meta-sam/parser": "^0.1.0",
     "@preact/signals": "^2.11.3",
     "esbuild": "^0.25.0",
+    "genaicode": "^2.24.0",
     "preact": "^10.29.8",
     "sharp": "^0.33.5",
     "three": "^0.170.0",

@@ -104,7 +104,7 @@ test('actions validate input and report errors without leaking keys', async () =
 test('a job streams step events and redacted output to the live feed, tagged with who asked', async () => {
   const seen: Array<{ type: string; [k: string]: unknown }> = [];
   const off = studio.events.subscribe((e) => seen.push(e));
-  const res = await act('run_step', { slug: 'foghorn', step: 'layout' }, { 'x-diorama-by': 'agent' });
+  const res = await act('run_step', { slug: 'foghorn', step: 'layout' }, { authorization: `Bearer ${studio.agentToken}` });
   expect(res.status).toBe(200);
   const job = JSON.parse(res.body).result;
   const done = await studio.jobs.wait(job.id);
@@ -143,4 +143,33 @@ test('one job per world at a time; the next waits and can be cancelled', async (
   expect(studio.jobs.cancel(second.id).state).toBe('cancelled');
   studio.jobs.cancel(first.id);
   expect((await studio.jobs.wait(first.id)).state).toBe('cancelled');
+});
+
+const mcp = (body: unknown, token = studio.agentToken) => request('/mcp', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+test('MCP over HTTP: the agent token only, every action a tool, calls tagged as the agent', async () => {
+  expect((await mcp({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, studio.token)).status).toBe(401);
+  const init = JSON.parse((await mcp({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } })).body);
+  expect(init.result.serverInfo.name).toBe('diorama');
+  expect((await mcp({ jsonrpc: '2.0', method: 'notifications/initialized' })).status).toBe(202);
+  const tools = JSON.parse((await mcp({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).body).result.tools as Array<{ name: string; inputSchema: { type: string }; annotations: { readOnlyHint: boolean } }>;
+  expect(tools.map((t) => t.name).sort()).toEqual([...actions.keys()].sort());
+  expect(tools.find((t) => t.name === 'world_status')!.annotations.readOnlyHint).toBe(true);
+  expect(tools.find((t) => t.name === 'world_build')!.annotations.readOnlyHint).toBe(false);
+  const seen: Array<{ type: string; by?: unknown }> = [];
+  const off = studio.events.subscribe((e) => seen.push(e));
+  const call = JSON.parse((await mcp({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'world_status', arguments: { slug: 'foghorn' } } })).body);
+  off();
+  expect(call.result.isError).toBe(false);
+  expect(call.result.structuredContent.title).toBe('Foghorn');
+  expect(seen.find((e) => e.type === 'action.start')?.by).toBe('agent');
+  const bad = JSON.parse((await mcp({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'world_status', arguments: { slug: 'Nope!' } } })).body);
+  expect(bad.result.isError).toBe(true);
+});
+
+test('job_wait answers when the job ends, with its last lines', async () => {
+  const job = studio.jobs.start('foghorn', ['build', 'foghorn'], 'quick', 'agent');
+  const call = JSON.parse((await mcp({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'job_wait', arguments: { id: job.id, timeoutSeconds: 20 } } })).body);
+  expect(call.result.structuredContent.state).toBe('done');
+  expect(call.result.structuredContent.tail.join('\n')).toContain('laying out foghorn');
 });

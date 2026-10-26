@@ -2,6 +2,7 @@
 // as `diorama action` and the Muse Code agent.
 import { spawn } from 'node:child_process';
 import { defineCommand, takeOption } from '../registry.ts';
+import { writeStudioFile } from '../studio/discovery.ts';
 import { startStudio } from '../studio/server.ts';
 
 defineCommand({
@@ -12,6 +13,7 @@ defineCommand({
     const noOpen = args.includes('--no-open');
     const slug = args.find((a) => !a.startsWith('--'));
     const studio = await startStudio({ port });
+    const forget = writeStudioFile(process.cwd(), { url: studio.url, agentToken: studio.agentToken });
     // The token rides in the fragment: browsers never send it to a server or put it in a Referer.
     const link = `${studio.url}${slug ? `w/${slug}` : ''}#${studio.token}`;
     console.log(`Diorama Studio: ${link}\n(only this link opens it; Ctrl+C to stop)`);
@@ -20,6 +22,7 @@ defineCommand({
       spawn(opener, [link], { stdio: 'ignore', detached: true }).on('error', () => {}).unref();
     }
     const stop = async () => {
+      forget();
       await studio.close();
       process.exit(0);
     };

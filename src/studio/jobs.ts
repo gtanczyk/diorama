@@ -20,6 +20,8 @@ export type Job = {
   endedAt?: string;
   step?: string;
   error?: string;
+  /** The last lines it printed. */
+  tail: string[];
 };
 
 export class Jobs {
@@ -31,7 +33,7 @@ export class Jobs {
   constructor(private readonly events: Events, private readonly opts: { cwd?: string; echo?: boolean; bin?: string } = {}) {}
 
   start(world: string, args: string[], label: string, by: string): Job {
-    const job: Job = { id: randomBytes(4).toString('hex'), world, label, args, by, state: 'queued', queuedAt: new Date().toISOString() };
+    const job: Job = { id: randomBytes(4).toString('hex'), world, label, args, by, state: 'queued', queuedAt: new Date().toISOString(), tail: [] };
     this.all.push(job);
     this.events.publish('job.queued', { world, job: { ...job } });
     this.next(world);
@@ -58,11 +60,22 @@ export class Jobs {
   }
 
   /** Resolves when the job has ended, however it ended. */
-  wait(id: string): Promise<Job> {
+  wait(id: string, timeoutMs?: number): Promise<Job> {
     const job = this.get(id);
     if (!job) return Promise.reject(new Error(`no job ${id}`));
     if (!['queued', 'running'].includes(job.state)) return Promise.resolve({ ...job });
-    return new Promise((resolve) => this.waiters.set(id, [...(this.waiters.get(id) ?? []), resolve]));
+    return new Promise((resolve) => {
+      const done = (j: Job) => {
+        clearTimeout(timer);
+        resolve(j);
+      };
+      // Past the timeout it answers with the job as it stands, still running.
+      const timer = timeoutMs === undefined ? undefined : setTimeout(() => {
+        this.waiters.set(id, (this.waiters.get(id) ?? []).filter((w) => w !== done));
+        resolve({ ...job });
+      }, timeoutMs);
+      this.waiters.set(id, [...(this.waiters.get(id) ?? []), done]);
+    });
   }
 
   stopAll() {
@@ -112,6 +125,8 @@ export class Jobs {
       } catch {}
     }
     if (stream === 'err' && line.startsWith('diorama ')) job.error = line;
+    job.tail.push(line);
+    if (job.tail.length > 40) job.tail.shift();
     if (this.opts.echo) (stream === 'out' ? process.stdout : process.stderr).write(`${line}\n`);
     this.events.publish('log', { world: job.world, job: job.id, stream, line });
   }

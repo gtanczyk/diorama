@@ -15,6 +15,7 @@ import { redact } from '../secrets.ts';
 import { Slug } from '../world/schema.ts';
 import { Events, type StudioEvent } from './events.ts';
 import { Jobs } from './jobs.ts';
+import { handleMcp } from './mcp.ts';
 
 export const STUDIO_WEB = fileURLToPath(new URL('../../studio/', import.meta.url));
 const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.mp3': 'audio/mpeg', '.jsonl': 'text/plain; charset=utf-8' };
@@ -22,7 +23,8 @@ const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 's
 const COOKIE = 'diorama_studio';
 const MAX_BODY = 1 << 20;
 
-export type Studio = { url: string; port: number; token: string; events: Events; jobs: Jobs; close(): Promise<void> };
+/** token opens the page; agentToken is the agent's (MCP, `diorama mcp`), so its calls show as the agent's. */
+export type Studio = { url: string; port: number; token: string; agentToken: string; root: string; events: Events; jobs: Jobs; close(): Promise<void> };
 
 function same(a: string, b: string): boolean {
   const x = Buffer.from(a);
@@ -111,6 +113,7 @@ class WorldWatch {
 export async function startStudio(opts: { port?: number; root?: string; cwd?: string; token?: string; bin?: string } = {}): Promise<Studio> {
   const root = path.resolve(opts.root ?? 'worlds');
   const token = opts.token ?? randomBytes(32).toString('base64url');
+  const agentToken = randomBytes(32).toString('base64url');
   const cookie = randomBytes(32).toString('base64url');
   const events = new Events();
   const jobs = new Jobs(events, { cwd: opts.cwd, bin: opts.bin });
@@ -149,8 +152,40 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
 
       const url = new URL(req.url ?? '/', `http://${host}`);
       const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1] ?? '';
-      const authed = !!bearer && same(bearer, token);
+      const asAgent = !!bearer && same(bearer, agentToken);
+      const authed = asAgent || (!!bearer && same(bearer, token));
+      const body = async (): Promise<{ value?: unknown; error?: [number, string] }> => {
+        let size = 0;
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) {
+          size += (chunk as Buffer).length;
+          if (size > MAX_BODY) return { error: [413, 'too large'] };
+          chunks.push(chunk as Buffer);
+        }
+        try {
+          return { value: chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {} };
+        } catch {
+          return { error: [400, 'body is not JSON'] };
+        }
+      };
       const cookieOk = (req.headers.cookie ?? '').split(/;\s*/).some((c) => c.startsWith(`${COOKIE}=`) && same(c.slice(COOKIE.length + 1), cookie));
+
+      // MCP over streamable HTTP, for the agent: plain JSON answers to POSTed JSON-RPC, no server stream.
+      if (url.pathname === '/mcp') {
+        if (!asAgent) return json(401, { error: 'the agent token is required' });
+        if (req.method !== 'POST') return send(405, 'text/plain', 'POST JSON-RPC here', { allow: 'POST' });
+        if (!(req.headers['content-type'] ?? '').startsWith('application/json')) return json(415, { error: 'JSON only' });
+        const { value, error } = await body();
+        if (error) return json(error[0], { jsonrpc: '2.0', id: null, error: { code: -32700, message: error[1] } });
+        const ctx: ActionContext = { by: 'agent', root, jobs, events };
+        const batch = Array.isArray(value) ? value : [value];
+        const replies = (await Promise.all(batch.map((m) => handleMcp(m as Parameters<typeof handleMcp>[0], ctx)))).filter(Boolean);
+        if (!replies.length) {
+          res.writeHead(202, headers);
+          return res.end();
+        }
+        return json(200, Array.isArray(value) ? replies : replies[0]);
+      }
 
       if (url.pathname.startsWith('/api/')) {
         if (!authed) return json(401, { error: 'missing or wrong token: open the link diorama studio printed' });
@@ -161,21 +196,9 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
         }
         if (url.pathname === '/api/actions' && req.method === 'GET') return json(200, describeActions());
         if (url.pathname.startsWith('/api/actions/') && req.method === 'POST') {
-          let size = 0;
-          const chunks: Buffer[] = [];
-          for await (const chunk of req) {
-            size += (chunk as Buffer).length;
-            if (size > MAX_BODY) return json(413, { error: 'too large' });
-            chunks.push(chunk as Buffer);
-          }
-          let input: unknown;
-          try {
-            input = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
-          } catch {
-            return json(400, { error: 'body is not JSON' });
-          }
-          const by = req.headers['x-diorama-by'] === 'agent' ? 'agent' : 'user';
-          const ctx: ActionContext = { by, root, jobs, events };
+          const { value: input, error } = await body();
+          if (error) return json(error[0], { error: error[1] });
+          const ctx: ActionContext = { by: asAgent ? 'agent' : 'user', root, jobs, events };
           try {
             return json(200, { result: await runAction(url.pathname.slice('/api/actions/'.length), input, ctx) });
           } catch (error) {
@@ -244,6 +267,8 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
     url: `http://127.0.0.1:${port}/`,
     port,
     token,
+    agentToken,
+    root,
     events,
     jobs,
     async close() {
