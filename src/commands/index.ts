@@ -15,4 +15,5 @@ import './build.ts';
 import './cast.ts';
 import './play.ts';
 import './export.ts';
+import './publish.ts';
 import './reel.ts';
