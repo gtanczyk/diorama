@@ -33,7 +33,10 @@ defineCommand({
       }
       for (const occ of entry.geometry?.occluders ?? []) if (occ.mask) await copy(`places/${key}/${occ.mask}`);
     }
-    for (const rel of Object.values(data.cast)) await copy(rel);
+    for (const figure of Object.values(data.cast)) {
+      await copy(figure.image);
+      for (const part of figure.rig?.parts ?? []) await copy(`${figure.parts}/${part.file}`);
+    }
     fs.writeFileSync(path.join(out, 'world-data.json'), JSON.stringify(data));
     fs.writeFileSync(path.join(out, 'main.js'), await bundle(true));
     fs.copyFileSync(path.join(WEB, 'index.html'), path.join(out, 'index.html'));

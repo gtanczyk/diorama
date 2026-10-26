@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Geometry } from '../play/geometry.ts';
 import { previewGeometry } from '../play/preview.ts';
+import { Rig } from '../play/rig.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { Layout } from '../scene/layout.ts';
 import { Story } from '../story/schema.ts';
@@ -34,7 +35,11 @@ export function worldData(files: WorldFiles) {
   const castDir = files.path('cast');
   const cast = Object.fromEntries((fs.existsSync(castDir) ? fs.readdirSync(castDir) : [])
     .filter((f) => f.endsWith('.png') && !f.endsWith('-painting.png'))
-    .map((f) => [f.slice(0, -4), `cast/${f}`]));
+    .map((f) => {
+      const key = f.slice(0, -4);
+      const rig = fs.existsSync(files.path('cast', key, 'rig.json')) ? Rig.parse(files.readJson(files.path('cast', key, 'rig.json'))) : undefined;
+      return [key, { image: `cast/${f}`, ...(rig ? { rig, parts: `cast/${key}` } : {}) }];
+    }));
   const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
   return { slug: files.slug, world, places, cast, story };
 }

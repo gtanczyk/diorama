@@ -1,6 +1,7 @@
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
 import { hiddenRuns, personPx, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
+import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, apply, hiddenThings, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
@@ -9,14 +10,15 @@ type Data = {
   slug: string;
   world: World;
   places: Record<string, { geometry: Geometry | null; painting: string | null; issue?: string }>;
-  /** Figure image per hero or NPC key. */
-  cast: Record<string, string>;
+  /** Figure per hero or NPC key: a cut-out image, and its rig when `diorama cast` could cut it into parts. */
+  cast: Record<string, { image: string; rig?: Rig; parts?: string }>;
   story: Story | null;
 };
 
 type Bits = { bits: Uint8Array; area: number };
 type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement; outline?: HTMLCanvasElement };
 type Rect = [number, number, number, number];
+type Figure = { img: HTMLImageElement; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement } };
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number };
 
 type Place = {
@@ -87,8 +89,9 @@ class Game {
   data!: Data;
   place!: Place;
   private cache = new Map<string, Place>();
-  private figures = new Map<string, HTMLImageElement>();
-  hero = { x: 0, y: 0, path: [] as Point[], facing: 1, phase: 0, img: undefined as HTMLImageElement | undefined };
+  private figures = new Map<string, Figure>();
+  /** phase counts walk cycles; it only advances with distance walked, so feet keep pace with the floor. */
+  hero = { x: 0, y: 0, path: [] as Point[], facing: 1, phase: 0, figure: undefined as Figure | undefined };
   speech: { text: string; until: number } | null = null;
   state!: State;
   /** The inventory item the next click uses. */
@@ -105,11 +108,19 @@ class Game {
 
   async start() {
     this.data = await (await fetch('world-data.json')).json();
-    await Promise.all(Object.entries(this.data.cast).map(async ([key, src]) => {
-      const img = await loadImage(files(src)).catch(() => undefined);
-      if (img) this.figures.set(key, img);
+    await Promise.all(Object.entries(this.data.cast).map(async ([key, cast]) => {
+      const img = await loadImage(files(cast.image)).catch(() => undefined);
+      if (!img) return;
+      const figure: Figure = { img };
+      if (cast.rig && cast.parts) {
+        const parts = new Map<PartName, HTMLImageElement>();
+        await Promise.all(cast.rig.parts.map(async (p) => parts.set(p.name, await loadImage(files(`${cast.parts}/${p.file}`)))));
+        const canvas = Object.assign(document.createElement('canvas'), { width: cast.rig.size[0], height: cast.rig.size[1] });
+        figure.rig = { rig: cast.rig, parts, canvas };
+      }
+      this.figures.set(key, figure);
     }));
-    this.hero.img = this.figures.get(this.data.world.hero.key);
+    this.hero.figure = this.figures.get(this.data.world.hero.key);
     this.state = startState(this.data.world);
     const at = params.get('place');
     if (at) this.state.place = at;
@@ -137,6 +148,24 @@ class Game {
       } else if ('act' in step) await this.act(step.act);
       else await this.wait(step.wait);
     }
+  }
+
+  /** For QA: a figure's walk drawn at `frames` evenly spaced phases (plus standing), side by side, as a PNG data URL. */
+  figureSheet(key: string, frames = 8): string | undefined {
+    const rig = this.figures.get(key)?.rig;
+    if (!rig) return undefined;
+    const [w, h] = rig.rig.size;
+    const sheet = Object.assign(document.createElement('canvas'), { width: w * (frames + 1), height: h });
+    const c = sheet.getContext('2d')!;
+    c.fillStyle = '#d8d4cc';
+    c.fillRect(0, 0, sheet.width, h);
+    for (let i = 0; i <= frames; i++) {
+      drawRig(rig, pose(rig.rig, i / frames, i < frames));
+      c.drawImage(rig.canvas, i * w, 0);
+      c.fillStyle = '#c33';
+      c.fillRect(i * w, rig.rig.ground, w, 1);
+    }
+    return sheet.toDataURL('image/png');
   }
 
   /** Waits on the game clock, so a wait lasts the same number of frames in capture mode. */
@@ -398,6 +427,7 @@ class Game {
     while (budget > 0 && hero.path.length) {
       const [tx, ty] = hero.path[0];
       const d = Math.hypot(tx - hero.x, ty - hero.y);
+      const moved = Math.min(d, budget);
       if (Math.abs(tx - hero.x) > 1) hero.facing = tx > hero.x ? 1 : -1;
       if (d <= budget) {
         [hero.x, hero.y] = [tx, ty];
@@ -408,9 +438,9 @@ class Game {
         hero.y += ((ty - hero.y) / d) * budget;
         budget = 0;
       }
-      hero.phase += dt * 9;
+      // One cycle per CYCLE heights walked: the rig's planted foot keeps pace with the floor.
+      hero.phase += moved / (CYCLE * personPx(this.place.g, hero.y));
       if (!hero.path.length) {
-        hero.phase = 0;
         this.emit('arrive', { x: hero.x, y: hero.y });
         this.pending?.();
       }
@@ -445,12 +475,11 @@ class Game {
       if (who.npc) {
         const [x0, , x1, y1] = who.npc.thing.box;
         const x = (x0 + x1) / 2;
-        const img = this.figures.get(who.npc.thing.key);
-        const drawn = this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, img, '#4b3b2a', lit === who.npc);
+        const drawn = this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, false, this.figures.get(who.npc.thing.key), '#4b3b2a', lit === who.npc);
         this.drawn.push({ hot: who.npc, rect: drawn });
         this.occlude(drawn, y1, gone);
       } else {
-        rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.img, '#2b2733');
+        rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.path.length > 0, this.hero.figure, '#2b2733');
         this.occlude(rect, this.hero.y, gone);
       }
     }
@@ -482,24 +511,41 @@ class Game {
   }
 
   /** Draws a person with feet at (x, y); returns the box they and their shadow cover. */
-  private drawPerson(x: number, y: number, facing: number, phase: number, img: HTMLImageElement | undefined, colour: string, lit = false): Rect {
+  private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false): Rect {
     const h = personPx(this.place.g, y);
-    const w = img ? (h * img.width) / img.height : h * 0.36;
-    const bob = Math.abs(Math.sin(phase)) * h * 0.025;
+    const rig = figure?.rig;
+    // A rig walks its legs; a plain cut-out (or the stand-in) only bobs and rocks as it slides.
+    const bob = rig || !walking ? 0 : Math.abs(Math.sin(phase * Math.PI * 2)) * h * 0.025;
+    const rock = rig || !walking ? 0 : Math.sin(phase * Math.PI * 2) * 0.035;
+    let left: number;
+    let right: number;
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
     ctx.beginPath();
-    ctx.ellipse(x, y, w * 0.42, Math.max(2, h * 0.035), 0, 0, Math.PI * 2);
+    ctx.ellipse(x, y, h * 0.16, Math.max(2, h * 0.035), 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.filter = `brightness(${this.lightAt(x, y - h * 0.5).toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}`;
     ctx.translate(x, y - bob);
-    ctx.rotate(Math.sin(phase) * 0.035);
+    ctx.rotate(rock);
     ctx.scale(facing, 1);
-    if (img) ctx.drawImage(img, -w / 2, -h, w, h);
-    else drawFigure(h, colour);
+    if (rig) {
+      const s = h / rig.rig.height;
+      drawRig(rig, pose(rig.rig, phase, walking));
+      const [ax, ay] = [rig.rig.hip[0], rig.rig.ground];
+      ctx.drawImage(rig.canvas, -ax * s, -ay * s, rig.canvas.width * s, rig.canvas.height * s);
+      const reach = Math.max(ax, rig.canvas.width - ax) * s;
+      [left, right] = [x - reach, x + reach];
+    } else {
+      const img = figure?.img;
+      const w = img ? (h * img.width) / img.height : h * 0.36;
+      if (img) ctx.drawImage(img, -w / 2, -h, w, h);
+      else drawFigure(h, colour);
+      [left, right] = [x - w / 2, x + w / 2];
+    }
     ctx.restore();
-    return [x - w / 2 - 2, y - h - bob - 2, x + w / 2 + 2, y + Math.max(3, h * 0.04)];
+    return [left - 2, y - h * 1.04 - bob - 2, right + 2, y + Math.max(3, h * 0.04)];
   }
+
 
   /** How bright a person looks at (x, y): the painting's luma around that spot, softened. */
   private lightAt(x: number, y: number): number {
@@ -583,6 +629,23 @@ class Game {
     ctx.lineTo(g.frame.width, g.scale.horizonY);
     ctx.stroke();
     ctx.restore();
+  }
+}
+
+/** Poses a rig's parts into its own canvas, back to front, in the figure's coordinates. */
+function drawRig(fig: NonNullable<Figure['rig']>, at: ReturnType<typeof pose>) {
+  const c = fig.canvas.getContext('2d')!;
+  c.clearRect(0, 0, fig.canvas.width, fig.canvas.height);
+  for (const part of fig.rig.parts) {
+    const img = fig.parts.get(part.name);
+    const p = at[part.name];
+    if (!img || !p) continue;
+    c.save();
+    c.translate(p.to[0], p.to[1]);
+    c.rotate(p.turn);
+    c.translate(-p.from[0], -p.from[1]);
+    c.drawImage(img, part.at[0], part.at[1]);
+    c.restore();
   }
 }
 
