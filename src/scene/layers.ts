@@ -129,14 +129,16 @@ export type Water = { tex: Buffer; mask: Buffer; box: [number, number, number, n
 /**
  * The water of a place (a river, a canal, the sea) for the runtime to set flowing: its pixels, carried past
  * its edges from its own colours so a shifted copy never shows the bank, and its mask. None without water.
+ * `notWater`: the floors and the cards, which SAM's water may take in when they are wet.
  */
-export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer): Promise<Water | undefined> {
+export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer, notWater: Mask): Promise<Water | undefined> {
   const [W, H]: [number, number] = [FRAME.width, FRAME.height];
   let mask: Mask | undefined;
   let phrase = '';
   for (const p of ['water', 'river', 'sea']) {
     const hits = await samFind(memo, { label: `water:${place.key}/${p}`, image: backdrop, prompt: p });
-    const m = unionAll(W, H, hits.map((f) => f.mask));
+    // SAM's "water" also takes wet planks and shiny cobbles: the floors and the standing things never flow.
+    const m = subtract(unionAll(W, H, hits.map((f) => f.mask)), notWater);
     if (maskArea(m) >= 8000) [mask, phrase] = [m, p];
     if (mask) break;
   }
@@ -151,6 +153,8 @@ export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer): Pr
   const region = { left: box[0], top: box[1], width: box[2] - box[0], height: box[3] - box[1] };
   const tex = await sharp(filled, { raw: { width: W, height: H, channels: 3 } }).extract(region).jpeg({ quality: 90 }).toBuffer();
   // The mask is shrunk a hair and feathered, so the flowing copy fades into the still painting at the banks.
-  const soft = await sharp(await maskToPng(dilate(mask, -2))).blur(2).extract(region).png().toBuffer();
+  // The page cuts with the mask's alpha (destination-in), so it is white with the water as alpha.
+  const alpha = await sharp(await maskToPng(dilate(mask, -2))).blur(2).extract(region).extractChannel(0).toBuffer();
+  const soft = await sharp({ create: { width: region.width, height: region.height, channels: 3, background: '#ffffff' } }).joinChannel(alpha).png().toBuffer();
   return { tex, mask: soft, box, phrase };
 }

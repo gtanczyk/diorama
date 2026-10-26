@@ -2,6 +2,8 @@
 // slide the cards against it (parallax). Cards are the sharp occluders of geometry.json, so run it after derive.
 import fs from 'node:fs';
 import { maskFromPng } from '../image/mask.ts';
+import { dilate, unionAll } from '../image/raster.ts';
+import { FRAME } from '../scene/layout.ts';
 import { Geometry } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
 import { backdropFor, smearedBackdrop, type Card } from '../scene/backdrop.ts';
@@ -52,7 +54,10 @@ defineCommand({
         return undefined;
       });
       // Water to set flowing (layers/water.jpg and its mask), found by SAM on the backdrop.
-      const water = await waterSheet(files.memo, place, png).catch(() => undefined);
+      const floorDir = at('masks', 'floors');
+      const floors = fs.existsSync(floorDir) ? await Promise.all(fs.readdirSync(floorDir).filter((f) => f.endsWith('.png')).map(async (f) => maskFromPng(fs.readFileSync(`${floorDir}/${f}`)))) : [];
+      const dry = dilate(unionAll(FRAME.width, FRAME.height, [...floors, ...cards.map((c) => c.mask)]), 6);
+      const water = await waterSheet(files.memo, place, png, dry).catch(() => undefined);
       if (water) {
         files.write(at('layers', 'water.jpg'), water.tex);
         files.write(at('layers', 'water-mask.png'), water.mask);
