@@ -1,0 +1,85 @@
+// What a machine needs before diorama can build: shown by `diorama setup`, the Studio's Setup screen and
+// the setup_status action. A check never returns a key, only where it comes from.
+import { execFile } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { envValue, findVault, loadSecrets, NO_VAULT, type SecretName } from '../secrets.ts';
+
+export type Check = {
+  id: string;
+  label: string;
+  /** ok, missing (needed to build), optional (missing but not needed), fail (present but broken). */
+  state: 'ok' | 'missing' | 'optional' | 'fail';
+  detail: string;
+  /** Commands that fix it, typed in a terminal. */
+  fix?: string[];
+};
+
+function sh(cmd: string, args: string[], timeout = 8000): Promise<string | null> {
+  return new Promise((resolve) => execFile(cmd, args, { timeout }, (error, out) => resolve(error ? null : String(out).trim())));
+}
+
+async function keyCheck(name: SecretName, label: string, required: boolean, what: string, source?: 'env' | 'store'): Promise<Check> {
+  const value = envValue(name);
+  if (!value) return { id: name, label, state: required ? 'missing' : 'optional', detail: what, fix: [`diorama setup --key ${name}`] };
+  return { id: name, label, state: 'ok', detail: source === 'store' ? 'in your system keychain' : 'from the environment' };
+}
+
+export async function runChecks(opts: { live?: boolean } = {}): Promise<Check[]> {
+  const sources = await loadSecrets().catch(() => ({}) as Partial<Record<SecretName, 'env' | 'store'>>);
+  const checks: Check[] = [];
+
+  const major = Number(process.versions.node.split('.')[0]);
+  checks.push({ id: 'node', label: 'Node.js', state: major >= 22 ? 'ok' : 'fail', detail: `${process.versions.node}${major >= 22 ? '' : ': diorama needs 22 or newer'}` });
+
+  const vault = await findVault();
+  checks.push(vault
+    ? { id: 'vault', label: 'Key storage', state: 'ok', detail: vault.name }
+    : { id: 'vault', label: 'Key storage', state: 'optional', detail: NO_VAULT });
+
+  const meta = await keyCheck('META_API_KEY', 'Meta Model API key', true, 'Plans, paints and cuts every scene (Muse Spark, Muse Image, SAM 3.1). Needed to build.', sources.META_API_KEY);
+  if (meta.state === 'ok' && opts.live) {
+    const { askSparkJson } = await import('../meta/spark.ts');
+    const { Memo } = await import('../meta/memo.ts');
+    const started = Date.now();
+    try {
+      // A fresh label each time, so the memo cannot answer for the API.
+      await askSparkJson(new Memo(path.resolve('.diorama/setup/memo')), { label: 'setup', prompt: `Reply as JSON {"ok": true}. (${Date.now()})` });
+      meta.detail += ` · live check ${Date.now() - started} ms`;
+    } catch (error) {
+      Object.assign(meta, { state: 'fail', detail: `the API refused it: ${error instanceof Error ? error.message.slice(0, 200) : error}` });
+    }
+  }
+  checks.push(meta);
+
+  const muse = await sh('muse', ['--version']);
+  checks.push(muse
+    ? { id: 'muse', label: 'Muse Code', state: 'ok', detail: muse.split('\n')[0] }
+    : { id: 'muse', label: 'Muse Code', state: 'missing', detail: 'The agent that builds and fixes worlds with you. Not found on PATH. macOS and Linux; on Windows use WSL2.', fix: ['curl -fsSL https://dev.meta.ai/install.sh | bash', 'muse login', 'muse --version'] });
+
+  let chromium: string | null = null;
+  try {
+    const { chromium: pw } = await import('playwright');
+    chromium = pw.executablePath();
+  } catch {}
+  checks.push(chromium && fs.existsSync(chromium)
+    ? { id: 'chromium', label: 'Chromium for Explore and Playthrough', state: 'ok', detail: 'installed' }
+    : { id: 'chromium', label: 'Chromium for Explore and Playthrough', state: 'missing', detail: 'Explore and the playthrough bot drive a browser.', fix: ['npx playwright install chromium'] });
+
+  checks.push(await keyCheck('ELEVENLABS_API_KEY', 'ElevenLabs key', false, 'Optional: sound effects, music and voices. Without it the world plays silent.', sources.ELEVENLABS_API_KEY));
+  checks.push(await keyCheck('HF_TOKEN', 'Hugging Face token', false, 'Optional: 3D hero figures (TRELLIS, auto-rig) on ZeroGPU Spaces.', sources.HF_TOKEN));
+
+  const py = process.env.DIORAMA_PYTHON;
+  checks.push(!py
+    ? { id: 'python', label: 'Python for local music', state: 'optional', detail: 'DIORAMA_PYTHON not set: music comes from ElevenLabs. MusicGen needs torch, transformers, scipy.' }
+    : fs.existsSync(py)
+      ? { id: 'python', label: 'Python for local music', state: 'ok', detail: py }
+      : { id: 'python', label: 'Python for local music', state: 'fail', detail: `DIORAMA_PYTHON points at ${py}, which does not exist` });
+
+  const remote = await sh('git', ['remote', 'get-url', 'origin']);
+  checks.push(remote
+    ? { id: 'publish', label: 'Publishing', state: 'ok', detail: `git remote ${remote.replace(/\/\/[^@/]+@/, '//')}; diorama publish pushes to gh-pages` }
+    : { id: 'publish', label: 'Publishing', state: 'optional', detail: 'No git remote: diorama export --zip still makes an itch.io upload.' });
+
+  return checks;
+}

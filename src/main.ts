@@ -1,5 +1,6 @@
 import './commands/index.ts';
 import { registry } from './registry.ts';
+import { loadSecrets, redact } from './secrets.ts';
 
 function help() {
   console.log('diorama: a story prompt becomes painted scenes you can walk in\n\nusage: diorama <command> [args]\n');
@@ -13,8 +14,10 @@ if (!cmd) {
   process.exit(!name || name === 'help' ? 0 : 2);
 }
 try {
+  // Keys kept by `diorama setup` fill in what the environment leaves unset.
+  if (name !== 'setup') await loadSecrets();
   await cmd.run(args);
 } catch (error) {
-  console.error(`diorama ${name}: ${error instanceof Error ? error.message : error}`);
+  console.error(redact(`diorama ${name}: ${error instanceof Error ? error.message : error}`));
   process.exit(1);
 }
