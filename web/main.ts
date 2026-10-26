@@ -31,9 +31,9 @@ export type SpriteInfo = {
   cols: number; rows: number; frames: number; width: number; height: number;
   /** Feet at (cell width / 2, cell height * feetAt); the figure is about `px` tall. */
   feetAt: number; px: number;
-  facings: Record<string, { sheet: string; yaw: number; iou?: number[] }>;
+  facings: Record<string, { sheet: string; yaw: number; iou?: number[]; stand?: number }>;
 };
-type Figure = { img: HTMLImageElement; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Array<{ yaw: number; img: HTMLImageElement }> } };
+type Figure = { img: HTMLImageElement; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Array<{ yaw: number; stand: number; img: HTMLImageElement }> } };
 /** y: the floor row the cut stands on, which sets how far it slides with parallax. */
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number; y: number };
 
@@ -160,7 +160,7 @@ class Game {
       }
       if (cast.sprites && params.get('model') !== '1') {
         const { dir, info } = cast.sprites;
-        figure.sprites = { info, sheets: await Promise.all(Object.values(info.facings).map(async (f) => ({ yaw: f.yaw, img: await loadImage(files(`${dir}/${f.sheet}`)) }))) };
+        figure.sprites = { info, sheets: await Promise.all(Object.values(info.facings).map(async (f) => ({ yaw: f.yaw, stand: f.stand ?? 0, img: await loadImage(files(`${dir}/${f.sheet}`)) }))) };
       }
       // A 3D figure needs WebGL; without it (or if the model fails) the 2D rig or cut-out stays.
       else if (cast.model && params.get('model') !== '0') {
@@ -872,7 +872,7 @@ class Game {
       const sheet = sprites.sheets.reduce((best, s) => (Math.abs(s.yaw - Math.abs(a)) < Math.abs(best.yaw - Math.abs(a)) ? s : best));
       const { cols, rows, frames, feetAt, px } = sprites.info;
       const [cw, ch] = [sheet.img.width / cols, sheet.img.height / rows];
-      const i = walking ? Math.floor((((phase % 1) + 1) % 1) * frames) % frames : 0;
+      const i = walking ? Math.floor((((phase % 1) + 1) % 1) * frames) % frames : sheet.stand;
       const s = h / px;
       if (a < 0) ctx.scale(-1, 1);
       ctx.drawImage(sheet.img, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch, (-cw / 2) * s, -ch * feetAt * s, cw * s, ch * s);
