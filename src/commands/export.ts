@@ -25,6 +25,10 @@ export async function exportWorld(slug: string, out: string): Promise<void> {
   for (const [key, entry] of Object.entries(data.places)) {
     if (entry.painting) entry.painting = await copy(entry.painting, true);
     if (entry.backdrop) entry.backdrop = await copy(entry.backdrop, true);
+    if (entry.layers) {
+      entry.layers.sky = await copy(entry.layers.sky, true);
+      for (const f of entry.layers.flats) f.file = await copy(f.file); // transparent around the flat, so PNG
+    }
     for (const thing of entry.geometry?.things ?? []) {
       if (thing.mask) await copy(`places/${key}/${thing.mask}`);
       if (thing.plate) thing.plate = path.posix.relative(`places/${key}`, await copy(`places/${key}/${thing.plate}`, true));
