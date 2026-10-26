@@ -466,8 +466,7 @@ class Game {
       if (this.drawn.some((d) => d.hot === hot)) continue;
       if (gone.has(hot.thing.key)) continue;
       // Each thing is tested where it is drawn: moved by its own parallax shift.
-      const [dx, dy] = this.shift(this.thingY(hot.thing.key));
-      [x, y] = [sx0 - dx, sy0 - dy];
+      [x, y] = this.paintingPoint(hot, sx0, sy0);
       const [x0, y0, x1, y1] = hot.thing.box;
       if (x < x0 || x > x1 || y < y0 || y > y1) continue;
       if (!hot.mask || hot.mask.bits[Math.floor(y) * g.frame.width + Math.floor(x)]) return hot;
@@ -608,6 +607,66 @@ class Game {
     this.cam.y += (Math.max(-1, Math.min(1, ty)) - this.cam.y) * k;
   }
 
+  /** The card a thing slides with at column x (the piece covering x, else its nearest), if it has one. */
+  private cardOf(key: string, x: number): Cut | undefined {
+    let best: Cut | undefined;
+    let gap = Infinity;
+    for (const c of this.place.cuts) {
+      if ((c.occ.thing ?? c.occ.key) !== key) continue;
+      const d = Math.max(0, c.occ.box[0] - x, x - c.occ.box[2]);
+      if (d < gap) [best, gap] = [c, d];
+    }
+    return best;
+  }
+
+  /** The painting point a thing shows at screen (x, y): on its card, or on the sheared floor for a flat thing. */
+  private paintingPoint(hot: Hot, x: number, y: number): Point {
+    const p = this.parallax();
+    if (!p) return [x, y];
+    const key = hot.thing.key;
+    if (!this.cardOf(key, x)) return floorPoint(this.place.g, p, x, y);
+    // The card's shift depends on the column, so step from the screen column to the painting one.
+    let px = x;
+    for (let i = 0; i < 3; i++) px = x - this.cardShift(this.cardOf(key, px)!, px)[0];
+    const cut = this.cardOf(key, px)!;
+    const [sx, sy] = this.cardShift(cut, px);
+    return [x - sx, y - sy];
+  }
+
+  /** The hover outline, moved exactly as what it outlines: strip by strip with its card, or with the floor. */
+  private drawLit(hot: Hot) {
+    const p = this.parallax();
+    if (!p) return this.drawOutline(hot);
+    const key = hot.thing.key;
+    if (!this.cardOf(key, hot.thing.box[0])) {
+      const { above, below } = backdropTransforms(this.place.g, p);
+      const h = this.place.g.scale.horizonY;
+      const { width: W, height: H } = this.place.g.frame;
+      for (const [m, y0, y1] of [[above, 0, h], [below, h, H]] as const) {
+        ctx.save();
+        ctx.transform(...(m as [number, number, number, number, number, number]));
+        ctx.beginPath();
+        ctx.rect(-W, y0, 3 * W, y1 - y0);
+        ctx.clip();
+        this.drawOutline(hot);
+        ctx.restore();
+      }
+      return;
+    }
+    const [bx0, , bx1] = hot.thing.box;
+    const STRIP = 6;
+    for (let x = Math.floor(bx0) - 4; x < bx1 + 4; x += STRIP) {
+      const [sx, sy] = this.cardShift(this.cardOf(key, x + STRIP / 2)!, x + STRIP / 2);
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.beginPath();
+      ctx.rect(x, -1e4, STRIP + 0.5, 2e4);
+      ctx.clip();
+      this.drawOutline(hot);
+      ctx.restore();
+    }
+  }
+
   /** Draws `draw` moved by the parallax shift of floor row y. */
   private at(y: number, draw: () => void) {
     const [dx, dy] = this.shift(y);
@@ -673,7 +732,7 @@ class Game {
     let rect: Rect = [0, 0, 0, 0];
     const lit = this.hover && !hideCursor ? this.hover : undefined;
     // Under the people, so someone standing in front of a highlighted thing stays in front of its outline.
-    if (lit && !this.drawn.some((d) => d.hot === lit)) this.at(this.thingY(lit.thing.key), () => this.drawOutline(lit));
+    if (lit && !this.drawn.some((d) => d.hot === lit)) this.drawLit(lit);
     this.drawn = [];
     for (const who of people) {
       if (who.npc) {
