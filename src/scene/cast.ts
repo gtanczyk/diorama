@@ -3,7 +3,7 @@ import sharp from 'sharp';
 import type { Mask } from '../image/mask.ts';
 import { maskBox } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
-import { musePaint } from '../meta/muse.ts';
+import { museEdit, musePaint } from '../meta/muse.ts';
 import { samFind } from '../meta/sam.ts';
 import type { World } from '../world/schema.ts';
 
@@ -34,8 +34,19 @@ export async function cutHero(painting: Buffer, mask: Mask): Promise<Buffer> {
     .toBuffer();
 }
 
-export async function paintFigure(memo: Memo, world: World, who: Who, take = 0): Promise<{ painting: Buffer; figure: Buffer }> {
-  const painting = await musePaint(memo, { label: `figure:${who.key}`, prompt: figurePrompt(world, who), take });
+/** For a photo of a real person: same person, same pose and outline, so live footage can dissolve into the figure. */
+export function photoPrompt(world: World): string {
+  return `Repaint this photo of a person as a character of a 2D point-and-click adventure game. Keep the same person, face, hair, clothes, body proportions and exact pose, at the same place and size in the frame, so the outline matches the photo. Show the whole figure from head to feet.
+
+Style: ${world.style}
+
+Plain flat light grey background, no floor, no shadow, no other people, no text.`;
+}
+
+export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, photo?: Buffer): Promise<{ painting: Buffer; figure: Buffer }> {
+  const painting = photo
+    ? await museEdit(memo, { label: `figure:${who.key}:photo`, prompt: photoPrompt(world), images: [await sharp(photo).rotate().png().toBuffer()], take })
+    : await musePaint(memo, { label: `figure:${who.key}`, prompt: figurePrompt(world, who), take });
   const png = await sharp(painting).png().toBuffer();
   const found = await samFind(memo, { label: `figure:${who.key}`, image: png, prompt: 'person' });
   if (!found.length) throw new Error(`${who.key}: SAM found no person in the painting; try --take 1`);

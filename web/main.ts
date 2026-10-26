@@ -204,6 +204,12 @@ class Game {
     const back = from ? place.spec.exits.find((e) => e.to === from) : undefined;
     const arrive = back ? place.g.things.find((t) => t.key === back.via)?.stand : undefined;
     [this.hero.x, this.hero.y] = arrive ?? place.g.start;
+    // ?spawn=x,y,left|right places the hero exactly on the first entry, to match a shot cut into the game.
+    const spawn = !from && params.get('spawn')?.split(',');
+    if (spawn && spawn.length >= 2) {
+      [this.hero.x, this.hero.y] = [Number(spawn[0]), Number(spawn[1])];
+      if (spawn[2]) this.hero.facing = spawn[2] === 'left' ? -1 : 1;
+    }
     this.hero.path = [];
     this.speech = null;
     this.darkTarget = 0;
