@@ -17,7 +17,10 @@ Node 22 or newer and a Meta Model API key:
 ```sh
 export META_API_KEY=...
 npx -y github:gtanczyk/diorama help
+npx -y github:gtanczyk/diorama doctor   # one live call to each model
 ```
+
+Model answers are kept by a hash of their inputs under each world's memo folder, so rerunning a step with the same inputs is free.
 
 ## Status
 
