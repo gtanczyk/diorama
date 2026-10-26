@@ -30,20 +30,14 @@ type RoutePage = {
   on(event: 'pageerror', fn: (e: { message: string }) => void): void;
 };
 
-/**
- * Talking is drawn for the facings a conversation uses; the left ones are these mirrored. Not straight
- * at the viewer: from the front the hands hide in front of the body and Muse hands the guide back.
- */
-export const TALK_FACINGS: Facing[] = ['front-right', 'right'];
-
 /** Mean pose IoU above this means Muse gave the 3D guide back instead of drawing it again. */
 export const TRACED = 0.97;
 
 /**
- * The model walking (or, with `talk`, standing in the 8 talking poses of web/hero3d.ts GESTURES), one
- * transparent sheet per facing, rendered in headless Chromium with WebGL.
+ * The model walking (or, given `gestures`, standing in those talking poses of src/play/gestures.ts, one
+ * per cell), one transparent sheet per facing, rendered in headless Chromium with WebGL.
  */
-export async function renderGuides(modelDir: string, facings: Facing[], talk = false): Promise<Record<string, Buffer>> {
+export async function renderGuides(modelDir: string, facings: Facing[], gestures?: number[]): Promise<Record<string, Buffer>> {
   const info = JSON.parse(fs.readFileSync(path.join(modelDir, 'model.json'), 'utf8'));
   const js = (await build({ entryPoints: [path.join(WEB, 'sheet.ts')], bundle: true, format: 'esm', write: false, target: 'es2022' })).outputFiles[0].text;
   const browser = await (await chromium()).launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -61,7 +55,7 @@ export async function renderGuides(modelDir: string, facings: Facing[], talk = f
     await page.goto('http://sprites.local/');
     const out: Record<string, Buffer> = {};
     for (const facing of facings) {
-      const ask = { info, base: 'http://sprites.local', yaw: FACINGS[facing], talk, ...SHEET };
+      const ask = { info, base: 'http://sprites.local', yaw: FACINGS[facing], gestures, ...SHEET };
       const url = await page.evaluate<string>(`window.renderSheet(${JSON.stringify(ask)})`);
       if (errors.length) throw new Error(`sheet page: ${errors.join('; ')}`);
       out[facing] = Buffer.from(url.split(',')[1], 'base64');
@@ -87,7 +81,8 @@ const SEEN: Record<Facing, string> = {
  * Muse draws the sheet again from scratch over the guide. `refs`: the character (Muse's painted view for
  * that side) and, for consistency across facings, a sheet already painted.
  */
-export function paintSheet(memo: Memo, key: string, facing: Facing, looks: string, guide: Buffer, refs: Buffer[], take = 0, talk = false): Promise<Buffer> {
+export function paintSheet(memo: Memo, key: string, facing: Facing, looks: string, guide: Buffer, refs: Buffer[], take = 0, talkFrames = 0): Promise<Buffer> {
+  const talk = talkFrames > 0; // the sheet is always full: Muse redraws a half-empty grid as a few big figures
   const what = talk
     ? `a talking sprite sheet: eight frames of one character standing still and talking, ${SEEN[facing].replace(/^walking/, 'turned')}, gesturing with empty hands (holding nothing) and the head, mouth slightly open in some frames; where the guide's coat bulges around a hand, it is only the hand gesture`
     : `a walk-cycle sprite sheet: eight frames of one character ${SEEN[facing]}`;

@@ -3,26 +3,11 @@
 // surface, lit by the painting around it. The page only imports this when a world ships a model.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GESTURES, type Pose as GesturePose } from '../src/play/gestures.ts';
 import { CYCLE } from '../src/play/rig.ts';
 
 const STANCE = 0.6;
 
-/**
- * Talking poses, standing: where each upper arm points (world, the figure facing +z, its left at +x),
- * how far the elbow bends, and the head's nod and tilt. Played in any order while a line is spoken.
- * Elbows stay near the body: a long coat is skinned to the upper arms and flares into a cape otherwise.
- */
-type Gesture = { left?: [number, number, number, number]; right?: [number, number, number, number]; nod?: number; tilt?: number; lean?: number };
-export const GESTURES: Gesture[] = [
-  {}, // hands down, listening
-  { right: [-0.2, -0.9, 0.35, 1.7] }, // right hand up, palm open
-  { left: [0.25, -0.92, 0.3, 1.3], right: [-0.25, -0.92, 0.3, 1.3] }, // both hands forward, explaining
-  { right: [-0.1, -0.75, 0.65, 0.9], lean: 0.04 }, // pointing ahead
-  { left: [0.2, -0.95, 0.15, 1.4], right: [-0.2, -0.95, 0.15, 1.4], tilt: 0.15 }, // shrug, forearms out
-  { left: [0.1, -0.95, 0.3, 2.1], nod: 0.1 }, // hand on the chest
-  { right: [-0.2, -0.92, 0.3, 1.2], nod: 0.25 }, // nodding
-  { left: [0.08, -0.92, 0.38, 1.5], right: [-0.08, -0.92, 0.38, 1.5] }, // hands together
-];
 const LIFT = 0.06;
 const smooth = (u: number) => u * u * (3 - 2 * u);
 
@@ -319,7 +304,7 @@ float notBg(vec3 c) { return smoothstep(0.14, 0.32, abs(c.r - pBg.r) + abs(c.g -
     }
     this.turnBone('Neck', new THREE.Quaternion());
     this.turnBone('Head', new THREE.Quaternion());
-    const g = gesture === undefined ? undefined : GESTURES[gesture % GESTURES.length];
+    const g: GesturePose | undefined = gesture === undefined ? undefined : GESTURES[gesture % GESTURES.length].pose;
     if (!g) return;
     for (const side of ['Left', 'Right'] as const) {
       const arm = side === 'Left' ? g.left : g.right;
@@ -338,7 +323,7 @@ float notBg(vec3 c) { return smoothstep(0.14, 0.32, abs(c.r - pBg.r) + abs(c.g -
    */
   draw({ phase = 0, walking = false, yaw = 0, elevation = 0.18, px = 300, light, armSwing = 0.12, gesture }: {
     phase?: number; walking?: boolean; yaw?: number; elevation?: number; px?: number; light?: FigureLight; armSwing?: number;
-    /** A talking pose (index into GESTURES), standing. */
+    /** A talking pose (index into src/play/gestures.ts GESTURES), standing. */
     gesture?: number;
   }): HTMLCanvasElement {
     this.pose(phase, walking && gesture === undefined, armSwing, gesture);

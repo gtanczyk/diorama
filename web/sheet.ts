@@ -2,7 +2,9 @@
 // transparent canvas, each figure's feet at the same spot of its cell. Muse paints over it later.
 import { Figure3D, type ModelInfo } from './hero3d.ts';
 
-export type SheetAsk = { info: ModelInfo; base: string; yaw: number; cols: number; rows: number; width: number; height: number; feetAt: number; px: number; elevation: number; talk?: boolean };
+export type SheetAsk = { info: ModelInfo; base: string; yaw: number; cols: number; rows: number; width: number; height: number; feetAt: number; px: number; elevation: number;
+  /** Talking: the gesture (index into src/play/gestures.ts) for each cell, in order; cells past the end stay empty. */
+  gestures?: number[] };
 
 let figure: Promise<Figure3D> | undefined;
 
@@ -14,8 +16,8 @@ let figure: Promise<Figure3D> | undefined;
   const ctx = out.getContext('2d')!;
   const [cw, ch] = [a.width / a.cols, a.height / a.rows];
   const n = a.cols * a.rows;
-  for (let i = 0; i < n; i++) {
-    const c = fig.draw({ phase: i / n, walking: !a.talk, gesture: a.talk ? i : undefined, yaw: a.yaw, elevation: a.elevation, px: a.px });
+  for (let i = 0; i < (a.gestures?.length ?? n); i++) {
+    const c = fig.draw({ phase: i / n, walking: !a.gestures, gesture: a.gestures?.[i], yaw: a.yaw, elevation: a.elevation, px: a.px });
     const [x, y] = [(i % a.cols) * cw + cw / 2, Math.floor(i / a.cols) * ch + ch * a.feetAt];
     ctx.drawImage(c, x - c.width / 2, y - c.height * fig.feetAt);
   }

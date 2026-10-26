@@ -1,92 +1,123 @@
-// diorama sprites <slug> [key]: walk-cycle and talking sprite sheets drawn by Muse over the rigged model's poses.
+// diorama sprites <slug> [key]: walk and talk sprite sheets drawn by Muse over the rigged model's poses,
+// only those the world and its story use (src/model/plan.ts).
 import fs from 'node:fs';
+import { gestureIndex } from '../play/gestures.ts';
 import { defineCommand, takeOption } from '../registry.ts';
-import { cutSheet, FACINGS, onGrey, paintSheet, renderGuides, SHEET, TALK_FACINGS, TRACED, type Facing } from '../model/sprites.ts';
+import { planSprites, type CharacterPlan } from '../model/plan.ts';
+import { cutSheet, FACINGS, onGrey, paintSheet, renderGuides, SHEET, TRACED, type Facing } from '../model/sprites.ts';
+import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
 
 const LEGS_OK = 0.6;
+const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
 defineCommand({
   name: 'sprites',
-  usage: 'sprites <slug> [key]     walk sheets for 5 facings and talk sheets for 2: the 3D model moves, Muse draws each sheet again (cast/<key>/sprites/; needs `diorama model` first) [--take N] [--tries N: up to N Muse takes per facing while a frame has its legs wrong; the best whole take wins]',
+  usage: 'sprites <slug> [key]     walk and talk sheets for what the story uses: the 3D model poses, Muse draws each sheet again (cast/<key>/sprites/; needs `diorama model` first) [--plan: only print what would be drawn] [--take N] [--tries N: up to N takes per walk facing while a frame has its legs wrong]',
   async run(args) {
     const take = Number(takeOption(args, 'take', '0'));
     const tries = Number(takeOption(args, 'tries', '1'));
-    const [slug, keyArg] = args;
+    const planOnly = args.includes('--plan');
+    const [slug, keyArg] = args.filter((a) => !a.startsWith('--'));
     if (!slug) throw new Error('usage: diorama sprites <slug> [key]');
     const files = new WorldFiles(slug);
-    const world = files.world();
-    const who = [world.hero, ...world.places.flatMap((p) => p.things)].find((w) => w.key === (keyArg ?? world.hero.key));
-    if (!who) throw new Error(`no hero or NPC called ${keyArg}`);
-    const key = who.key;
-    const modelDir = files.path('cast', key, 'model');
-    if (!fs.existsSync(`${modelDir}/model.json`)) throw new Error(`no model for ${key}: run diorama model ${slug} ${key} first`);
-    const view = (name: string) => fs.readFileSync(`${modelDir}/${name}.png`);
-    const out = (name: string) => files.path('cast', key, 'sprites', name);
-    const looks = who.looks ?? '';
-
-    const facings = Object.keys(FACINGS) as Facing[];
-    const guides = await renderGuides(modelDir, facings);
-    const grey: Record<string, Buffer> = {};
-    for (const f of facings) {
-      grey[f] = await onGrey(guides[f]);
-      files.write(out(`guide-${f}.png`), grey[f]);
+    const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : undefined;
+    const plans = (await planSprites(files, story)).filter((p) => !keyArg || p.key === keyArg);
+    if (!plans.length) throw new Error(keyArg ? `${keyArg} needs no sprites (not the hero, says no lines)` : 'nobody needs sprites');
+    files.write(files.path('cast', 'sprites-plan.json'), plans);
+    for (const p of plans) {
+      const talk = Object.entries(p.talk).map(([f, g]) => `${f} [${g.join(', ')}]`).join('; ');
+      console.log(`${p.key}: walk ${p.walk.join(', ') || '-'} · talk ${talk || '-'} · ${p.walk.length + Object.keys(p.talk).length} Muse sheets`);
     }
-    // The profile first; every other facing also sees it, so patches and colours stay the same.
-    const painted: Record<string, Buffer> = {};
-    painted.right = await paintSheet(files.memo, key, 'right', looks, grey.right, [view('front'), view('right')], take);
-    await Promise.all(facings.filter((f) => f !== 'right').map(async (f) => {
-      const side = f.startsWith('back') ? view('back') : view('front');
-      painted[f] = await paintSheet(files.memo, key, f, looks, grey[f], [side, painted.right], take);
-    }));
+    if (planOnly) return;
+    for (const p of plans) {
+      if (!fs.existsSync(files.path('cast', p.key, 'model', 'model.json'))) {
+        console.log(`${p.key}: no model yet, skipped (diorama model ${slug} ${p.key})`);
+        continue;
+      }
+      await drawCharacter(files, p, take, tries);
+    }
+    console.log(`calls sent: muse ${files.memo.sent.muse}, spark ${files.memo.sent.spark}`);
+  },
+});
 
-    // A frame whose legs do not follow the guide (Muse drew the other leg forward) makes the walk skip:
-    // with --tries, more takes of that facing, and the whole take whose legs follow the guide best wins
-    // (frames mixed from several takes do not match each other, and the take that traces the guide
-    // closest is often the stiffest, so one take is the default).
-    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
-    const sheets: Record<string, { sheet: string; yaw: number; stand: number; iou: number[]; legs: number[] }> = {};
-    await Promise.all(facings.map(async (f) => {
+async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: number, tries: number) {
+  const { key } = plan;
+  const world = files.world();
+  const who = [world.hero, ...world.places.flatMap((p) => p.things)].find((w) => w.key === key);
+  const looks = who?.looks ?? '';
+  const modelDir = files.path('cast', key, 'model');
+  const view = (name: string) => fs.readFileSync(`${modelDir}/${name}.png`);
+  const out = (name: string) => files.path('cast', key, 'sprites', name);
+
+  // Walking: the first facing (the profile when it is used) is painted first; the others also see it,
+  // so patches and colours stay the same. A frame whose legs do not follow the guide makes the walk
+  // skip: with --tries, more takes, and the whole take whose legs follow best wins (frames mixed from
+  // several takes do not match, and the take that traces the guide closest is the stiffest).
+  const facings: Record<string, { sheet: string; yaw: number; stand: number; iou: number[]; legs: number[] }> = {};
+  if (plan.walk.length) {
+    const guides = await renderGuides(modelDir, plan.walk);
+    const grey: Record<string, Buffer> = {};
+    for (const f of plan.walk) files.write(out(`guide-${f}.png`), (grey[f] = await onGrey(guides[f])));
+    const first: Facing = plan.walk.includes('right') ? 'right' : plan.walk[0];
+    const refsFor = (f: Facing, painted?: Buffer) => [f.startsWith('back') ? view('back') : view('front'), painted ?? view('right')];
+    const painted: Record<string, Buffer> = {};
+    painted[first] = await paintSheet(files.memo, key, first, looks, grey[first], [view('front'), view('right')], take);
+    await Promise.all(plan.walk.filter((f) => f !== first).map(async (f) => {
+      painted[f] = await paintSheet(files.memo, key, f, looks, grey[f], refsFor(f, painted[first]), take);
+    }));
+    await Promise.all(plan.walk.map(async (f) => {
       files.write(out(`painted-${f}.png`), painted[f]);
       const takes = [await cutSheet(guides[f], painted[f])];
       const pick = () => takes.reduce((a, b) => (mean(b.legs) > mean(a.legs) ? b : a));
       let best = pick();
       for (let t = 1; t < tries && Math.min(...best.legs) < LEGS_OK; t++) {
-        const refs = f === 'right' ? [view('front'), view('right')] : [f.startsWith('back') ? view('back') : view('front'), painted.right];
-        const again = await paintSheet(files.memo, key, f, looks, grey[f], refs, take + t);
-        files.write(out(`painted-${f}-${t}.png`), again);
-        takes.push(await cutSheet(guides[f], again));
+        const refs = f === first ? [view('front'), view('right')] : refsFor(f, painted[first]);
+        takes.push(await cutSheet(guides[f], await paintSheet(files.memo, key, f, looks, grey[f], refs, take + t)));
         best = pick();
       }
       files.write(out(`${f}.png`), best.sheet);
-      sheets[f] = { sheet: `${f}.png`, yaw: FACINGS[f], stand: best.stand, iou: best.iou, legs: best.legs };
-      console.log(`${key} ${f}: take ${takes.indexOf(best) + 1} of ${takes.length}, pose IoU ${mean(best.iou).toFixed(3)}, legs ${mean(best.legs).toFixed(3)} (worst ${Math.min(...best.legs)})`);
+      facings[f] = { sheet: `${f}.png`, yaw: FACINGS[f], stand: best.stand, iou: best.iou, legs: best.legs };
+      console.log(`${key} walk ${f}: take ${takes.indexOf(best) + 1} of ${takes.length}, pose IoU ${mean(best.iou).toFixed(3)}, legs ${mean(best.legs).toFixed(3)} (worst ${Math.min(...best.legs)})`);
     }));
-    // Talking: 8 standing poses (hands, pointing, a shrug, a nod) per facing, played while a line is said.
-    // The painted views, not a walk sheet, are the reference: with a walk sheet Muse draws the legs walking.
-    const talkGuides = await renderGuides(modelDir, TALK_FACINGS, true);
-    const talk: Record<string, { sheet: string; yaw: number; iou: number[] }> = {};
-    await Promise.all(TALK_FACINGS.map(async (f) => {
-      const g = await onGrey(talkGuides[f]);
-      files.write(out(`talk-guide-${f}.png`), g);
-      let p = await paintSheet(files.memo, key, f, looks, g, [view('front'), view('right')], take, true);
-      let cut = await cutSheet(talkGuides[f], p);
-      for (let t = 1; t <= 2 && mean(cut.iou) > TRACED; t++) {
-        p = await paintSheet(files.memo, key, f, looks, g, [view('front'), view('right')], take + t, true);
-        cut = await cutSheet(talkGuides[f], p);
-      }
-      files.write(out(`talk-painted-${f}.png`), p);
-      files.write(out(`talk-${f}.png`), cut.sheet);
-      talk[f] = { sheet: `talk-${f}.png`, yaw: FACINGS[f], iou: cut.iou };
-      console.log(`${key} talk ${f}: pose IoU ${mean(cut.iou).toFixed(3)} (worst ${Math.min(...cut.iou)})${mean(cut.iou) > TRACED ? '  <- Muse kept the 3D look, try --take' : ''}`);
-    }));
-    files.write(out('sprites.json'), {
-      cols: SHEET.cols, rows: SHEET.rows, frames: SHEET.cols * SHEET.rows, width: SHEET.width, height: SHEET.height,
-      // In each cell the feet stand at (cell width / 2, cell height * feetAt); the figure is about `px` tall.
-      feetAt: SHEET.feetAt, px: SHEET.px, facings: sheets,
-      // Talking sheets: frame 0 is listening (hands down), 1-7 are gestures to pick from while speaking.
-      talk,
-    });
-    console.log(`calls sent: muse ${files.memo.sent.muse}`);
-  },
-});
+  }
+
+  // Talking: the gestures this character's lines use, in the facing its conversation is held in. The
+  // painted views are the reference, not a walk sheet: with a walk sheet Muse draws the legs walking.
+  const talk: Record<string, { sheet: string; yaw: number; gestures: string[]; iou: number[] }> = {};
+  await Promise.all(Object.entries(plan.talk).map(async ([facing, names]) => {
+    const f = facing as Facing;
+    const used = names.map(gestureIndex);
+    // Muse redraws a half-empty grid as a few big figures, so the used gestures repeat to fill all 8
+    // cells (the sheet costs the same); cell i < used.length is gestures[i].
+    const cells = Array.from({ length: SHEET.cols * SHEET.rows }, (_, i) => used[i % used.length]);
+    const guide = (await renderGuides(modelDir, [f], cells))[f];
+    const g = await onGrey(guide);
+    files.write(out(`talk-guide-${f}.png`), g);
+    const refs = [view('front'), view('right')];
+    let p = await paintSheet(files.memo, key, f, looks, g, refs, take, used.length);
+    let cut = await cutSheet(guide, p);
+    const score = () => mean(cut.iou.slice(0, used.length));
+    // From some angles the hands hide in front of the body and Muse hands the guide back unchanged.
+    for (let t = 1; t <= 2 && score() > TRACED; t++) {
+      p = await paintSheet(files.memo, key, f, looks, g, refs, take + t, used.length);
+      cut = await cutSheet(guide, p);
+    }
+    files.write(out(`talk-painted-${f}.png`), p);
+    files.write(out(`talk-${f}.png`), cut.sheet);
+    talk[f] = { sheet: `talk-${f}.png`, yaw: FACINGS[f], gestures: names, iou: cut.iou.slice(0, used.length) };
+    console.log(`${key} talk ${f} [${names.join(', ')}]: pose IoU ${score().toFixed(3)}${score() > TRACED ? '  <- Muse kept the 3D look, try --take' : ''}`);
+  }));
+
+  files.write(out('sprites.json'), {
+    cols: SHEET.cols, rows: SHEET.rows, frames: SHEET.cols * SHEET.rows, width: SHEET.width, height: SHEET.height,
+    // In each cell the feet stand at (cell width / 2, cell height * feetAt); the figure is about `px` tall.
+    feetAt: SHEET.feetAt, px: SHEET.px,
+    // Walk sheets: 8 frames of a full cycle; `stand` is the frame shown standing still.
+    facings,
+    // Talk sheets: cell i is gestures[i]; cell 0 is `listen` (also how an NPC stands when idle).
+    talk,
+    // The gesture for each line this character says, by its text.
+    lines: plan.lines,
+  });
+}
