@@ -18,7 +18,7 @@ const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg
 /** What the page loads: the world, and per place its geometry (measured, or a preview from the layout). */
 export function worldData(files: WorldFiles) {
   const world = files.world();
-  const places: Record<string, { geometry: Geometry | null; painting: string | null; issue?: string }> = {};
+  const places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; issue?: string }> = {};
   for (const place of world.places) {
     const painted = ['painting.png', 'blockin.png'].find((f) => fs.existsSync(files.place(place.key, f)));
     let geometry: Geometry | null = null;
@@ -30,7 +30,9 @@ export function worldData(files: WorldFiles) {
     } catch (error) {
       issue = `geometry.json: ${error instanceof Error ? error.message.slice(0, 300) : error}`;
     }
-    places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, issue };
+    // backdrop.png: the painting without its standing things; with it the page draws the place as a parallax diorama.
+    const backdrop = painted === 'painting.png' && fs.existsSync(files.place(place.key, 'backdrop.png')) ? `places/${place.key}/backdrop.png` : undefined;
+    places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, ...(backdrop && { backdrop }), issue };
   }
   const castDir = files.path('cast');
   const cast = Object.fromEntries((fs.existsSync(castDir) ? fs.readdirSync(castDir) : [])

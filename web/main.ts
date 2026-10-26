@@ -1,5 +1,6 @@
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
 import { hiddenRuns, personPx, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
+import { backdropTransforms, cardY, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
@@ -9,7 +10,7 @@ import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 type Data = {
   slug: string;
   world: World;
-  places: Record<string, { geometry: Geometry | null; painting: string | null; issue?: string }>;
+  places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; issue?: string }>;
   /** Figure per hero or NPC key: a cut-out image, and its rig when `diorama cast` could cut it into parts. */
   cast: Record<string, { image: string; rig?: Rig; parts?: string }>;
   story: Story | null;
@@ -21,7 +22,8 @@ type Bits = { bits: Uint8Array; area: number };
 type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement; outline?: HTMLCanvasElement };
 type Rect = [number, number, number, number];
 type Figure = { img: HTMLImageElement; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement } };
-type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number };
+/** y: the floor row the cut stands on, which sets how far it slides with parallax. */
+type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number; y: number };
 
 type Place = {
   key: string;
@@ -29,6 +31,10 @@ type Place = {
   g: Geometry;
   grid: WalkGrid;
   bg?: HTMLImageElement;
+  /** The painting without its cards (backdrop.png): with it the place is drawn as a parallax diorama. */
+  backdrop?: HTMLImageElement;
+  /** The depth that stays put while the camera sways. */
+  pivot: number;
   hots: Hot[];
   cuts: Cut[];
   byKey: Map<string, Occluder>;
@@ -63,6 +69,12 @@ const ctx = canvas.getContext('2d')!;
 const params = new URLSearchParams(location.search);
 const capture = params.has('capture');
 const hideCursor = capture || params.get('cursor') === '0';
+// ?parallax=0 turns the diorama sway off, ?parallax=1.5 makes it stronger. Capture runs (QA, the bot) stay flat
+// unless they ask for it, since they read frame pixels at painting coordinates. ?sway=1 adds a slow idle drift.
+const parallaxScale = Number(params.get('parallax') ?? (capture ? '0' : '1')) || 0;
+const sway = params.get('sway') === '1';
+/** The pointer over the canvas, 0..1 across and down; null when it is elsewhere. */
+let pointer: { x: number; y: number } | null = null;
 // Relative paths, so the same page runs from `diorama play` and from an exported folder.
 const files = (p: string) => `files/${p}`;
 
@@ -104,6 +116,8 @@ class Game {
   dark = 0;
   private darkTarget = 0;
   time = 0;
+  /** The diorama camera, -1..1 each way; eases toward where the pointer and the hero pull it. */
+  cam: Camera = { x: 0, y: 0 };
   private pending: (() => void) | null = null;
   private listeners: Array<(event: Events, detail: object) => void> = [];
   frame = 0;
@@ -187,6 +201,7 @@ class Game {
     const g = entry.geometry;
     const dir = (p: string) => files(`places/${key}/${p}`);
     const bg = entry.painting ? await loadImage(files(entry.painting)) : undefined;
+    const backdrop = entry.backdrop && parallaxScale > 0 ? await loadImage(files(entry.backdrop)).catch(() => undefined) : undefined;
     const maskOf = (p?: string) => (p ? loadBits(dir(p), g.frame.width, g.frame.height).catch(() => undefined) : Promise.resolve(undefined));
     const byPath = new Map<string, Promise<Bits | undefined>>();
     const shared = (p?: string) => {
@@ -204,7 +219,11 @@ class Game {
     );
     hots.sort((a, b) => a.area - b.area);
     const cuts = await Promise.all(g.occluders.map(async (occ) => this.cut(occ, bg, await shared(occ.mask), g)));
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, light: bg && lightMap(bg, g.frame.width, g.frame.height), hots, cuts: cuts.filter((c): c is Cut => !!c), byKey: new Map(g.occluders.map((o) => [o.key, o])) };
+    const byKey = new Map(g.occluders.map((o) => [o.key, o]));
+    const kept = cuts.filter((c): c is Cut => !!c).map((c) => ({ ...c, y: cardY(g, c.occ, (k) => byKey.get(k)) }));
+    // Far cards first, so nearer ones cover them when they slide.
+    kept.sort((a, b) => a.y - b.y);
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), light: bg && lightMap(bg, g.frame.width, g.frame.height), hots, cuts: kept, byKey };
     this.cache.set(key, place);
     return place;
   }
@@ -225,7 +244,7 @@ class Game {
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!mask.bits[(y0 + y) * g.frame.width + x0 + x]) img.data[(y * w + x) * 4 + 3] = 0;
       cx.putImageData(img, 0, 0);
     }
-    return { occ, canvas: c, x0, y0 };
+    return { occ, canvas: c, x0, y0, y: occ.baseY };
   }
 
   /** Enters a place, at the thing that leads back to where the hero came from, or at its start. */
@@ -389,10 +408,10 @@ class Game {
   private changeImgs = new Map<number, HTMLImageElement | null>();
 
   /** Images of the story changes that hold now in this place; each loads on first use. */
-  changed(): HTMLImageElement[] {
+  changed(): Array<{ img: HTMLImageElement; i: number }> {
     const story = this.data.story;
     if (!story || !this.data.changes) return [];
-    const out: HTMLImageElement[] = [];
+    const out: Array<{ img: HTMLImageElement; i: number }> = [];
     for (const i of activeChanges(story, this.state)) {
       if (story.changes[i].place !== this.place.key || !this.data.changes[i]) continue;
       if (!this.changeImgs.has(i)) {
@@ -400,7 +419,7 @@ class Game {
         void loadImage(files(this.data.changes[i])).then((img) => this.changeImgs.set(i, img)).catch(() => undefined);
       }
       const img = this.changeImgs.get(i);
-      if (img) out.push(img);
+      if (img) out.push({ img, i });
     }
     return out;
   }
@@ -424,9 +443,13 @@ class Game {
       const inset = (x1 - x0) * 0.12;
       if (x >= x0 + inset && x <= x1 - inset && y >= y0 && y <= y1 - 4) return this.drawn[i].hot;
     }
+    const [sx0, sy0] = [x, y];
     for (const hot of this.place.hots) {
       if (this.drawn.some((d) => d.hot === hot)) continue;
       if (gone.has(hot.thing.key)) continue;
+      // Each thing is tested where it is drawn: moved by its own parallax shift.
+      const [dx, dy] = this.shift(this.thingY(hot.thing.key));
+      [x, y] = [sx0 - dx, sy0 - dy];
       const [x0, y0, x1, y1] = hot.thing.box;
       if (x < x0 || x > x1 || y < y0 || y > y1) continue;
       if (!hot.mask || hot.mask.bits[Math.floor(y) * g.frame.width + Math.floor(x)]) return hot;
@@ -444,6 +467,7 @@ class Game {
       this.speech = null;
       this.emit('silent', {});
     }
+    this.swayCamera(dt);
     let budget = personPx(this.place.g, hero.y) * 0.85 * dt;
     while (budget > 0 && hero.path.length) {
       const [tx, ty] = hero.path[0];
@@ -468,23 +492,118 @@ class Game {
     }
   }
 
+  /** The parallax of this frame, or undefined when the place is drawn flat (no backdrop, or turned off). */
+  parallax(): Parallax | undefined {
+    return this.place.backdrop ? { cam: this.cam, pivot: this.place.pivot, px: PARALLAX_PX * parallaxScale } : undefined;
+  }
+
+  /** How far something standing on the floor row y slides this frame. */
+  shift(y: number): [number, number] {
+    const p = this.parallax();
+    return p ? shiftAt(this.place.g, p, y) : [0, 0];
+  }
+
+  /** The floor row a thing stands on: its card's, or its box's bottom. */
+  private thingY(key: string): number {
+    const cut = this.place.cuts.find((c) => (c.occ.thing ?? c.occ.key) === key);
+    return cut ? cut.y : (this.place.hots.find((h) => h.thing.key === key)?.thing.box[3] ?? this.place.g.frame.height);
+  }
+
+  /** The zoom that keeps the frame's edges covered while the cards sway; 1 when flat. */
+  zoom(): number {
+    const p = this.parallax();
+    return p ? overscan(this.place.g, { ...p, cam: { x: 1, y: 1 } }) : 1;
+  }
+
+  /** A canvas point as a point of the zoomed scene. */
+  unzoom(x: number, y: number): Point {
+    const z = this.zoom();
+    const { width: W, height: H } = this.place.g.frame;
+    return [(x - W / 2) / z + W / 2, (y - H / 2) / z + H / 2];
+  }
+
+  /** Where a click on screen lands on the floor, in painting coordinates. */
+  floorAt(x: number, y: number): Point {
+    const p = this.parallax();
+    return p ? floorPoint(this.place.g, p, x, y) : [x, y];
+  }
+
+  private swayCamera(dt: number) {
+    const W = this.place.g.frame.width;
+    // The pointer looks around the diorama; the hero walking across pulls the view after him.
+    let tx = -0.5 * (this.hero.x / W - 0.5) * 2;
+    let ty = 0;
+    if (pointer && !hideCursor) {
+      tx += (0.5 - pointer.x) * 2 * 0.8;
+      ty += (0.5 - pointer.y) * 2 * 0.8;
+    }
+    if (sway) {
+      tx += Math.sin(this.time * 0.45) * 0.6;
+      ty += Math.sin(this.time * 0.31 + 1) * 0.5;
+    }
+    const k = 1 - Math.exp(-dt * 2.5);
+    this.cam.x += (Math.max(-1, Math.min(1, tx)) - this.cam.x) * k;
+    this.cam.y += (Math.max(-1, Math.min(1, ty)) - this.cam.y) * k;
+  }
+
+  /** Draws `draw` moved by the parallax shift of floor row y. */
+  private at(y: number, draw: () => void) {
+    const [dx, dy] = this.shift(y);
+    ctx.save();
+    ctx.translate(dx, dy);
+    draw();
+    ctx.restore();
+  }
+
   render() {
-    const { g, bg } = this.place;
+    const { g, bg, backdrop } = this.place;
     const W = g.frame.width;
     const H = g.frame.height;
-    if (bg) ctx.drawImage(bg, 0, 0, W, H);
-    else {
-      ctx.fillStyle = '#20232a';
-      ctx.fillRect(0, 0, W, H);
-    }
-    // What the story has changed here (a beacon lit): each change is the thing as it looks after, transparent elsewhere.
-    for (const img of this.changed()) ctx.drawImage(img, 0, 0, W, H);
+    const p = this.parallax();
+    const z = this.zoom();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#20232a';
+    ctx.fillRect(0, 0, W, H);
+    ctx.setTransform(z, 0, 0, z, (W / 2) * (1 - z), (H / 2) * (1 - z));
     const gone = this.gone();
-    for (const hot of this.place.hots) {
-      if (!hot.plate || !gone.has(hot.thing.key)) continue;
-      // The plate differs from the painting only near the thing, so its grown box is enough.
-      const [x0, y0, x1, y1] = hot.thing.box.map((v, i) => (i < 2 ? Math.max(0, v - 16) : v + 16));
-      ctx.drawImage(hot.plate, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+    if (p && backdrop) {
+      // A diorama: the backdrop's floor shears with depth, then every card slides as the floor row it stands on.
+      const { above, below } = backdropTransforms(g, p);
+      const h = Math.round(g.scale.horizonY);
+      if (h > 0) {
+        ctx.save();
+        ctx.transform(...(above as [number, number, number, number, number, number]));
+        ctx.drawImage(backdrop, 0, 0, W, Math.min(H, h + 1), 0, 0, W, Math.min(H, h + 1));
+        ctx.restore();
+      }
+      ctx.save();
+      ctx.transform(...(below as [number, number, number, number, number, number]));
+      ctx.drawImage(backdrop, 0, h, W, H - h, 0, h, W, H - h);
+      ctx.restore();
+      const carded = new Set(this.place.cuts.map((c) => c.occ.thing ?? c.occ.key));
+      for (const hot of this.place.hots) {
+        // A carried-off card is simply not drawn; a flat thing gets its clean plate, on the floor it lies on.
+        if (!hot.plate || !gone.has(hot.thing.key) || carded.has(hot.thing.key)) continue;
+        const [x0, y0, x1, y1] = hot.thing.box.map((v, i) => (i < 2 ? Math.max(0, v - 16) : v + 16));
+        this.at(hot.thing.box[3], () => ctx.drawImage(hot.plate!, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0));
+      }
+      for (const cut of this.place.cuts) {
+        if (cut.occ.thing && gone.has(cut.occ.thing)) continue;
+        this.at(cut.y, () => ctx.drawImage(cut.canvas, cut.x0, cut.y0));
+      }
+      // A change belongs to its thing's card, so it slides with it (and its glow with it).
+      const story = this.data.story;
+      for (const { img, i } of this.changed()) this.at(this.thingY(story!.changes[i].thing), () => ctx.drawImage(img, 0, 0, W, H));
+    } else {
+      if (bg) ctx.drawImage(bg, 0, 0, W, H);
+      // What the story has changed here (a beacon lit): each change is the thing as it looks after, transparent elsewhere.
+      for (const { img } of this.changed()) ctx.drawImage(img, 0, 0, W, H);
+      for (const hot of this.place.hots) {
+        if (!hot.plate || !gone.has(hot.thing.key)) continue;
+        // The plate differs from the painting only near the thing, so its grown box is enough.
+        const [x0, y0, x1, y1] = hot.thing.box.map((v, i) => (i < 2 ? Math.max(0, v - 16) : v + 16));
+        ctx.drawImage(hot.plate, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+      }
     }
     // Everyone is drawn far to near, and each one gets the things in front of them put back.
     const npcs = this.place.hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc' && !h.mask);
@@ -492,22 +611,28 @@ class Game {
     let rect: Rect = [0, 0, 0, 0];
     const lit = this.hover && !hideCursor ? this.hover : undefined;
     // Under the people, so someone standing in front of a highlighted thing stays in front of its outline.
-    if (lit && !this.drawn.some((d) => d.hot === lit)) this.drawOutline(lit);
+    if (lit && !this.drawn.some((d) => d.hot === lit)) this.at(this.thingY(lit.thing.key), () => this.drawOutline(lit));
     this.drawn = [];
     for (const who of people) {
       if (who.npc) {
         const [x0, , x1, y1] = who.npc.thing.box;
         const x = (x0 + x1) / 2;
-        const drawn = this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, false, this.figures.get(who.npc.thing.key), '#4b3b2a', lit === who.npc);
+        const drawn = this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, false, this.figures.get(who.npc.thing.key), '#4b3b2a', lit === who.npc, this.shift(y1));
         this.drawn.push({ hot: who.npc, rect: drawn });
         this.occlude(drawn, y1, gone);
       } else {
-        rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.path.length > 0, this.hero.figure, '#2b2733');
+        rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.path.length > 0, this.hero.figure, '#2b2733', false, this.shift(this.hero.y));
         this.occlude(rect, this.hero.y, gone);
       }
     }
-    if (this.grid) this.drawGrid();
+    if (this.grid) {
+      ctx.save();
+      if (p) ctx.transform(...(backdropTransforms(g, p).below as [number, number, number, number, number, number]));
+      this.drawGrid();
+      ctx.restore();
+    }
     this.drawSpeech(rect);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (this.dark > 0) {
       ctx.fillStyle = `rgba(0,0,0,${this.dark})`;
       ctx.fillRect(0, 0, W, H);
@@ -534,7 +659,7 @@ class Game {
   }
 
   /** Draws a person with feet at (x, y); returns the box they and their shadow cover. */
-  private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false): Rect {
+  private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0]): Rect {
     const h = personPx(this.place.g, y);
     const rig = figure?.rig;
     // A rig walks its legs; a plain cut-out (or the stand-in) only bobs and rocks as it slides.
@@ -543,6 +668,8 @@ class Game {
     let left: number;
     let right: number;
     ctx.save();
+    // Parallax: the person slides with the floor under their feet; size and light still come from where they stand.
+    ctx.translate(sx, sy);
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
     ctx.beginPath();
     ctx.ellipse(x, y, h * 0.16, Math.max(2, h * 0.035), 0, 0, Math.PI * 2);
@@ -566,7 +693,7 @@ class Game {
       [left, right] = [x - w / 2, x + w / 2];
     }
     ctx.restore();
-    return [left - 2, y - h * 1.04 - bob - 2, right + 2, y + Math.max(3, h * 0.04)];
+    return [left - 2 + sx, y - h * 1.04 - bob - 2 + sy, right + 2 + sx, y + Math.max(3, h * 0.04) + sy];
   }
 
 
@@ -589,10 +716,13 @@ class Game {
   }
 
   /** Puts the painting back over the hero, column by column, wherever an occluder stands in front of him. */
-  private occlude([left, top, right, bottom]: [number, number, number, number], feetY: number, gone: Set<string>) {
+  private occlude(rect: [number, number, number, number], feetY: number, gone: Set<string>) {
     const support = (k: string) => this.place.byKey.get(k);
     for (const cut of this.place.cuts) {
       if (cut.occ.thing && gone.has(cut.occ.thing)) continue;
+      // The person's box as seen from the card, which slid by its own amount.
+      const [sx, sy] = this.shift(cut.y);
+      const [left, top, right, bottom] = [rect[0] - sx, rect[1] - sy, rect[2] - sx, rect[3] - sy];
       const [bx0, by0, bx1, by1] = cut.occ.box;
       if (bx1 < left || bx0 > right || by1 < top || by0 > bottom) continue;
       const y0 = Math.max(top, cut.y0);
@@ -601,7 +731,7 @@ class Game {
       for (const [a, b] of hiddenRuns(cut.occ, left, right, feetY, support)) {
         const xa = Math.max(a, cut.x0);
         const xb = Math.min(b, cut.x0 + cut.canvas.width);
-        if (xb > xa) ctx.drawImage(cut.canvas, xa - cut.x0, y0 - cut.y0, xb - xa, y1 - y0, xa, y0, xb - xa, y1 - y0);
+        if (xb > xa) ctx.drawImage(cut.canvas, xa - cut.x0, y0 - cut.y0, xb - xa, y1 - y0, xa + sx, y0 + sy, xb - xa, y1 - y0);
       }
     }
   }
@@ -711,13 +841,16 @@ function drawFigure(h: number, colour: string) {
 }
 
 const game = new Game();
+/** The scene point under the pointer: canvas pixels, then out of the parallax zoom. */
 const toFrame = (e: MouseEvent): Point => {
   const r = canvas.getBoundingClientRect();
-  return [((e.clientX - r.left) / r.width) * canvas.width, ((e.clientY - r.top) / r.height) * canvas.height];
+  return game.unzoom(((e.clientX - r.left) / r.width) * canvas.width, ((e.clientY - r.top) / r.height) * canvas.height);
 };
 
 canvas.addEventListener('mousemove', (e) => {
   if (!game.place) return;
+  const r = canvas.getBoundingClientRect();
+  pointer = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   game.hover = game.thingAt(...toFrame(e));
   canvas.style.cursor = hideCursor ? 'none' : game.hover ? 'pointer' : 'default';
   document.getElementById('hover')!.textContent = game.hover ? game.hover.thing.key.replace(/-/g, ' ') : '';
@@ -727,13 +860,14 @@ canvas.addEventListener('click', (e) => {
   const [x, y] = toFrame(e);
   const hot = game.thingAt(x, y);
   if (hot) void game.use(hot.thing.key);
-  else void game.walkTo(x, y);
+  else void game.walkTo(...game.floorAt(x, y));
 });
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   const hot = game.place && game.dark === 0 ? game.thingAt(...toFrame(e)) : undefined;
   if (hot) void game.use(hot.thing.key, 'look');
 });
+canvas.addEventListener('mouseleave', () => (pointer = null));
 addEventListener('keydown', (e) => {
   if (e.key === 'g') game.grid = !game.grid;
 });

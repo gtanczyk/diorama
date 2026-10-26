@@ -4,7 +4,7 @@ import { defineCommand, registry, takeOption } from '../registry.ts';
 import type { Finding, Verdict } from '../scene/verify.ts';
 import { WorldFiles } from '../world/files.ts';
 
-const STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'derive', 'verify'] as const;
+const STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'derive', 'backdrop', 'verify'] as const;
 type Step = (typeof STEPS)[number];
 
 /** Model calls sent (not answered from the memo) since `since`, read from the memo's call log. */

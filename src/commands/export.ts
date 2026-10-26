@@ -27,6 +27,7 @@ defineCommand({
     };
     for (const [key, entry] of Object.entries(data.places)) {
       if (entry.painting) entry.painting = await copy(entry.painting, true);
+      if (entry.backdrop) entry.backdrop = await copy(entry.backdrop, true);
       for (const thing of entry.geometry?.things ?? []) {
         if (thing.mask) await copy(`places/${key}/${thing.mask}`);
         if (thing.plate) thing.plate = path.posix.relative(`places/${key}`, await copy(`places/${key}/${thing.plate}`, true));

@@ -1,0 +1,71 @@
+// Parallax: a place drawn as a real diorama, a painted backdrop and cut-out cards standing on its floor.
+// The floor is a plane, so how far a spot moves when the camera sways grows with its distance below the
+// horizon; a card moves as the floor row it stands on. No Node imports: the browser bundles this file.
+import type { Geometry, Occluder } from './geometry.ts';
+
+/** How far (px) the bottom row moves against the horizon at a full camera swing. Kept small: a diorama, not a flyby. */
+export const PARALLAX_PX = 22;
+/** Vertical swing is half the horizontal one; eyes move sideways more than up and down. */
+const VERTICAL = 0.5;
+
+export type Camera = { x: number; y: number };
+
+/** 0 at the horizon (and above it, the painted backdrop), 1 at the bottom of the frame. */
+export function disparity(g: Geometry, y: number): number {
+  const { horizonY } = g.scale;
+  const span = Math.max(1, g.frame.height - horizonY);
+  return Math.min(1.25, Math.max(0, (y - horizonY) / span));
+}
+
+/** The depth that stays put while the camera sways: the middle of the walkable floor, where the hero lives. */
+export function pivot(g: Geometry): number {
+  let sum = 0;
+  let n = 0;
+  g.walk.forEach((row, r) => {
+    for (let c = 0; c < row.length; c++) if (row[c] === '#') (sum += disparity(g, (r + 0.5) * g.cell)), n++;
+  });
+  return n ? sum / n : 0.5;
+}
+
+export type Parallax = { cam: Camera; pivot: number; px: number };
+
+/** The shift of anything standing on the floor at feetY (its own pixels all move with it). */
+export function shiftAt(g: Geometry, p: Parallax, feetY: number): [number, number] {
+  const d = disparity(g, feetY) - p.pivot;
+  return [p.cam.x * p.px * d, p.cam.y * p.px * VERTICAL * d];
+}
+
+/** The floor row a card stands on: its base, its support's for a thing on top, the frame's bottom for a framing one. */
+export function cardY(g: Geometry, occ: Occluder, byKey: (key: string) => Occluder | undefined): number {
+  if (occ.front) return g.frame.height;
+  const under = occ.on ? byKey(occ.on) : undefined;
+  return under && under !== occ ? under.baseY : occ.baseY;
+}
+
+/**
+ * The backdrop's two pieces as canvas transforms [a, b, c, d, e, f] (x' = a x + c y + e, y' = b x + d y + f):
+ * above the horizon it only slides; below, the floor shears, near rows sliding more than far ones.
+ */
+export function backdropTransforms(g: Geometry, p: Parallax): { above: number[]; below: number[] } {
+  const h = g.scale.horizonY;
+  const span = Math.max(1, g.frame.height - h);
+  const kx = (p.cam.x * p.px) / span;
+  const ky = (p.cam.y * p.px * VERTICAL) / span;
+  const [ax, ay] = [-p.cam.x * p.px * p.pivot, -p.cam.y * p.px * VERTICAL * p.pivot];
+  return { above: [1, 0, 0, 1, ax, ay], below: [1, 0, kx, 1 + ky, ax - kx * h, ay - ky * h] };
+}
+
+/** Where a point of the floor seen on screen at (x, y) lies in the painting. */
+export function floorPoint(g: Geometry, p: Parallax, x: number, y: number): [number, number] {
+  const { above, below } = backdropTransforms(g, p);
+  let py = (y - below[5]) / below[3];
+  if (py < g.scale.horizonY) py = y - above[5];
+  const [dx] = py < g.scale.horizonY ? [above[4]] : [below[2] * py + below[4]];
+  return [x - dx, py];
+}
+
+/** The zoom that keeps the frame's edges covered at a full swing in any direction. */
+export function overscan(g: Geometry, p: Parallax): number {
+  const reach = Math.max(p.pivot, disparity(g, g.frame.height) - p.pivot) * p.px;
+  return 1 + Math.max((2 * reach) / g.frame.width, (2 * reach * VERTICAL) / g.frame.height);
+}
