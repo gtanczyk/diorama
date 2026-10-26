@@ -16,7 +16,7 @@ import { Layout } from '../scene/layout.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
 
-type Flats = { sky: string | null; flats: Array<{ file: string; box: [number, number, number, number] }>; water?: { tex: string; mask: string; box: [number, number, number, number] } };
+type Flats = { sky: string | null; flats: Array<{ file: string; box: [number, number, number, number] }>; water?: { tex: string; mask: string; box: [number, number, number, number]; flow?: [number, number] } };
 
 export const WEB = fileURLToPath(new URL('../../web/', import.meta.url));
 const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.mp3': 'audio/mpeg' };
@@ -47,7 +47,7 @@ export function worldData(files: WorldFiles) {
     const layers: Layers | undefined = flats && {
       sky: flats.sky ? rel(flats.sky) : null,
       flats: flats.flats.map((f) => ({ file: rel(f.file), box: f.box })),
-      ...(flats.water && { water: { tex: rel(flats.water.tex), mask: rel(flats.water.mask), box: flats.water.box } }),
+      ...(flats.water && { water: { tex: rel(flats.water.tex), mask: rel(flats.water.mask), box: flats.water.box, flow: flats.water.flow } }),
     };
     places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, ...(backdrop && { backdrop }), ...(layers && { layers }), issue };
   }
