@@ -1,0 +1,5 @@
+node_modules/
+.diorama/
+worlds/*
+!worlds/demo/
+.env

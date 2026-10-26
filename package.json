@@ -1,0 +1,22 @@
+{
+  "name": "diorama",
+  "version": "0.1.0",
+  "description": "Turn a story prompt into playable painted point-and-click scenes with Meta Muse and SAM 3.1",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": { "diorama": "bin/diorama.mjs" },
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "diorama": "node bin/diorama.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
