@@ -122,9 +122,14 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     const [x, y] = grid.centre(i);
     byRow.set(y, [...(byRow.get(y) ?? []), x]);
   }
-  const probes = await sparkPeople(memo, `scale:${place.key}`, painting, probePoints([...byRow].map(([y, xs]) => ({ y, xs }))));
+  const sharpOnFloor = onFloor.filter((b) => !things.find((t) => t.key === b.thing)!.coarse);
+  const refs = sharpOnFloor.flatMap((b) => {
+    const metres = layout.things.find((t) => t.key === b.thing)?.metres;
+    return metres ? [{ key: b.thing, x: (b.box[0] + b.box[2]) / 2, footY: b.baseY, px: b.baseY - b.box[1], metres }] : [];
+  });
+  const probes = await sparkPeople(memo, `scale:${place.key}`, painting, probePoints([...byRow].map(([y, xs]) => ({ y, xs }))), refs);
   let scale: Scale | undefined;
-  for (const [source, samples] of [['spark', probes], ['anchors', anchorSamples(onFloor.filter((b) => !things.find((t) => t.key === b.thing)!.coarse), layout)]] as const) {
+  for (const [source, samples] of [['spark', probes], ['anchors', anchorSamples(sharpOnFloor, layout)]] as const) {
     const fit = scaleFrom(samples, topY, layout.horizon, source);
     if (fit.scale) {
       scale = fit.scale;
@@ -185,7 +190,6 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
       occluders.push({ ...base, foot: b.foot });
     }
   }
-  for (const t of things) if (t.coarse && t.kind === 'standing') flag(`${t.key}: coarse mask, it blocks the floor but hides no one`);
   // The runtime gives each occluder pixel to the first box that holds it: small boxes first.
   occluders.sort((a, b) => (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]) - (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]));
 

@@ -65,8 +65,15 @@ export function probePoints(floorRows: { y: number; xs: number[] }[]): { x: numb
 
 const People = z.object({ people: z.array(z.object({ x: z.number(), y: z.number(), px: z.number() })) });
 
-export async function sparkPeople(memo: Memo, label: string, painting: Buffer, points: { x: number; y: number }[]): Promise<Sample[]> {
-  const prompt = `This is a painted background for a 2D adventure game (${FRAME.width}x${FRAME.height} px, x right, y down). Judge its perspective from the things in it (doors, boats, steps, furniture, trees, planks). For each point on the ground below, how tall in pixels would an adult ${PERSON_M} m tall be, standing with their feet there?
+/** A thing measured on its mask, to give Spark something to compare a person with. */
+export type Reference = { key: string; x: number; footY: number; px: number; metres: number };
+
+export async function sparkPeople(memo: Memo, label: string, painting: Buffer, points: { x: number; y: number }[], refs: Reference[] = []): Promise<Sample[]> {
+  const known = refs.length
+    ? `\nFor reference, measured in this painting (the real heights are rough guesses):\n${refs.map((r) => `- ${r.key}: stands at (${Math.round(r.x)}, ${Math.round(r.footY)}), ${Math.round(r.px)} px tall, roughly ${r.metres} m`).join('\n')}\n`
+    : '';
+  const prompt = `This is a painted background for a 2D adventure game (${FRAME.width}x${FRAME.height} px, x right, y down). Judge its perspective from the things in it (doors, boats, steps, furniture, trees, planks): things farther away are smaller, and a person is drawn smaller the higher their feet are in the picture.${known}
+For each point on the ground below, how tall in pixels would an adult ${PERSON_M} m tall be, standing with their feet there?
 Points: ${points.map((p) => `(${p.x}, ${p.y})`).join(', ')}
 
 Reply with JSON only: {"people": [{"x": 0, "y": 0, "px": 0}]}`;

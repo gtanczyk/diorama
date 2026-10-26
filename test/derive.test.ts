@@ -113,3 +113,26 @@ test('an island no allowed path reaches is stranded, not opened through walls', 
   expect(done.reopened).toBe(0);
   expect(emptyMask(1, 1).bits.length).toBe(1);
 });
+
+test('verify: a walkable, reachable place with sane scale is ok; a cut-off exit is an error', async () => {
+  const { verifyPlace } = await import('../src/scene/verify.ts');
+  const walk = Array.from({ length: 112 }, (_, r) => (r >= 60 ? '#'.repeat(150) : '.'.repeat(150)));
+  const place = { key: 'yard', shows: 'a yard seen from above', mood: 'dusk', exits: [], things: [
+    { key: 'gate', role: 'exit' as const, looks: 'a gate' }, { key: 'well', role: 'prop' as const, looks: 'a well' }] };
+  const g = {
+    frame: { width: 1200, height: 896 }, cell: 8, walk, zone: walk.map((row) => row.replace(/#/g, '0')),
+    scale: { horizonY: 300, pxPerY: 0.6, source: 'spark' as const }, start: [600, 850] as [number, number],
+    things: [
+      { key: 'gate', role: 'exit' as const, box: [100, 300, 200, 480] as [number, number, number, number], mask: 'masks/gate.png', stand: [150, 500] as [number, number] },
+      { key: 'well', role: 'prop' as const, box: [500, 400, 600, 520] as [number, number, number, number], mask: 'masks/well.png', stand: [550, 540] as [number, number] },
+    ],
+    occluders: [],
+  };
+  const notes = { things: {}, floors: { yard: { coarse: false, source: 'sam-text', iouLayout: 0.8 } } };
+  expect(verifyPlace(place, g, notes)).toEqual({ ok: true, errors: [], flags: [] });
+  const cut = { ...g, things: [{ ...g.things[0], stand: [150, 300] as [number, number] }, g.things[1]] };
+  const verdict = verifyPlace(place, cut, notes);
+  expect(verdict.ok).toBe(false);
+  expect(verdict.errors.map((e) => e.code)).toEqual(['SPOT_UNREACHABLE']);
+  expect(verifyPlace(place, { ...g, scale: { horizonY: 600, pxPerY: 0.6 } }, notes).errors.map((e) => e.code)).toContain('HORIZON_LOW');
+});

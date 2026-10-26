@@ -291,18 +291,14 @@ export function connect(g: Grid, start: number, cost: (i: number) => number, min
     }
     fillZones(g);
   }
-  // Whatever is still cut off and small goes; thin fringes touching the reached floor stay.
-  const keep = reach(g, start, roomy(g));
-  const strandedCells = new Set(result.stranded.flat());
-  const queue = [...keep.keys()].filter((i) => keep[i] || strandedCells.has(i));
-  queue.forEach((i) => (keep[i] = 1));
-  for (let q = 0; q < queue.length; q++) {
-    for (const n of g.neighbours(queue[q])) {
-      if (g.open[n] && !keep[n]) {
-        keep[n] = 1;
-        queue.push(n);
-      }
-    }
+  // Whatever is still cut off goes. Thin fringes touching the reached floor stay, but a fringe is
+  // never a way into another patch: the hero needs two cells to pass.
+  const finalCells = roomy(g);
+  const keep = reach(g, start, finalCells);
+  for (const island of result.stranded) island.forEach((i) => (keep[i] = 1));
+  const fringe = [...keep.keys()].filter((i) => keep[i]);
+  for (const i of fringe) {
+    for (const n of g.neighbours(i)) if (g.open[n] && !finalCells[n]) keep[n] = 1;
   }
   for (let i = 0; i < g.open.length; i++) {
     if (g.open[i] && !keep[i]) {
