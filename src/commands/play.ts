@@ -44,6 +44,32 @@ async function bundle(): Promise<string> {
   return out.outputFiles[0].text;
 }
 
+/** Serves the page and the world's files on localhost; resolves once listening. */
+export async function serveWorld(files: WorldFiles, port: number): Promise<http.Server> {
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    const send = (status: number, type: string, body: string | Buffer) => {
+      res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store' });
+      res.end(body);
+    };
+    try {
+      if (url.pathname === '/') return send(200, 'text/html; charset=utf-8', fs.readFileSync(path.join(WEB, 'index.html')));
+      if (url.pathname === '/main.js') return send(200, 'text/javascript; charset=utf-8', await bundle());
+      if (url.pathname === '/api/world') return send(200, 'application/json', JSON.stringify(worldData(files)));
+      if (url.pathname.startsWith('/files/')) {
+        const file = path.resolve(files.dir, decodeURIComponent(url.pathname.slice('/files/'.length)));
+        if (!file.startsWith(files.dir + path.sep) || !fs.existsSync(file)) return send(404, 'text/plain', 'not found');
+        return send(200, TYPES[path.extname(file)] ?? 'application/octet-stream', fs.readFileSync(file));
+      }
+      send(404, 'text/plain', 'not found');
+    } catch (error) {
+      send(500, 'text/plain', String(error instanceof Error ? error.stack : error));
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(port, resolve));
+  return server;
+}
+
 defineCommand({
   name: 'play',
   usage: 'play <slug> serve the world at http://localhost:4173 to walk through it [--port N]',
@@ -54,27 +80,7 @@ defineCommand({
     const files = new WorldFiles(slug);
     files.world();
 
-    const server = http.createServer(async (req, res) => {
-      const url = new URL(req.url ?? '/', 'http://localhost');
-      const send = (status: number, type: string, body: string | Buffer) => {
-        res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store' });
-        res.end(body);
-      };
-      try {
-        if (url.pathname === '/') return send(200, 'text/html; charset=utf-8', fs.readFileSync(path.join(WEB, 'index.html')));
-        if (url.pathname === '/main.js') return send(200, 'text/javascript; charset=utf-8', await bundle());
-        if (url.pathname === '/api/world') return send(200, 'application/json', JSON.stringify(worldData(files)));
-        if (url.pathname.startsWith('/files/')) {
-          const file = path.resolve(files.dir, decodeURIComponent(url.pathname.slice('/files/'.length)));
-          if (!file.startsWith(files.dir + path.sep) || !fs.existsSync(file)) return send(404, 'text/plain', 'not found');
-          return send(200, TYPES[path.extname(file)] ?? 'application/octet-stream', fs.readFileSync(file));
-        }
-        send(404, 'text/plain', 'not found');
-      } catch (error) {
-        send(500, 'text/plain', String(error instanceof Error ? error.stack : error));
-      }
-    });
-    await new Promise<void>((resolve) => server.listen(port, resolve));
+    await serveWorld(files, port);
     console.log(`play ${slug}: http://localhost:${port}  (g: grid and occluders, Ctrl+C to stop)`);
     await new Promise(() => {});
   },
