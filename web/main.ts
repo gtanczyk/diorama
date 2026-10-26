@@ -1,6 +1,6 @@
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
-import { hiddenRuns, personPx, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
-import { backdropTransforms, cardY, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, type Camera, type Parallax } from '../src/play/parallax.ts';
+import { floorYAt, hiddenRuns, personPx, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
+import { backdropTransforms, cardY, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
@@ -73,6 +73,10 @@ const hideCursor = capture || params.get('cursor') === '0';
 // unless they ask for it, since they read frame pixels at painting coordinates. ?sway=1 adds a slow idle drift.
 const parallaxScale = Number(params.get('parallax') ?? (capture ? '0' : '1')) || 0;
 const sway = params.get('sway') === '1';
+// ?track=1: walking along a place, the camera is closer in and pans after the hero, so near things pass faster
+// than far ones, like a side-scroller. It only drives the parallax, so a flat place stays as it was.
+const track = Number(params.get('track') ?? '0') || 0;
+const TRACK_ZOOM = 0.2;
 /** The pointer over the canvas, 0..1 across and down; null when it is elsewhere. */
 let pointer: { x: number; y: number } | null = null;
 // Relative paths, so the same page runs from `diorama play` and from an exported folder.
@@ -118,6 +122,8 @@ class Game {
   time = 0;
   /** The diorama camera, -1..1 each way; eases toward where the pointer and the hero pull it. */
   cam: Camera = { x: 0, y: 0 };
+  /** The scene column at the middle of the view; W/2 unless the camera tracks the hero. */
+  viewX = 0;
   private pending: (() => void) | null = null;
   private listeners: Array<(event: Events, detail: object) => void> = [];
   frame = 0;
@@ -218,7 +224,9 @@ class Game {
       }),
     );
     hots.sort((a, b) => a.area - b.area);
-    const cuts = await Promise.all(g.occluders.map(async (occ) => this.cut(occ, bg, await shared(occ.mask), g)));
+    // With parallax, a thing cut into stacked pieces slides as one card (see stackCards).
+    const cards: Array<Occluder & { stacked?: boolean }> = backdrop ? stackCards(g.occluders) : g.occluders;
+    const cuts = await Promise.all(cards.map(async (occ) => this.cut(occ, bg, await shared(occ.mask), g, occ.stacked)));
     const byKey = new Map(g.occluders.map((o) => [o.key, o]));
     const kept = cuts.filter((c): c is Cut => !!c).map((c) => ({ ...c, y: cardY(g, c.occ, (k) => byKey.get(k)) }));
     // Far cards first, so nearer ones cover them when they slide.
@@ -229,7 +237,7 @@ class Game {
   }
 
   /** The painting's own pixels of an occluder, to put back over the hero where he stands behind it. */
-  private cut(occ: Occluder, bg: HTMLImageElement | undefined, mask: Bits | undefined, g: Geometry): Cut | undefined {
+  private cut(occ: Occluder, bg: HTMLImageElement | undefined, mask: Bits | undefined, g: Geometry, closeGaps = false): Cut | undefined {
     if (!bg) return undefined;
     const x0 = Math.max(0, Math.floor(occ.box[0]));
     const y0 = Math.max(0, Math.floor(occ.box[1]));
@@ -241,7 +249,17 @@ class Game {
     cx.drawImage(bg, x0, y0, w, h, 0, 0, w, h);
     if (mask) {
       const img = cx.getImageData(0, 0, w, h);
-      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!mask.bits[(y0 + y) * g.frame.width + x0 + x]) img.data[(y * w + x) * 4 + 3] = 0;
+      const on = (x: number, y: number) => mask.bits[(y0 + y) * g.frame.width + x0 + x] === 1;
+      for (let x = 0; x < w; x++) {
+        // A stacked card fills short gaps down each column, so the piece SAM missed between two parts stays on it.
+        let last = -1;
+        for (let y = 0; y < h; y++) {
+          if (on(x, y)) {
+            if (closeGaps && last >= 0 && y - last - 1 <= STACK_GAP) for (let f = last + 1; f < y; f++) img.data[(f * w + x) * 4 + 3] = 255;
+            last = y;
+          } else img.data[(y * w + x) * 4 + 3] = 0;
+        }
+      }
       cx.putImageData(img, 0, 0);
     }
     return { occ, canvas: c, x0, y0, y: occ.baseY };
@@ -494,7 +512,7 @@ class Game {
 
   /** The parallax of this frame, or undefined when the place is drawn flat (no backdrop, or turned off). */
   parallax(): Parallax | undefined {
-    return this.place.backdrop ? { cam: this.cam, pivot: this.place.pivot, px: PARALLAX_PX * parallaxScale } : undefined;
+    return this.place.backdrop ? { cam: this.cam, pivot: this.place.pivot, px: PARALLAX_PX * parallaxScale * (1 + 1.5 * track) } : undefined;
   }
 
   /** How far something standing on the floor row y slides this frame. */
@@ -509,17 +527,49 @@ class Game {
     return cut ? cut.y : (this.place.hots.find((h) => h.thing.key === key)?.thing.box[3] ?? this.place.g.frame.height);
   }
 
-  /** The zoom that keeps the frame's edges covered while the cards sway; 1 when flat. */
+  /** The zoom that keeps the frame's edges covered while the cards sway (and leaves room to pan when tracking); 1 when flat. */
   zoom(): number {
     const p = this.parallax();
-    return p ? overscan(this.place.g, { ...p, cam: { x: 1, y: 1 } }) : 1;
+    return p ? overscan(this.place.g, { ...p, cam: { x: 1, y: 1 } }) * (1 + TRACK_ZOOM * track) : 1;
   }
 
-  /** A canvas point as a point of the zoomed scene. */
+  /** How far the view's middle may pan from the frame's middle when tracking. */
+  private panRoom(): number {
+    const W = this.place.g.frame.width;
+    return this.parallax() && track ? W / 2 - W / (2 * (1 + TRACK_ZOOM * track)) : 0;
+  }
+
+  /** A canvas point as a point of the zoomed (and panned) scene. */
   unzoom(x: number, y: number): Point {
     const z = this.zoom();
     const { width: W, height: H } = this.place.g.frame;
-    return [(x - W / 2) / z + W / 2, (y - H / 2) / z + H / 2];
+    return [(x - W / 2) / z + (this.viewX || W / 2), (y - H / 2) / z + H / 2];
+  }
+
+  /** The parallax shift of a card at column x: a card with a floor line (a railing along the quay) slides
+   * column by column as the floor under it, so its far end moves less than its near end. */
+  private cardShift(cut: Cut, x: number): [number, number] {
+    const o = cut.occ;
+    if (!o.floor?.length || o.on || o.front) return this.shift(cut.y);
+    // SAM often splits one thing into stacked blobs (a post's cap above its rope coil): in each column the
+    // whole thing stands where its lowest blob meets the floor, so the pieces stay together.
+    let y = floorYAt(o, x);
+    for (const c of this.place.cuts) {
+      const b = c.occ;
+      if (b !== o && o.thing && b.thing === o.thing && !b.on && !b.front && x >= b.box[0] && x <= b.box[2]) y = Math.max(y, floorYAt(b, x));
+    }
+    return this.shift(y);
+  }
+
+  /** Draws the card's columns [xa, xb) (frame x) in strips, each slid by the floor under it. */
+  private drawCard(cut: Cut, xa = cut.x0, xb = cut.x0 + cut.canvas.width, ya = cut.y0, yb = cut.y0 + cut.canvas.height) {
+    const STRIP = 6;
+    for (let x = xa; x < xb; x += STRIP) {
+      const w = Math.min(STRIP, xb - x);
+      const [sx, sy] = this.cardShift(cut, x + w / 2);
+      // A hair wider than the strip, so neighbours that slid apart by a fraction of a px leave no seam.
+      ctx.drawImage(cut.canvas, x - cut.x0, ya - cut.y0, Math.min(w + 1, cut.x0 + cut.canvas.width - x), yb - ya, x + sx, ya + sy, Math.min(w + 1, cut.x0 + cut.canvas.width - x), yb - ya);
+    }
   }
 
   /** Where a click on screen lands on the floor, in painting coordinates. */
@@ -530,6 +580,19 @@ class Game {
 
   private swayCamera(dt: number) {
     const W = this.place.g.frame.width;
+    const k = 1 - Math.exp(-dt * 2.5);
+    this.viewX ||= W / 2;
+    const room = this.panRoom();
+    if (room > 0) {
+      // Tracking: the view pans after the hero; how far it has panned is the camera's swing.
+      const want = Math.max(W / 2 - room, Math.min(W / 2 + room, this.hero.x));
+      this.viewX += (want - this.viewX) * (1 - Math.exp(-dt * 1.6));
+      this.cam.x = -(this.viewX - W / 2) / room;
+      const ty = sway ? Math.sin(this.time * 0.31 + 1) * 0.4 : 0;
+      this.cam.y += (ty - this.cam.y) * k;
+      return;
+    }
+    this.viewX = W / 2;
     // The pointer looks around the diorama; the hero walking across pulls the view after him.
     let tx = -0.5 * (this.hero.x / W - 0.5) * 2;
     let ty = 0;
@@ -541,7 +604,6 @@ class Game {
       tx += Math.sin(this.time * 0.45) * 0.6;
       ty += Math.sin(this.time * 0.31 + 1) * 0.5;
     }
-    const k = 1 - Math.exp(-dt * 2.5);
     this.cam.x += (Math.max(-1, Math.min(1, tx)) - this.cam.x) * k;
     this.cam.y += (Math.max(-1, Math.min(1, ty)) - this.cam.y) * k;
   }
@@ -564,7 +626,7 @@ class Game {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#20232a';
     ctx.fillRect(0, 0, W, H);
-    ctx.setTransform(z, 0, 0, z, (W / 2) * (1 - z), (H / 2) * (1 - z));
+    ctx.setTransform(z, 0, 0, z, W / 2 - z * (this.viewX || W / 2), (H / 2) * (1 - z));
     const gone = this.gone();
     if (p && backdrop) {
       // A diorama: the backdrop's floor shears with depth, then every card slides as the floor row it stands on.
@@ -589,7 +651,7 @@ class Game {
       }
       for (const cut of this.place.cuts) {
         if (cut.occ.thing && gone.has(cut.occ.thing)) continue;
-        this.at(cut.y, () => ctx.drawImage(cut.canvas, cut.x0, cut.y0));
+        this.drawCard(cut);
       }
       // A change belongs to its thing's card, so it slides with it (and its glow with it).
       const story = this.data.story;
@@ -721,7 +783,7 @@ class Game {
     for (const cut of this.place.cuts) {
       if (cut.occ.thing && gone.has(cut.occ.thing)) continue;
       // The person's box as seen from the card, which slid by its own amount.
-      const [sx, sy] = this.shift(cut.y);
+      const [sx, sy] = this.cardShift(cut, (rect[0] + rect[2]) / 2);
       const [left, top, right, bottom] = [rect[0] - sx, rect[1] - sy, rect[2] - sx, rect[3] - sy];
       const [bx0, by0, bx1, by1] = cut.occ.box;
       if (bx1 < left || bx0 > right || by1 < top || by0 > bottom) continue;
@@ -731,7 +793,7 @@ class Game {
       for (const [a, b] of hiddenRuns(cut.occ, left, right, feetY, support)) {
         const xa = Math.max(a, cut.x0);
         const xb = Math.min(b, cut.x0 + cut.canvas.width);
-        if (xb > xa) ctx.drawImage(cut.canvas, xa - cut.x0, y0 - cut.y0, xb - xa, y1 - y0, xa + sx, y0 + sy, xb - xa, y1 - y0);
+        if (xb > xa) this.drawCard(cut, xa, xb, y0, y1);
       }
     }
   }

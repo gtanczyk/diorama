@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { Geometry } from '../src/play/geometry.ts';
-import { backdropTransforms, disparity, floorPoint, overscan, shiftAt, type Parallax } from '../src/play/parallax.ts';
+import { backdropTransforms, disparity, floorPoint, overscan, shiftAt, stackCards, type Parallax } from '../src/play/parallax.ts';
 
 const g = { frame: { width: 1200, height: 896 }, cell: 8, walk: ['#'], scale: { horizonY: 200, pxPerY: 0.6 }, start: [10, 10], things: [], occluders: [] } as unknown as Geometry;
 const p: Parallax = { cam: { x: 0.7, y: -0.4 }, pivot: 0.5, px: 22 };
@@ -38,4 +38,13 @@ test('the zoom covers the frame edges at a full swing', () => {
   const z = overscan(g, { ...p, cam: { x: 1, y: 1 } });
   const [dx] = shiftAt(g, { ...p, cam: { x: 1, y: 1 } }, 896);
   expect((z - 1) * 600).toBeGreaterThanOrEqual(Math.abs(dx) - 1e-9);
+});
+
+test('a post SAM cut into a cap and a foot becomes one card standing on the foot', () => {
+  const cap = { key: 'post#1', thing: 'post', box: [315, 497, 423, 614], baseY: 614 };
+  const foot = { key: 'post#2', thing: 'post', box: [316, 636, 421, 734], baseY: 734 };
+  const other = { key: 'post#3', thing: 'post', box: [547, 555, 641, 665], baseY: 665 };
+  const cards = stackCards([cap, foot, other] as never);
+  expect(cards.map((c) => c.key)).toEqual(['post#2', 'post#3']);
+  expect(cards[0]).toMatchObject({ box: [315, 497, 423, 734], baseY: 734, stacked: true });
 });

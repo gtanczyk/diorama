@@ -69,3 +69,31 @@ export function overscan(g: Geometry, p: Parallax): number {
   const reach = Math.max(p.pivot, disparity(g, g.frame.height) - p.pivot) * p.px;
   return 1 + Math.max((2 * reach) / g.frame.width, (2 * reach * VERTICAL) / g.frame.height);
 }
+
+/** Gaps up to this many px between stacked pieces of one thing are painted over by its card. */
+export const STACK_GAP = 48;
+
+/**
+ * Cards for a parallax place: SAM often cuts one thing into pieces stacked in the same columns (a post's
+ * cap and its foot, with the rope coil between them missed). Each such stack becomes one card, standing
+ * where its lowest piece meets the floor; `stacked` marks cards whose gaps the runtime fills in.
+ */
+export function stackCards(occluders: Occluder[]): Array<Occluder & { stacked?: boolean }> {
+  const out: Array<Occluder & { stacked?: boolean }> = occluders.map((o) => ({ ...o }));
+  const overlap = (a: Occluder, b: Occluder) => Math.min(a.box[2], b.box[2]) - Math.max(a.box[0], b.box[0]);
+  for (let merged = true; merged; ) {
+    merged = false;
+    for (const lo of out) {
+      const up = out.find((u) => u !== lo && u.thing && u.thing === lo.thing && !u.front && !lo.front && !u.on && !lo.on
+        && u.box[3] <= lo.box[1] + 4 && lo.box[1] - u.box[3] <= STACK_GAP
+        && overlap(u, lo) > 0.5 * Math.min(u.box[2] - u.box[0], lo.box[2] - lo.box[0]));
+      if (!up) continue;
+      lo.box = [Math.min(lo.box[0], up.box[0]), up.box[1], Math.max(lo.box[2], up.box[2]), lo.box[3]];
+      lo.stacked = true;
+      out.splice(out.indexOf(up), 1);
+      merged = true;
+      break;
+    }
+  }
+  return out;
+}

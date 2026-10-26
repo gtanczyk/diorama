@@ -31,7 +31,9 @@ export function worldData(files: WorldFiles) {
       issue = `geometry.json: ${error instanceof Error ? error.message.slice(0, 300) : error}`;
     }
     // backdrop.png: the painting without its standing things; with it the page draws the place as a parallax diorama.
-    const backdrop = painted === 'painting.png' && fs.existsSync(files.place(place.key, 'backdrop.png')) ? `places/${place.key}/backdrop.png` : undefined;
+    // Not for a place painted from a photo: the film dissolves the photo into that exact frame, so it stays still.
+    const fromPhoto = fs.existsSync(files.place(place.key, 'photo.png'));
+    const backdrop = painted === 'painting.png' && !fromPhoto && fs.existsSync(files.place(place.key, 'backdrop.png')) ? `places/${place.key}/backdrop.png` : undefined;
     places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, ...(backdrop && { backdrop }), issue };
   }
   const castDir = files.path('cast');
