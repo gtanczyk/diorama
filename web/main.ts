@@ -1024,7 +1024,11 @@ class Game {
     const sc = this.shadowCanvas;
     const [w, hh] = [Math.ceil(h * 1.4), Math.ceil(h * 1.25)];
     const [ox, oy] = [w / 2, Math.ceil(h * 1.15)];
-    if (sc.width < w || sc.height < hh) Object.assign(sc, { width: Math.max(sc.width, w), height: Math.max(sc.height, hh) });
+    // Sized once for the tallest person the place can hold: resizing a canvas mid-walk stalls a frame.
+    if (sc.width < w || sc.height < hh) {
+      const most = personPx(this.place.g, this.place.g.frame.height);
+      Object.assign(sc, { width: Math.ceil(Math.max(w, most * 1.4)), height: Math.ceil(Math.max(hh, most * 1.25)) });
+    }
     const c = sc.getContext('2d')!;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.clearRect(0, 0, sc.width, sc.height);
