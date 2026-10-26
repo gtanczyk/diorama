@@ -28,6 +28,8 @@ Model answers are kept by a hash of their inputs under each world's memo folder,
 
 The Meta Model API has no audio model, so effects come from ElevenLabs (`ELEVENLABS_API_KEY`) and music from Meta's open-weights MusicGen run on your machine (`DIORAMA_PYTHON=/path/to/python` with `torch transformers scipy`; without it ElevenLabs makes the music). Code checks every take: a loop that came back as one event is asked for again, loops are crossfaded into themselves so they never click, footstep takes are cut into single steps, and everything is levelled. Needs `ffmpeg`. Without a key the world plays silent.
 
+`diorama voices <slug>` (also a build step) speaks every story line. Spark casts a stock ElevenLabs voice for the narrator, the hero and each NPC from how they look and talk (`voices.json`, edit to recast), ElevenLabs reads each line, and **Muse Voice Transcribe** listens to every take: a take that does not say its line is read again, up to three times, and flagged if it still does not.
+
 In the page, loops pan and fade with where the hero stands, footsteps follow the floor under him, and `m` mutes. `diorama playthrough --video` records the page's sound too and writes an mp4.
 
 ## Checking a world

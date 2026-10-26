@@ -430,7 +430,9 @@ class Game {
   }
 
   say(text: string): Promise<void> {
-    const seconds = 2.2 + text.length * 0.045;
+    // A voiced line stays up until it has been said.
+    const voiced = this.data.sound?.lines?.[text]?.seconds ?? 0;
+    const seconds = Math.max(2.2 + text.length * 0.045, voiced + 0.5);
     this.speech = { text, until: this.time + seconds };
     this.emit('say', { text });
     return new Promise((resolve) => {

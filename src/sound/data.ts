@@ -5,8 +5,19 @@ import { Layout } from '../scene/layout.ts';
 import type { WorldFiles } from '../world/files.ts';
 import { SoundManifest } from './make.ts';
 import { SoundPlan, soundIds } from './plan.ts';
+import { Voices } from './voices.ts';
 
 export function soundData(files: WorldFiles): SoundData | undefined {
+  const sound = effects(files);
+  const voicesFile = files.path('voices.json');
+  if (!fs.existsSync(voicesFile)) return sound;
+  const lines = Object.fromEntries(Voices.parse(files.readJson(voicesFile)).lines
+    .filter((l) => fs.existsSync(files.path(l.file)))
+    .map((l) => [l.text, { file: l.file, seconds: l.seconds }]));
+  return { ...(sound ?? { files: {}, places: {}, shots: {} }), lines };
+}
+
+function effects(files: WorldFiles): SoundData | undefined {
   const planFile = files.path('sound.json');
   const madeFile = files.path('sound', 'sounds.json');
   if (!fs.existsSync(planFile) || !fs.existsSync(madeFile)) return undefined;

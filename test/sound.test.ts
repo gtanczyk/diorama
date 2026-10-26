@@ -2,6 +2,8 @@ import { expect, test } from 'vitest';
 import { placeSound, zoneAt } from '../src/play/sound.ts';
 import { loopProblem, RATE, seamless, steps, type Pcm } from '../src/sound/pcm.ts';
 import { planIssues, soundIds, type SoundPlan } from '../src/sound/plan.ts';
+import { heardMatch, storyLines } from '../src/sound/voices.ts';
+import type { Story } from '../src/story/schema.ts';
 import type { World } from '../src/world/schema.ts';
 
 const pcm = (fn: (t: number) => number, secs: number): Pcm => {
@@ -63,4 +65,22 @@ test('a loop pans to its side of the view and fades with distance, never to sile
   expect(far.gain).toBeGreaterThanOrEqual(0.2);
   expect(zoneAt(['..1', '0.1'], 10, 25, 5)).toBe(1);
   expect(zoneAt(['..1', '0.1'], 10, 15, 15)).toBe(-1);
+});
+
+test('a heard line matches by letters, so spelling and spacing cost little and missing words a lot', () => {
+  expect(heardMatch('Open trapdoor to the harbour.', 'open trap door to the harbor')).toBeGreaterThan(0.95);
+  expect(heardMatch('Fill your can from my barrel behind the crates.', 'Fill your can.')).toBeLessThan(0.5);
+});
+
+test('every story line has a speaker: NPC lines are theirs, choices and actions the hero, intro and endings the narrator', () => {
+  const world = { hero: { key: 'girl' } } as unknown as World;
+  const story = {
+    intro: 'Fog.', interactions: [{ say: 'A can.' }], locks: [],
+    dialogues: [{ npc: 'liss', lines: [{ says: 'Hello, love.', choices: [{ text: 'Hi.' }] }] }],
+    endings: [{ text: 'Light.' }],
+  } as unknown as Story;
+  expect(storyLines(world, story)).toEqual([
+    { speaker: 'narrator', text: 'Fog.' }, { speaker: 'girl', text: 'A can.' }, { speaker: 'liss', text: 'Hello, love.' },
+    { speaker: 'girl', text: 'Hi.' }, { speaker: 'narrator', text: 'Light.' },
+  ]);
 });

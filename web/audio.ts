@@ -24,6 +24,7 @@ export class Mixer {
   readonly ctx = new AudioContext();
   private master = this.ctx.createGain();
   private musicBus = this.ctx.createGain();
+  private voiceBus = this.ctx.createGain();
   private limiter = new DynamicsCompressorNode(this.ctx, { threshold: -14, knee: 8, ratio: 8, attack: 0.004, release: 0.25 });
   private buffers = new Map<string, AudioBuffer>();
   private loading = new Map<string, Promise<AudioBuffer | undefined>>();
@@ -41,6 +42,8 @@ export class Mixer {
   constructor(private game: Listened, private url: (file: string) => string) {
     // A soft limiter at the end: one-shots on top of loops and music never clip.
     this.musicBus.connect(this.master);
+    this.voiceBus.gain.value = 1.1;
+    this.voiceBus.connect(this.master);
     this.master.connect(this.limiter).connect(this.ctx.destination);
     // Browsers start audio only after a gesture; the first click or key resumes it.
     const resume = () => void this.ctx.resume();
@@ -55,6 +58,8 @@ export class Mixer {
       if (event === 'use') this.lastUsed = String(detail.thing);
       if (event === 'exit' && this.lastUsed) this.shot(`exit:${this.lastUsed}`);
       if (event === 'ending') this.shot('ending');
+      if (event === 'say') void this.speak(String(detail.text));
+      if (event === 'enter') this.hush();
     });
   }
 
@@ -112,6 +117,34 @@ export class Mixer {
     const keep = new Set([sound.music, here?.bed].filter(Boolean));
     for (const id of [...this.voices.keys()]) if (!keep.has(id)) this.stop(id);
     if (here?.bed) void this.start(here.bed, levelGain('bed', 2));
+  }
+
+  private speaking: AudioBufferSourceNode | undefined;
+  private lines = new Map<string, Promise<AudioBuffer | undefined>>();
+
+  /** Says a line in its cast voice, cutting off the one before. */
+  private async speak(text: string) {
+    this.hush();
+    const line = this.sound?.lines?.[text];
+    if (!line) return;
+    if (!this.lines.has(text)) this.lines.set(text, fetch(this.url(line.file)).then((r) => r.arrayBuffer()).then((b) => this.ctx.decodeAudioData(b)).catch(() => undefined));
+    const buf = await this.lines.get(text);
+    if (!buf || this.game.speech === null) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(this.voiceBus);
+    src.start();
+    this.speaking = src;
+    this.log.push({ at: this.ctx.currentTime, id: text.slice(0, 40), kind: 'line' });
+  }
+
+  private hush() {
+    try {
+      this.speaking?.stop();
+    } catch {
+      // already ended
+    }
+    this.speaking = undefined;
   }
 
   /** A one-shot, panned to where it happens. */
@@ -174,8 +207,8 @@ export class Mixer {
         voice.pan.pan.setTargetAtTime(at.pan, now, 0.15);
       }
     }
-    // Music steps back while someone speaks.
-    this.musicBus.gain.setTargetAtTime(game.speech ? 0.55 : 1, now, 0.3);
+    // Music steps back while someone speaks, further when the line is voiced.
+    this.musicBus.gain.setTargetAtTime(game.speech ? (this.speaking ? 0.35 : 0.55) : 1, now, 0.3);
 
     // Two footsteps per walk cycle; the floor under the hero picks the surface.
     const step = Math.floor(game.hero.phase * 2);
