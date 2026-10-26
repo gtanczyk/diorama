@@ -15,7 +15,8 @@ type Data = {
 };
 
 type Bits = { bits: Uint8Array; area: number };
-type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement };
+type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement; outline?: HTMLCanvasElement };
+type Rect = [number, number, number, number];
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number };
 
 type Place = {
@@ -355,10 +356,20 @@ class Game {
     return new Set(hiddenThings(story, this.state).filter((h) => h.place === this.place.key).map((h) => h.thing));
   }
 
+  /** Where each NPC was drawn last frame, nearest last, so a click lands on the figure people see. */
+  private drawn: Array<{ hot: Hot; rect: Rect }> = [];
+
   thingAt(x: number, y: number): Hot | undefined {
     const g = this.place.g;
     const gone = this.gone();
+    for (let i = this.drawn.length - 1; i >= 0; i--) {
+      const [x0, y0, x1, y1] = this.drawn[i].rect;
+      // The rect includes the shadow; trim it and the transparent margin at the sides.
+      const inset = (x1 - x0) * 0.12;
+      if (x >= x0 + inset && x <= x1 - inset && y >= y0 && y <= y1 - 4) return this.drawn[i].hot;
+    }
     for (const hot of this.place.hots) {
+      if (this.drawn.some((d) => d.hot === hot)) continue;
       if (gone.has(hot.thing.key)) continue;
       const [x0, y0, x1, y1] = hot.thing.box;
       if (x < x0 || x > x1 || y < y0 || y > y1) continue;
@@ -419,13 +430,19 @@ class Game {
     // Everyone is drawn far to near, and each one gets the things in front of them put back.
     const npcs = this.place.hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc' && !h.mask);
     const people = [...npcs.map((h) => ({ npc: h, y: h.thing.box[3] })), { npc: undefined, y: this.hero.y }].sort((a, b) => a.y - b.y);
-    let rect: [number, number, number, number] = [0, 0, 0, 0];
+    let rect: Rect = [0, 0, 0, 0];
+    const lit = this.hover && !hideCursor ? this.hover : undefined;
+    // Under the people, so someone standing in front of a highlighted thing stays in front of its outline.
+    if (lit && !this.drawn.some((d) => d.hot === lit)) this.drawOutline(lit);
+    this.drawn = [];
     for (const who of people) {
       if (who.npc) {
         const [x0, , x1, y1] = who.npc.thing.box;
         const x = (x0 + x1) / 2;
         const img = this.figures.get(who.npc.thing.key);
-        this.occlude(this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, img, '#4b3b2a'), y1, gone);
+        const drawn = this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, img, '#4b3b2a', lit === who.npc);
+        this.drawn.push({ hot: who.npc, rect: drawn });
+        this.occlude(drawn, y1, gone);
       } else {
         rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.img, '#2b2733');
         this.occlude(rect, this.hero.y, gone);
@@ -433,20 +450,33 @@ class Game {
     }
     if (this.grid) this.drawGrid();
     this.drawSpeech(rect);
-    if (this.hover && !capture) {
-      ctx.strokeStyle = '#ffe9a8aa';
-      ctx.lineWidth = 2;
-      const [x0, y0, x1, y1] = this.hover.thing.box;
-      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
-    }
     if (this.dark > 0) {
       ctx.fillStyle = `rgba(0,0,0,${this.dark})`;
       ctx.fillRect(0, 0, W, H);
     }
   }
 
+  /** A glowing line along the edge of the thing's mask (its box, when it has no mask). */
+  private drawOutline(hot: Hot) {
+    const [bx0, by0, bx1, by1] = hot.thing.box.map(Math.round);
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,225,150,0.9)';
+    ctx.shadowBlur = 8;
+    if (!hot.mask) {
+      ctx.strokeStyle = 'rgba(255,233,168,0.8)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(bx0, by0, bx1 - bx0, by1 - by0, 8);
+      ctx.stroke();
+    } else {
+      hot.outline ??= edgeCanvas(hot.mask, this.place.g.frame.width, [bx0, by0, bx1, by1]);
+      ctx.drawImage(hot.outline, bx0 - 2, by0 - 2);
+    }
+    ctx.restore();
+  }
+
   /** Draws a person with feet at (x, y); returns the box they and their shadow cover. */
-  private drawPerson(x: number, y: number, facing: number, phase: number, img: HTMLImageElement | undefined, colour: string): [number, number, number, number] {
+  private drawPerson(x: number, y: number, facing: number, phase: number, img: HTMLImageElement | undefined, colour: string, lit = false): Rect {
     const h = personPx(this.place.g, y);
     const w = img ? (h * img.width) / img.height : h * 0.36;
     const bob = Math.abs(Math.sin(phase)) * h * 0.025;
@@ -455,7 +485,7 @@ class Game {
     ctx.beginPath();
     ctx.ellipse(x, y, w * 0.42, Math.max(2, h * 0.035), 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.filter = `brightness(${this.lightAt(x, y - h * 0.5).toFixed(2)})`;
+    ctx.filter = `brightness(${this.lightAt(x, y - h * 0.5).toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}`;
     ctx.translate(x, y - bob);
     ctx.rotate(Math.sin(phase) * 0.035);
     ctx.scale(facing, 1);
@@ -548,6 +578,30 @@ class Game {
     ctx.stroke();
     ctx.restore();
   }
+}
+
+/** The mask's edge pixels inside the box (plus 2 px), as a light line to draw over the painting. */
+function edgeCanvas(mask: Bits, frameW: number, [x0, y0, x1, y1]: Rect): HTMLCanvasElement {
+  const w = x1 - x0 + 4;
+  const h = y1 - y0 + 4;
+  const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const cx = c.getContext('2d')!;
+  const img = cx.createImageData(w, h);
+  const frameH = mask.bits.length / frameW;
+  const at = (x: number, y: number) => x >= 0 && y >= 0 && x < frameW && y < frameH && mask.bits[y * frameW + x] === 1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const fx = x0 + x - 2;
+      const fy = y0 + y - 2;
+      if (!at(fx, fy)) continue;
+      // Two pixels thick: set where something within 2 px is outside the mask.
+      if (at(fx - 2, fy) && at(fx + 2, fy) && at(fx, fy - 2) && at(fx, fy + 2)) continue;
+      const i = (y * w + x) * 4;
+      img.data.set([255, 236, 180, 230], i);
+    }
+  }
+  cx.putImageData(img, 0, 0);
+  return c;
 }
 
 /** A plain stand-in person, drawn facing right with feet at the origin. */
