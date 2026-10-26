@@ -58,6 +58,8 @@ type Place = {
   byKey: Map<string, Occluder>;
   /** Mean luma of the painting per LIGHT_CELL square, to light people like the place around them. */
   light?: { cols: number; rows: number; luma: Float32Array };
+  /** Painted shadows on the floors (geometry.shadows): a person standing in one is darkened. */
+  shade?: Bits;
 };
 
 const LIGHT_CELL = 40;
@@ -279,7 +281,8 @@ class Game {
     const kept = cuts.filter((c): c is Cut => !!c).map((c) => ({ ...c, y: cardY(g, c.occ, (k) => byKey.get(k)) }));
     // Far cards first, so nearer ones cover them when they slide.
     kept.sort((a, b) => a.y - b.y);
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, light: bg && lightMap(bg, g.frame.width, g.frame.height), hots, cuts: kept, byKey };
+    const shade = await shared(g.shadows);
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, hots, cuts: kept, byKey };
     this.cache.set(key, place);
     return place;
   }
@@ -861,10 +864,10 @@ class Game {
         const x = (x0 + x1) / 2;
         const drawn = this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, false, this.figures.get(who.npc.thing.key), '#4b3b2a', lit === who.npc, this.shift(y1));
         this.drawn.push({ hot: who.npc, rect: drawn });
-        this.occlude(drawn, y1, gone);
+        this.occlude(union(drawn, this.shadowRect), y1, gone);
       } else {
         rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.path.length > 0, this.hero.figure, '#2b2733', false, this.shift(this.hero.y), this.hero.yaw);
-        this.occlude(rect, this.hero.y, gone);
+        this.occlude(union(rect, this.shadowRect), this.hero.y, gone);
       }
     }
     if (this.grid) {
@@ -900,63 +903,127 @@ class Game {
     ctx.restore();
   }
 
-  /** Draws a person with feet at (x, y); returns the box they and their shadow cover. */
+  /** Draws a person with feet at (x, y); returns the box the figure covers (its cast shadow's box is in shadowRect). */
   private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0], yaw = facing * Math.PI / 3): Rect {
-    const h = personPx(this.place.g, y);
+    const g = this.place.g;
+    const h = personPx(g, y);
     const sprites = figure?.sprites;
     const model = sprites ? undefined : figure?.model;
     const rig = model || sprites ? undefined : figure?.rig;
     // A rig walks its legs; a plain cut-out (or the stand-in) only bobs and rocks as it slides.
     const bob = rig || model || sprites || !walking ? 0 : Math.abs(Math.sin(phase * Math.PI * 2)) * h * 0.025;
     const rock = rig || model || sprites || !walking ? 0 : Math.sin(phase * Math.PI * 2) * 0.035;
-    let left: number;
-    let right: number;
+    if (rig) drawRig(rig, pose(rig.rig, phase, walking));
+    const modelCanvas = model?.draw({ phase, walking, yaw, px: h });
+    /** Draws the figure into c with its feet at c's origin; returns its half width. */
+    const paint = (c: CanvasRenderingContext2D): number => {
+      if (sprites) {
+        // The nearest painted facing; the left-facing ones are the right ones mirrored.
+        const a = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+        const sheet = sprites.sheets.reduce((best, s) => (Math.abs(s.yaw - Math.abs(a)) < Math.abs(best.yaw - Math.abs(a)) ? s : best));
+        const { cols, rows, frames, feetAt, px } = sprites.info;
+        const [cw, ch] = [sheet.img.width / cols, sheet.img.height / rows];
+        const i = walking ? Math.floor((((phase % 1) + 1) % 1) * frames) % frames : sheet.stand;
+        const s = h / px;
+        if (a < 0) c.scale(-1, 1);
+        c.drawImage(sheet.img, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch, (-cw / 2) * s, -ch * feetAt * s, cw * s, ch * s);
+        return (cw / 2) * s;
+      }
+      if (modelCanvas && model) {
+        // yaw turns the model itself, so no mirroring; feet sit at (width / 2, height * feetAt).
+        c.drawImage(modelCanvas, -modelCanvas.width / 2, -modelCanvas.height * model.feetAt);
+        return modelCanvas.width / 2;
+      }
+      c.scale(facing, 1);
+      if (rig) {
+        const s = h / rig.rig.height;
+        const [ax, ay] = [rig.rig.hip[0], rig.rig.ground];
+        c.drawImage(rig.canvas, -ax * s, -ay * s, rig.canvas.width * s, rig.canvas.height * s);
+        return Math.max(ax, rig.canvas.width - ax) * s;
+      }
+      const img = figure?.img;
+      const w = img ? (h * img.width) / img.height : h * 0.36;
+      if (img) c.drawImage(img, -w / 2, -h, w, h);
+      else drawFigure(c, h, colour);
+      return w / 2;
+    };
+    // How much of the floor under the feet lies in a painted shadow: the person stands in it too.
+    const shaded = this.shadeAt(x, y, h);
+    const strength = g.light?.strength ?? 0.35;
     ctx.save();
     // Parallax: the person slides with the floor under their feet; size and light still come from where they stand.
     ctx.translate(sx, sy);
-    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.fillStyle = `rgba(0,0,0,${(0.12 + 0.4 * strength).toFixed(3)})`;
     ctx.beginPath();
     ctx.ellipse(x, y, h * 0.16, Math.max(2, h * 0.035), 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.filter = `brightness(${this.lightAt(x, y - h * 0.5).toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}`;
+    this.shadowRect = undefined;
+    if (g.light && g.light.length > 0 && shaded < 0.98) this.shadowRect = this.castShadow(x, y, h, g.light, (1 - shaded) * strength, paint, [sx, sy]);
+    const bright = this.lightAt(x, y - h * 0.5) * (1 - shaded * strength);
+    ctx.filter = `brightness(${bright.toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}`;
     ctx.translate(x, y - bob);
     ctx.rotate(rock);
-    if (sprites) {
-      // The nearest painted facing; the left-facing ones are the right ones mirrored.
-      const a = Math.atan2(Math.sin(yaw), Math.cos(yaw));
-      const sheet = sprites.sheets.reduce((best, s) => (Math.abs(s.yaw - Math.abs(a)) < Math.abs(best.yaw - Math.abs(a)) ? s : best));
-      const { cols, rows, frames, feetAt, px } = sprites.info;
-      const [cw, ch] = [sheet.img.width / cols, sheet.img.height / rows];
-      const i = walking ? Math.floor((((phase % 1) + 1) % 1) * frames) % frames : sheet.stand;
-      const s = h / px;
-      if (a < 0) ctx.scale(-1, 1);
-      ctx.drawImage(sheet.img, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch, (-cw / 2) * s, -ch * feetAt * s, cw * s, ch * s);
-      [left, right] = [x - (cw / 2) * s, x + (cw / 2) * s];
-    } else if (model) {
-      // yaw turns the model itself, so no mirroring; feet sit at (width / 2, height * feetAt).
-      const c = model.draw({ phase, walking, yaw, px: h });
-      ctx.drawImage(c, -c.width / 2, -c.height * model.feetAt);
-      [left, right] = [x - c.width / 2, x + c.width / 2];
-    } else if (rig) {
-      ctx.scale(facing, 1);
-      const s = h / rig.rig.height;
-      drawRig(rig, pose(rig.rig, phase, walking));
-      const [ax, ay] = [rig.rig.hip[0], rig.rig.ground];
-      ctx.drawImage(rig.canvas, -ax * s, -ay * s, rig.canvas.width * s, rig.canvas.height * s);
-      const reach = Math.max(ax, rig.canvas.width - ax) * s;
-      [left, right] = [x - reach, x + reach];
-    } else {
-      ctx.scale(facing, 1);
-      const img = figure?.img;
-      const w = img ? (h * img.width) / img.height : h * 0.36;
-      if (img) ctx.drawImage(img, -w / 2, -h, w, h);
-      else drawFigure(h, colour);
-      [left, right] = [x - w / 2, x + w / 2];
-    }
+    const half = paint(ctx);
     ctx.restore();
-    return [left - 2 + sx, y - h * 1.04 - bob - 2 + sy, right + 2 + sx, y + Math.max(3, h * 0.04) + sy];
+    return [x - half - 2 + sx, y - h * 1.04 - bob - 2 + sy, x + half + 2 + sx, y + Math.max(3, h * 0.04) + sy];
   }
 
+  /** The box of the last person's cast shadow, so occluders in front can cover it too. */
+  shadowRect: Rect | undefined;
+  private shadowCanvas = document.createElement('canvas');
+
+  /**
+   * The figure's silhouette laid on the floor away from the light: its feet stay put and its head lands
+   * length * h along dir. Drawn soft, at the painting's own shadow strength. ctx is already shifted for parallax.
+   */
+  private castShadow(x: number, y: number, h: number, light: NonNullable<Geometry['light']>, alpha: number, paint: (c: CanvasRenderingContext2D) => number, [sx, sy]: [number, number]): Rect {
+    const sc = this.shadowCanvas;
+    const [w, hh] = [Math.ceil(h * 1.4), Math.ceil(h * 1.25)];
+    const [ox, oy] = [w / 2, Math.ceil(h * 1.15)];
+    if (sc.width < w || sc.height < hh) Object.assign(sc, { width: Math.max(sc.width, w), height: Math.max(sc.height, hh) });
+    const c = sc.getContext('2d')!;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, sc.width, sc.height);
+    c.translate(ox, oy);
+    const half = paint(c);
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.globalCompositeOperation = 'source-in';
+    c.fillStyle = '#000';
+    c.fillRect(0, 0, sc.width, sc.height);
+    c.globalCompositeOperation = 'source-over';
+    const [dx, dy] = light.dir;
+    const n = Math.hypot(dx, dy) || 1;
+    const [ux, uy] = [(dx / n) * light.length, (dy / n) * light.length];
+    ctx.save();
+    ctx.translate(x, y);
+    // (u, v) in the figure (v up is negative) goes to (u - ux * v, -uy * v): a head at v = -h lands at h * (ux, uy).
+    ctx.transform(1, 0, -ux, -uy, 0, 0);
+    ctx.globalAlpha = Math.min(1, alpha);
+    // Softer the farther it reaches, like a real penumbra.
+    ctx.filter = `blur(${Math.max(1, h * 0.012 * (1 + light.length)).toFixed(1)}px)`;
+    ctx.drawImage(sc, 0, 0, w, hh, -ox, -oy, w, hh);
+    ctx.restore();
+    const [hx, hy] = [x + ux * h * 1.15, y + uy * h * 1.15];
+    return [Math.min(x, hx) - half - 4 + sx, Math.min(y, hy) - 4 + sy, Math.max(x, hx) + half + 4 + sx, Math.max(y, hy) + 4 + sy];
+  }
+
+  /** The share of the floor under the feet (an ellipse a person's shadow would cover) inside a painted shadow. */
+  private shadeAt(x: number, y: number, h: number): number {
+    const shade = this.place.shade;
+    if (!shade) return 0;
+    const W = this.place.g.frame.width;
+    const H = shade.bits.length / W;
+    let n = 0;
+    let hit = 0;
+    for (let j = -2; j <= 2; j++) for (let i = -4; i <= 4; i++) {
+      const px = Math.round(x + (i / 4) * h * 0.12);
+      const py = Math.round(y + (j / 2) * h * 0.03);
+      if (px < 0 || py < 0 || px >= W || py >= H) continue;
+      n++;
+      hit += shade.bits[py * W + px];
+    }
+    return n ? hit / n : 0;
+  }
 
   /** How bright a person looks at (x, y): the painting's luma around that spot, softened. */
   private lightAt(x: number, y: number): number {
@@ -1088,17 +1155,17 @@ function edgeCanvas(mask: Bits, frameW: number, [x0, y0, x1, y1]: Rect): HTMLCan
 }
 
 /** A plain stand-in person, drawn facing right with feet at the origin. */
-function drawFigure(h: number, colour: string) {
-  ctx.fillStyle = colour;
-  ctx.strokeStyle = '#f2e6c9';
-  ctx.lineWidth = Math.max(1, h * 0.012);
+function drawFigure(c: CanvasRenderingContext2D, h: number, colour: string) {
+  c.fillStyle = colour;
+  c.strokeStyle = '#f2e6c9';
+  c.lineWidth = Math.max(1, h * 0.012);
   const body = new Path2D();
   body.ellipse(0, -h * 0.9, h * 0.075, h * 0.09, 0, 0, Math.PI * 2);
   body.roundRect(-h * 0.11, -h * 0.79, h * 0.22, h * 0.42, h * 0.05);
   body.roundRect(-h * 0.09, -h * 0.4, h * 0.075, h * 0.4, h * 0.02);
   body.roundRect(h * 0.015, -h * 0.4, h * 0.075, h * 0.4, h * 0.02);
-  ctx.fill(body);
-  ctx.stroke(body);
+  c.fill(body);
+  c.stroke(body);
 }
 
 const game = new Game();
@@ -1159,4 +1226,8 @@ await game.start();
 function turnToward(a: number, b: number, step: number): number {
   const d = Math.atan2(Math.sin(b - a), Math.cos(b - a));
   return a + Math.max(-step, Math.min(step, d));
+}
+
+function union(a: Rect, b?: Rect): Rect {
+  return b ? [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])] : a;
 }

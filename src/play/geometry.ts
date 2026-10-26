@@ -42,6 +42,15 @@ export const Geometry = z.object({
     /** Floor footprint rows [x, back, front], for QA; derive already blocks those cells. */
     foot: z.array(z.tuple([z.number(), z.number(), z.number()])).optional(),
   })),
+  /**
+   * How the painting is lit, so people cast and catch shadows like the things around them.
+   * dir: the way shadows fall across the floor in screen px (unit-ish; +x right, +y towards the viewer).
+   * length: a shadow's floor length as a share of the caster's height (0.3 high sun, 1.5+ low sun).
+   * strength: how dark painted shadows are, 0..1 (fog ~0.15, hard sun ~0.5). Omitted: no cast shadow.
+   */
+  light: z.object({ dir: XY, length: z.number().nonnegative(), strength: z.number().min(0).max(1) }).optional(),
+  /** Mask (relative to the place folder) of painted shadows on floors: a person standing in one is darkened. */
+  shadows: z.string().optional(),
   flagged: z.array(z.string()).optional(),
   /** Made from layout.json, not measured from the painting. */
   preview: z.boolean().optional(),
