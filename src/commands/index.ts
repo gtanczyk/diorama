@@ -12,3 +12,4 @@ import './explore.ts';
 import './build.ts';
 import './cast.ts';
 import './play.ts';
+import './export.ts';

@@ -58,7 +58,8 @@ const ctx = canvas.getContext('2d')!;
 const params = new URLSearchParams(location.search);
 const capture = params.has('capture');
 const hideCursor = capture || params.get('cursor') === '0';
-const files = (p: string) => `/files/${p}`;
+// Relative paths, so the same page runs from `diorama play` and from an exported folder.
+const files = (p: string) => `files/${p}`;
 
 const loadImage = (src: string) =>
   new Promise<HTMLImageElement>((resolve, reject) => {
@@ -102,7 +103,7 @@ class Game {
   frame = 0;
 
   async start() {
-    this.data = await (await fetch('/api/world')).json();
+    this.data = await (await fetch('world-data.json')).json();
     await Promise.all(Object.entries(this.data.cast).map(async ([key, src]) => {
       const img = await loadImage(files(src)).catch(() => undefined);
       if (img) this.figures.set(key, img);

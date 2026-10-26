@@ -11,7 +11,7 @@ import { Layout } from '../scene/layout.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
 
-const WEB = fileURLToPath(new URL('../../web/', import.meta.url));
+export const WEB = fileURLToPath(new URL('../../web/', import.meta.url));
 const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json' };
 
 /** What the page loads: the world, and per place its geometry (measured, or a preview from the layout). */
@@ -39,8 +39,8 @@ export function worldData(files: WorldFiles) {
   return { slug: files.slug, world, places, cast, story };
 }
 
-async function bundle(): Promise<string> {
-  const out = await build({ entryPoints: [path.join(WEB, 'main.ts')], bundle: true, format: 'esm', write: false, sourcemap: 'inline', target: 'es2022' });
+export async function bundle(forShip = false): Promise<string> {
+  const out = await build({ entryPoints: [path.join(WEB, 'main.ts')], bundle: true, format: 'esm', write: false, target: 'es2022', ...(forShip ? { minify: true } : { sourcemap: 'inline' }) });
   return out.outputFiles[0].text;
 }
 
@@ -55,7 +55,7 @@ export async function serveWorld(files: WorldFiles, port: number): Promise<http.
     try {
       if (url.pathname === '/') return send(200, 'text/html; charset=utf-8', fs.readFileSync(path.join(WEB, 'index.html')));
       if (url.pathname === '/main.js') return send(200, 'text/javascript; charset=utf-8', await bundle());
-      if (url.pathname === '/api/world') return send(200, 'application/json', JSON.stringify(worldData(files)));
+      if (url.pathname === '/world-data.json') return send(200, 'application/json', JSON.stringify(worldData(files)));
       if (url.pathname.startsWith('/files/')) {
         const file = path.resolve(files.dir, decodeURIComponent(url.pathname.slice('/files/'.length)));
         if (!file.startsWith(files.dir + path.sep) || !fs.existsSync(file)) return send(404, 'text/plain', 'not found');
