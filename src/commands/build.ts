@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { defineCommand, registry, takeOption } from '../registry.ts';
 import { WorldFiles } from '../world/files.ts';
 
-const STEPS = ['world', 'layout', 'paint'] as const;
+const STEPS = ['world', 'story', 'layout', 'paint'] as const;
 type Step = (typeof STEPS)[number];
 
 /** Model calls sent (not answered from the memo) since `since`, read from the memo's call log. */
@@ -21,7 +21,7 @@ function callsSince(files: WorldFiles, since: string): Record<string, number> {
 
 defineCommand({
   name: 'build',
-  usage: 'build <slug> ["<idea>"] run world, layout and paint in order [--from STEP] [--to STEP] [--places N]',
+  usage: 'build <slug> ["<idea>"] run world, story, layout and paint in order [--from STEP] [--to STEP] [--places N]',
   async run(args) {
     const from = takeOption(args, 'from', STEPS[0]) as Step;
     const to = takeOption(args, 'to', STEPS[STEPS.length - 1]) as Step;
