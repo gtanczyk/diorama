@@ -25,10 +25,12 @@ type Run = { ending: string; reached: string | null; clicks: number; seconds: nu
 
 defineCommand({
   name: 'playthrough',
-  usage: 'playthrough <slug> [ending...] play the route to each ending in the browser and check it is reached [--video] [--port N]',
+  usage: 'playthrough <slug> [ending...] play the route to each ending in the browser and check it is reached [--video] [--query "parallax=1&track=1"] [--port N]',
   async run(args) {
     const video = args.includes('--video');
     const port = Number(takeOption(args, 'port', '4193'));
+    // Extra page options, e.g. parallax=1&track=1, so a recording looks like the game people play.
+    const query = takeOption(args, 'query', '');
     const [slug, ...only] = args.filter((a) => !a.startsWith('--'));
     if (!slug) throw new Error('usage: diorama playthrough <slug> [ending...] [--video]');
     const files = new WorldFiles(slug);
@@ -50,7 +52,7 @@ defineCommand({
           ...(video ? { recordVideo: { dir: outDir, size: { width: 1920, height: 1080 } } } : {}),
         })) as Page & { close(): Promise<void>; video(): { path(): Promise<string> } | null };
         page.on('pageerror', (e) => console.log(`  page error: ${e.message}`));
-        await page.goto(`http://localhost:${port}/?capture=1&cursor=0`);
+        await page.goto(`http://localhost:${port}/?capture=1&cursor=0${query ? `&${query}` : ''}`);
         await page.waitForFunction('window.diorama && window.diorama.place', undefined, { timeout: 30000 });
         const steps: Step[] = [{ wait: 600 }, ...route.actions.map(toStep), { wait: 2500 }];
         const started = Date.now();
