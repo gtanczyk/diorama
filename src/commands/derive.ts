@@ -1,6 +1,6 @@
 // diorama derive <slug> [place...]: geometry.json (walk grid, scale, occluders, spots) and walk.png per place.
 import fs from 'node:fs';
-import { maskFromPng, emptyMask } from '../image/mask.ts';
+import { maskArea, maskFromPng, maskToPng, emptyMask } from '../image/mask.ts';
 import { PALETTE, svgLabel, tintOver } from '../image/overlay.ts';
 import { Geometry, personPx } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
@@ -59,7 +59,11 @@ defineCommand({
       const floors = await Promise.all(layout.floors.map(async (f) => maskFromPng(fs.readFileSync(at('masks', 'floors', `${f.key}.png`)))));
       const plates = fs.existsSync(at('plates')) ? fs.readdirSync(at('plates')).filter((f) => f.endsWith('.png')).map((f) => f.slice(0, -4)) : [];
       const out = await derive(files.memo, { place, layout, things, floors, painting, plates }, (line) => console.log(`  ${place.key}: ${line}`));
-      const geometry = Geometry.parse(out.geometry);
+      // Shadows only with a light: without one the runtime has nothing to darken by.
+      const lit = out.shadows.light && maskArea(out.shadows.mask) > 0;
+      if (lit) files.write(at('masks', 'shadows.png'), await maskToPng(out.shadows.mask));
+      else fs.rmSync(at('masks', 'shadows.png'), { force: true });
+      const geometry = Geometry.parse({ ...out.geometry, ...(out.shadows.light && { light: out.shadows.light }), ...(lit && { shadows: 'masks/shadows.png' }) });
       files.write(at('geometry.json'), geometry);
       files.write(at('walk.png'), await walkPicture(painting, geometry, out.footprint));
       const open = geometry.walk.join('').split('#').length - 1;

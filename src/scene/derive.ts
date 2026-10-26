@@ -11,13 +11,14 @@ import { FRAME, type Layout } from './layout.ts';
 import type { Kind } from './locate.ts';
 import type { MaskSource } from './masks.ts';
 import { blobsOf, footDepth, lineYAt, simplifyLine, type Blob } from './occluders.ts';
+import { findShadows, type Shadows } from './shadows.ts';
 import { PERSON_M, probePoints, scaleFrom, sparkPeople, type Sample, type Scale } from './scale.ts';
 import { CELL, connect, gridFromPixels, nearestRoomy, reach, roomy, type Grid } from './walk.ts';
 
 export type ThingIn = { key: string; kind: Kind; source: MaskSource; coarse: boolean; mask: Mask };
 /** `plates`: things that have a clean plate (plates/<key>.png), for the runtime to hide them once taken. */
 export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors: Mask[]; painting: Buffer; plates?: string[] };
-export type Derived = { geometry: Geometry; grid: Grid; blobs: Blob[]; footprint: Mask; probes: Sample[] };
+export type Derived = { geometry: Geometry; grid: Grid; blobs: Blob[]; footprint: Mask; probes: Sample[]; shadows: Shadows };
 
 const { width: W, height: H } = FRAME;
 
@@ -222,6 +223,11 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   // The runtime gives each occluder pixel to the first box that holds it: small boxes first.
   occluders.sort((a, b) => (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]) - (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]));
 
+  // Painted shadows on the open floor, and the light they tell of.
+  const shadows = await findShadows(memo, place.key, painting, subtract(ground, dilate(inTheWay, 2)), sharpOnFloor);
+  if (shadows.source === 'spark') flag(`no thing has a shadow of its own; light from Spark`);
+  if (shadows.light) log(`light ${shadows.light.dir.join(', ')} x${shadows.light.length}, strength ${shadows.light.strength} (${shadows.source})`);
+
   const { walk, zone } = grid.rowsOut();
   const geometry: Geometry = {
     frame: { width: W, height: H },
@@ -234,5 +240,5 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     occluders,
     flagged,
   };
-  return { geometry, grid, blobs, footprint, probes };
+  return { geometry, grid, blobs, footprint, probes, shadows };
 }
