@@ -54,12 +54,13 @@ test('scale: a clean line, and a horizon that has to stay above the floor', () =
   expect(scaleFrom([], 480, 300, 'spark').why).toBeDefined();
 });
 
-test('probe points run from the back of the floor to the front', () => {
+test('probe points run from the back of the floor to the front, two per depth', () => {
   const rows = Array.from({ length: 50 }, (_, i) => ({ y: 400 + i * 8, xs: [100, 600, 1100] }));
   const pts = probePoints(rows);
-  expect(pts).toHaveLength(4);
-  expect(pts[0].y).toBeLessThan(pts[3].y);
-  expect(pts.every((p) => p.x === 600)).toBe(true);
+  expect(pts).toHaveLength(8);
+  expect(pts[0].y).toBeLessThan(pts[7].y);
+  expect(pts.slice(0, 2).map((p) => p.x)).toEqual([100, 600]);
+  expect(probePoints(rows.map((r) => ({ ...r, xs: [600] })))).toHaveLength(4);
 });
 
 function gridOf(rows: string[]): Grid {

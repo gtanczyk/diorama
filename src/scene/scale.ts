@@ -52,15 +52,18 @@ export function scaleFrom(samples: Sample[], topY: number, layoutHorizon: number
 
 const round3 = (v: number) => Math.round(v * 1000) / 1000;
 
-/** Four probe points on the floor, from the far rows to the near ones. */
+/**
+ * Eight probe points on the floor: two per depth, from the far rows to the near ones. Spark's
+ * guesses scatter by tens of percent; more points give the line fit something to average.
+ */
 export function probePoints(floorRows: { y: number; xs: number[] }[]): { x: number; y: number }[] {
   if (floorRows.length === 0) return [];
   const sorted = [...floorRows].sort((a, b) => a.y - b.y);
-  return [0.08, 0.38, 0.68, 0.95].map((q) => {
+  return [0.08, 0.38, 0.68, 0.95].flatMap((q) => {
     const row = sorted[Math.min(sorted.length - 1, Math.round(q * (sorted.length - 1)))];
     const xs = [...row.xs].sort((a, b) => a - b);
-    return { x: Math.round(xs[Math.floor(xs.length / 2)]), y: Math.round(row.y) };
-  }).filter((p, i, all) => all.findIndex((o) => o.y === p.y) === i);
+    return [0.3, 0.7].map((f) => ({ x: Math.round(xs[Math.floor(f * (xs.length - 1))]), y: Math.round(row.y) }));
+  }).filter((p, i, all) => all.findIndex((o) => o.y === p.y && o.x === p.x) === i);
 }
 
 const People = z.object({ people: z.array(z.object({ x: z.number(), y: z.number(), px: z.number() })) });

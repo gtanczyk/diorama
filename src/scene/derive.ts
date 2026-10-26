@@ -83,8 +83,10 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   const standing = things.filter((t) => t.kind === 'standing' || t.kind === 'on-top');
   const blobs = standing.flatMap((t) => blobsOf(t.key, t.mask));
   const onFloor = blobs.filter((b) => things.find((t) => t.key === b.thing)!.kind === 'standing');
-  const footprint = footprintMask(onFloor);
-  const behind = unionAll(W, H, onFloor.map((b) => hiddenFloor(b, ground)));
+  // A coarse mask is a box, not a silhouette: nobody walks behind it, and all of it is in the way.
+  const isCoarse = (b: Blob) => things.find((t) => t.key === b.thing)!.coarse;
+  const footprint = union(footprintMask(onFloor), unionAll(W, H, onFloor.filter(isCoarse).map((b) => b.mask)));
+  const behind = unionAll(W, H, onFloor.filter((b) => !isCoarse(b)).map((b) => hiddenFloor(b, ground)));
   const walkPx = subtract(union(subtract(ground, inTheWay), behind), footprint);
 
   const floorOf = (p: number) => floors.findIndex((f) => f.bits[p]);
@@ -117,10 +119,11 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   // Scale: Spark's people first, then the things' heights, then the layout.
   const open = [...grid.open.keys()].filter((i) => grid.open[i]);
   const topY = Math.min(...open.map((i) => grid.centre(i)[1])) - CELL / 2;
+  // Probe points come from the painted floor, not the grid, so later gates don't move them
+  // (a moved point is a new question, and Spark's answers vary from question to question).
   const byRow = new Map<number, number[]>();
-  for (const i of open) {
-    const [x, y] = grid.centre(i);
-    byRow.set(y, [...(byRow.get(y) ?? []), x]);
+  for (let y = CELL / 2; y < H; y += CELL) {
+    for (let x = CELL / 2; x < W; x += CELL) if (floorAny.bits[y * W + x]) byRow.set(y, [...(byRow.get(y) ?? []), x]);
   }
   const sharpOnFloor = onFloor.filter((b) => !things.find((t) => t.key === b.thing)!.coarse);
   const refs = sharpOnFloor.flatMap((b) => {
@@ -140,6 +143,24 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   if (!scale) {
     scale = { horizonY: Math.min(layout.horizon, topY - 40), pxPerY: 0.5, source: 'layout' };
     flag('scale: guessed from the layout horizon');
+  }
+
+  // The frame gate: no standing where a good part of the hero would be outside the picture.
+  const sized = scale;
+  let framed = 0;
+  grid.open.forEach((v, i) => {
+    if (!v) return;
+    const [x, y] = grid.centre(i);
+    const h = Math.max(8, sized.pxPerY * (y - sized.horizonY));
+    if (x < 0.1 * h || x > W - 0.1 * h || y < 0.7 * h) {
+      grid.open[i] = 0;
+      framed++;
+    }
+  });
+  if (framed) {
+    log(`closed ${framed} cells at the frame edge, where the hero would be cut off`);
+    const again = connect(grid, nearestRoomy(grid, ...grid.centre(startCell)) ?? startCell, cost);
+    for (const island of again.stranded) flag(`${island.length} walkable cells can't be reached from the start after the frame gate`);
   }
 
   /** The standing blob a thing on top rests on: its middle column is over it, its base near or inside it. */
