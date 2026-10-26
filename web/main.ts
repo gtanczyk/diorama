@@ -1,6 +1,6 @@
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
 import { floorYAt, hiddenRuns, personPx, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
-import { backdropTransforms, backEdge, cardY, disparity, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
+import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
@@ -95,8 +95,8 @@ const sway = params.get('sway') === '1';
 // than far ones, like a side-scroller. It only drives the parallax, so a flat place stays as it was.
 const track = Number(params.get('track') ?? '0') || 0;
 const TRACK_ZOOM = 0.2;
-/** Water drifts this many px per second at the bottom row of the frame (less with distance). */
-const FLOW = 40;
+/** Water drifts this many px per second at its near edge (40% of it at its far edge). */
+const FLOW = 20;
 /** How far the water texture reaches past the banks (WATER_PAD in src/scene/layers.ts). */
 const WATER_PAD = 64;
 /** The pointer over the canvas, 0..1 across and down; null when it is elsewhere. */
@@ -728,8 +728,7 @@ class Game {
 
   /**
    * The water flows: two copies of its texture drift downstream, each fading in and out half a cycle apart, so
-   * their sum always weighs one and no copy is seen jumping back. Near rows drift faster than far ones, the
-   * same depth the parallax uses. The result is cut to the water's soft mask and slides with the bank behind.
+   * their sum always weighs one and no copy is seen jumping back. Near rows drift faster than far ones. The result is cut to the water's soft mask and slides with the bank behind.
    */
   private drawWater(p: Parallax) {
     const water = this.place.water;
@@ -741,15 +740,17 @@ class Game {
     c.globalCompositeOperation = 'source-over';
     c.globalAlpha = 1;
     c.clearRect(0, 0, w, y1 - y0);
-    const PERIOD = 3;
+    const PERIOD = 6;
     const STRIP = 3;
     const phase = (this.time / PERIOD) % 1;
     for (const [k, alpha] of [[0, 1], [0.5, 1 - Math.abs(2 * ((phase + 0.5) % 1) - 1)]] as const) {
       const ph = (phase + k) % 1;
       c.globalAlpha = k === 0 ? 1 : alpha;
       for (let y = y0; y < y1; y += STRIP) {
-        // At most the texture's reach past the banks per cycle; a far row barely moves.
-        const travel = Math.min(2 * WATER_PAD - 4, FLOW * Math.max(0.04, disparity(g, y)) * PERIOD);
+        // By the row's place within the water, not the floor depth: a river near the horizon would barely move.
+        // At most the texture's reach past the banks per cycle.
+        const near = (y - y0) / Math.max(1, y1 - y0);
+        const travel = Math.min(2 * WATER_PAD - 4, FLOW * (0.4 + 0.6 * near) * PERIOD);
         const dx = (ph - 0.5) * travel;
         c.drawImage(water.tex, 0, y - y0, w, STRIP, dx, y - y0, w, STRIP);
       }
@@ -762,7 +763,7 @@ class Game {
     const [sx, sy] = shiftAt(g, p, bank);
     // A little of the still painting shows through, so reflections (a low sun, lit windows) hold their place.
     ctx.save();
-    ctx.globalAlpha = 0.8;
+    ctx.globalAlpha = 0.9;
     ctx.drawImage(water.canvas, x0 + sx, y0 + sy);
     ctx.restore();
   }
