@@ -10,11 +10,13 @@ defineCommand({
   async run(args) {
     const take = Number(takeOption(args, 'take', '0'));
     const photoPath = takeOption(args, 'photo', '');
-    const photo = photoPath ? fs.readFileSync(photoPath) : undefined;
     const [slug, ...only] = args;
     if (!slug) throw new Error('usage: diorama cast <slug> [key...] [--take N]');
     const files = new WorldFiles(slug);
     const world = files.world();
+    // world --hero-photo keeps the photo next to the cast, so a plain `cast` uses it too.
+    const kept = files.path('cast', `${world.hero.key}-photo.png`);
+    const photo = photoPath ? fs.readFileSync(photoPath) : fs.existsSync(kept) ? fs.readFileSync(kept) : undefined;
     const npcs = world.places.flatMap((p) => p.things.filter((t) => t.role === 'npc'));
     const cast: Who[] = [world.hero, ...new Map(npcs.map((n) => [n.key, n])).values()].filter((w) => !only.length || only.includes(w.key));
     await Promise.all(cast.map(async (who) => {

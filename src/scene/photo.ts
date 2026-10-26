@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { Memo } from '../meta/memo.ts';
 import { museEdit } from '../meta/muse.ts';
 import { askSparkJson } from '../meta/spark.ts';
-import { Place, type World } from '../world/schema.ts';
+import { Place, World } from '../world/schema.ts';
 import type { Brief } from './brief.ts';
 import { FRAME } from './layout.ts';
 
@@ -72,4 +72,18 @@ Remove every person; paint the furniture and floor behind them. Keep the floor c
 export async function paintPhoto(memo: Memo, world: World, place: Place, photo: Buffer, brief?: Brief, take = 0): Promise<Buffer> {
   const painted = await museEdit(memo, { label: `paint:${place.key}`, prompt: photoPaintPrompt(world, place, brief), images: [photo], take });
   return sharp(painted).resize(FRAME.width, FRAME.height, { fit: 'fill' }).png().toBuffer();
+}
+
+/** Spark describes the person in a photo head to toe, so world.json's hero is them. */
+export async function describePerson(memo: Memo, photo: Buffer): Promise<{ key: string; looks: string }> {
+  const prompt = `This photo shows the real person who will be the hero of a 2D point-and-click adventure. Describe them head to toe as a game character: build, hair, face, beard or glasses, every piece of clothing with its colour, shoes. No name, no guesses about who they are.
+
+Reply with JSON only: {"key": "kebab-key like the-developer", "looks": "..."}`;
+  const answer = await askSparkJson<{ key: string; looks: string }>(memo, { label: 'hero-photo', prompt, images: [photo] });
+  return World.shape.hero.parse(answer);
+}
+
+/** Upright, at most 1600 px on the long side, PNG: what Spark and Muse get. */
+export function normalisePhoto(photo: Buffer): Promise<Buffer> {
+  return sharp(photo).rotate().resize(1600, 1600, { fit: 'inside', withoutEnlargement: true }).png().toBuffer();
 }

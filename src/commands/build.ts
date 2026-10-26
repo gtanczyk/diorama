@@ -22,12 +22,13 @@ function callsSince(files: WorldFiles, since: string): Record<string, number> {
 
 defineCommand({
   name: 'build',
-  usage: 'build <slug> ["<idea>"] run every step, world to verify, in order [--from STEP] [--to STEP] [--places N] [--photo room.jpg]',
+  usage: 'build <slug> ["<idea>"] run every step, world to verify, in order [--from STEP] [--to STEP] [--places N] [--photo room.jpg] [--hero-photo me.jpg]',
   async run(args) {
     const from = takeOption(args, 'from', STEPS[0]) as Step;
     const to = takeOption(args, 'to', STEPS[STEPS.length - 1]) as Step;
     const places = takeOption(args, 'places', '4');
     const photo = takeOption(args, 'photo', '');
+    const heroPhoto = takeOption(args, 'hero-photo', '');
     const [slug, idea] = args;
     if (!slug) throw new Error('usage: diorama build <slug> ["<idea>"] [--from STEP] [--to STEP]');
     const range = STEPS.slice(STEPS.indexOf(from), STEPS.indexOf(to) + 1);
@@ -42,7 +43,7 @@ defineCommand({
       const at = new Date().toISOString();
       const started = Date.now();
       // A build runs the same commands you could run by hand, one after another.
-      await registry.get(step)!.run(step === 'world' ? [slug, idea, '--places', places, ...(photo ? ['--photo', photo] : [])] : [slug]);
+      await registry.get(step)!.run(step === 'world' ? [slug, idea, '--places', places, ...(photo ? ['--photo', photo] : []), ...(heroPhoto ? ['--hero-photo', heroPhoto] : [])] : [slug]);
       log.steps[step] = { at, seconds: Math.round((Date.now() - started) / 100) / 10, sent: callsSince(files, at) };
       files.write(logFile, log);
     }
