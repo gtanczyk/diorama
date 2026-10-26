@@ -62,9 +62,18 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
     const first: Facing = plan.walk.includes('right') ? 'right' : plan.walk[0];
     const refsFor = (f: Facing, painted?: Buffer) => [f.startsWith('back') ? view('back') : view('front'), painted ?? view('right')];
     const painted: Record<string, Buffer> = {};
-    painted[first] = await paintSheet(files.memo, key, first, looks, grey[first], [view('front'), view('right')], take);
+    // Muse sometimes hands the guide back with only a filter over it (pose IoU above TRACED); that sheet
+    // looks like the 3D render, and a traced first facing passes the look on to every other facing.
+    const paintUntraced = async (f: Facing, refs: Buffer[]) => {
+      let p = await paintSheet(files.memo, key, f, looks, grey[f], refs, take);
+      for (let t = 1; t <= 2 && mean((await cutSheet(guides[f], p)).iou) > TRACED; t++) {
+        p = await paintSheet(files.memo, key, f, looks, grey[f], refs, take + t);
+      }
+      return p;
+    };
+    painted[first] = await paintUntraced(first, [view('front'), view('right')]);
     await Promise.all(plan.walk.filter((f) => f !== first).map(async (f) => {
-      painted[f] = await paintSheet(files.memo, key, f, looks, grey[f], refsFor(f, painted[first]), take);
+      painted[f] = await paintUntraced(f, refsFor(f, painted[first]));
     }));
     await Promise.all(plan.walk.map(async (f) => {
       files.write(out(`painted-${f}.png`), painted[f]);
@@ -78,7 +87,7 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
       }
       files.write(out(`${f}.png`), best.sheet);
       facings[f] = { sheet: `${f}.png`, yaw: FACINGS[f], stand: best.stand, iou: best.iou, legs: best.legs };
-      console.log(`${key} walk ${f}: take ${takes.indexOf(best) + 1} of ${takes.length}, pose IoU ${mean(best.iou).toFixed(3)}, legs ${mean(best.legs).toFixed(3)} (worst ${Math.min(...best.legs)})`);
+      console.log(`${key} walk ${f}: take ${takes.indexOf(best) + 1} of ${takes.length}, pose IoU ${mean(best.iou).toFixed(3)}, legs ${mean(best.legs).toFixed(3)} (worst ${Math.min(...best.legs)})${mean(best.iou) > TRACED ? '  <- Muse kept the 3D look, try --take' : ''}`);
     }));
   }
 
