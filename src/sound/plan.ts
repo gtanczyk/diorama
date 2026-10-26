@@ -65,8 +65,9 @@ export function planIssues(plan: SoundPlan, world: World, sources: Record<string
       else if (!plan.steps[surface]) issues.push(`${place.key}: surface "${surface}" of ${floor.key} has no footsteps in steps`);
     }
     // Every thing the brief animates should be heard too, unless it is silent by nature (a light, cloth).
+    // A moving floor (water under a quay) has nothing to pan to; the bed carries it.
     for (const alive of sources[place.key]?.brief?.alive ?? []) {
-      if (['water', 'fire', 'smoke'].includes(alive.as) && !p.loops.some((l) => l.thing === alive.key)) issues.push(`${place.key}: ${alive.key} is ${alive.as} but makes no sound`);
+      if (things.has(alive.key) && ['water', 'fire', 'smoke'].includes(alive.as) && !p.loops.some((l) => l.thing === alive.key)) issues.push(`${place.key}: ${alive.key} is ${alive.as} but makes no sound`);
     }
   }
   return issues;
