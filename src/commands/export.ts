@@ -39,6 +39,7 @@ export async function exportWorld(slug: string, out: string): Promise<void> {
   for (const figure of Object.values(data.cast)) {
     await copy(figure.image);
     for (const part of figure.rig?.parts ?? []) await copy(`${figure.parts}/${part.file}`);
+    if (figure.sprites) for (const f of Object.values(figure.sprites.info.facings)) await copy(`${figure.sprites.dir}/${f.sheet}`);
     if (figure.model) for (const file of [figure.model.info.glb, ...Object.values(figure.model.info.views).map((v) => v.image)]) await copy(`${figure.model.dir}/${file}`);
   }
   for (const sound of [...Object.values(data.sound?.files ?? {}), ...Object.values(data.sound?.lines ?? {})]) await copy(sound.file);

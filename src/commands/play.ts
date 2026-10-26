@@ -9,6 +9,7 @@ import { previewGeometry } from '../play/preview.ts';
 import type { Layers } from '../play/parallax.ts';
 import { Rig } from '../play/rig.ts';
 import type { ModelInfo } from '../../web/hero3d.ts';
+import type { SpriteInfo } from '../../web/main.ts';
 import { soundData } from '../sound/data.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { Layout } from '../scene/layout.ts';
@@ -53,7 +54,9 @@ export function worldData(files: WorldFiles) {
       const rig = fs.existsSync(files.path('cast', key, 'rig.json')) ? Rig.parse(files.readJson(files.path('cast', key, 'rig.json'))) : undefined;
       // cast/<key>/model/model.json (diorama model): a rigged 3D figure the page draws instead of the 2D rig.
       const model = fs.existsSync(files.path('cast', key, 'model', 'model.json')) ? { dir: `cast/${key}/model`, info: files.readJson(files.path('cast', key, 'model', 'model.json')) as ModelInfo } : undefined;
-      return [key, { image: `cast/${f}`, ...(rig ? { rig, parts: `cast/${key}` } : {}), ...(model && { model }) }];
+      // cast/<key>/sprites/sprites.json (diorama sprites): painted walk sheets, preferred over the 3D figure.
+      const sprites = fs.existsSync(files.path('cast', key, 'sprites', 'sprites.json')) ? { dir: `cast/${key}/sprites`, info: files.readJson(files.path('cast', key, 'sprites', 'sprites.json')) as SpriteInfo } : undefined;
+      return [key, { image: `cast/${f}`, ...(rig ? { rig, parts: `cast/${key}` } : {}), ...(model && { model }), ...(sprites && { sprites }) }];
     }));
   const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
   // changes/<i>.png per place: how story.changes[i] looks once it holds.

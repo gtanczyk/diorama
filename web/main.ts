@@ -15,7 +15,7 @@ type Data = {
   world: World;
   places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; issue?: string }>;
   /** Figure per hero or NPC key: a cut-out image, and its rig when `diorama cast` could cut it into parts. */
-  cast: Record<string, { image: string; rig?: Rig; parts?: string; model?: { dir: string; info: ModelInfo } }>;
+  cast: Record<string, { image: string; rig?: Rig; parts?: string; model?: { dir: string; info: ModelInfo }; sprites?: { dir: string; info: SpriteInfo } }>;
   story: Story | null;
   /** Index into story.changes → the painting as it looks once that change holds. */
   changes?: Record<string, string>;
@@ -26,7 +26,14 @@ type Data = {
 type Bits = { bits: Uint8Array; area: number };
 type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement; outline?: HTMLCanvasElement };
 type Rect = [number, number, number, number];
-type Figure = { img: HTMLImageElement; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D };
+/** sprites.json, written by `diorama sprites`: one walk cycle per facing, a cols x rows grid of frames per sheet. */
+export type SpriteInfo = {
+  cols: number; rows: number; frames: number; width: number; height: number;
+  /** Feet at (cell width / 2, cell height * feetAt); the figure is about `px` tall. */
+  feetAt: number; px: number;
+  facings: Record<string, { sheet: string; yaw: number; iou?: number[] }>;
+};
+type Figure = { img: HTMLImageElement; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Array<{ yaw: number; img: HTMLImageElement }> } };
 /** y: the floor row the cut stands on, which sets how far it slides with parallax. */
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number; y: number };
 
@@ -151,8 +158,12 @@ class Game {
         const canvas = Object.assign(document.createElement('canvas'), { width: cast.rig.size[0], height: cast.rig.size[1] });
         figure.rig = { rig: cast.rig, parts, canvas };
       }
+      if (cast.sprites && params.get('model') !== '1') {
+        const { dir, info } = cast.sprites;
+        figure.sprites = { info, sheets: await Promise.all(Object.values(info.facings).map(async (f) => ({ yaw: f.yaw, img: await loadImage(files(`${dir}/${f.sheet}`)) }))) };
+      }
       // A 3D figure needs WebGL; without it (or if the model fails) the 2D rig or cut-out stays.
-      if (cast.model && params.get('model') !== '0') {
+      else if (cast.model && params.get('model') !== '0') {
         const dir = cast.model.dir;
         figure.model = await import('./hero3d.ts').then(({ Figure3D }) => Figure3D.load(cast.model!.info, (f) => files(`${dir}/${f}`)))
           .catch((e) => (console.warn(`no 3D figure for ${key}:`, e), undefined));
@@ -837,11 +848,12 @@ class Game {
   /** Draws a person with feet at (x, y); returns the box they and their shadow cover. */
   private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0], yaw = facing * Math.PI / 3): Rect {
     const h = personPx(this.place.g, y);
-    const model = figure?.model;
-    const rig = model ? undefined : figure?.rig;
+    const sprites = figure?.sprites;
+    const model = sprites ? undefined : figure?.model;
+    const rig = model || sprites ? undefined : figure?.rig;
     // A rig walks its legs; a plain cut-out (or the stand-in) only bobs and rocks as it slides.
-    const bob = rig || model || !walking ? 0 : Math.abs(Math.sin(phase * Math.PI * 2)) * h * 0.025;
-    const rock = rig || model || !walking ? 0 : Math.sin(phase * Math.PI * 2) * 0.035;
+    const bob = rig || model || sprites || !walking ? 0 : Math.abs(Math.sin(phase * Math.PI * 2)) * h * 0.025;
+    const rock = rig || model || sprites || !walking ? 0 : Math.sin(phase * Math.PI * 2) * 0.035;
     let left: number;
     let right: number;
     ctx.save();
@@ -854,7 +866,18 @@ class Game {
     ctx.filter = `brightness(${this.lightAt(x, y - h * 0.5).toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}`;
     ctx.translate(x, y - bob);
     ctx.rotate(rock);
-    if (model) {
+    if (sprites) {
+      // The nearest painted facing; the left-facing ones are the right ones mirrored.
+      const a = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+      const sheet = sprites.sheets.reduce((best, s) => (Math.abs(s.yaw - Math.abs(a)) < Math.abs(best.yaw - Math.abs(a)) ? s : best));
+      const { cols, rows, frames, feetAt, px } = sprites.info;
+      const [cw, ch] = [sheet.img.width / cols, sheet.img.height / rows];
+      const i = walking ? Math.floor((((phase % 1) + 1) % 1) * frames) % frames : 0;
+      const s = h / px;
+      if (a < 0) ctx.scale(-1, 1);
+      ctx.drawImage(sheet.img, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch, (-cw / 2) * s, -ch * feetAt * s, cw * s, ch * s);
+      [left, right] = [x - (cw / 2) * s, x + (cw / 2) * s];
+    } else if (model) {
       // yaw turns the model itself, so no mirroring; feet sit at (width / 2, height * feetAt).
       const c = model.draw({ phase, walking, yaw, px: h });
       ctx.drawImage(c, -c.width / 2, -c.height * model.feetAt);
