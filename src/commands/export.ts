@@ -39,6 +39,7 @@ export async function exportWorld(slug: string, out: string): Promise<void> {
   for (const figure of Object.values(data.cast)) {
     await copy(figure.image);
     for (const part of figure.rig?.parts ?? []) await copy(`${figure.parts}/${part.file}`);
+    if (figure.model) for (const file of [figure.model.info.glb, ...Object.values(figure.model.info.views).map((v) => v.image)]) await copy(`${figure.model.dir}/${file}`);
   }
   for (const sound of Object.values(data.sound?.files ?? {})) await copy(sound.file);
   fs.writeFileSync(path.join(out, 'world-data.json'), JSON.stringify(data));

@@ -8,13 +8,14 @@ import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 import { Mixer, type Listened } from './audio.ts';
 import type { SoundData } from '../src/play/sound.ts';
+import type { Figure3D, ModelInfo } from './hero3d.ts';
 
 type Data = {
   slug: string;
   world: World;
   places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; issue?: string }>;
   /** Figure per hero or NPC key: a cut-out image, and its rig when `diorama cast` could cut it into parts. */
-  cast: Record<string, { image: string; rig?: Rig; parts?: string }>;
+  cast: Record<string, { image: string; rig?: Rig; parts?: string; model?: { dir: string; info: ModelInfo } }>;
   story: Story | null;
   /** Index into story.changes → the painting as it looks once that change holds. */
   changes?: Record<string, string>;
@@ -25,7 +26,7 @@ type Data = {
 type Bits = { bits: Uint8Array; area: number };
 type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement; outline?: HTMLCanvasElement };
 type Rect = [number, number, number, number];
-type Figure = { img: HTMLImageElement; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement } };
+type Figure = { img: HTMLImageElement; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D };
 /** y: the floor row the cut stands on, which sets how far it slides with parallax. */
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number; y: number };
 
@@ -117,7 +118,7 @@ class Game {
   private cache = new Map<string, Place>();
   private figures = new Map<string, Figure>();
   /** phase counts walk cycles; it only advances with distance walked, so feet keep pace with the floor. */
-  hero = { x: 0, y: 0, path: [] as Point[], facing: 1, phase: 0, figure: undefined as Figure | undefined };
+  hero = { x: 0, y: 0, path: [] as Point[], facing: 1, phase: 0, yaw: Math.PI / 2, figure: undefined as Figure | undefined };
   speech: { text: string; until: number } | null = null;
   state!: State;
   /** The inventory item the next click uses. */
@@ -149,6 +150,12 @@ class Game {
         await Promise.all(cast.rig.parts.map(async (p) => parts.set(p.name, await loadImage(files(`${cast.parts}/${p.file}`)))));
         const canvas = Object.assign(document.createElement('canvas'), { width: cast.rig.size[0], height: cast.rig.size[1] });
         figure.rig = { rig: cast.rig, parts, canvas };
+      }
+      // A 3D figure needs WebGL; without it (or if the model fails) the 2D rig or cut-out stays.
+      if (cast.model && params.get('model') !== '0') {
+        const dir = cast.model.dir;
+        figure.model = await import('./hero3d.ts').then(({ Figure3D }) => Figure3D.load(cast.model!.info, (f) => files(`${dir}/${f}`)))
+          .catch((e) => (console.warn(`no 3D figure for ${key}:`, e), undefined));
       }
       this.figures.set(key, figure);
     }));
@@ -509,6 +516,7 @@ class Game {
       const d = Math.hypot(tx - hero.x, ty - hero.y);
       const moved = Math.min(d, budget);
       if (Math.abs(tx - hero.x) > 1) hero.facing = tx > hero.x ? 1 : -1;
+      if (d > 0.5) hero.yaw = turnToward(hero.yaw, Math.atan2(tx - hero.x, ty - hero.y), dt * 10);
       if (d <= budget) {
         [hero.x, hero.y] = [tx, ty];
         hero.path.shift();
@@ -787,7 +795,7 @@ class Game {
         this.drawn.push({ hot: who.npc, rect: drawn });
         this.occlude(drawn, y1, gone);
       } else {
-        rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.path.length > 0, this.hero.figure, '#2b2733', false, this.shift(this.hero.y));
+        rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.path.length > 0, this.hero.figure, '#2b2733', false, this.shift(this.hero.y), this.hero.yaw);
         this.occlude(rect, this.hero.y, gone);
       }
     }
@@ -825,12 +833,13 @@ class Game {
   }
 
   /** Draws a person with feet at (x, y); returns the box they and their shadow cover. */
-  private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0]): Rect {
+  private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0], yaw = facing * Math.PI / 3): Rect {
     const h = personPx(this.place.g, y);
-    const rig = figure?.rig;
+    const model = figure?.model;
+    const rig = model ? undefined : figure?.rig;
     // A rig walks its legs; a plain cut-out (or the stand-in) only bobs and rocks as it slides.
-    const bob = rig || !walking ? 0 : Math.abs(Math.sin(phase * Math.PI * 2)) * h * 0.025;
-    const rock = rig || !walking ? 0 : Math.sin(phase * Math.PI * 2) * 0.035;
+    const bob = rig || model || !walking ? 0 : Math.abs(Math.sin(phase * Math.PI * 2)) * h * 0.025;
+    const rock = rig || model || !walking ? 0 : Math.sin(phase * Math.PI * 2) * 0.035;
     let left: number;
     let right: number;
     ctx.save();
@@ -843,8 +852,13 @@ class Game {
     ctx.filter = `brightness(${this.lightAt(x, y - h * 0.5).toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}`;
     ctx.translate(x, y - bob);
     ctx.rotate(rock);
-    ctx.scale(facing, 1);
-    if (rig) {
+    if (model) {
+      // yaw turns the model itself, so no mirroring; feet sit at (width / 2, height * feetAt).
+      const c = model.draw({ phase, walking, yaw, px: h });
+      ctx.drawImage(c, -c.width / 2, -c.height * model.feetAt);
+      [left, right] = [x - c.width / 2, x + c.width / 2];
+    } else if (rig) {
+      ctx.scale(facing, 1);
       const s = h / rig.rig.height;
       drawRig(rig, pose(rig.rig, phase, walking));
       const [ax, ay] = [rig.rig.hip[0], rig.rig.ground];
@@ -852,6 +866,7 @@ class Game {
       const reach = Math.max(ax, rig.canvas.width - ax) * s;
       [left, right] = [x - reach, x + reach];
     } else {
+      ctx.scale(facing, 1);
       const img = figure?.img;
       const w = img ? (h * img.width) / img.height : h * 0.36;
       if (img) ctx.drawImage(img, -w / 2, -h, w, h);
@@ -1059,3 +1074,9 @@ const frame = (now: number) => {
 };
 requestAnimationFrame(frame);
 await game.start();
+
+/** Turns angle `a` toward `b` by at most `step` radians, the short way round. */
+function turnToward(a: number, b: number, step: number): number {
+  const d = Math.atan2(Math.sin(b - a), Math.cos(b - a));
+  return a + Math.max(-step, Math.min(step, d));
+}

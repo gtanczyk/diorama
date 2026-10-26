@@ -8,6 +8,7 @@ import { Geometry } from '../play/geometry.ts';
 import { previewGeometry } from '../play/preview.ts';
 import type { Layers } from '../play/parallax.ts';
 import { Rig } from '../play/rig.ts';
+import type { ModelInfo } from '../../web/hero3d.ts';
 import { soundData } from '../sound/data.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { Layout } from '../scene/layout.ts';
@@ -50,7 +51,9 @@ export function worldData(files: WorldFiles) {
     .map((f) => {
       const key = f.slice(0, -4);
       const rig = fs.existsSync(files.path('cast', key, 'rig.json')) ? Rig.parse(files.readJson(files.path('cast', key, 'rig.json'))) : undefined;
-      return [key, { image: `cast/${f}`, ...(rig ? { rig, parts: `cast/${key}` } : {}) }];
+      // cast/<key>/model/model.json (diorama model): a rigged 3D figure the page draws instead of the 2D rig.
+      const model = fs.existsSync(files.path('cast', key, 'model', 'model.json')) ? { dir: `cast/${key}/model`, info: files.readJson(files.path('cast', key, 'model', 'model.json')) as ModelInfo } : undefined;
+      return [key, { image: `cast/${f}`, ...(rig ? { rig, parts: `cast/${key}` } : {}), ...(model && { model }) }];
     }));
   const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
   // changes/<i>.png per place: how story.changes[i] looks once it holds.
