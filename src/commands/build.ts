@@ -1,9 +1,10 @@
 // diorama build <slug> ["<idea>"]: runs the steps in order and keeps a build.json of what happened.
 import fs from 'node:fs';
 import { defineCommand, registry, takeOption } from '../registry.ts';
+import type { Finding, Verdict } from '../scene/verify.ts';
 import { WorldFiles } from '../world/files.ts';
 
-const STEPS = ['world', 'story', 'layout', 'paint'] as const;
+const STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'derive', 'verify'] as const;
 type Step = (typeof STEPS)[number];
 
 /** Model calls sent (not answered from the memo) since `since`, read from the memo's call log. */
@@ -21,7 +22,7 @@ function callsSince(files: WorldFiles, since: string): Record<string, number> {
 
 defineCommand({
   name: 'build',
-  usage: 'build <slug> ["<idea>"] run world, story, layout and paint in order [--from STEP] [--to STEP] [--places N]',
+  usage: 'build <slug> ["<idea>"] run every step, world to verify, in order [--from STEP] [--to STEP] [--places N]',
   async run(args) {
     const from = takeOption(args, 'from', STEPS[0]) as Step;
     const to = takeOption(args, 'to', STEPS[STEPS.length - 1]) as Step;
@@ -43,6 +44,24 @@ defineCommand({
       await registry.get(step)!.run(step === 'world' ? [slug, idea, '--places', places] : [slug]);
       log.steps[step] = { at, seconds: Math.round((Date.now() - started) / 100) / 10, sent: callsSince(files, at) };
       files.write(logFile, log);
+    }
+    if (range.includes('verify')) {
+      // The report: per place, whether it is playable and everything that was flagged and let through.
+      const report = files.world().places.map((place) => {
+        const file = files.place(place.key, 'verify.json');
+        if (!fs.existsSync(file)) return { place: place.key, ok: false, errors: ['no verify.json'], flagged: [] };
+        const v = files.readJson(file) as Verdict;
+        const line = (f: Finding) => `${f.code}${f.key ? ` ${f.key}` : ''}: ${f.detail}`;
+        return { place: place.key, ok: v.ok, errors: v.errors.map(line), flagged: v.flags.map(line) };
+      });
+      Object.assign(log, { places: report });
+      files.write(logFile, log);
+      console.log('\n# report');
+      for (const r of report) {
+        console.log(`${r.place}: ${r.ok ? 'playable' : 'NOT playable'}${r.flagged.length ? `, flagged and continued: ${r.flagged.length}` : ''}`);
+        for (const e of r.errors) console.log(`  error  ${e}`);
+        for (const f of r.flagged) console.log(`  flag   ${f}`);
+      }
     }
     console.log(`\nbuild ${slug}: ${range.join(' > ')} done · ${files.path('build.json')}`);
   },
