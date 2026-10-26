@@ -897,7 +897,9 @@ class Game {
       this.drawGrid();
       ctx.restore();
     }
-    this.drawSpeech(rect);
+    // The bubble sits over whoever says the line; the narrator (no speaker) and the hero use the hero.
+    const speaker = this.speech?.who ? this.drawn.find((d) => d.hot.thing.key === this.speech!.who)?.rect : undefined;
+    this.drawSpeech(speaker ?? rect);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (this.dark > 0) {
       ctx.fillStyle = `rgba(0,0,0,${this.dark})`;
