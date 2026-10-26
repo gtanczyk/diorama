@@ -1,4 +1,5 @@
 // diorama layout <slug> [place...]: layout.json and blockin.png for each place.
+import fs from 'node:fs';
 import { renderBlockin } from '../scene/blockin.ts';
 import { layOut } from '../scene/layout.ts';
 import { defineCommand } from '../registry.ts';
@@ -13,9 +14,12 @@ defineCommand({
     const world = files.world();
     const places = world.places.filter((p) => only.length === 0 || only.includes(p.key));
     await Promise.all(places.map(async (place) => {
-      const layout = await layOut(files.memo, world, place);
+      // A place made from a photo is measured from it, and the photo stands in for the block-in.
+      const photoFile = files.place(place.key, 'photo.png');
+      const photo = fs.existsSync(photoFile) ? fs.readFileSync(photoFile) : undefined;
+      const layout = await layOut(files.memo, world, place, photo);
       files.write(files.place(place.key, 'layout.json'), layout);
-      files.write(files.place(place.key, 'blockin.png'), await renderBlockin(layout, place));
+      files.write(files.place(place.key, 'blockin.png'), photo ?? await renderBlockin(layout, place));
       console.log(`${place.key}: ${layout.floors.length} floor(s), ${layout.things.length} things, horizon ${layout.horizon}`);
     }));
     console.log(`spark calls sent: ${files.memo.sent.spark}`);

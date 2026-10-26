@@ -70,15 +70,17 @@ Reply with JSON only:
  "lights": [{"key": "...", "x": 0, "y": 0, "colour": "#rrggbb"}]}`;
 }
 
-export async function layOut(memo: Memo, world: World, place: Place): Promise<Layout> {
-  let prompt = brief(world, place);
+/** With a photo, Spark measures where things already are instead of placing them. */
+export async function layOut(memo: Memo, world: World, place: Place, photo?: Buffer): Promise<Layout> {
+  const ask = () => (photo ? `${brief(world, place)}\n\nThe place already exists: it is the attached photo, ${FRAME.width}x${FRAME.height} px. Do not place anything; measure where each thing, floor and light is in it.` : brief(world, place));
+  let prompt = ask();
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const answer = await askSparkJson(memo, { label: `layout:${place.key}#${attempt}`, prompt });
+    const answer = await askSparkJson(memo, { label: `layout:${place.key}#${attempt}`, prompt, images: photo ? [photo] : [] });
     const parsed = Layout.safeParse(answer);
     const issues = parsed.success ? layoutIssues(parsed.data, place) : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
     if (parsed.success && issues.length === 0) return parsed.data;
     console.log(`  ${place.key} layout try ${attempt}: ${issues.slice(0, 4).join('; ')}`);
-    prompt = `${brief(world, place)}\n\nYour last answer was:\n${JSON.stringify(answer)}\n\nFix every one of these and reply with the whole JSON again:\n- ${issues.join('\n- ')}`;
+    prompt = `${ask()}\n\nYour last answer was:\n${JSON.stringify(answer)}\n\nFix every one of these and reply with the whole JSON again:\n- ${issues.join('\n- ')}`;
   }
   throw new Error(`no valid layout for ${place.key} in 3 tries`);
 }

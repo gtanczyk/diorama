@@ -4,6 +4,7 @@ import { writeBrief } from '../scene/brief.ts';
 import { critique, repaint } from '../scene/critic.ts';
 import { Layout } from '../scene/layout.ts';
 import { paintPlace } from '../scene/paint.ts';
+import { paintPhoto } from '../scene/photo.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { WorldFiles } from '../world/files.ts';
 
@@ -22,7 +23,10 @@ defineCommand({
       const blockin = fs.readFileSync(files.place(place.key, 'blockin.png'));
       const brief = await writeBrief(files.memo, world, place, layout);
       files.write(files.place(place.key, 'brief.json'), brief);
-      const first = await paintPlace(files.memo, world, place, layout, blockin, brief, take);
+      const fromPhoto = fs.existsSync(files.place(place.key, 'photo.png'));
+      const first = fromPhoto
+        ? await paintPhoto(files.memo, world, place, blockin, brief, take)
+        : await paintPlace(files.memo, world, place, layout, blockin, brief, take);
       files.write(files.place(place.key, 'painting-first.png'), first);
       const found = await critique(files.memo, place, brief, first);
       files.write(files.place(place.key, 'critique.json'), found);
