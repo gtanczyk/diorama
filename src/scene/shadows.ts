@@ -3,7 +3,7 @@
 // "shadow", "cast shadow", "shade": nothing), so they are cut by brightness: floor clearly darker
 // than the lit floor around it, touching the base of a standing thing. The shape of each thing's
 // shadow gives the direction and length. Spark says whether there is sun at all (fog darkens wet
-// planks too), and gives the light itself when no thing has a shadow of its own.
+// planks too). No thing with a shadow of its own: no light, so the hero casts none either.
 import sharp from 'sharp';
 import { z } from 'zod';
 import { emptyMask, maskArea, type Mask } from '../image/mask.ts';
@@ -19,7 +19,7 @@ const { width: W, height: H } = FRAME;
  * per px of the caster's height, and how much darker the floor is in shadow (0 none, 1 black). */
 export type Light = { dir: [number, number]; length: number; strength: number };
 export type CasterShadow = { thing: string; px: number; dir?: [number, number]; length?: number };
-export type Shadows = { mask: Mask; light?: Light; casters: CasterShadow[]; source: 'casters' | 'spark' | 'none' };
+export type Shadows = { mask: Mask; light?: Light; casters: CasterShadow[]; source: 'casters' | 'none' };
 
 /** Darker than this share of the lit floor around it is shadow. */
 export const SHADOW_DARK = 0.74;
@@ -88,7 +88,7 @@ export function measure(shadow: Mask, base: [number, number], height: number): {
 
 const SparkLight = z.object({ sunlit: z.boolean(), dx: z.number(), dy: z.number(), length: z.number() });
 
-/** Is there sun, and which way would shadows fall? */
+/** Is there sun? (Its direction is not used: painted shadows are measured, not guessed.) */
 async function sparkLight(memo: Memo, label: string, painting: Buffer): Promise<Light | undefined> {
   const prompt = `This is a painted background for a 2D adventure game (${W}x${H} px, x right, y down). A person will be walking on its floor.
 Is the scene lit by direct sun or another strong light that casts clear shadows (not fog, overcast or night without a lamp)? If it is, which way on the screen would a person's shadow fall from their feet, and how long would it be compared with their height?
@@ -129,10 +129,10 @@ export async function findShadows(memo: Memo, label: string, painting: Buffer, f
   }
   const mask = unionAll(W, H, kept);
   const directed = measured.filter((m) => m.dir);
-  // Dark wet planks next to a teapot look like a shadow too: Spark says first whether there is sun at all.
-  const told = await sparkLight(memo, `light:${label}`, painting);
-  if (!told) return { mask: emptyMask(W, H), casters: measured, source: 'none' };
-  if (!directed.length) return { mask: emptyMask(W, H), light: told, casters: measured, source: 'spark' };
+  // No thing casts a painted shadow: neither does the hero, or he'd have one the painting lacks.
+  if (!directed.length) return { mask: emptyMask(W, H), casters: measured, source: 'none' };
+  // Dark wet planks next to a teapot look like a shadow too: Spark says whether there is sun at all.
+  if (!(await sparkLight(memo, `light:${label}`, painting))) return { mask: emptyMask(W, H), casters: measured, source: 'none' };
   // The things agree on the light when their directions add up; if they don't, the biggest shadow wins.
   const weight = (m: CasterShadow) => Math.sqrt(m.px);
   const total = directed.reduce((s, m) => s + weight(m), 0);

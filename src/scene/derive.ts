@@ -225,7 +225,6 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
 
   // Painted shadows on the open floor, and the light they tell of.
   const shadows = await findShadows(memo, place.key, painting, subtract(ground, dilate(inTheWay, 2)), sharpOnFloor);
-  if (shadows.source === 'spark') flag(`no thing has a shadow of its own; light from Spark`);
   if (shadows.light) log(`light ${shadows.light.dir.join(', ')} x${shadows.light.length}, strength ${shadows.light.strength} (${shadows.source})`);
 
   const { walk, zone } = grid.rowsOut();
