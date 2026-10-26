@@ -18,7 +18,7 @@ export type Page = {
   on(event: 'pageerror' | 'console', fn: (e: { message?: string; text?: () => string; type?: () => string }) => void): void;
 };
 
-/** Playwright is not a dependency: the explorer is a QA tool, and the browser is large. */
+/** Playwright is a dev dependency; its Chromium is a separate download (npx playwright install chromium). */
 export async function chromium(): Promise<{ launch(o?: object): Promise<Browser> }> {
   try {
     return ((await import('playwright' as string)) as { chromium: never }).chromium;
@@ -26,7 +26,7 @@ export async function chromium(): Promise<{ launch(o?: object): Promise<Browser>
     try {
       return (createRequire(import.meta.url)('playwright') as { chromium: never }).chromium;
     } catch {
-      throw new Error('explore needs Playwright with Chromium: npm i -D playwright && npx playwright install chromium');
+      throw new Error('this command needs Playwright with Chromium: npm install && npx playwright install chromium');
     }
   }
 }
