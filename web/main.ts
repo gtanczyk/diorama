@@ -32,8 +32,11 @@ export type SpriteInfo = {
   /** Feet at (cell width / 2, cell height * feetAt); the figure is about `px` tall. */
   feetAt: number; px: number;
   facings: Record<string, { sheet: string; yaw: number; iou?: number[]; stand?: number }>;
+  /** Talking sheets, same grid: frame 0 listens, 1..7 are gestures. */
+  talk?: Record<string, { sheet: string; yaw: number }>;
 };
-type Figure = { img: HTMLImageElement; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Array<{ yaw: number; stand: number; img: HTMLImageElement }> } };
+type Sheet = { yaw: number; stand: number; img: HTMLImageElement };
+type Figure = { img: HTMLImageElement; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
 /** y: the floor row the cut stands on, which sets how far it slides with parallax. */
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number; y: number };
 
@@ -134,7 +137,9 @@ class Game {
   private figures = new Map<string, Figure>();
   /** phase counts walk cycles; it only advances with distance walked, so feet keep pace with the floor. */
   hero = { x: 0, y: 0, path: [] as Point[], facing: 1, phase: 0, yaw: Math.PI / 2, figure: undefined as Figure | undefined };
-  speech: { text: string; until: number } | null = null;
+  speech: { text: string; until: number; who?: string } | null = null;
+  /** The talk frame the speaker holds now (1..7), and until when. */
+  private gesture = { frame: 1, until: 0 };
   state!: State;
   /** The inventory item the next click uses. */
   holding: string | undefined;
@@ -168,7 +173,8 @@ class Game {
       }
       if (cast.sprites && params.get('model') !== '1') {
         const { dir, info } = cast.sprites;
-        figure.sprites = { info, sheets: await Promise.all(Object.values(info.facings).map(async (f) => ({ yaw: f.yaw, stand: f.stand ?? 0, img: await loadImage(files(`${dir}/${f.sheet}`)) }))) };
+        const sheets = (list: Array<{ sheet: string; yaw: number; stand?: number }>) => Promise.all(list.map(async (f) => ({ yaw: f.yaw, stand: f.stand ?? 0, img: await loadImage(files(`${dir}/${f.sheet}`)) })));
+        figure.sprites = { info, sheets: await sheets(Object.values(info.facings)), talk: await sheets(Object.values(info.talk ?? {})).catch(() => []) };
       }
       // A 3D figure needs WebGL; without it (or if the model fails) the 2D rig or cut-out stays.
       else if (cast.model && params.get('model') !== '0') {
@@ -362,6 +368,8 @@ class Game {
     if (this.place.key !== placeKey) return;
     const [x0, , x1] = hot.thing.box;
     this.hero.facing = (x0 + x1) / 2 >= this.hero.x ? 1 : -1;
+    // Three-quarter towards it, the way a painted figure talks to someone.
+    this.hero.yaw = this.hero.facing * Math.PI / 3;
     this.emit('use', { thing: key, verb });
     await this.act(this.actionFor(key, hot, verb));
   }
@@ -397,6 +405,7 @@ class Game {
   async act(action: Action) {
     const story = this.data.story;
     const from = this.state.place;
+    const before = this.state;
     let say: string[];
     if (story) {
       const step = apply(this.data.world, story, this.state, action);
@@ -412,7 +421,10 @@ class Game {
     if (action.kind === 'do' && action.with) this.holding = undefined;
     if (!say.length && action.kind === 'do') say = [this.lookLine(action.thing, action.verb)];
     this.ui();
-    for (const line of say) await this.say(line);
+    // Who says each line: in a conversation the NPC answers after the hero's choice; everything else is the hero's.
+    const hero = this.data.world.hero.key;
+    const npc = story && (action.kind === 'talk' ? action.npc : action.kind === 'choose' && before.talk ? story.dialogues[before.talk.dialogue]?.npc : undefined);
+    for (const [i, line] of say.entries()) await this.say(line, npc && (action.kind === 'talk' || i > 0) ? npc : hero);
     if (this.state.place !== from) {
       this.emit('exit', { from, to: this.state.place });
       await this.fadeOut();
@@ -455,11 +467,13 @@ class Game {
     if (ending) end.innerHTML = `<h1></h1><p></p>`, (end.querySelector('h1')!.textContent = ending.title), (end.querySelector('p')!.textContent = ending.text);
   }
 
-  say(text: string): Promise<void> {
+  /** Shows (and voices) a line; `who` (a cast key) gestures while it lasts. */
+  say(text: string, who?: string): Promise<void> {
     // A voiced line stays up until it has been said.
     const voiced = this.data.sound?.lines?.[text]?.seconds ?? 0;
     const seconds = Math.max(2.2 + text.length * 0.045, voiced + 0.5);
-    this.speech = { text, until: this.time + seconds };
+    this.speech = { text, until: this.time + seconds, who };
+    this.gesture.until = 0;
     this.emit('say', { text });
     return new Promise((resolve) => {
       const done = this.speech;
@@ -533,6 +547,12 @@ class Game {
     const hero = this.hero;
     const step = dt / 0.3;
     this.dark = this.darkTarget > this.dark ? Math.min(this.darkTarget, this.dark + step) : Math.max(this.darkTarget, this.dark - step);
+    if (this.speech?.who && this.time > this.gesture.until) {
+      // A new gesture about every 0.45 s, never the same one twice in a row.
+      // Picked from the frame count, not Math.random, so capture runs come out the same every time.
+      const next = 1 + (((this.frame + 1) * 2654435761) >>> 0) % 6;
+      this.gesture = { frame: next >= this.gesture.frame ? next + 1 : next, until: this.time + 0.45 };
+    }
     if (this.speech && this.time > this.speech.until) {
       this.speech = null;
       this.emit('silent', {});
@@ -867,11 +887,11 @@ class Game {
       if (who.npc) {
         const [x0, , x1, y1] = who.npc.thing.box;
         const x = (x0 + x1) / 2;
-        const drawn = this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, false, this.figures.get(who.npc.thing.key), '#4b3b2a', lit === who.npc, this.shift(y1));
+        const drawn = this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, false, this.figures.get(who.npc.thing.key), '#4b3b2a', lit === who.npc, this.shift(y1), undefined, this.talking(who.npc.thing.key));
         this.drawn.push({ hot: who.npc, rect: drawn });
         this.occlude(union(drawn, this.shadowRect), y1, gone);
       } else {
-        rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.path.length > 0, this.hero.figure, '#2b2733', false, this.shift(this.hero.y), this.hero.yaw);
+        rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.path.length > 0, this.hero.figure, '#2b2733', false, this.shift(this.hero.y), this.hero.yaw, this.talking(this.data.world.hero.key));
         this.occlude(union(rect, this.shadowRect), this.hero.y, gone);
       }
     }
@@ -909,7 +929,7 @@ class Game {
   }
 
   /** Draws a person with feet at (x, y); returns the box the figure covers (its cast shadow's box is in shadowRect). */
-  private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0], yaw = facing * Math.PI / 3): Rect {
+  private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0], yaw = facing * Math.PI / 3, talk?: 'speak' | 'listen'): Rect {
     const g = this.place.g;
     const h = personPx(g, y);
     const sprites = figure?.sprites;
@@ -925,10 +945,13 @@ class Game {
       if (sprites) {
         // The nearest painted facing; the left-facing ones are the right ones mirrored.
         const a = Math.atan2(Math.sin(yaw), Math.cos(yaw));
-        const sheet = sprites.sheets.reduce((best, s) => (Math.abs(s.yaw - Math.abs(a)) < Math.abs(best.yaw - Math.abs(a)) ? s : best));
+        const nearest = (list: Sheet[], to: number) => list.reduce((best, s) => (Math.abs(s.yaw - to) < Math.abs(best.yaw - to) ? s : best));
+        // Talking: there is no front talk sheet, so a figure facing the viewer talks three-quarter.
+        const talking = talk && !walking && sprites.talk.length > 0;
+        const sheet = talking ? nearest(sprites.talk, Math.max(Math.PI / 4, Math.abs(a))) : nearest(sprites.sheets, Math.abs(a));
         const { cols, rows, frames, feetAt, px } = sprites.info;
         const [cw, ch] = [sheet.img.width / cols, sheet.img.height / rows];
-        const i = walking ? Math.floor((((phase % 1) + 1) % 1) * frames) % frames : sheet.stand;
+        const i = talking ? (talk === 'speak' ? this.gesture.frame : 0) : walking ? Math.floor((((phase % 1) + 1) % 1) * frames) % frames : sheet.stand;
         const s = h / px;
         if (a < 0) c.scale(-1, 1);
         c.drawImage(sheet.img, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch, (-cw / 2) * s, -ch * feetAt * s, cw * s, ch * s);
@@ -971,6 +994,12 @@ class Game {
     const half = paint(ctx);
     ctx.restore();
     return [x - half - 2 + sx, y - h * 1.04 - bob - 2 + sy, x + half + 2 + sx, y + Math.max(3, h * 0.04) + sy];
+  }
+
+  /** Whether `key` is speaking a line now, or listening in a conversation (between lines, both listen). */
+  private talking(key: string): 'speak' | 'listen' | undefined {
+    if (this.speech?.who === key) return 'speak';
+    return this.speech?.who || this.state.talk ? 'listen' : undefined;
   }
 
   /** The box of the last person's cast shadow, so occluders in front can cover it too. */
