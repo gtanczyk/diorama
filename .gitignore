@@ -4,3 +4,5 @@ worlds/*
 !worlds/demo/
 .env
 exports/
+demo/out/
+demo/footage/

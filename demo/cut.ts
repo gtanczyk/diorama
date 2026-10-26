@@ -1,0 +1,73 @@
+// The demo film's edit as data: demo/cut.json lists the shots, this script renders them with ffmpeg.
+// npx tsx demo/cut.ts [demo/cut.json] [out.mp4]
+// A shot is a clip (`src`, optional `from`), a still (`image`) or a title card (`card`), held for `dur` seconds;
+// `fade` blends it in over the previous shot. Paths are relative to the cut file. Missing clips render as a
+// labelled placeholder card, so the cut always plays end to end while the real shots are still being made.
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import sharp from 'sharp';
+
+type Shot = { name: string; dur: number; src?: string; from?: number; image?: string; card?: string; fade?: number };
+type Cut = { fps?: number; shots: Shot[] };
+
+const W = 1920, H = 1080;
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+async function cardPng(title: string, note: string): Promise<Buffer> {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="100%" height="100%" fill="#101014"/>
+<text x="120" y="500" font-family="DejaVu Sans, sans-serif" font-size="64" font-weight="bold" fill="#fff">${esc(title)}</text>
+<text x="120" y="580" font-family="DejaVu Sans, sans-serif" font-size="34" fill="#9a9aa8">${esc(note)}</text></svg>`;
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+async function main() {
+  const cutFile = path.resolve(process.argv[2] ?? 'demo/cut.json');
+  const out = path.resolve(process.argv[3] ?? 'demo/out/cut.mp4');
+  const cut = JSON.parse(fs.readFileSync(cutFile, 'utf8')) as Cut;
+  const fps = cut.fps ?? 30;
+  const base = path.dirname(cutFile);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cut-'));
+  const fit = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,fps=${fps},format=yuv420p,setsar=1`;
+
+  // Every shot becomes a same-sized, same-rate segment, running past its slot by the overlap with the next one.
+  const segments: string[] = [];
+  for (const [i, shot] of cut.shots.entries()) {
+    const next = cut.shots[i + 1];
+    const len = shot.dur + (next ? next.fade ?? 1 / fps : 0);
+    const seg = path.join(tmp, `${String(i).padStart(3, '0')}.mp4`);
+    const src = shot.src && path.resolve(base, shot.src);
+    const image = shot.image && path.resolve(base, shot.image);
+    let input: string[];
+    if (src && fs.existsSync(src)) input = ['-ss', String(shot.from ?? 0), '-t', String(len), '-i', src];
+    else {
+      const png = path.join(tmp, `${i}.png`);
+      if (image && fs.existsSync(image)) fs.copyFileSync(image, png);
+      else fs.writeFileSync(png, await cardPng(shot.card ?? shot.name, shot.card ? '' : `placeholder: ${shot.src ?? shot.image ?? 'to shoot'}`));
+      input = ['-loop', '1', '-t', String(len), '-i', png];
+    }
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...input, '-vf', fit, '-an', '-t', String(len), '-c:v', 'libx264', '-crf', '18', seg]);
+    segments.push(seg);
+  }
+
+  // Join: a hard cut is an xfade of a single frame, so every join goes through the same chain.
+  // Each segment runs past its slot by the overlap, so shot i starts exactly at the sum of the slots before it.
+  const inputs = segments.flatMap((s) => ['-i', s]);
+  let chain = '', last = '[0:v]', at = 0;
+  for (let i = 1; i < segments.length; i++) {
+    at += cut.shots[i - 1].dur;
+    const fade = cut.shots[i].fade ?? 1 / fps;
+    const label = `[j${i}]`;
+    chain += `${last}[${i}:v]xfade=transition=fade:duration=${fade}:offset=${at.toFixed(3)}${label};`;
+    last = label;
+  }
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  const map = segments.length > 1 ? ['-filter_complex', chain.slice(0, -1).replace(/\[j\d+\]$/, '[v]'), '-map', '[v]'] : [];
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...inputs, ...map, '-c:v', 'libx264', '-crf', '20', '-pix_fmt', 'yuv420p', out], { stdio: 'inherit' });
+  const total = cut.shots.reduce((s, x) => s + x.dur, 0);
+  console.log(`${out}: ${cut.shots.length} shots, ${total.toFixed(1)}s`);
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+await main();
