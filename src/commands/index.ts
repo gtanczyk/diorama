@@ -3,3 +3,4 @@ import './doctor.ts';
 import './world.ts';
 import './layout.ts';
 import './paint.ts';
+import './build.ts';
