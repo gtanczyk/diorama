@@ -1,7 +1,7 @@
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
 import { hiddenRuns, personPx, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
-import { actions, apply, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
+import { actions, apply, hiddenThings, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 
@@ -9,12 +9,13 @@ type Data = {
   slug: string;
   world: World;
   places: Record<string, { geometry: Geometry | null; painting: string | null; issue?: string }>;
-  hero: string | null;
+  /** Figure image per hero or NPC key. */
+  cast: Record<string, string>;
   story: Story | null;
 };
 
 type Bits = { bits: Uint8Array; area: number };
-type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number };
+type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement };
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number };
 
 type Place = {
@@ -26,7 +27,23 @@ type Place = {
   hots: Hot[];
   cuts: Cut[];
   byKey: Map<string, Occluder>;
+  /** Mean luma of the painting per LIGHT_CELL square, to light people like the place around them. */
+  light?: { cols: number; rows: number; luma: Float32Array };
 };
+
+const LIGHT_CELL = 40;
+
+function lightMap(bg: HTMLImageElement, w: number, h: number): Place['light'] {
+  const cols = Math.ceil(w / LIGHT_CELL);
+  const rows = Math.ceil(h / LIGHT_CELL);
+  const c = Object.assign(document.createElement('canvas'), { width: cols, height: rows });
+  const cx = c.getContext('2d', { willReadFrequently: true })!;
+  cx.drawImage(bg, 0, 0, cols, rows);
+  const px = cx.getImageData(0, 0, cols, rows).data;
+  const luma = new Float32Array(cols * rows);
+  for (let i = 0; i < luma.length; i++) luma[i] = 0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2];
+  return { cols, rows, luma };
+}
 
 type Events = 'enter' | 'arrive' | 'say' | 'silent' | 'use' | 'exit' | 'ending';
 type Verb = 'look' | 'use' | 'take' | 'talk';
@@ -68,6 +85,7 @@ class Game {
   data!: Data;
   place!: Place;
   private cache = new Map<string, Place>();
+  private figures = new Map<string, HTMLImageElement>();
   hero = { x: 0, y: 0, path: [] as Point[], facing: 1, phase: 0, img: undefined as HTMLImageElement | undefined };
   speech: { text: string; until: number } | null = null;
   state!: State;
@@ -85,7 +103,11 @@ class Game {
 
   async start() {
     this.data = await (await fetch('/api/world')).json();
-    if (this.data.hero) this.hero.img = await loadImage(files(this.data.hero)).catch(() => undefined);
+    await Promise.all(Object.entries(this.data.cast).map(async ([key, src]) => {
+      const img = await loadImage(files(src)).catch(() => undefined);
+      if (img) this.figures.set(key, img);
+    }));
+    this.hero.img = this.figures.get(this.data.world.hero.key);
     this.state = startState(this.data.world);
     const at = params.get('place');
     if (at) this.state.place = at;
@@ -143,12 +165,13 @@ class Game {
       g.things.map(async (thing) => {
         const mask = await shared(thing.mask);
         const [x0, y0, x1, y1] = thing.box;
-        return { thing, spec: spec.things.find((t) => t.key === thing.key), mask, area: mask?.area ?? (x1 - x0) * (y1 - y0) };
+        const plate = thing.plate ? await loadImage(dir(thing.plate)).catch(() => undefined) : undefined;
+        return { thing, spec: spec.things.find((t) => t.key === thing.key), mask, plate, area: mask?.area ?? (x1 - x0) * (y1 - y0) };
       }),
     );
     hots.sort((a, b) => a.area - b.area);
     const cuts = await Promise.all(g.occluders.map(async (occ) => this.cut(occ, bg, await shared(occ.mask), g)));
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, hots, cuts: cuts.filter((c): c is Cut => !!c), byKey: new Map(g.occluders.map((o) => [o.key, o])) };
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, light: bg && lightMap(bg, g.frame.width, g.frame.height), hots, cuts: cuts.filter((c): c is Cut => !!c), byKey: new Map(g.occluders.map((o) => [o.key, o])) };
     this.cache.set(key, place);
     return place;
   }
@@ -207,13 +230,27 @@ class Game {
     const hot = this.place.hots.find((h) => h.thing.key === key);
     if (!hot) throw new Error(`${this.place.key} has no thing "${key}"`);
     const placeKey = this.place.key;
-    const [sx, sy] = hot.thing.stand;
+    const [sx, sy] = this.approach(hot);
     if (!(await this.walkTo(sx, sy)) && Math.hypot(this.hero.x - sx, this.hero.y - sy) > this.place.g.cell * 2) return;
     if (this.place.key !== placeKey) return;
     const [x0, , x1] = hot.thing.box;
     this.hero.facing = (x0 + x1) / 2 >= this.hero.x ? 1 : -1;
     this.emit('use', { thing: key, verb });
     await this.act(this.actionFor(key, hot, verb));
+  }
+
+  /** Where to stand to use a thing; beside a person rather than inside them, on the side the hero comes from. */
+  private approach(hot: Hot): Point {
+    if ((hot.spec?.role ?? hot.thing.role) !== 'npc') return hot.thing.stand;
+    const [x0, , x1, y1] = hot.thing.box;
+    const x = (x0 + x1) / 2;
+    const side = this.hero.x < x ? -1 : 1;
+    const gap = personPx(this.place.g, y1) * 0.42;
+    for (const s of [side, -side]) {
+      const spot = this.place.grid.snap(x + s * gap, y1);
+      if (spot && Math.abs(spot[0] - x) > gap * 0.6) return spot;
+    }
+    return hot.thing.stand;
   }
 
   /** What a click on a thing means: the exit, the talk, the held item, or the first verb the story answers. */
@@ -310,9 +347,18 @@ class Game {
     });
   }
 
+  /** Things of this place the story has carried off: drawn from their clean plate, not clickable, hiding no one. */
+  gone(): Set<string> {
+    const story = this.data.story;
+    if (!story) return new Set();
+    return new Set(hiddenThings(story, this.state).filter((h) => h.place === this.place.key).map((h) => h.thing));
+  }
+
   thingAt(x: number, y: number): Hot | undefined {
     const g = this.place.g;
+    const gone = this.gone();
     for (const hot of this.place.hots) {
+      if (gone.has(hot.thing.key)) continue;
       const [x0, y0, x1, y1] = hot.thing.box;
       if (x < x0 || x > x1 || y < y0 || y > y1) continue;
       if (!hot.mask || hot.mask.bits[Math.floor(y) * g.frame.width + Math.floor(x)]) return hot;
@@ -362,6 +408,13 @@ class Game {
       ctx.fillStyle = '#20232a';
       ctx.fillRect(0, 0, W, H);
     }
+    const gone = this.gone();
+    for (const hot of this.place.hots) {
+      if (!hot.plate || !gone.has(hot.thing.key)) continue;
+      // The plate differs from the painting only near the thing, so its grown box is enough.
+      const [x0, y0, x1, y1] = hot.thing.box.map((v, i) => (i < 2 ? Math.max(0, v - 16) : v + 16));
+      ctx.drawImage(hot.plate, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+    }
     // Everyone is drawn far to near, and each one gets the things in front of them put back.
     const npcs = this.place.hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc' && !h.mask);
     const people = [...npcs.map((h) => ({ npc: h, y: h.thing.box[3] })), { npc: undefined, y: this.hero.y }].sort((a, b) => a.y - b.y);
@@ -370,10 +423,11 @@ class Game {
       if (who.npc) {
         const [x0, , x1, y1] = who.npc.thing.box;
         const x = (x0 + x1) / 2;
-        this.occlude(this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, undefined, '#4b3b2a'), y1);
+        const img = this.figures.get(who.npc.thing.key);
+        this.occlude(this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, img, '#4b3b2a'), y1, gone);
       } else {
         rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.img, '#2b2733');
-        this.occlude(rect, this.hero.y);
+        this.occlude(rect, this.hero.y, gone);
       }
     }
     if (this.grid) this.drawGrid();
@@ -400,6 +454,7 @@ class Game {
     ctx.beginPath();
     ctx.ellipse(x, y, w * 0.42, Math.max(2, h * 0.035), 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.filter = `brightness(${this.lightAt(x, y - h * 0.5).toFixed(2)})`;
     ctx.translate(x, y - bob);
     ctx.rotate(Math.sin(phase) * 0.035);
     ctx.scale(facing, 1);
@@ -409,10 +464,29 @@ class Game {
     return [x - w / 2 - 2, y - h - bob - 2, x + w / 2 + 2, y + Math.max(3, h * 0.04)];
   }
 
+  /** How bright a person looks at (x, y): the painting's luma around that spot, softened. */
+  private lightAt(x: number, y: number): number {
+    const light = this.place.light;
+    if (!light) return 1;
+    const c = Math.min(light.cols - 1, Math.max(0, Math.floor(x / LIGHT_CELL)));
+    const r = Math.min(light.rows - 1, Math.max(0, Math.floor(y / LIGHT_CELL)));
+    let sum = 0;
+    let n = 0;
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const rr = r + dr;
+      const cc = c + dc;
+      if (rr < 0 || cc < 0 || rr >= light.rows || cc >= light.cols) continue;
+      sum += light.luma[rr * light.cols + cc];
+      n++;
+    }
+    return Math.min(1.1, Math.max(0.4, 0.35 + (0.65 * sum) / n / 150));
+  }
+
   /** Puts the painting back over the hero, column by column, wherever an occluder stands in front of him. */
-  private occlude([left, top, right, bottom]: [number, number, number, number], feetY: number) {
+  private occlude([left, top, right, bottom]: [number, number, number, number], feetY: number, gone: Set<string>) {
     const support = (k: string) => this.place.byKey.get(k);
     for (const cut of this.place.cuts) {
+      if (cut.occ.thing && gone.has(cut.occ.thing)) continue;
       const [bx0, by0, bx1, by1] = cut.occ.box;
       if (bx1 < left || bx0 > right || by1 < top || by0 > bottom) continue;
       const y0 = Math.max(top, cut.y0);

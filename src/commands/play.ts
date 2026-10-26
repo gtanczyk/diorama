@@ -31,9 +31,12 @@ export function worldData(files: WorldFiles) {
     }
     places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, issue };
   }
-  const hero = fs.existsSync(files.path('hero', 'hero.png')) ? 'hero/hero.png' : null;
+  const castDir = files.path('cast');
+  const cast = Object.fromEntries((fs.existsSync(castDir) ? fs.readdirSync(castDir) : [])
+    .filter((f) => f.endsWith('.png') && !f.endsWith('-painting.png'))
+    .map((f) => [f.slice(0, -4), `cast/${f}`]));
   const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
-  return { slug: files.slug, world, places, hero, story };
+  return { slug: files.slug, world, places, cast, story };
 }
 
 async function bundle(): Promise<string> {
