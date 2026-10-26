@@ -15,7 +15,7 @@ Built during the Meta AI Global Hackathon (26 Oct - 4 Nov 2026).
 Node 22 or newer and a Meta Model API key:
 
 ```sh
-export META_API_KEY=...
+export META_API_KEY=...        # or META_MUSE_API_KEY / META_MODEL_API_KEY
 npx -y github:gtanczyk/diorama help
 npx -y github:gtanczyk/diorama doctor   # one live call to each model
 ```

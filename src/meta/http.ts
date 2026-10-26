@@ -1,9 +1,12 @@
 // The Meta Model API: one key, a POST that retries what is worth retrying.
 export const META_API = 'https://api.meta.ai/v1';
 
+/** The first of these that is set holds the Meta Model API key. */
+export const KEY_VARS = ['META_API_KEY', 'META_MUSE_API_KEY', 'META_MODEL_API_KEY'] as const;
+
 export function apiKey(): string {
-  const key = process.env.META_API_KEY ?? process.env.META_MODEL_API_KEY;
-  if (!key) throw new Error('META_API_KEY is not set (Meta Model API key)');
+  const key = KEY_VARS.map((name) => process.env[name]).find(Boolean);
+  if (!key) throw new Error(`no Meta Model API key: set one of ${KEY_VARS.join(', ')}`);
   return key;
 }
 
