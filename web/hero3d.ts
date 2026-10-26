@@ -6,6 +6,23 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { CYCLE } from '../src/play/rig.ts';
 
 const STANCE = 0.6;
+
+/**
+ * Talking poses, standing: where each upper arm points (world, the figure facing +z, its left at +x),
+ * how far the elbow bends, and the head's nod and tilt. Played in any order while a line is spoken.
+ * Elbows stay near the body: a long coat is skinned to the upper arms and flares into a cape otherwise.
+ */
+type Gesture = { left?: [number, number, number, number]; right?: [number, number, number, number]; nod?: number; tilt?: number; lean?: number };
+export const GESTURES: Gesture[] = [
+  {}, // hands down, listening
+  { right: [-0.2, -0.9, 0.35, 1.7] }, // right hand up, palm open
+  { left: [0.25, -0.92, 0.3, 1.3], right: [-0.25, -0.92, 0.3, 1.3] }, // both hands forward, explaining
+  { right: [-0.1, -0.75, 0.65, 0.9], lean: 0.04 }, // pointing ahead
+  { left: [0.2, -0.95, 0.15, 1.4], right: [-0.2, -0.95, 0.15, 1.4], tilt: 0.15 }, // shrug, forearms out
+  { left: [0.1, -0.95, 0.3, 2.1], nod: 0.1 }, // hand on the chest
+  { right: [-0.2, -0.92, 0.3, 1.2], nod: 0.25 }, // nodding
+  { left: [0.08, -0.92, 0.38, 1.5], right: [-0.08, -0.92, 0.38, 1.5] }, // hands together
+];
 const LIFT = 0.06;
 const smooth = (u: number) => u * u * (3 - 2 * u);
 
@@ -261,7 +278,7 @@ float notBg(vec3 c) { return smoothstep(0.14, 0.32, abs(c.r - pBg.r) + abs(c.g -
   }
 
   /** The walk at `phase` (cycles; the left foot strikes at 0), feet planted like src/play/rig.ts. */
-  private pose(phase: number, walking: boolean, armSwing: number) {
+  private pose(phase: number, walking: boolean, armSwing: number, gesture?: number) {
     const step = CYCLE * STANCE;
     const L = this.legs.Left;
     const reach = (L.thigh + L.shin) * 0.985;
@@ -300,16 +317,31 @@ float notBg(vec3 c) { return smoothstep(0.14, 0.32, abs(c.r - pBg.r) + abs(c.g -
       this.turnBone(`${side}Arm`, turn(X, -a).multiply(new THREE.Quaternion().setFromUnitVectors(this.arms[side], down)));
       this.turnBone(`${side}ForeArm`, turn(X, -(0.25 + Math.max(0, a) * 0.6)));
     }
+    this.turnBone('Neck', new THREE.Quaternion());
+    this.turnBone('Head', new THREE.Quaternion());
+    const g = gesture === undefined ? undefined : GESTURES[gesture % GESTURES.length];
+    if (!g) return;
+    for (const side of ['Left', 'Right'] as const) {
+      const arm = side === 'Left' ? g.left : g.right;
+      if (!arm) continue;
+      const dir = new THREE.Vector3(arm[0], arm[1], arm[2]).normalize();
+      this.turnBone(`${side}Arm`, new THREE.Quaternion().setFromUnitVectors(this.arms[side], dir));
+      this.turnBone(`${side}ForeArm`, turn(X, -arm[3]));
+    }
+    this.turnBone('Spine1', turn(X, g.lean ?? 0));
+    this.turnBone('Head', turn(X, g.nod ?? 0).multiply(turn(Z, g.tilt ?? 0)));
   }
 
   /**
    * One frame, `px` pixels tall. yaw: 0 faces the viewer, PI/2 faces screen right. elevation: how far
    * the camera looks down (radians). Returns the canvas, feet at (width / 2, height * feetAt).
    */
-  draw({ phase = 0, walking = false, yaw = 0, elevation = 0.18, px = 300, light, armSwing = 0.12 }: {
+  draw({ phase = 0, walking = false, yaw = 0, elevation = 0.18, px = 300, light, armSwing = 0.12, gesture }: {
     phase?: number; walking?: boolean; yaw?: number; elevation?: number; px?: number; light?: FigureLight; armSwing?: number;
+    /** A talking pose (index into GESTURES), standing. */
+    gesture?: number;
   }): HTMLCanvasElement {
-    this.pose(phase, walking, armSwing);
+    this.pose(phase, walking && gesture === undefined, armSwing, gesture);
     this.holder.rotation.y = yaw;
     this.holder.updateMatrixWorld(true);
     const [w, h] = [Math.ceil(px * 0.9), Math.ceil(px * 1.12)];
