@@ -30,8 +30,12 @@ type RoutePage = {
   on(event: 'pageerror', fn: (e: { message: string }) => void): void;
 };
 
-/** Mean pose IoU above this means Muse gave the 3D guide back instead of drawing it again. */
-export const TRACED = 0.97;
+/**
+ * Mean `same` (cutSheet) above this means Muse gave the 3D guide back with a filter over it instead of
+ * drawing it again. On foghorn's walk sheets, sheets drawn again scored 0.22-0.37 and traced ones 0.60-0.78;
+ * pose IoU did not tell them apart (a drawn sheet can follow the pose as closely as a traced one).
+ */
+export const TRACED = 0.5;
 
 /**
  * The model walking (or, given `gestures`, standing in those talking poses of src/play/gestures.ts, one
@@ -133,10 +137,43 @@ function background(img: Rgba, [x0, y0, w, h]: number[], tolerance = 26): Mask {
 }
 
 /**
- * Cuts each painted frame out of its grey and lines it up with its guide frame: same feet line, same
- * centre, same height. Returns the transparent sheet and how well each frame kept the guide's pose (IoU).
+ * How closely the drawn figure keeps the guide's own shading: the correlation of the two images' edge
+ * strength (Sobel on luminance) inside both figures, away from the outline. A sheet drawn again has its
+ * own folds, hair and face, about 0.2-0.4; the guide with a filter over it keeps the render's edges, 0.6+.
+ * Colour alone does not tell them apart: Muse repaints a traced figure in other colours just as often.
  */
-export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ sheet: Buffer; iou: number[]; legs: number[]; stand: number }> {
+function sameEdges(guide: Buffer, drawn: Buffer, W: number, [x0, y0, cw, ch]: number[]): number {
+  const lum = (d: Buffer, x: number, y: number) => { const i = ((y0 + y) * W + x0 + x) * 4; return 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]; };
+  const edge = (d: Buffer, x: number, y: number) => {
+    const p = (dx: number, dy: number) => lum(d, x + dx, y + dy);
+    const gx = p(1, -1) + 2 * p(1, 0) + p(1, 1) - p(-1, -1) - 2 * p(-1, 0) - p(-1, 1);
+    const gy = p(-1, 1) + 2 * p(0, 1) + p(1, 1) - p(-1, -1) - 2 * p(0, -1) - p(1, -1);
+    return Math.hypot(gx, gy);
+  };
+  const inside = (x: number, y: number) => {
+    const i = ((y0 + y) * W + x0 + x) * 4 + 3;
+    return guide[i] > 40 && drawn[i] > 0;
+  };
+  const a: number[] = [];
+  const b: number[] = [];
+  for (let y = 4; y < ch - 4; y++) for (let x = 4; x < cw - 4; x++) {
+    if (!inside(x, y) || !inside(x + 3, y) || !inside(x - 3, y) || !inside(x, y + 3) || !inside(x, y - 3)) continue;
+    a.push(edge(guide, x, y));
+    b.push(edge(drawn, x, y));
+  }
+  if (a.length < 50) return 0;
+  const [ma, mb] = [a.reduce((s, v) => s + v, 0) / a.length, b.reduce((s, v) => s + v, 0) / b.length];
+  let [ab, aa, bb] = [0, 0, 0];
+  for (let i = 0; i < a.length; i++) { ab += (a[i] - ma) * (b[i] - mb); aa += (a[i] - ma) ** 2; bb += (b[i] - mb) ** 2; }
+  return aa && bb ? ab / Math.sqrt(aa * bb) : 0;
+}
+
+/**
+ * Cuts each painted frame out of its grey and lines it up with its guide frame: same feet line, same
+ * centre, same height. Returns the transparent sheet and how well each frame kept the guide's pose (IoU)
+ * and its look (`same`, sameEdges).
+ */
+export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ sheet: Buffer; iou: number[]; legs: number[]; same: number[]; stand: number }> {
   const { cols, rows, width: W, height: H } = SHEET;
   const guide = await rgba(guidePng, [W, H]);
   const painted = await rgba(paintedPng, [W, H]);
@@ -144,6 +181,7 @@ export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ 
   const [cw, ch] = [W / cols, H / rows];
   const iou: number[] = [];
   const legs: number[] = [];
+  const same: number[] = [];
   const spread: number[] = [];
   for (let i = 0; i < cols * rows; i++) {
     const cell = [(i % cols) * cw, Math.floor(i / cols) * ch, cw, ch];
@@ -162,7 +200,7 @@ export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ 
     }
     const gb = maskBox(want);
     const pb = maskBox(kept);
-    if (!gb || !pb) { iou.push(0); legs.push(0); spread.push(Infinity); continue; }
+    if (!gb || !pb) { iou.push(0); legs.push(0); same.push(0); spread.push(Infinity); continue; }
     // Same height, same feet line, same centre across.
     const s = Math.min(1.2, Math.max(0.8, (gb[3] - gb[1]) / (pb[3] - pb[1])));
     const [gcx, pcx] = [(gb[0] + gb[2]) / 2, (pb[0] + pb[2]) / 2];
@@ -177,6 +215,7 @@ export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ 
       painted.data.copy(out, to, from, from + 3);
       out[to + 3] = 255;
     }
+    same.push(Number(sameEdges(guide.data, out, W, cell).toFixed(3)));
     iou.push(Number(maskIou(want, moved).toFixed(3)));
     // Muse sometimes draws the other leg forward: the legs alone (lowest third) catch that.
     const below = Math.round(gb[3] - (gb[3] - gb[1]) / 3);
@@ -187,6 +226,6 @@ export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ 
   }
   // Standing still shows the frame whose feet are closest together (the legs passing each other).
   const stand = spread.indexOf(Math.min(...spread));
-  return { sheet: await sharp(out, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer(), iou, legs, stand };
+  return { sheet: await sharp(out, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer(), iou, legs, same, stand };
 }
 

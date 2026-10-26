@@ -9,6 +9,8 @@ import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
 
 const LEGS_OK = 0.6;
+// Below this mean pose IoU a walk take has frames facing the wrong way (drawn takes keep 0.8 or more).
+const POSE_OK = 0.75;
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
 defineCommand({
@@ -51,10 +53,13 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
   const out = (name: string) => files.path('cast', key, 'sprites', name);
 
   // Walking: the first facing (the profile when it is used) is painted first; the others also see it,
-  // so patches and colours stay the same. A frame whose legs do not follow the guide makes the walk
-  // skip: with --tries, more takes, and the whole take whose legs follow best wins (frames mixed from
-  // several takes do not match, and the take that traces the guide closest is the stiffest).
-  const facings: Record<string, { sheet: string; yaw: number; stand: number; iou: number[]; legs: number[] }> = {};
+  // so patches and colours stay the same. Muse sometimes hands the guide back with a filter over it
+  // (mean `same` above TRACED): that sheet looks like the 3D render, and as the first facing it passes the
+  // look on to every other facing, so a traced take is painted again, at most twice. A frame whose legs
+  // do not follow the guide makes the walk skip: with --tries, more takes, and the whole take whose legs
+  // follow best wins (frames mixed from several takes do not match, and the take that traces the guide
+  // closest is the stiffest).
+  const facings: Record<string, { sheet: string; yaw: number; stand: number; iou: number[]; legs: number[]; same: number[] }> = {};
   if (plan.walk.length) {
     const guides = await renderGuides(modelDir, plan.walk);
     const grey: Record<string, Buffer> = {};
@@ -62,38 +67,39 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
     const first: Facing = plan.walk.includes('right') ? 'right' : plan.walk[0];
     const refsFor = (f: Facing, painted?: Buffer) => [f.startsWith('back') ? view('back') : view('front'), painted ?? view('right')];
     const painted: Record<string, Buffer> = {};
-    // Muse sometimes hands the guide back with only a filter over it (pose IoU above TRACED); that sheet
-    // looks like the 3D render, and a traced first facing passes the look on to every other facing.
-    const paintUntraced = async (f: Facing, refs: Buffer[]) => {
-      let p = await paintSheet(files.memo, key, f, looks, grey[f], refs, take);
-      for (let t = 1; t <= 2 && mean((await cutSheet(guides[f], p)).iou) > TRACED; t++) {
-        p = await paintSheet(files.memo, key, f, looks, grey[f], refs, take + t);
-      }
-      return p;
-    };
-    painted[first] = await paintUntraced(first, [view('front'), view('right')]);
-    await Promise.all(plan.walk.filter((f) => f !== first).map(async (f) => {
-      painted[f] = await paintUntraced(f, refsFor(f, painted[first]));
-    }));
-    await Promise.all(plan.walk.map(async (f) => {
-      files.write(out(`painted-${f}.png`), painted[f]);
-      const takes = [await cutSheet(guides[f], painted[f])];
-      const pick = () => takes.reduce((a, b) => (mean(b.legs) > mean(a.legs) ? b : a));
-      let best = pick();
-      for (let t = 1; t < tries && Math.min(...best.legs) < LEGS_OK; t++) {
-        const refs = f === first ? [view('front'), view('right')] : refsFor(f, painted[first]);
-        takes.push(await cutSheet(guides[f], await paintSheet(files.memo, key, f, looks, grey[f], refs, take + t)));
-        best = pick();
-      }
+    const walk = async (f: Facing, refs: Buffer[]) => {
+      type Take = Awaited<ReturnType<typeof cutSheet>> & { painted: Buffer; n: number };
+      const takes: Take[] = [];
+      let n = take;
+      const another = async () => {
+        const p = await paintSheet(files.memo, key, f, looks, grey[f], refs, n);
+        takes.push({ ...(await cutSheet(guides[f], p)), painted: p, n: n++ });
+      };
+      const traced = (t: Take) => mean(t.same) > TRACED;
+      // A take that left the pose (Muse turned some frames to another facing) is worst, then traced takes;
+      // among drawn takes the legs that follow best win, among traced ones the least traced.
+      const rank = (t: Take) => (mean(t.iou) < POSE_OK ? 0 : traced(t) ? 1 : 2);
+      const pick = () => takes.reduce((a, b) => {
+        if (rank(a) !== rank(b)) return rank(b) > rank(a) ? b : a;
+        return traced(a) ? (mean(b.same) < mean(a.same) ? b : a) : (mean(b.legs) > mean(a.legs) ? b : a);
+      });
+      await another();
+      for (let t = 1; t <= 2 && rank(pick()) < 2; t++) await another();
+      for (let t = 1; t < tries && Math.min(...pick().legs) < LEGS_OK; t++) await another();
+      const best = pick();
+      painted[f] = best.painted;
+      files.write(out(`painted-${f}.png`), best.painted);
       files.write(out(`${f}.png`), best.sheet);
-      facings[f] = { sheet: `${f}.png`, yaw: FACINGS[f], stand: best.stand, iou: best.iou, legs: best.legs };
-      console.log(`${key} walk ${f}: take ${takes.indexOf(best) + 1} of ${takes.length}, pose IoU ${mean(best.iou).toFixed(3)}, legs ${mean(best.legs).toFixed(3)} (worst ${Math.min(...best.legs)})${mean(best.iou) > TRACED ? '  <- Muse kept the 3D look, try --take' : ''}`);
-    }));
+      facings[f] = { sheet: `${f}.png`, yaw: FACINGS[f], stand: best.stand, iou: best.iou, legs: best.legs, same: best.same };
+      console.log(`${key} walk ${f}: take ${best.n + 1} (${takes.length} painted), pose IoU ${mean(best.iou).toFixed(3)}, legs ${mean(best.legs).toFixed(3)} (worst ${Math.min(...best.legs)}), same ${mean(best.same).toFixed(3)}${traced(best) ? '  <- Muse kept the 3D look, try --take' : mean(best.iou) < POSE_OK ? '  <- frames left the pose, try --take' : ''}`);
+    };
+    await walk(first, [view('front'), view('right')]);
+    await Promise.all(plan.walk.filter((f) => f !== first).map((f) => walk(f, refsFor(f, painted[first]))));
   }
 
   // Talking: the gestures this character's lines use, in the facing its conversation is held in. The
   // painted views are the reference, not a walk sheet: with a walk sheet Muse draws the legs walking.
-  const talk: Record<string, { sheet: string; yaw: number; gestures: string[]; iou: number[] }> = {};
+  const talk: Record<string, { sheet: string; yaw: number; gestures: string[]; iou: number[]; same: number[] }> = {};
   await Promise.all(Object.entries(plan.talk).map(async ([facing, names]) => {
     const f = facing as Facing;
     const used = names.map(gestureIndex);
@@ -106,7 +112,7 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
     const refs = [view('front'), view('right')];
     let p = await paintSheet(files.memo, key, f, looks, g, refs, take, used.length);
     let cut = await cutSheet(guide, p);
-    const score = () => mean(cut.iou.slice(0, used.length));
+    const score = () => mean(cut.same.slice(0, used.length));
     // From some angles the hands hide in front of the body and Muse hands the guide back unchanged.
     for (let t = 1; t <= 2 && score() > TRACED; t++) {
       p = await paintSheet(files.memo, key, f, looks, g, refs, take + t, used.length);
@@ -114,8 +120,8 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
     }
     files.write(out(`talk-painted-${f}.png`), p);
     files.write(out(`talk-${f}.png`), cut.sheet);
-    talk[f] = { sheet: `talk-${f}.png`, yaw: FACINGS[f], gestures: names, iou: cut.iou.slice(0, used.length) };
-    console.log(`${key} talk ${f} [${names.join(', ')}]: pose IoU ${score().toFixed(3)}${score() > TRACED ? '  <- Muse kept the 3D look, try --take' : ''}`);
+    talk[f] = { sheet: `talk-${f}.png`, yaw: FACINGS[f], gestures: names, iou: cut.iou.slice(0, used.length), same: cut.same.slice(0, used.length) };
+    console.log(`${key} talk ${f} [${names.join(', ')}]: pose IoU ${mean(cut.iou.slice(0, used.length)).toFixed(3)}, same ${score().toFixed(3)}${score() > TRACED ? '  <- Muse kept the 3D look, try --take' : ''}`);
   }));
 
   files.write(out('sprites.json'), {
