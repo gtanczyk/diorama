@@ -42,6 +42,9 @@ export function storyNameIssues(world: World, story: Story): string[] {
   story.interactions.forEach((it, i) => {
     const where = `interaction ${i + 1} (${it.verb} ${it.thing})`;
     thingIn(where, it.place, it.thing, it.verb === 'talk' ? 'npc' : undefined);
+    // Clicking an exit always walks through it (and obeys its lock), so an exit only answers "look".
+    const exit = place(it.place)?.things.find((t) => t.key === it.thing)?.role === 'exit';
+    if (exit && it.verb !== 'look') issues.push(`${where}: "${it.thing}" is an exit; clicking it goes through, so it can only have "look" interactions (use a lock to stop it)`);
     if (it.with && !items.has(it.with)) issues.push(`${where}: unknown item "${it.with}"`);
     checkWhen(where, it.when);
   });
@@ -126,4 +129,29 @@ export function checkStory(world: World, raw: unknown): StoryReport & { story?: 
     if (!fired.has(i)) issues.push(`interaction ${i + 1} (${it.verb} ${it.thing} in ${it.place}) can never happen`);
   });
   return { issues, states: seen.size, routes, story: issues.length ? undefined : story };
+}
+
+/** Word limits per kind of line: everything said is read or voiced, so less is better. */
+export const BREVITY = { intro: 30, say: 14, npcLine: 20, choice: 8, ending: 25, linesPerDialogue: 6 } as const;
+
+const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
+
+/** Lines over the limits, for the designer to shorten. Not part of checkStory: a person may write longer by hand. */
+export function brevityIssues(story: Story): string[] {
+  const issues: string[] = [];
+  const over = (where: string, text: string, max: number) => {
+    if (words(text) > max) issues.push(`${where} has ${words(text)} words, keep it to ${max}: "${text}"`);
+  };
+  over('intro', story.intro, BREVITY.intro);
+  story.interactions.forEach((it, i) => over(`interaction ${i + 1} (${it.verb} ${it.thing}) say`, it.say, BREVITY.say));
+  story.locks.forEach((l) => over(`lock on ${l.via} say`, l.say, BREVITY.say));
+  for (const d of story.dialogues) {
+    if (d.lines.length > BREVITY.linesPerDialogue) issues.push(`dialogue with ${d.npc} has ${d.lines.length} lines, keep it to ${BREVITY.linesPerDialogue}`);
+    for (const l of d.lines) {
+      over(`${d.npc} line ${l.key}`, l.says, BREVITY.npcLine);
+      l.choices.forEach((c, i) => over(`${d.npc} line ${l.key} choice ${i + 1}`, c.text, BREVITY.choice));
+    }
+  }
+  story.endings.forEach((e) => over(`ending ${e.key} text`, e.text, BREVITY.ending));
+  return issues;
 }

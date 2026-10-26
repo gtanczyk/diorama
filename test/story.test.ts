@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { checkStory } from '../src/story/check.ts';
+import { brevityIssues, checkStory } from '../src/story/check.ts';
 import { actions, apply, hiddenThings, removableThings, startState } from '../src/story/engine.ts';
 import { Story } from '../src/story/schema.ts';
 import { World } from '../src/world/schema.ts';
@@ -84,4 +84,16 @@ test('a taken item is listed for a clean plate and hidden once taken', () => {
   const taken = apply(world, s, startState(world), { kind: 'do', thing: 'lamp', verb: 'take' }).state;
   expect(hiddenThings(s, startState(world))).toEqual([]);
   expect(hiddenThings(s, taken)).toEqual([{ place: 'hut', thing: 'lamp' }]);
+});
+
+test('lines over the word limits are named, the rest pass', () => {
+  const s = Story.parse(story);
+  expect(brevityIssues(s)).toEqual([]);
+  const long = Story.parse({ ...story, intro: Array(40).fill('word').join(' ') });
+  expect(brevityIssues(long)).toEqual([expect.stringMatching(/^intro has 40 words, keep it to 30/)]);
+});
+
+test('an exit only answers look: a use with a go would walk past its lock', () => {
+  const report = checkStory(world, { ...story, interactions: [...story.interactions, { place: 'hut', thing: 'door', verb: 'use', say: 'Out.', do: [{ go: 'shore' }] }] });
+  expect(report.issues).toEqual([expect.stringMatching(/^interaction 4 \(use door\): "door" is an exit/)]);
 });
