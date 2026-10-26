@@ -131,3 +131,20 @@ export function backEdge(g: Geometry, smooth = 7): Float32Array {
   }
   return out;
 }
+
+/** The far view as flats: the sky (drawn still) and flats farthest first, each a cut-out at `box` in the frame. */
+export type Layers = { sky: string; flats: Array<{ file: string; box: [number, number, number, number] }> };
+
+/**
+ * How far each far flat slides, as a disparity: spread evenly between the horizon (the sky, still) and the
+ * nearest upright band, so each flat sits clearly behind the next. Stage flats, not measured distances.
+ */
+export function flatDisparities(g: Geometry, edge: Float32Array, count: number): number[] {
+  const nearest = Math.max(0.2, disparity(g, Math.min(...edge)));
+  return Array.from({ length: count }, (_, k) => (0.85 * nearest * (k + 1)) / (count + 1));
+}
+
+/** The shift of something at disparity d (see shiftAt, which takes a floor row). */
+export function shiftAtDisparity(p: Parallax, d: number): [number, number] {
+  return [p.cam.x * p.px * (d - p.pivot), p.cam.y * p.px * VERTICAL * (d - p.pivot)];
+}

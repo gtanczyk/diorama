@@ -1,6 +1,6 @@
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
 import { floorYAt, hiddenRuns, personPx, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
-import { backdropTransforms, backEdge, cardY, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
+import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
@@ -12,7 +12,7 @@ import type { SoundData } from '../src/play/sound.ts';
 type Data = {
   slug: string;
   world: World;
-  places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; issue?: string }>;
+  places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; issue?: string }>;
   /** Figure per hero or NPC key: a cut-out image, and its rig when `diorama cast` could cut it into parts. */
   cast: Record<string, { image: string; rig?: Rig; parts?: string }>;
   story: Story | null;
@@ -41,6 +41,8 @@ type Place = {
   pivot: number;
   /** Per walk-grid column, the floor's back edge: what stands above it slides with it (see backEdge). */
   edge: Float32Array;
+  /** The far view as flats: the sky drawn still, then each flat (farthest first) at its own disparity. */
+  far?: { sky: HTMLImageElement; flats: Array<{ img: HTMLImageElement; box: [number, number, number, number]; d: number }> };
   hots: Hot[];
   cuts: Cut[];
   byKey: Map<string, Occluder>;
@@ -216,6 +218,14 @@ class Game {
     const dir = (p: string) => files(`places/${key}/${p}`);
     const bg = entry.painting ? await loadImage(files(entry.painting)) : undefined;
     const backdrop = entry.backdrop && parallaxScale > 0 ? await loadImage(files(entry.backdrop)).catch(() => undefined) : undefined;
+    const edge = backEdge(g);
+    let far: Place['far'];
+    if (backdrop && entry.layers) {
+      const sky = await loadImage(files(entry.layers.sky)).catch(() => undefined);
+      const imgs = await Promise.all(entry.layers.flats.map((f) => loadImage(files(f.file)).catch(() => undefined)));
+      const ds = flatDisparities(g, edge, imgs.length);
+      if (sky && imgs.every(Boolean)) far = { sky, flats: entry.layers.flats.map((f, i) => ({ img: imgs[i]!, box: f.box, d: ds[i] })) };
+    }
     const maskOf = (p?: string) => (p ? loadBits(dir(p), g.frame.width, g.frame.height).catch(() => undefined) : Promise.resolve(undefined));
     const byPath = new Map<string, Promise<Bits | undefined>>();
     const shared = (p?: string) => {
@@ -239,7 +249,7 @@ class Game {
     const kept = cuts.filter((c): c is Cut => !!c).map((c) => ({ ...c, y: cardY(g, c.occ, (k) => byKey.get(k)) }));
     // Far cards first, so nearer ones cover them when they slide.
     kept.sort((a, b) => a.y - b.y);
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge: backEdge(g), light: bg && lightMap(bg, g.frame.width, g.frame.height), hots, cuts: kept, byKey };
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, light: bg && lightMap(bg, g.frame.width, g.frame.height), hots, cuts: kept, byKey };
     this.cache.set(key, place);
     return place;
   }
@@ -711,8 +721,14 @@ class Game {
         ctx.save();
         ctx.transform(...(above as [number, number, number, number, number, number]));
         // A few rows past the horizon, under the upright band, so a small vertical slide leaves no gap.
-        ctx.drawImage(backdrop, 0, 0, W, Math.min(H, h + 12), 0, 0, W, Math.min(H, h + 12));
+        const top = this.place.far?.sky ?? backdrop;
+        ctx.drawImage(top, 0, 0, W, Math.min(H, h + 12), 0, 0, W, Math.min(H, h + 12));
         ctx.restore();
+      }
+      // The far view, flat behind flat, each sliding a little more than the one behind it.
+      for (const f of this.place.far?.flats ?? []) {
+        const [sx, sy] = shiftAtDisparity(p, f.d);
+        ctx.drawImage(f.img, f.box[0] + sx, f.box[1] + sy);
       }
       ctx.save();
       ctx.transform(...(below as [number, number, number, number, number, number]));

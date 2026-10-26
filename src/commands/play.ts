@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Geometry } from '../play/geometry.ts';
 import { previewGeometry } from '../play/preview.ts';
+import type { Layers } from '../play/parallax.ts';
 import { Rig } from '../play/rig.ts';
 import { soundData } from '../sound/data.ts';
 import { defineCommand, takeOption } from '../registry.ts';
@@ -13,13 +14,15 @@ import { Layout } from '../scene/layout.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
 
+type Flats = { sky: string; flats: Array<{ file: string; box: [number, number, number, number] }> };
+
 export const WEB = fileURLToPath(new URL('../../web/', import.meta.url));
 const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.mp3': 'audio/mpeg' };
 
 /** What the page loads: the world, and per place its geometry (measured, or a preview from the layout). */
 export function worldData(files: WorldFiles) {
   const world = files.world();
-  const places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; issue?: string }> = {};
+  const places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; issue?: string }> = {};
   for (const place of world.places) {
     const painted = ['painting.png', 'blockin.png'].find((f) => fs.existsSync(files.place(place.key, f)));
     let geometry: Geometry | null = null;
@@ -35,7 +38,11 @@ export function worldData(files: WorldFiles) {
     // Not for a place painted from a photo: the film dissolves the photo into that exact frame, so it stays still.
     const fromPhoto = fs.existsSync(files.place(place.key, 'photo.png'));
     const backdrop = painted === 'painting.png' && !fromPhoto && fs.existsSync(files.place(place.key, 'backdrop.png')) ? `places/${place.key}/backdrop.png` : undefined;
-    places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, ...(backdrop && { backdrop }), issue };
+    // layers.json: the far view as flats (sky, then farthest to nearest), from the same backdrop step.
+    const layersFile = files.place(place.key, 'layers.json');
+    const flats = backdrop && fs.existsSync(layersFile) ? (files.readJson(layersFile) as Flats) : undefined;
+    const layers = flats && { sky: `places/${place.key}/${flats.sky}`, flats: flats.flats.map((f) => ({ file: `places/${place.key}/${f.file}`, box: f.box })) };
+    places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, ...(backdrop && { backdrop }), ...(layers && { layers }), issue };
   }
   const castDir = files.path('cast');
   const cast = Object.fromEntries((fs.existsSync(castDir) ? fs.readdirSync(castDir) : [])

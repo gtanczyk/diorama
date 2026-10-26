@@ -5,6 +5,7 @@ import { maskFromPng } from '../image/mask.ts';
 import { Geometry } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
 import { backdropFor, smearedBackdrop, type Card } from '../scene/backdrop.ts';
+import { farFlats } from '../scene/layers.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
@@ -43,6 +44,19 @@ defineCommand({
       files.write(at('backdrop.json'), report);
       const stuck = Object.entries(report).filter(([, r]) => r.stillThere).map(([k]) => k);
       console.log(`${place.key}: backdrop behind ${keys.join(', ')}${stuck.length ? ` (Muse left ${stuck.join(', ')}: smeared there)` : ''}`);
+      // The far view as flats one behind another (layers/), so it has depth of its own.
+      fs.rmSync(at('layers'), { recursive: true, force: true });
+      fs.rmSync(at('layers.json'), { force: true });
+      const far = await farFlats(files.memo, place, png, g.scale.horizonY).catch((error) => {
+        console.log(`  ${place.key}: no far flats (${error instanceof Error ? error.message.slice(0, 120) : error})`);
+        return undefined;
+      });
+      if (far) {
+        files.write(at('layers', 'sky.png'), far.sky);
+        far.flats.forEach((f, i) => files.write(at('layers', `${i}.png`), f.png));
+        files.write(at('layers.json'), { sky: 'layers/sky.png', flats: far.flats.map((f, i) => ({ phrase: f.phrase, file: `layers/${i}.png`, box: f.box, px: f.px })) });
+        console.log(`  ${place.key}: far flats, farthest first: ${far.flats.map((f) => f.phrase).join(' · ')}`);
+      }
     }));
     console.log(`calls sent: muse ${files.memo.sent.muse}, sam ${files.memo.sent.sam}`);
   },

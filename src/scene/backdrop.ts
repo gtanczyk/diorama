@@ -18,12 +18,14 @@ export const BACKDROP_GROW = 14;
 /**
  * Fills the masked pixels from their surroundings: a pyramid of averages of the known pixels,
  * read back from the finest level that has any. Smooth, never sharp; fine for a strip of a few px.
+ * With `known`, only those pixels feed the fill.
  */
-export function smearFill(rgb: Uint8Array, W: number, H: number, hole: Mask): Uint8Array {
+export function smearFill(rgb: Uint8Array, W: number, H: number, hole: Mask, known?: Mask): Uint8Array {
   type Level = { w: number; h: number; sum: Float32Array; weight: Float32Array };
   const base: Level = { w: W, h: H, sum: new Float32Array(W * H * 3), weight: new Float32Array(W * H) };
   for (let i = 0; i < W * H; i++) {
-    if (hole.bits[i]) continue;
+    // Known pixels: everything outside the hole, or only `known` (to grow a layer from its own pixels).
+    if (known ? !known.bits[i] : hole.bits[i]) continue;
     base.weight[i] = 1;
     for (let c = 0; c < 3; c++) base.sum[i * 3 + c] = rgb[i * 3 + c];
   }
