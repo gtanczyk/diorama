@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import { defineCommand, takeOption } from '../registry.ts';
 import { paintFigure, type Who } from '../scene/cast.ts';
+import { rigFigure } from '../scene/rig.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
@@ -23,7 +24,15 @@ defineCommand({
       const { painting, figure } = await paintFigure(files.memo, world, who, take, who.key === world.hero.key ? photo : undefined);
       files.write(files.path('cast', `${who.key}-painting.png`), painting);
       files.write(files.path('cast', `${who.key}.png`), figure);
-      console.log(`${who.key}: ${files.path('cast', `${who.key}.png`)}`);
+      // The same painting cut into parts, so the runtime can walk the figure.
+      try {
+        const { rig, parts, issues } = await rigFigure(files.memo, who.key, painting);
+        for (const [file, png] of Object.entries(parts)) files.write(files.path('cast', who.key, file), png);
+        files.write(files.path('cast', who.key, 'rig.json'), rig);
+        console.log(`${who.key}: ${files.path('cast', `${who.key}.png`)} · rig ${rig.parts.length} parts${issues.map((i) => ` · ${i}`).join('')}`);
+      } catch (error) {
+        console.log(`${who.key}: ${files.path('cast', `${who.key}.png`)} · no rig: ${error instanceof Error ? error.message : error}`);
+      }
     }));
     console.log(`calls sent: muse ${files.memo.sent.muse}, sam ${files.memo.sent.sam}`);
   },
