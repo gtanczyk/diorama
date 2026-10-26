@@ -126,13 +126,14 @@ function background(img: Rgba, [x0, y0, w, h]: number[], tolerance = 26): Mask {
  * Cuts each painted frame out of its grey and lines it up with its guide frame: same feet line, same
  * centre, same height. Returns the transparent sheet and how well each frame kept the guide's pose (IoU).
  */
-export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ sheet: Buffer; iou: number[] }> {
+export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ sheet: Buffer; iou: number[]; legs: number[] }> {
   const { cols, rows, width: W, height: H } = SHEET;
   const guide = await rgba(guidePng, [W, H]);
   const painted = await rgba(paintedPng, [W, H]);
   const out = Buffer.alloc(W * H * 4);
   const [cw, ch] = [W / cols, H / rows];
   const iou: number[] = [];
+  const legs: number[] = [];
   for (let i = 0; i < cols * rows; i++) {
     const cell = [(i % cols) * cw, Math.floor(i / cols) * ch, cw, ch];
     const [x0, y0] = cell;
@@ -150,7 +151,7 @@ export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ 
     }
     const gb = maskBox(want);
     const pb = maskBox(kept);
-    if (!gb || !pb) { iou.push(0); continue; }
+    if (!gb || !pb) { iou.push(0); legs.push(0); continue; }
     // Same height, same feet line, same centre across.
     const s = Math.min(1.2, Math.max(0.8, (gb[3] - gb[1]) / (pb[3] - pb[1])));
     const [gcx, pcx] = [(gb[0] + gb[2]) / 2, (pb[0] + pb[2]) / 2];
@@ -166,6 +167,11 @@ export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ 
       out[to + 3] = 255;
     }
     iou.push(Number(maskIou(want, moved).toFixed(3)));
+    // Muse sometimes draws the other leg forward: the legs alone (lowest third) catch that.
+    const below = Math.round(gb[3] - (gb[3] - gb[1]) / 3);
+    const low = (m: Mask) => ({ ...m, bits: m.bits.map((b, k) => (k >= below * cw ? b : 0)) });
+    legs.push(Number(maskIou(low(want), low(moved)).toFixed(3)));
   }
-  return { sheet: await sharp(out, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer(), iou };
+  return { sheet: await sharp(out, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer(), iou, legs };
 }
+
