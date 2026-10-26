@@ -8,5 +8,5 @@ import './masks.ts';
 import './derive.ts';
 import './verify.ts';
 import './build.ts';
-import './hero.ts';
+import './cast.ts';
 import './play.ts';
