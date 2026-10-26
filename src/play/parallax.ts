@@ -97,3 +97,37 @@ export function stackCards(occluders: Occluder[]): Array<Occluder & { stacked?: 
   }
   return out;
 }
+
+/**
+ * Per walk-grid column, the row where the walkable floor ends at the back (smoothed). The backdrop between
+ * the horizon and that row is taken as standing upright there (a quay wall, a railing, the far side of a
+ * room), so it slides as one piece with the floor's back edge instead of leaning with the floor's shear.
+ */
+export function backEdge(g: Geometry, smooth = 7): Float32Array {
+  const cols = Math.max(...g.walk.map((r) => r.length));
+  const raw = new Float32Array(cols).fill(NaN);
+  for (let c = 0; c < cols; c++) {
+    const r = g.walk.findIndex((row) => row[c] === '#');
+    if (r >= 0) raw[c] = r * g.cell;
+  }
+  const valid = [...raw.keys()].filter((c) => !Number.isNaN(raw[c]));
+  if (!valid.length) return raw.fill(g.scale.horizonY);
+  for (let c = 0; c < cols; c++) {
+    if (!Number.isNaN(raw[c])) continue;
+    const near = valid.reduce((a, b) => (Math.abs(b - c) < Math.abs(a - c) ? b : a));
+    raw[c] = raw[near];
+  }
+  // A wide moving average: neighbouring columns must slide by nearly the same amount, or the wall tears.
+  const out = new Float32Array(cols);
+  for (let c = 0; c < cols; c++) {
+    let sum = 0;
+    let n = 0;
+    for (let d = -smooth; d <= smooth; d++) {
+      const k = Math.min(cols - 1, Math.max(0, c + d));
+      sum += raw[k];
+      n++;
+    }
+    out[c] = Math.max(g.scale.horizonY, sum / n);
+  }
+  return out;
+}

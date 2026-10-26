@@ -1,6 +1,6 @@
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
 import { floorYAt, hiddenRuns, personPx, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
-import { backdropTransforms, cardY, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
+import { backdropTransforms, backEdge, cardY, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
@@ -35,6 +35,8 @@ type Place = {
   backdrop?: HTMLImageElement;
   /** The depth that stays put while the camera sways. */
   pivot: number;
+  /** Per walk-grid column, the floor's back edge: what stands above it slides with it (see backEdge). */
+  edge: Float32Array;
   hots: Hot[];
   cuts: Cut[];
   byKey: Map<string, Occluder>;
@@ -124,6 +126,8 @@ class Game {
   cam: Camera = { x: 0, y: 0 };
   /** The scene column at the middle of the view; W/2 unless the camera tracks the hero. */
   viewX = 0;
+  /** The scene row at the middle of the view; H/2 unless tracking, which keeps the hero's feet in view. */
+  viewY = 0;
   private pending: (() => void) | null = null;
   private listeners: Array<(event: Events, detail: object) => void> = [];
   frame = 0;
@@ -231,7 +235,7 @@ class Game {
     const kept = cuts.filter((c): c is Cut => !!c).map((c) => ({ ...c, y: cardY(g, c.occ, (k) => byKey.get(k)) }));
     // Far cards first, so nearer ones cover them when they slide.
     kept.sort((a, b) => a.y - b.y);
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), light: bg && lightMap(bg, g.frame.width, g.frame.height), hots, cuts: kept, byKey };
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge: backEdge(g), light: bg && lightMap(bg, g.frame.width, g.frame.height), hots, cuts: kept, byKey };
     this.cache.set(key, place);
     return place;
   }
@@ -542,7 +546,7 @@ class Game {
   unzoom(x: number, y: number): Point {
     const z = this.zoom();
     const { width: W, height: H } = this.place.g.frame;
-    return [(x - W / 2) / z + (this.viewX || W / 2), (y - H / 2) / z + H / 2];
+    return [(x - W / 2) / z + (this.viewX || W / 2), (y - H / 2) / z + (this.viewY || H / 2)];
   }
 
   /** The parallax shift of a card at column x: a card with a floor line (a railing along the quay) slides
@@ -580,18 +584,26 @@ class Game {
   private swayCamera(dt: number) {
     const W = this.place.g.frame.width;
     const k = 1 - Math.exp(-dt * 2.5);
+    const H = this.place.g.frame.height;
     this.viewX ||= W / 2;
+    this.viewY ||= H / 2;
     const room = this.panRoom();
     if (room > 0) {
       // Tracking: the view pans after the hero; how far it has panned is the camera's swing.
       const want = Math.max(W / 2 - room, Math.min(W / 2 + room, this.hero.x));
       this.viewX += (want - this.viewX) * (1 - Math.exp(-dt * 1.6));
+      // Up and down only as far as the frame allows, and only as low as it takes to keep the feet in view:
+      // the rest of the view goes to the skyline.
+      const roomY = (room * H) / W;
+      const wantY = Math.max(H / 2 - roomY, Math.min(H / 2 + roomY, this.hero.y + 24 - H / (2 * this.zoom())));
+      this.viewY += (wantY - this.viewY) * (1 - Math.exp(-dt * 1.6));
       this.cam.x = -(this.viewX - W / 2) / room;
       const ty = sway ? Math.sin(this.time * 0.31 + 1) * 0.4 : 0;
       this.cam.y += (ty - this.cam.y) * k;
       return;
     }
     this.viewX = W / 2;
+    this.viewY = H / 2;
     // The pointer looks around the diorama; the hero walking across pulls the view after him.
     let tx = -0.5 * (this.hero.x / W - 0.5) * 2;
     let ty = 0;
@@ -685,7 +697,7 @@ class Game {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#20232a';
     ctx.fillRect(0, 0, W, H);
-    ctx.setTransform(z, 0, 0, z, W / 2 - z * (this.viewX || W / 2), (H / 2) * (1 - z));
+    ctx.setTransform(z, 0, 0, z, W / 2 - z * (this.viewX || W / 2), H / 2 - z * (this.viewY || H / 2));
     const gone = this.gone();
     if (p && backdrop) {
       // A diorama: the backdrop's floor shears with depth, then every card slides as the floor row it stands on.
@@ -694,13 +706,26 @@ class Game {
       if (h > 0) {
         ctx.save();
         ctx.transform(...(above as [number, number, number, number, number, number]));
-        ctx.drawImage(backdrop, 0, 0, W, Math.min(H, h + 1), 0, 0, W, Math.min(H, h + 1));
+        // A few rows past the horizon, under the upright band, so a small vertical slide leaves no gap.
+        ctx.drawImage(backdrop, 0, 0, W, Math.min(H, h + 12), 0, 0, W, Math.min(H, h + 12));
         ctx.restore();
       }
       ctx.save();
       ctx.transform(...(below as [number, number, number, number, number, number]));
       ctx.drawImage(backdrop, 0, h, W, H - h, 0, h, W, H - h);
       ctx.restore();
+      // Between the horizon and the floor's back edge stands the upright band (a wall, a railing): column by
+      // column it slides as one piece with the edge it stands on.
+      const edge = this.place.edge;
+      for (let c = 0; c < edge.length; c++) {
+        const e = Math.round(edge[c]);
+        if (e <= h + 1) continue;
+        const x0 = c * g.cell;
+        const w = Math.min(g.cell + 1, W - x0);
+        if (w <= 0) break;
+        const [sx, sy] = shiftAt(g, p, e);
+        ctx.drawImage(backdrop, x0, h, w, e - h + 1, x0 + sx, h + sy, w, e - h + 1);
+      }
       const carded = new Set(this.place.cuts.map((c) => c.occ.thing ?? c.occ.key));
       for (const hot of this.place.hots) {
         // A carried-off card is simply not drawn; a flat thing gets its clean plate, on the floor it lies on.
