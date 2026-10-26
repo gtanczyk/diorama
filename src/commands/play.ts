@@ -8,6 +8,7 @@ import { Geometry } from '../play/geometry.ts';
 import { previewGeometry } from '../play/preview.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { Layout } from '../scene/layout.ts';
+import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
 
 const WEB = fileURLToPath(new URL('../../web/', import.meta.url));
@@ -31,7 +32,8 @@ export function worldData(files: WorldFiles) {
     places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, issue };
   }
   const hero = fs.existsSync(files.path('hero', 'hero.png')) ? 'hero/hero.png' : null;
-  return { slug: files.slug, world, places, hero };
+  const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
+  return { slug: files.slug, world, places, hero, story };
 }
 
 async function bundle(): Promise<string> {

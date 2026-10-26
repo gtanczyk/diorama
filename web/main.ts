@@ -1,6 +1,8 @@
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
 import { hiddenRuns, personPx, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
+import { actions, apply, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
+import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 
 type Data = {
@@ -8,6 +10,7 @@ type Data = {
   world: World;
   places: Record<string, { geometry: Geometry | null; painting: string | null; issue?: string }>;
   hero: string | null;
+  story: Story | null;
 };
 
 type Bits = { bits: Uint8Array; area: number };
@@ -25,7 +28,13 @@ type Place = {
   byKey: Map<string, Occluder>;
 };
 
-type Events = 'enter' | 'arrive' | 'say' | 'silent' | 'use' | 'exit';
+type Events = 'enter' | 'arrive' | 'say' | 'silent' | 'use' | 'exit' | 'ending';
+type Verb = 'look' | 'use' | 'take' | 'talk';
+
+function lineChoice(story: Story, state: State, index: number): string {
+  const talk = state.talk!;
+  return story.dialogues[talk.dialogue].lines.find((l) => l.key === talk.line)?.choices[index]?.text ?? '…';
+}
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -60,6 +69,9 @@ class Game {
   private cache = new Map<string, Place>();
   hero = { x: 0, y: 0, path: [] as Point[], facing: 1, phase: 0, img: undefined as HTMLImageElement | undefined };
   speech: { text: string; until: number } | null = null;
+  state!: State;
+  /** The inventory item the next click uses. */
+  holding: string | undefined;
   hover: Hot | undefined;
   grid = params.has('grid');
   /** 0 clear, 1 black; eases toward darkTarget. */
@@ -72,7 +84,12 @@ class Game {
   async start() {
     this.data = await (await fetch('/api/world')).json();
     if (this.data.hero) this.hero.img = await loadImage(files(this.data.hero)).catch(() => undefined);
-    await this.enter(params.get('place') ?? this.data.world.start);
+    this.state = startState(this.data.world);
+    const at = params.get('place');
+    if (at) this.state.place = at;
+    await this.enter(this.state.place);
+    this.ui();
+    if (this.data.story && !at) await this.say(this.data.story.intro);
   }
 
   on(fn: (event: Events, detail: unknown) => void) {
@@ -161,24 +178,93 @@ class Game {
     });
   }
 
-  /** Walks to a thing, faces it and uses it: look at it, or go through it when it is an exit. */
-  async use(key: string) {
+  /** Walks to a thing, faces it and clicks it: through an exit, talk to someone, or the verb the story offers. */
+  async use(key: string, verb?: Verb) {
     const hot = this.place.hots.find((h) => h.thing.key === key);
     if (!hot) throw new Error(`${this.place.key} has no thing "${key}"`);
     const placeKey = this.place.key;
-    if (!(await this.walkTo(...hot.thing.stand)) && Math.hypot(this.hero.x - hot.thing.stand[0], this.hero.y - hot.thing.stand[1]) > this.place.g.cell * 2) return;
+    const [sx, sy] = hot.thing.stand;
+    if (!(await this.walkTo(sx, sy)) && Math.hypot(this.hero.x - sx, this.hero.y - sy) > this.place.g.cell * 2) return;
     if (this.place.key !== placeKey) return;
     const [x0, , x1] = hot.thing.box;
     this.hero.facing = (x0 + x1) / 2 >= this.hero.x ? 1 : -1;
-    this.emit('use', { thing: key });
-    const exit = this.place.spec.exits.find((e) => e.via === key);
-    if (exit) {
-      this.emit('exit', { from: placeKey, to: exit.to });
-      await this.fadeOut();
-      await this.enter(exit.to, placeKey);
-      return;
+    this.emit('use', { thing: key, verb });
+    await this.act(this.actionFor(key, hot, verb));
+  }
+
+  /** What a click on a thing means: the exit, the talk, the held item, or the first verb the story answers. */
+  private actionFor(key: string, hot: Hot, verb?: Verb): Action {
+    if (verb === 'look') return { kind: 'do', thing: key, verb: 'look' };
+    if (this.place.spec.exits.some((e) => e.via === key)) return { kind: 'go', via: key };
+    const role = hot.spec?.role ?? hot.thing.role;
+    if (role === 'npc' && !this.holding) return { kind: 'talk', npc: key };
+    if (this.holding) return { kind: 'do', thing: key, verb: 'use', with: this.holding };
+    if (verb) return { kind: 'do', thing: key, verb };
+    const story = this.data.story;
+    const offered = story ? (['take', 'use', 'talk'] as const).find((v) => pickInteraction(story, this.state, { thing: key, verb: v }) >= 0) : undefined;
+    return { kind: 'do', thing: key, verb: offered ?? 'look' };
+  }
+
+  /** Runs one story action: says its lines, follows a change of place, shows an ending. */
+  async act(action: Action) {
+    const story = this.data.story;
+    const from = this.state.place;
+    let say: string[];
+    if (story) {
+      const step = apply(this.data.world, story, this.state, action);
+      this.state = step.state;
+      say = step.say;
+    } else {
+      // Without story.json the world alone answers: exits lead on, everything else is looked at.
+      const exit = action.kind === 'go' ? this.place.spec.exits.find((e) => e.via === action.via) : undefined;
+      if (exit) this.state = { ...this.state, place: exit.to };
+      const key = action.kind === 'do' ? action.thing : action.kind === 'talk' ? action.npc : '';
+      say = exit || !key ? [] : [this.place.spec.things.find((t) => t.key === key)?.looks ?? key];
     }
-    await this.say(hot.spec?.looks ?? key);
+    if (action.kind === 'do' && action.with) this.holding = undefined;
+    if (!say.length && action.kind === 'do') say = [this.lookLine(action.thing, action.verb)];
+    this.ui();
+    for (const line of say) await this.say(line);
+    if (this.state.place !== from) {
+      this.emit('exit', { from, to: this.state.place });
+      await this.fadeOut();
+      await this.enter(this.state.place, from);
+    }
+    if (this.state.ending) this.emit('ending', { ending: this.state.ending });
+    this.ui();
+  }
+
+  private lookLine(thing: string, verb: string): string {
+    const looks = this.place.spec.things.find((t) => t.key === thing)?.looks ?? thing.replace(/-/g, ' ');
+    return verb === 'look' ? looks : `Nothing happens. ${looks[0].toUpperCase()}${looks.slice(1)}.`;
+  }
+
+  /** Inventory, conversation choices and the ending, as plain HTML over the canvas. */
+  ui() {
+    const story = this.data.story;
+    const inv = document.getElementById('inventory')!;
+    inv.replaceChildren(...this.state.items.map((item) => {
+      const b = document.createElement('button');
+      b.textContent = story?.items.find((i) => i.key === item)?.name ?? item;
+      b.className = this.holding === item ? 'held' : '';
+      b.onclick = () => {
+        this.holding = this.holding === item ? undefined : item;
+        this.ui();
+      };
+      return b;
+    }));
+    const talk = document.getElementById('talk')!;
+    const options = story && this.state.talk ? actions(this.data.world, story, this.state) : [];
+    talk.replaceChildren(...options.map((a) => {
+      const b = document.createElement('button');
+      b.textContent = a.kind === 'choose' ? lineChoice(story!, this.state, a.index) : 'Goodbye.';
+      b.onclick = () => void this.act(a);
+      return b;
+    }));
+    const ending = story?.endings.find((e) => e.key === this.state.ending);
+    const end = document.getElementById('ending')!;
+    end.hidden = !ending;
+    if (ending) end.innerHTML = `<h1></h1><p></p>`, (end.querySelector('h1')!.textContent = ending.title), (end.querySelector('p')!.textContent = ending.text);
   }
 
   say(text: string): Promise<void> {
@@ -251,8 +337,20 @@ class Game {
       ctx.fillStyle = '#20232a';
       ctx.fillRect(0, 0, W, H);
     }
-    const rect = this.drawHero();
-    this.occlude(rect);
+    // Everyone is drawn far to near, and each one gets the things in front of them put back.
+    const npcs = this.place.hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc' && !h.mask);
+    const people = [...npcs.map((h) => ({ npc: h, y: h.thing.box[3] })), { npc: undefined, y: this.hero.y }].sort((a, b) => a.y - b.y);
+    let rect: [number, number, number, number] = [0, 0, 0, 0];
+    for (const who of people) {
+      if (who.npc) {
+        const [x0, , x1, y1] = who.npc.thing.box;
+        const x = (x0 + x1) / 2;
+        this.occlude(this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, undefined, '#4b3b2a'), y1);
+      } else {
+        rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.img, '#2b2733');
+        this.occlude(rect, this.hero.y);
+      }
+    }
     if (this.grid) this.drawGrid();
     this.drawSpeech(rect);
     if (this.hover && !capture) {
@@ -267,9 +365,8 @@ class Game {
     }
   }
 
-  /** Draws the hero with feet at his position; returns the box he and his shadow cover. */
-  private drawHero(): [number, number, number, number] {
-    const { x, y, facing, phase, img } = this.hero;
+  /** Draws a person with feet at (x, y); returns the box they and their shadow cover. */
+  private drawPerson(x: number, y: number, facing: number, phase: number, img: HTMLImageElement | undefined, colour: string): [number, number, number, number] {
     const h = personPx(this.place.g, y);
     const w = img ? (h * img.width) / img.height : h * 0.36;
     const bob = Math.abs(Math.sin(phase)) * h * 0.025;
@@ -282,13 +379,13 @@ class Game {
     ctx.rotate(Math.sin(phase) * 0.035);
     ctx.scale(facing, 1);
     if (img) ctx.drawImage(img, -w / 2, -h, w, h);
-    else drawFigure(h);
+    else drawFigure(h, colour);
     ctx.restore();
     return [x - w / 2 - 2, y - h - bob - 2, x + w / 2 + 2, y + Math.max(3, h * 0.04)];
   }
 
   /** Puts the painting back over the hero, column by column, wherever an occluder stands in front of him. */
-  private occlude([left, top, right, bottom]: [number, number, number, number]) {
+  private occlude([left, top, right, bottom]: [number, number, number, number], feetY: number) {
     const support = (k: string) => this.place.byKey.get(k);
     for (const cut of this.place.cuts) {
       const [bx0, by0, bx1, by1] = cut.occ.box;
@@ -296,7 +393,7 @@ class Game {
       const y0 = Math.max(top, cut.y0);
       const y1 = Math.min(bottom, cut.y0 + cut.canvas.height);
       if (y1 <= y0) continue;
-      for (const [a, b] of hiddenRuns(cut.occ, left, right, this.hero.y, support)) {
+      for (const [a, b] of hiddenRuns(cut.occ, left, right, feetY, support)) {
         const xa = Math.max(a, cut.x0);
         const xb = Math.min(b, cut.x0 + cut.canvas.width);
         if (xb > xa) ctx.drawImage(cut.canvas, xa - cut.x0, y0 - cut.y0, xb - xa, y1 - y0, xa, y0, xb - xa, y1 - y0);
@@ -353,9 +450,9 @@ class Game {
   }
 }
 
-/** A plain stand-in hero, drawn facing right with feet at the origin. */
-function drawFigure(h: number) {
-  ctx.fillStyle = '#2b2733';
+/** A plain stand-in person, drawn facing right with feet at the origin. */
+function drawFigure(h: number, colour: string) {
+  ctx.fillStyle = colour;
   ctx.strokeStyle = '#f2e6c9';
   ctx.lineWidth = Math.max(1, h * 0.012);
   const body = new Path2D();
@@ -380,11 +477,16 @@ canvas.addEventListener('mousemove', (e) => {
   document.getElementById('hover')!.textContent = game.hover ? game.hover.thing.key.replace(/-/g, ' ') : '';
 });
 canvas.addEventListener('click', (e) => {
-  if (!game.place || game.dark > 0) return;
+  if (!game.place || game.dark > 0 || game.state.talk || game.state.ending) return;
   const [x, y] = toFrame(e);
   const hot = game.thingAt(x, y);
   if (hot) void game.use(hot.thing.key);
   else void game.walkTo(x, y);
+});
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  const hot = game.place && game.dark === 0 ? game.thingAt(...toFrame(e)) : undefined;
+  if (hot) void game.use(hot.thing.key, 'look');
 });
 addEventListener('keydown', (e) => {
   if (e.key === 'g') game.grid = !game.grid;
@@ -394,14 +496,15 @@ if (capture) document.getElementById('bar')!.style.display = 'none';
 // For scripts and recorders: drive the hero and listen to what happens.
 Object.assign(window, { diorama: game });
 
-await game.start();
 let last = performance.now();
 const frame = (now: number) => {
+  requestAnimationFrame(frame);
+  if (!game.place) return;
   // Capture mode steps a fixed 1/60 s per frame so a recorded run is the same every time.
   const dt = capture ? 1 / 60 : Math.min(0.05, (now - last) / 1000);
   last = now;
   game.update(dt);
   game.render();
-  requestAnimationFrame(frame);
 };
 requestAnimationFrame(frame);
+await game.start();

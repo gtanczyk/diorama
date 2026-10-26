@@ -10,11 +10,21 @@
   canvas { max-width: 100vw; max-height: 100vh; aspect-ratio: 1200 / 896; image-rendering: auto; }
   #bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 14px; background: linear-gradient(transparent, #000a); font-size: 14px; pointer-events: none; display: flex; justify-content: space-between; }
   #bar .hint { opacity: 0.6; }
+  #inventory { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; }
+  #talk { position: absolute; left: 50%; bottom: 48px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; width: min(640px, 90vw); }
+  button { font: inherit; color: #f4ecd8; background: #1a1714dd; border: 1px solid #f4ecd855; border-radius: 8px; padding: 6px 12px; cursor: pointer; text-align: left; }
+  button:hover, button.held { background: #4a3a22ee; border-color: #ffd37a; }
+  #ending { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; background: #000c; padding: 24px; }
+  #ending[hidden] { display: none; }
+  #ending h1 { font-weight: normal; font-size: 40px; margin: 0 0 12px; }
 </style>
 </head>
 <body>
 <div id="stage"><canvas id="view" width="1200" height="896"></canvas></div>
-<div id="bar"><span id="where"></span><span id="hover"></span><span class="hint">click to walk · g grid</span></div>
+<div id="inventory"></div>
+<div id="talk"></div>
+<div id="ending" hidden></div>
+<div id="bar"><span id="where"></span><span id="hover"></span><span class="hint">click to walk or use · right click to look · g grid</span></div>
 <script type="module" src="/main.js"></script>
 </body>
 </html>
