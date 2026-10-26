@@ -43,8 +43,9 @@ export const PROBE_JS = String.raw`async ({ placeKey, positions }) => {
     return line[line.length - 1][1];
   };
   const occ = new Map(g.occluders.map((o) => [o.key, o]));
-  // Where each thing meets the floor at column x; undefined for things nobody stands behind (walls, water).
-  const things = place.hots.filter((h) => h.mask && h.thing.kind !== 'walk-on' && h.thing.kind !== 'wall' && h.thing.kind !== 'flat').map((h) => {
+  // Where each thing meets the floor at column x. Walls and water have no such line, and a coarse
+  // mask is a box around the thing, not its outline, so overlaps with it say nothing.
+  const things = place.hots.filter((h) => h.mask && !h.thing.coarse && h.thing.kind !== 'walk-on' && h.thing.kind !== 'wall' && h.thing.kind !== 'flat').map((h) => {
     const own = g.occluders.filter((o) => (o.thing ?? o.key) === h.thing.key);
     const base = (x) => {
       const o = own.find((o) => x >= o.box[0] && x < o.box[2]) ?? own[0];
