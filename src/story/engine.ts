@@ -156,3 +156,15 @@ export function describe(action: Action): string {
     case 'leave': return 'leave';
   }
 }
+
+/** Things the player can carry off: a once-only "take" that gives an item. Each one needs a clean plate under it. */
+export function removableThings(story: Story): { place: string; thing: string }[] {
+  const out = story.interactions.filter((it) => it.verb === 'take' && it.once && it.do.some((e) => 'give' in e));
+  return [...new Map(out.map((it) => [`${it.place}|${it.thing}`, { place: it.place, thing: it.thing }])).values()];
+}
+
+/** Things already carried off in this state, to be painted over with their clean plate. */
+export function hiddenThings(story: Story, state: State): { place: string; thing: string }[] {
+  return state.spent.map((i) => story.interactions[i]).filter((it) => it.verb === 'take' && it.do.some((e) => 'give' in e))
+    .map((it) => ({ place: it.place, thing: it.thing }));
+}

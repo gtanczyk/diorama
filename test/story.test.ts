@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { checkStory } from '../src/story/check.ts';
-import { actions, apply, startState } from '../src/story/engine.ts';
+import { actions, apply, hiddenThings, removableThings, startState } from '../src/story/engine.ts';
 import { Story } from '../src/story/schema.ts';
 import { World } from '../src/world/schema.ts';
 
@@ -76,4 +76,12 @@ test('a locked exit refuses with its line and does not move', () => {
   const start = startState(world);
   expect(actions(world, s, start).map((a) => a.kind)).toEqual(['do']);
   expect(apply(world, s, start, { kind: 'go', via: 'door' })).toEqual({ state: start, say: ['Too dark to go out without a light.'] });
+});
+
+test('a taken item is listed for a clean plate and hidden once taken', () => {
+  const s = Story.parse(story);
+  expect(removableThings(s)).toEqual([{ place: 'hut', thing: 'lamp' }]);
+  const taken = apply(world, s, startState(world), { kind: 'do', thing: 'lamp', verb: 'take' }).state;
+  expect(hiddenThings(s, startState(world))).toEqual([]);
+  expect(hiddenThings(s, taken)).toEqual([{ place: 'hut', thing: 'lamp' }]);
 });
