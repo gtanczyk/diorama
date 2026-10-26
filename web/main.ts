@@ -40,6 +40,7 @@ const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
 const params = new URLSearchParams(location.search);
 const capture = params.has('capture');
+const hideCursor = capture || params.get('cursor') === '0';
 const files = (p: string) => `/files/${p}`;
 
 const loadImage = (src: string) =>
@@ -79,7 +80,8 @@ class Game {
   private darkTarget = 0;
   time = 0;
   private pending: (() => void) | null = null;
-  private listeners: Array<(event: Events, detail: unknown) => void> = [];
+  private listeners: Array<(event: Events, detail: object) => void> = [];
+  frame = 0;
 
   async start() {
     this.data = await (await fetch('/api/world')).json();
@@ -92,12 +94,34 @@ class Game {
     if (this.data.story && !at) await this.say(this.data.story.intro);
   }
 
-  on(fn: (event: Events, detail: unknown) => void) {
+  on(fn: (event: Events, detail: object) => void) {
     this.listeners.push(fn);
   }
 
-  private emit(event: Events, detail: unknown) {
-    for (const fn of this.listeners) fn(event, detail);
+  private emit(event: Events, detail: object) {
+    // The frame number lets a recorder cut on the fixed-step clock instead of wall time.
+    for (const fn of this.listeners) fn(event, { ...detail, frame: this.frame, time: this.time });
+  }
+
+  /** Plays a list of steps in order, for scripted runs and recordings; resolves when the last one is done. */
+  async play(steps: Array<{ walkTo: Point } | { use: string; verb?: Verb; with?: string } | { act: Action } | { wait: number }>) {
+    for (const step of steps) {
+      if ('walkTo' in step) await this.walkTo(...step.walkTo);
+      else if ('use' in step) {
+        this.holding = step.with;
+        await this.use(step.use, step.verb);
+      } else if ('act' in step) await this.act(step.act);
+      else await this.wait(step.wait);
+    }
+  }
+
+  /** Waits on the game clock, so a wait lasts the same number of frames in capture mode. */
+  wait(ms: number): Promise<void> {
+    const until = this.time + ms / 1000;
+    return new Promise((resolve) => {
+      const check = () => (this.time >= until ? resolve() : setTimeout(check, 10));
+      check();
+    });
   }
 
   async load(key: string): Promise<Place> {
@@ -298,6 +322,7 @@ class Game {
 
   update(dt: number) {
     this.time += dt;
+    this.frame++;
     const hero = this.hero;
     const step = dt / 0.3;
     this.dark = this.darkTarget > this.dark ? Math.min(this.darkTarget, this.dark + step) : Math.max(this.darkTarget, this.dark - step);
@@ -473,7 +498,7 @@ const toFrame = (e: MouseEvent): Point => {
 canvas.addEventListener('mousemove', (e) => {
   if (!game.place) return;
   game.hover = game.thingAt(...toFrame(e));
-  canvas.style.cursor = capture ? 'none' : game.hover ? 'pointer' : 'default';
+  canvas.style.cursor = hideCursor ? 'none' : game.hover ? 'pointer' : 'default';
   document.getElementById('hover')!.textContent = game.hover ? game.hover.thing.key.replace(/-/g, ' ') : '';
 });
 canvas.addEventListener('click', (e) => {
