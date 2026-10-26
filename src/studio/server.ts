@@ -57,7 +57,8 @@ class WorldWatch {
   }
 
   start() {
-    if (this.watcher || !fs.existsSync(this.dir)) return;
+    if (this.watcher || this.users <= 0 || !fs.existsSync(this.dir)) return;
+    this.tailCalls();
     try {
       this.watcher = fs.watch(this.dir, { recursive: true }, (_, name) => name && this.changed(String(name)));
       this.watcher.on('error', () => this.stop());
@@ -128,7 +129,7 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
   };
   // A job's world folder may appear only once the job runs; watch it from then on while anyone looks.
   events.subscribe((e) => {
-    if (e.type === 'job.start' && e.world) watches.get(e.world)?.start();
+    if (e.world && e.type !== 'file.changed' && e.type !== 'call') watches.get(e.world)?.start();
   });
 
   const server = http.createServer(async (req, res) => {

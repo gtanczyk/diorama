@@ -2,7 +2,7 @@
 // moves to sessionStorage and leaves the address bar.
 
 export type StudioEvent = { seq: number; at: string; type: string; world?: string; [k: string]: unknown };
-export type ActionInfo = { name: string; description: string; job: boolean; input: { properties?: Record<string, { enum?: string[] }> } };
+export type ActionInfo = { name: string; description: string; job: boolean; reads: boolean; input: { properties?: Record<string, { enum?: string[] }> } };
 
 const KEY = 'diorama-studio-token';
 

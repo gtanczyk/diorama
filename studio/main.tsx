@@ -22,6 +22,7 @@ type Status = Summary & { placeDetail: PlaceDetail[]; build: Record<string, { se
 const route = signal(location.pathname);
 const followAgent = signal(true);
 let steps: string[] = [];
+let quiet = new Set<string>();
 
 function go(path: string) {
   if (path === route.value) return;
@@ -147,7 +148,7 @@ function Start() {
           <h1>What should the world be?</h1>
           <textarea rows={3} placeholder="A lighthouse keeper's last night before the foghorn is switched off for good…" value={idea} onInput={(e) => setIdea(e.currentTarget.value)} />
           <div class="row">
-            <label>Name <input value={name} onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9-]*" /></label>
+            <label>Name <input value={name} onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
             <label>Places <select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
             <span class="grow" />
             <button type="submit" class="primary" disabled={idea.trim().length < 10 || !!taken}>{taken ? 'Name taken' : 'Build it'}</button>
@@ -189,7 +190,7 @@ function Workshop({ slug }: { slug: string }) {
   const [calls, setCalls] = useState(0);
   const [focus, setFocus] = useState<string | null>(null);
 
-  const refresh = () => call<Status>('world_status', { slug }).then((s) => (setStatus(s), setError(''))).catch((e) => setError(e.message));
+  const refresh = () => call<Status>('world_status', { slug }).then((s) => (setStatus(s), setError(''))).catch((e) => setError(e.status === 404 ? '' : e.message));
   useEffect(() => {
     refresh();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -211,7 +212,7 @@ function Workshop({ slug }: { slug: string }) {
           soon();
           return add(e, `${e.type === 'job.end' ? (job.state === 'done' ? 'done' : job.state) : e.type === 'job.start' ? 'started' : 'queued'}: ${job.label} (by ${job.by})${job.error ? ` · ${job.error}` : ''}`, e.type === 'job.end' && job.state !== 'done' ? 'err' : 'job');
         }
-        case 'action.start': return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.action}`, e.by === 'agent' ? 'agent' : 'act');
+        case 'action.start': if (quiet.has(String(e.action))) return; return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.action}`, e.by === 'agent' ? 'agent' : 'act');
         case 'ui.focus':
           if (!followAgent.value || e.by !== 'agent') return;
           if (e.place) setFocus(String(e.place));
@@ -300,6 +301,7 @@ function App() {
     Promise.all([openSession(), listActions()])
       .then(([, list]) => {
         steps = list.find((a) => a.name === 'run_step')?.input.properties?.step?.enum ?? [];
+        quiet = new Set(list.filter((a) => a.reads).map((a) => a.name));
         setReady('ok');
       })
       .catch((e) => setReady(e.message));

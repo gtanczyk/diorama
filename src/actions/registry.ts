@@ -20,6 +20,8 @@ export type Action<I extends z.ZodTypeAny = z.ZodTypeAny> = {
   input: I;
   /** Starts work that outlives the call (a job), rather than answering right away. */
   job?: boolean;
+  /** Only reads: the activity log leaves it out, since the page itself polls these. */
+  reads?: boolean;
   run(input: z.infer<I>, ctx: ActionContext): Promise<unknown>;
 };
 
@@ -56,7 +58,7 @@ export class ActionError extends Error {
 
 /** The JSON schema of an action's input, for MCP tool listings and the GUI. */
 export function describeActions() {
-  return [...actions.values()].map((a) => ({ name: a.name, description: a.description, job: !!a.job, input: zodToJson(a.input) }));
+  return [...actions.values()].map((a) => ({ name: a.name, description: a.description, job: !!a.job, reads: !!a.reads, input: zodToJson(a.input) }));
 }
 
 /** Enough of JSON Schema for flat action inputs: objects of strings, numbers, booleans, enums and arrays. */

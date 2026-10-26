@@ -44,6 +44,7 @@ defineAction({
 
 defineAction({
   name: 'job_list',
+  reads: true,
   description: 'Jobs this studio ran or queued, newest last, optionally for one world.',
   input: z.object({ slug: Slug.optional() }),
   async run({ slug }, ctx) {

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { Verdict } from '../scene/verify.ts';
 import { Slug, World } from '../world/schema.ts';
-import { defineAction } from './registry.ts';
+import { ActionError, defineAction } from './registry.ts';
 
 const STAGES = [
   ['layout', 'layout.json'],
@@ -70,6 +70,7 @@ export function worldSummary(root: string, slug: string) {
 
 defineAction({
   name: 'world_list',
+  reads: true,
   description: 'List the worlds in worlds/: title, places, how many are playable, which build steps ran.',
   input: z.object({}),
   async run(_, ctx) {
@@ -83,11 +84,12 @@ defineAction({
 
 defineAction({
   name: 'world_status',
+  reads: true,
   description: 'One world in detail: per place which stages exist (layout, painting, masks, geometry, backdrop, verify), verify errors and flags, build steps, model calls sent.',
   input: z.object({ slug: Slug }),
   async run({ slug }, ctx) {
     const dir = path.join(ctx.root, slug);
-    if (!fs.existsSync(dir)) throw new Error(`no world ${slug} in ${ctx.root}`);
+    if (!fs.existsSync(dir)) throw new ActionError(404, `no world ${slug} yet`);
     const parsed = World.safeParse(readJson(path.join(dir, 'world.json')));
     const build = readJson<{ steps?: Record<string, unknown> }>(path.join(dir, 'build.json'));
     const places = (parsed.success ? parsed.data.places : []).map((p) => {

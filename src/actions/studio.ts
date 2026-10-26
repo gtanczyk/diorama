@@ -7,6 +7,7 @@ import { defineAction } from './registry.ts';
 
 defineAction({
   name: 'setup_status',
+  reads: true,
   description: 'What this machine has and still needs (Node, Meta key, Muse Code, Chromium, ElevenLabs, Python, publishing). Never returns a key, only where it comes from.',
   input: z.object({}),
   async run() {
