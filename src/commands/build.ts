@@ -1,10 +1,10 @@
 // diorama build <slug> ["<idea>"]: runs the steps in order and keeps a build.json of what happened.
 import fs from 'node:fs';
-import { defineCommand, registry, takeOption } from '../registry.ts';
+import { defineCommand, emit, registry, takeOption } from '../registry.ts';
 import type { Finding, Verdict } from '../scene/verify.ts';
 import { WorldFiles } from '../world/files.ts';
 
-const STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'derive', 'backdrop', 'sound', 'voices', 'verify'] as const;
+export const STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'derive', 'backdrop', 'sound', 'voices', 'verify'] as const;
 type Step = (typeof STEPS)[number];
 
 /** Model calls sent (not answered from the memo) since `since`, read from the memo's call log. */
@@ -38,14 +38,22 @@ defineCommand({
     const files = new WorldFiles(slug);
     const logFile = files.path('build.json');
     const log = (fs.existsSync(logFile) ? files.readJson(logFile) : { steps: {} }) as { steps: Record<string, unknown> };
+    emit('build.start', { slug, steps: range });
     for (const step of range) {
       console.log(`\n# ${step}`);
+      emit('step.start', { step });
       const at = new Date().toISOString();
       const started = Date.now();
       // A build runs the same commands you could run by hand, one after another.
-      await registry.get(step)!.run(step === 'world' ? [slug, idea, '--places', places, ...(photo ? ['--photo', photo] : []), ...(heroPhoto ? ['--hero-photo', heroPhoto] : [])] : [slug]);
+      try {
+        await registry.get(step)!.run(step === 'world' ? [slug, idea, '--places', places, ...(photo ? ['--photo', photo] : []), ...(heroPhoto ? ['--hero-photo', heroPhoto] : [])] : [slug]);
+      } catch (error) {
+        emit('step.fail', { step, error: error instanceof Error ? error.message : String(error) });
+        throw error;
+      }
       log.steps[step] = { at, seconds: Math.round((Date.now() - started) / 100) / 10, sent: callsSince(files, at) };
       files.write(logFile, log);
+      emit('step.end', { step, ...(log.steps[step] as object) });
     }
     if (range.includes('verify')) {
       // The report: per place, whether it is playable and everything that was flagged and let through.
@@ -57,6 +65,7 @@ defineCommand({
         return { place: place.key, ok: v.ok, errors: v.errors.map(line), flagged: v.flags.map(line) };
       });
       Object.assign(log, { places: report });
+      for (const r of report) emit('place.verdict', r);
       files.write(logFile, log);
       console.log('\n# report');
       for (const r of report) {

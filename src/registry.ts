@@ -14,3 +14,8 @@ export function takeOption(args: string[], name: string, fallback: string): stri
   const [, value] = args.splice(at, 2);
   return value ?? fallback;
 }
+
+/** With DIORAMA_EVENTS=1 (a job run by diorama studio), a line the studio reads as a live event; otherwise nothing. */
+export function emit(type: string, data: Record<string, unknown> = {}) {
+  if (process.env.DIORAMA_EVENTS === '1') process.stdout.write(`@@diorama ${JSON.stringify({ type, ...data })}\n`);
+}

@@ -21,3 +21,6 @@ import './play.ts';
 import './export.ts';
 import './publish.ts';
 import './reel.ts';
+import './setup.ts';
+import './action.ts';
+import './studio.ts';
