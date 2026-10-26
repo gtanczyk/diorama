@@ -213,7 +213,8 @@ float notBg(vec3 c) { return smoothstep(0.14, 0.32, abs(c.r - pBg.r) + abs(c.g -
   }
 
   // A long coat is skinned to the thighs and tears between the legs: weight on a leg bone for a vertex
-  // further than `radius` (figure heights) from that leg's bones moves to the hips.
+  // further than `radius` (figure heights) from that leg's bones moves to the hips. The boot stays on
+  // the leg: the foot segment counts, and nothing below the ankle moves.
   private fixCoat(skinned: THREE.SkinnedMesh, radius: number) {
     const sk = skinned.skeleton;
     const idx = skinned.geometry.attributes.skinIndex;
@@ -221,7 +222,8 @@ float notBg(vec3 c) { return smoothstep(0.14, 0.32, abs(c.r - pBg.r) + abs(c.g -
     const pos = skinned.geometry.attributes.position;
     const hips = sk.bones.indexOf(this.bones.Hips);
     const at = (k: string) => this.bones[k].getWorldPosition(new THREE.Vector3());
-    const segs = { Left: [at('LeftUpLeg'), at('LeftLeg'), at('LeftFoot')], Right: [at('RightUpLeg'), at('RightLeg'), at('RightFoot')] };
+    const toe = (s: string) => (this.bones[`${s}ToeBase`] ? at(`${s}ToeBase`) : at(`${s}Foot`));
+    const segs = { Left: [at('LeftUpLeg'), at('LeftLeg'), at('LeftFoot'), toe('Left')], Right: [at('RightUpLeg'), at('RightLeg'), at('RightFoot'), toe('Right')] };
     const v = new THREE.Vector3();
     const c = new THREE.Vector3();
     const line = new THREE.Line3();
@@ -232,9 +234,10 @@ float notBg(vec3 c) { return smoothstep(0.14, 0.32, abs(c.r - pBg.r) + abs(c.g -
         const name = sk.bones[idx.getComponent(i, j)]?.name.replace(/^mixamorig:?/, '') ?? '';
         const side = name.startsWith('Left') ? 'Left' : name.startsWith('Right') ? 'Right' : null;
         if (!w || !side || !/UpLeg$|Leg$/.test(name)) continue;
-        const [a, b, f] = segs[side];
+        const [a, b, f, t] = segs[side];
+        if (v.y < f.y) continue;
         let d = Infinity;
-        for (const [p, q] of [[a, b], [b, f]]) d = Math.min(d, line.set(p, q).closestPointToPoint(v, true, c).distanceTo(v));
+        for (const [p, q] of [[a, b], [b, f], [f, t]]) d = Math.min(d, line.set(p, q).closestPointToPoint(v, true, c).distanceTo(v));
         const k = Math.max(0, Math.min(1, (d - radius) / radius));
         if (!k) continue;
         wt.setComponent(i, j, w * (1 - k));

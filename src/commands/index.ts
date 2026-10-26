@@ -16,6 +16,7 @@ import './explore.ts';
 import './build.ts';
 import './cast.ts';
 import './model.ts';
+import './sprites.ts';
 import './play.ts';
 import './export.ts';
 import './publish.ts';
