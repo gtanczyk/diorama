@@ -5,7 +5,8 @@ import { defineCommand, takeOption } from '../registry.ts';
 import { Brief } from '../scene/brief.ts';
 import { Layout } from '../scene/layout.ts';
 import { Kind, makeSounds, SoundManifest } from '../sound/make.ts';
-import { planIssues, SoundPlan, writeSoundPlan, type PlaceSources } from '../sound/plan.ts';
+import { inputHash } from '../meta/memo.ts';
+import { planIssues, SoundPlan, withoutStrayLoops, writeSoundPlan, type PlaceSources } from '../sound/plan.ts';
 import { elevenKey, musicgenPython } from '../sound/sources.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
@@ -31,12 +32,16 @@ defineCommand({
       sources[place.key] = { brief: read('brief.json', Brief), layout: read('layout.json', Layout) };
     }
 
-    // sound.json is the plan people may edit; it is only re-asked with --replan.
+    // sound.json is the plan people may edit. It is made again with --replan, or when what it was made from
+    // (world, story, briefs, floors) has changed since, so its shots and loops keep matching the story's things.
     const planFile = files.path('sound.json');
+    const from = inputHash(JSON.stringify(world), JSON.stringify(story), JSON.stringify(sources));
+    const old = fs.existsSync(planFile) ? SoundPlan.parse(files.readJson(planFile)) : undefined;
     let plan: SoundPlan;
-    if (fs.existsSync(planFile) && !replan) plan = SoundPlan.parse(files.readJson(planFile));
+    if (old && !replan && old.from === from) plan = old;
     else {
-      plan = await writeSoundPlan(files.memo, world, story, sources);
+      if (old && !replan) console.log('the world, story or paintings changed since sound.json was planned: planning again (hand edits to it are replaced)');
+      plan = { from, ...withoutStrayLoops(await writeSoundPlan(files.memo, world, story, sources), world) };
       files.write(planFile, plan);
     }
     const issues = planIssues(plan, world, sources);
@@ -53,14 +58,14 @@ defineCommand({
     if (musicFrom === 'musicgen' && !python) throw new Error('--music musicgen needs DIORAMA_PYTHON pointing at a Python with torch, transformers and scipy');
     console.log(`music: ${python ? 'MusicGen (Meta open weights) on this machine' : 'ElevenLabs (set DIORAMA_PYTHON to a Python with torch + transformers for MusicGen)'}`);
     const manifestFile = files.path('sound', 'sounds.json');
-    const old = fs.existsSync(manifestFile) ? SoundManifest.parse(files.readJson(manifestFile)) : { sounds: {} };
+    const made0 = fs.existsSync(manifestFile) ? SoundManifest.parse(files.readJson(manifestFile)) : { sounds: {} };
     const kinds = only ? only.split(',').map((k) => Kind.parse(k.trim())) : undefined;
     const made = await makeSounds(files.memo, plan, (id, mp3) => {
       files.write(files.path('sound', `${id}.mp3`), mp3);
       return `sound/${id}.mp3`;
     }, { python, only: kinds, log: (line) => console.log(line) });
     // A partial run keeps what it did not touch.
-    const sounds = { ...(kinds ? old.sounds : {}), ...made.sounds };
+    const sounds = { ...(kinds ? made0.sounds : {}), ...made.sounds };
     files.write(manifestFile, { sounds });
     const s = files.memo.sent;
     console.log(`sound ${slug}: ${Object.keys(sounds).length} sounds · sent: spark ${s.spark}, sound ${s.sound}, music ${s.music} · ${manifestFile}`);

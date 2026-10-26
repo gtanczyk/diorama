@@ -147,6 +147,9 @@ function speak(memo: Memo, label: string, text: string, voice: Cast[string], tak
 
 export const lineId = (line: Line) => `line-${inputHash(line.speaker, line.text).slice(0, 10)}`;
 
+/** Close enough: 90% of the letters, or at most two letters off, so a short line is not failed for one misheard word ("a" for "of"). */
+export const heardOk = (line: string, match: number) => match >= 0.9 || (1 - match) * letters(line).length <= 2.01;
+
 /** Reads one line, listens back, and reads it again (up to 3 takes) until the transcript matches. */
 export async function voiceLine(memo: Memo, line: Line, voice: Cast[string], write: (id: string, mp3: Buffer) => string): Promise<z.infer<typeof VoiceLine>> {
   const id = lineId(line);
@@ -156,9 +159,9 @@ export async function voiceLine(memo: Memo, line: Line, voice: Cast[string], wri
     const heard = await transcribe(memo, `${id}-${take}`, pcm24k(pcm), 10);
     const match = heardMatch(line.text, heard);
     if (!best || match > best.match) best = { pcm, heard, match, take };
-    if (match >= 0.9) break;
+    if (heardOk(line.text, match)) break;
   }
-  const flags = best!.match < 0.9 ? [`heard ${Math.round(best!.match * 100)}% of the line after 3 takes`] : best!.take > 1 ? [`take ${best!.take} used`] : [];
+  const flags = !heardOk(line.text, best!.match) ? [`heard ${Math.round(best!.match * 100)}% of the line after 3 takes`] : best!.take > 1 ? [`take ${best!.take} used`] : [];
   const pcm = normalise(best!.pcm, -18);
   return { speaker: line.speaker, text: line.text, file: write(id, encodeMp3(pcm, 96)), seconds: Math.round(seconds(pcm) * 100) / 100, heard: best!.heard, match: Math.round(best!.match * 100) / 100, flags };
 }

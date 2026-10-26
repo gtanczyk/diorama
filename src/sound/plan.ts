@@ -14,6 +14,8 @@ const Prompt = z.string().min(8);
 const Level = z.union([z.literal(1), z.literal(2), z.literal(3)]).default(2);
 
 export const SoundPlan = z.object({
+  /** Hash of what the plan was made from (world, story, briefs, floors); when that changes the plan is made again. */
+  from: z.string().optional(),
   /** A music bed for the whole world, looped under everything. */
   music: z.object({ prompt: Prompt }),
   places: z.record(z.string(), z.object({
@@ -70,6 +72,15 @@ export function planIssues(plan: SoundPlan, world: World, sources: Record<string
   return issues;
 }
 
+/** Drops loops on keys that are not things of their place (a floor, say): nothing in the page to pan them to. */
+export function withoutStrayLoops(plan: SoundPlan, world: World): SoundPlan {
+  const places = Object.fromEntries(Object.entries(plan.places).map(([key, p]) => {
+    const things = new Set(world.places.find((w) => w.key === key)?.things.map((t) => t.key) ?? []);
+    return [key, { ...p, loops: p.loops.filter((l) => things.has(l.thing)) }];
+  }));
+  return { ...plan, places };
+}
+
 function storyLines(story: Story | null): string[] {
   if (!story) return [];
   const lines = story.interactions.filter((i) => i.verb !== 'look').map((i) => `- ${i.place}: ${i.verb} ${i.thing}${i.with ? ` with ${i.with}` : ''} -> "${i.say}"`);
@@ -116,8 +127,8 @@ Reply with JSON only:
     const issues = parsed.success ? planIssues(parsed.data, world, sources) : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
     if (!issues.length && parsed.success) return parsed.data;
     if (attempt === 2) {
-      if (parsed.success) return parsed.data; // usable; the step prints what is missing
-      throw new Error(`sound plan: ${issues.join('; ')}`);
+      if (!parsed.success) throw new Error(`sound plan: ${issues.join('; ')}`);
+      return withoutStrayLoops(parsed.data, world); // usable; the step prints what is still missing
     }
     feedback = `\n\nYour last plan had these problems, fix them:\n${issues.map((i) => `- ${i}`).join('\n')}`;
   }

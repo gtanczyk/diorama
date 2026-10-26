@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { placeSound, zoneAt } from '../src/play/sound.ts';
 import { loopProblem, RATE, seamless, steps, type Pcm } from '../src/sound/pcm.ts';
 import { planIssues, soundIds, type SoundPlan } from '../src/sound/plan.ts';
-import { heardMatch, storyLines } from '../src/sound/voices.ts';
+import { heardMatch, heardOk, storyLines } from '../src/sound/voices.ts';
 import type { Story } from '../src/story/schema.ts';
 import type { World } from '../src/world/schema.ts';
 
@@ -84,4 +84,9 @@ test('conversations, intro and endings are spoken; the hero\'s remarks on things
     { speaker: 'girl', text: 'Hi.' }, { speaker: 'narrator', text: 'Light.' },
   ].filter((l) => l.text !== 'A can.'));
   expect(storyLines(world, story, true).map((l) => l.text)).toContain('A can.');
+});
+
+test('a short line may be two letters off, a long one 10%', () => {
+  expect(heardOk('Tell me of fog.', heardMatch('Tell me of fog.', 'Tell me a fog.'))).toBe(true);
+  expect(heardOk('Tell me of fog.', heardMatch('Tell me of fog.', 'Tell me.'))).toBe(false);
 });
