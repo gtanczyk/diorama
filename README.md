@@ -15,12 +15,17 @@ Built during the Meta AI Global Hackathon (26 Oct - 4 Nov 2026).
 Node 22 or newer and a Meta Model API key:
 
 ```sh
-export META_API_KEY=...        # or META_MUSE_API_KEY / META_MODEL_API_KEY
-npx -y github:gtanczyk/diorama help
+npx -y github:gtanczyk/diorama setup    # what this machine still needs; asks for keys, hidden
 npx -y github:gtanczyk/diorama doctor   # one live call to each model
 ```
 
+`diorama setup` keeps keys encrypted (AES-256-GCM) under `~/.config/diorama/`, with the encryption key in the macOS Keychain or the Linux Secret Service. Environment variables (`META_API_KEY`, `ELEVENLABS_API_KEY`, `HF_TOKEN`) still work and win.
+
 Model answers are kept by a hash of their inputs under each world's memo folder, so rerunning a step with the same inputs is free.
+
+## Studio
+
+`diorama studio [slug]` opens the GUI: describe a world and watch it build, place by place, with every step, model call and verify finding live. It listens on 127.0.0.1 only and opens through the one-time link it prints. Everything it does is an action, also runnable as `diorama action <name> '<json>'` (`diorama action` lists them), so a terminal, the page and the Muse Code agent drive the same things.
 
 ## Sound
 
