@@ -44,7 +44,7 @@ defineCommand({
     // with --tries, more takes of that facing, and the whole take whose legs follow the guide best wins
     // (frames mixed from several takes do not match each other, and the take that traces the guide
     // closest is often the stiffest, so one take is the default).
-    const sheets: Record<string, { sheet: string; yaw: number; iou: number[]; legs: number[] }> = {};
+    const sheets: Record<string, { sheet: string; yaw: number; stand: number; iou: number[]; legs: number[] }> = {};
     await Promise.all(facings.map(async (f) => {
       files.write(out(`painted-${f}.png`), painted[f]);
       const takes = [await cutSheet(guides[f], painted[f])];
@@ -59,7 +59,7 @@ defineCommand({
         best = pick();
       }
       files.write(out(`${f}.png`), best.sheet);
-      sheets[f] = { sheet: `${f}.png`, yaw: FACINGS[f], iou: best.iou, legs: best.legs };
+      sheets[f] = { sheet: `${f}.png`, yaw: FACINGS[f], stand: best.stand, iou: best.iou, legs: best.legs };
       console.log(`${key} ${f}: take ${takes.indexOf(best) + 1} of ${takes.length}, pose IoU ${mean(best.iou).toFixed(3)}, legs ${mean(best.legs).toFixed(3)} (worst ${Math.min(...best.legs)})`);
     }));
     files.write(out('sprites.json'), {

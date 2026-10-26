@@ -126,7 +126,7 @@ function background(img: Rgba, [x0, y0, w, h]: number[], tolerance = 26): Mask {
  * Cuts each painted frame out of its grey and lines it up with its guide frame: same feet line, same
  * centre, same height. Returns the transparent sheet and how well each frame kept the guide's pose (IoU).
  */
-export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ sheet: Buffer; iou: number[]; legs: number[] }> {
+export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ sheet: Buffer; iou: number[]; legs: number[]; stand: number }> {
   const { cols, rows, width: W, height: H } = SHEET;
   const guide = await rgba(guidePng, [W, H]);
   const painted = await rgba(paintedPng, [W, H]);
@@ -134,6 +134,7 @@ export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ 
   const [cw, ch] = [W / cols, H / rows];
   const iou: number[] = [];
   const legs: number[] = [];
+  const spread: number[] = [];
   for (let i = 0; i < cols * rows; i++) {
     const cell = [(i % cols) * cw, Math.floor(i / cols) * ch, cw, ch];
     const [x0, y0] = cell;
@@ -151,7 +152,7 @@ export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ 
     }
     const gb = maskBox(want);
     const pb = maskBox(kept);
-    if (!gb || !pb) { iou.push(0); legs.push(0); continue; }
+    if (!gb || !pb) { iou.push(0); legs.push(0); spread.push(Infinity); continue; }
     // Same height, same feet line, same centre across.
     const s = Math.min(1.2, Math.max(0.8, (gb[3] - gb[1]) / (pb[3] - pb[1])));
     const [gcx, pcx] = [(gb[0] + gb[2]) / 2, (pb[0] + pb[2]) / 2];
@@ -171,7 +172,11 @@ export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ 
     const below = Math.round(gb[3] - (gb[3] - gb[1]) / 3);
     const low = (m: Mask) => ({ ...m, bits: m.bits.map((b, k) => (k >= below * cw ? b : 0)) });
     legs.push(Number(maskIou(low(want), low(moved)).toFixed(3)));
+    const feet = maskBox(low(want));
+    spread.push(feet ? feet[2] - feet[0] : Infinity);
   }
-  return { sheet: await sharp(out, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer(), iou, legs };
+  // Standing still shows the frame whose feet are closest together (the legs passing each other).
+  const stand = spread.indexOf(Math.min(...spread));
+  return { sheet: await sharp(out, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer(), iou, legs, stand };
 }
 
