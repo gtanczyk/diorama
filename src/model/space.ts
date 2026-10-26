@@ -26,29 +26,66 @@ export class Space {
     return { path: where, meta: { _type: 'gradio.FileData' }, orig_name: name };
   }
 
+  /** One session for every call, so endpoints that keep files per session (TRELLIS) find them. */
+  private readonly session = Math.random().toString(36).slice(2, 13);
+  private endpoints?: Map<string, { fn: number; states: number[] }>;
+
   /** Calls an endpoint; returns the data of every event it sent (a generator sends several), in order. */
   async call(api: string, data: unknown[]): Promise<unknown[][]> {
-    const res = await fetch(`${this.base}/call/${api}`, {
+    const { fn, states } = await this.endpoint(api);
+    // The API leaves out the app's hidden state inputs; the queue wants them in place, as null.
+    data = [...data];
+    for (const at of states) data.splice(at, 0, null);
+    const join = await fetch(`${this.base}/queue/join`, {
       method: 'POST',
       headers: { ...this.headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data }),
+      body: JSON.stringify({ data, fn_index: fn, session_hash: this.session, event_data: null, trigger_id: null }),
     });
-    if (!res.ok) throw new Error(`${this.id} /${api}: ${res.status} ${(await res.text()).slice(0, 200)}`);
-    const { event_id } = (await res.json()) as { event_id: string };
-    const stream = await fetch(`${this.base}/call/${api}/${event_id}`, { headers: this.headers });
-    const text = await stream.text();
+    if (!join.ok) throw new Error(`${this.id} /${api}: ${join.status} ${(await join.text()).slice(0, 200)}`);
+    const { event_id } = (await join.json()) as { event_id: string };
+    const stream = await fetch(`${this.base}/queue/data?session_hash=${this.session}`, { headers: this.headers });
+    if (!stream.ok || !stream.body) throw new Error(`${this.id} /${api}: queue ${stream.status}`);
     const events: unknown[][] = [];
-    let kind = '';
-    for (const line of text.split('\n')) {
-      if (line.startsWith('event:')) kind = line.slice(6).trim();
-      else if (line.startsWith('data:')) {
-        const payload = line.slice(5).trim();
-        if (kind === 'error') throw new Error(`${this.id} /${api}: ${payload.slice(0, 300)}`);
-        if ((kind === 'generating' || kind === 'complete') && payload.startsWith('[')) events.push(JSON.parse(payload));
+    const decoder = new TextDecoder();
+    let buffered = '';
+    for await (const chunk of stream.body as unknown as AsyncIterable<Uint8Array>) {
+      buffered += decoder.decode(chunk, { stream: true });
+      const lines = buffered.split('\n');
+      buffered = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        if (process.env.DIORAMA_SPACE_DEBUG) console.error(line.slice(0, 400));
+        const msg = JSON.parse(line.slice(5)) as { msg: string; event_id?: string; success?: boolean; output?: { data?: unknown[]; error?: unknown; title?: string } };
+        if (msg.event_id && msg.event_id !== event_id) continue;
+        if (msg.msg === 'process_generating' && msg.output?.data) events.push(msg.output.data);
+        if (msg.msg === 'process_completed') {
+          if (!msg.success || msg.output?.error !== undefined && msg.output.error !== null) {
+            throw new Error(`${this.id} /${api}: ${JSON.stringify(msg.output?.error ?? msg.output).slice(0, 300)}`);
+          }
+          if (msg.output?.data) events.push(msg.output.data);
+          stream.body.cancel().catch(() => {});
+          return events;
+        }
       }
     }
-    if (!events.length) throw new Error(`${this.id} /${api}: no answer (${text.slice(0, 200)})`);
-    return events;
+    throw new Error(`${this.id} /${api}: the stream closed before an answer`);
+  }
+
+  /** The fn_index of a named endpoint and where its hidden state inputs go, from the app's config. */
+  private async endpoint(api: string): Promise<{ fn: number; states: number[] }> {
+    if (!this.endpoints) {
+      const res = await fetch(`${this.base.replace(/\/gradio_api$/, '')}/config`, { headers: this.headers });
+      if (!res.ok) throw new Error(`${this.id} config: ${res.status}`);
+      type Config = { components: { id: number; type: string }[]; dependencies: { id?: number; api_name?: string | false; inputs: number[] }[] };
+      const config = (await res.json()) as Config;
+      const state = new Set(config.components.filter((c) => c.type === 'state').map((c) => c.id));
+      this.endpoints = new Map(config.dependencies.flatMap((d, i) => d.api_name
+        ? [[d.api_name, { fn: d.id ?? i, states: d.inputs.flatMap((c, at) => (state.has(c) ? [at] : [])) }] as const]
+        : []));
+    }
+    const found = this.endpoints.get(api);
+    if (!found) throw new Error(`${this.id} has no endpoint /${api}`);
+    return found;
   }
 
   async download(file: { path: string; url?: string }): Promise<Buffer> {

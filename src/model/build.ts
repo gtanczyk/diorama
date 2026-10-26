@@ -11,6 +11,8 @@ export const AUTORIG = 'jasongzy/Make-It-Animatable';
 export async function reconstruct(memo: Memo, key: string, front: Buffer, seed = 1): Promise<Buffer> {
   return memo.remember('space', `${key}-trellis`, inputHash(TRELLIS, String(seed), front), 'glb', async () => {
     const space = new Space(TRELLIS);
+    // The app keeps each session's files in its own folder, made when the page loads.
+    await space.call('start_session', []);
     const image = await space.upload('front.png', front);
     const [pre] = await space.call('preprocess_image', [image]);
     const cut = await space.upload('cut.png', await space.download(pre[0] as { path: string; url?: string }));
@@ -29,7 +31,10 @@ export async function autoRig(memo: Memo, key: string, model: Buffer): Promise<B
     const input = await space.upload(`${key}.glb`, model);
     // input, no fingers, rest pose, rest parts, gaussian, opacity, input normals, weight fix, bone shown,
     // reset to rest, animation file, retarget, in place
-    const events = await space.call('pipeline', [input, true, 'No', [], false, 0.01, false, true, 'LeftArm', false, null, true, true]);
+    await space.call('pipeline', [input, true, 'No', [], false, 0.01, false, true, 'LeftArm', false, null, true, true]);
+    // The pipeline keeps joints and weights in the session; the Blender step after it writes the rigged model.
+    // reset to rest, no fingers, rest pose, rest parts, animation file, retarget, in place
+    const events = await space.call('vis_blender', [false, true, 'No', [], null, true, true]);
     const rigged = filesNamed(events, `${key}.glb`)[0] ?? filesNamed(events, '.glb').find((f) => !/joints|normed|sample|bw|rest/.test(f.path));
     if (!rigged) throw new Error('auto-rig answered without a rigged model');
     return space.download(rigged);
