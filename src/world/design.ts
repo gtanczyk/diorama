@@ -1,0 +1,50 @@
+// The world step: a prompt becomes world.json. Spark designs it; the gate sends problems back.
+import type { Memo } from '../meta/memo.ts';
+import { askSparkJson } from '../meta/spark.ts';
+import { checkWorld, type World } from './schema.ts';
+
+const EXAMPLE = `{
+  "title": "...",
+  "pitch": "two sentences for the back of the box",
+  "style": "one painting style for every place: medium, palette, light (no artist names)",
+  "start": "<place key>",
+  "hero": { "key": "kebab-key", "looks": "the hero head to toe" },
+  "places": [{
+    "key": "kebab-key",
+    "shows": "what the painting of this place shows, front to back",
+    "mood": "time of day, weather, feeling",
+    "things": [{ "key": "kebab-key", "role": "prop | exit | item | npc", "looks": "a few words" }],
+    "exits": [{ "to": "<place key>", "via": "<key of a thing with role exit here>" }]
+  }]
+}`;
+
+function brief(idea: string, places: number): string {
+  return `You design worlds for a 2D point-and-click adventure. Each place is one painted background seen from a fixed camera, slightly from above, with open floor the hero walks on.
+
+The idea:
+"""
+${idea}
+"""
+
+Design ${places} places that tell this idea. Rules:
+- 3 to 7 things per place, big enough to see and click; no tiny details.
+- Exits are things you can see (door, path, ladder, boat) and every exit has one back.
+- The world has at least one item to pick up and one npc to talk to.
+- Everything is original: no characters, places or names from existing films, books, games or brands.
+
+Reply with JSON only, shaped like:
+${EXAMPLE}`;
+}
+
+/** Up to three tries: the second and third show Spark its last answer and what was wrong with it. */
+export async function designWorld(memo: Memo, idea: string, places = 4): Promise<World> {
+  let prompt = brief(idea, places);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const answer = await askSparkJson(memo, { label: `world#${attempt}`, prompt });
+    const { world, issues } = checkWorld(answer);
+    if (world) return world;
+    console.log(`  world try ${attempt}: ${issues.length} issue(s): ${issues.slice(0, 4).join('; ')}`);
+    prompt = `${brief(idea, places)}\n\nYour last answer was:\n${JSON.stringify(answer)}\n\nFix every one of these and reply with the whole JSON again:\n- ${issues.join('\n- ')}`;
+  }
+  throw new Error('Spark gave no valid world in 3 tries');
+}
