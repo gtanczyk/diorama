@@ -212,6 +212,8 @@ function Workshop({ slug }: { slug: string }) {
           soon();
           return add(e, `${e.type === 'job.end' ? (job.state === 'done' ? 'done' : job.state) : e.type === 'job.start' ? 'started' : 'queued'}: ${job.label} (by ${job.by})${job.error ? ` · ${job.error}` : ''}`, e.type === 'job.end' && job.state !== 'done' ? 'err' : 'job');
         }
+        case 'history.undo': soon(); return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: undo to ${e.id} · ${(e.restored as string[]).length} restored, ${(e.removed as string[]).length} removed`, e.by === 'agent' ? 'agent' : 'act');
+        case 'lock.changed': return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.locked ? 'locked' : 'unlocked'} ${e.place ?? 'the world'}`, 'act');
         case 'action.start': if (quiet.has(String(e.action))) return; return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.action}`, e.by === 'agent' ? 'agent' : 'act');
         case 'ui.focus':
           if (!followAgent.value || e.by !== 'agent') return;
@@ -236,6 +238,7 @@ function Workshop({ slug }: { slug: string }) {
           <div class="row">
             <h1>{status?.title ?? slug}</h1>
             <span class="grow" />
+            {!job && status && status.steps.length > 0 && <button type="button" class="ghost" title="Put the world back as it was before the last job" onClick={() => call('history_undo', { slug }).catch((e) => setError(e.message))}>Undo last job</button>}
             {job
               ? <button type="button" class="ghost" onClick={() => call('job_cancel', { id: job.id })}>Stop {job.label}</button>
               : <button type="button" class="primary" disabled={!status || !!status.issue} onClick={() => call('world_build', { slug }).catch((e) => setError(e.message))}>{status && status.steps.length >= steps.length - 1 ? 'Rebuild verify' : 'Continue build'}</button>}
@@ -270,10 +273,7 @@ function Workshop({ slug }: { slug: string }) {
           )}
         </div>
         <aside class="right">
-          <section class="agent">
-            <h2>Muse Code</h2>
-            <p class="note">The agent joins this panel next: it builds and fixes this world with you, through the same actions as these buttons.</p>
-          </section>
+          <AgentPanel slug={slug} />
           <section class="log">
             <div class="row"><h2>Activity</h2><span class="grow" /><span class="detail">{calls} model calls this session{status ? ` · ${Object.entries(status.calls).map(([m, n]) => `${m} ${n}`).join(', ') || 'none yet'} total` : ''}</span></div>
             <ol>{[...lines].reverse().map((l) => <li key={l.seq} class={l.kind}>{l.text}</li>)}</ol>
@@ -281,6 +281,90 @@ function Workshop({ slug }: { slug: string }) {
         </aside>
       </main>
     </>
+  );
+}
+
+type Bubble = { key: number; kind: 'user' | 'agent' | 'tool' | 'error' | 'note'; text: string; ok?: boolean };
+
+/** Chat with the Muse Code agent about this world. Its tool calls are Studio actions, so they also show in Activity. */
+function AgentPanel({ slug }: { slug: string }) {
+  const [items, setItems] = useState<Bubble[]>([]);
+  const [stream, setStream] = useState('');
+  const [running, setRunning] = useState(false);
+  const [asks, setAsks] = useState<Array<{ id: string; kind: string; summary?: string }>>([]);
+  const [text, setText] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let n = 0;
+    let after: number | null = null;
+    const push = (kind: Bubble['kind'], body: string, ok?: boolean) => setItems((l) => [...l.slice(-200), { key: n++, kind, text: body, ok }]);
+    fetch(`/api/agent/${slug}`, { headers: { authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((s: { seq: number; running: boolean; turns: Array<{ role: 'user' | 'agent'; text: string }>; approvals: Array<{ id: string; kind: string; summary?: string }> }) => {
+        s.turns.forEach((t) => push(t.role, t.text));
+        after = s.seq;
+        setRunning(s.running);
+        setAsks(s.approvals);
+      })
+      .catch(() => {});
+    return follow(slug, (e) => {
+      // The feed replays from the start on connect; the conversation up to `after` came from the state call above.
+      if (!e.type.startsWith('agent.') || after === null || e.seq <= after) return;
+      const v = e as unknown as Record<string, string | boolean | undefined>;
+      switch (e.type) {
+        case 'agent.user': return push('user', String(v.text));
+        case 'agent.turn.start': setRunning(true); return setStream('');
+        case 'agent.delta': return setStream((t) => t + String(v.text));
+        case 'agent.message': setStream(''); return push('agent', String(v.text));
+        case 'agent.tool': return push('tool', String(v.name));
+        case 'agent.tool.end': return setItems((l) => l.map((b) => (b.kind === 'tool' && b.text === v.name && b.ok === undefined ? { ...b, ok: !v.isError } : b)));
+        case 'agent.error': return push('error', String(v.text));
+        case 'agent.approval': return setAsks((a) => [...a, (e as unknown as { request: { id: string; kind: string; summary?: string } }).request]);
+        case 'agent.approval.resolved': return setAsks((a) => a.filter((x) => x.id !== v.id));
+        case 'agent.turn.end':
+          setRunning(false);
+          setStream('');
+          if (v.status !== 'completed' && v.status !== 'aborted') push('error', /ENOENT|spawn|not found/i.test(String(v.error)) ? 'Muse Code is not installed or not on PATH: see Setup.' : `The agent stopped: ${v.error ?? v.status}`);
+          return;
+      }
+    });
+  }, [slug]);
+  const send = async (e?: Event) => {
+    e?.preventDefault();
+    const say = text.trim();
+    if (!say) return;
+    setText('');
+    setError('');
+    const res = await fetch(`/api/agent/${slug}/say`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ text: say }) });
+    if (!res.ok) setError(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `could not send (${res.status})`);
+  };
+  const post = (verb: string, body: object = {}) => fetch(`/api/agent/${slug}/${verb}`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  return (
+    <section class="agent">
+      <div class="row"><h2>Muse Code</h2><span class="grow" /><span class={`live ${running ? 'on' : ''}`}>{running ? 'working…' : 'ready'}</span></div>
+      <ol class="chat">
+        {items.length === 0 && <li class="note">Ask for a world, a fix or a check. Everything the agent does runs through the same actions as the buttons, and you can undo its jobs.</li>}
+        {items.map((b) => (
+          <li key={b.key} class={b.kind}>{b.kind === 'tool' ? <><span class={`mark ${b.ok === undefined ? 'run' : b.ok ? 'ok' : 'fail'}`}>{b.ok === undefined ? '◌' : b.ok ? '✓' : '✕'}</span>{b.text}</> : b.text}</li>
+        ))}
+        {stream && <li class="agent streaming">{stream}</li>}
+      </ol>
+      {asks.map((a) => (
+        <div class="ask" key={a.id}>
+          <span>The agent asks to run: <code>{a.summary ?? a.kind}</code></span>
+          <div class="row"><button type="button" class="primary small" onClick={() => post('approval', { id: a.id, decision: 'approve' })}>Allow once</button><button type="button" class="ghost small" onClick={() => post('approval', { id: a.id, decision: 'deny' })}>Deny</button></div>
+        </div>
+      ))}
+      <form class="say" onSubmit={send}>
+        <textarea id="agent-say" rows={2} placeholder={running ? 'Add to what it is doing…' : 'Ask Muse Code…'} value={text} onInput={(e) => setText(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }} />
+        <div class="row">
+          {error && <span class="error">{error}</span>}
+          <span class="grow" />
+          {running && <button type="button" class="ghost small" onClick={() => post('stop')}>Stop</button>}
+          <button type="submit" class="primary small" disabled={!text.trim()}>Send</button>
+        </div>
+      </form>
+    </section>
   );
 }
 

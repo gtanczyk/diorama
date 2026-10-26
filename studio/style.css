@@ -86,3 +86,16 @@ main.workshop { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap:
 .log li.step, .log li.job { color: var(--text); }
 .log li.err { color: var(--bad); }
 .log li.agent { color: var(--accent); }
+
+.agent { display: flex; flex-direction: column; gap: 10px; }
+.chat { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 42vh; overflow: auto; }
+.chat li { font-size: 14px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+.chat li.user { align-self: flex-end; max-width: 85%; padding: 6px 10px; border-radius: 12px 12px 2px 12px; background: var(--raised); }
+.chat li.agent { max-width: 92%; }
+.chat li.streaming { color: var(--muted); }
+.chat li.tool { display: flex; gap: 6px; align-items: center; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent); }
+.chat li.tool .mark { width: 18px; height: 18px; font-size: 10px; }
+.chat li.error { color: var(--bad); }
+.ask { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--accent); border-radius: 10px; background: rgba(232, 168, 92, 0.06); font-size: 13px; }
+.say { display: flex; flex-direction: column; gap: 6px; }
+.say textarea { font-size: 14px; }

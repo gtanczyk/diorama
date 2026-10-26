@@ -15,6 +15,7 @@ import { redact } from '../secrets.ts';
 import { Slug } from '../world/schema.ts';
 import { Events, type StudioEvent } from './events.ts';
 import { Jobs } from './jobs.ts';
+import { AgentHub } from './agent.ts';
 import { History } from './history.ts';
 import { handleMcp } from './mcp.ts';
 
@@ -111,7 +112,7 @@ class WorldWatch {
   }
 }
 
-export async function startStudio(opts: { port?: number; root?: string; cwd?: string; token?: string; bin?: string } = {}): Promise<Studio> {
+export async function startStudio(opts: { port?: number; root?: string; cwd?: string; token?: string; bin?: string; muse?: string } = {}): Promise<Studio> {
   const root = path.resolve(opts.root ?? 'worlds');
   const token = opts.token ?? randomBytes(32).toString('base64url');
   const agentToken = randomBytes(32).toString('base64url');
@@ -128,6 +129,8 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
   const watches = new Map<string, WorldWatch>();
   let app: Promise<string> | null = null;
   let port = 0;
+  // Filled in once the port is known (the agent needs the MCP URL).
+  let agents: AgentHub = null as unknown as AgentHub;
 
   const watch = (slug: string) => {
     let w = watches.get(slug);
@@ -203,6 +206,30 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
           return send(200, 'application/json', '{"ok":true}', { 'set-cookie': `${COOKIE}=${cookie}; HttpOnly; SameSite=Strict; Path=/` });
         }
         if (url.pathname === '/api/actions' && req.method === 'GET') return json(200, describeActions());
+        // The agent conversation: the person's side only (the agent itself never posts here).
+        const talk = /^\/api\/agent\/([a-z][a-z0-9-]*)(?:\/(say|stop|approval))?$/.exec(url.pathname);
+        if (talk && !asAgent) {
+          const [, slug, verb] = talk;
+          if (!verb && req.method === 'GET') return json(200, agents.state(slug));
+          if (verb && req.method === 'POST') {
+            const { value, error } = await body();
+            if (error) return json(error[0], { error: error[1] });
+            const input = (value ?? {}) as { text?: unknown; id?: unknown; decision?: unknown };
+            try {
+              if (verb === 'say') {
+                if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > 8000) return json(400, { error: 'say something (up to 8000 characters)' });
+                await agents.say(slug, input.text.trim());
+              } else if (verb === 'stop') agents.stop(slug);
+              else {
+                if (input.decision !== 'approve' && input.decision !== 'deny') return json(400, { error: 'decision is approve or deny' });
+                agents.answer(slug, String(input.id), input.decision);
+              }
+              return json(200, { ok: true });
+            } catch (e) {
+              return json(409, { error: redact(e instanceof Error ? e.message : String(e)) });
+            }
+          }
+        }
         if (url.pathname.startsWith('/api/actions/') && req.method === 'POST') {
           const { value: input, error } = await body();
           if (error) return json(error[0], { error: error[1] });
@@ -271,6 +298,7 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
     server.listen(opts.port ?? 0, '127.0.0.1', () => resolve());
   });
   port = (server.address() as { port: number }).port;
+  agents = new AgentHub(events, { root, mcpUrl: `http://127.0.0.1:${port}/mcp`, agentToken, command: opts.muse });
   return {
     url: `http://127.0.0.1:${port}/`,
     port,
@@ -281,6 +309,7 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
     jobs,
     async close() {
       jobs.stopAll();
+      agents.stopAll();
       for (const w of watches.values()) w.stop();
       server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));

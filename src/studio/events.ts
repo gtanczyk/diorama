@@ -24,6 +24,11 @@ export class Events {
     return this.recent.filter((e) => e.seq > seq && (!world || !e.world || e.world === world));
   }
 
+  /** The sequence number of the latest event. */
+  get last(): number {
+    return this.seq;
+  }
+
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
