@@ -14,11 +14,16 @@ const TTS_MODEL = 'eleven_multilingual_v2';
 
 export type Line = { speaker: string; text: string };
 
-/** Every line the page can say, and who says it: dialogue lines are the NPC's, the rest the hero's, the intro and endings the narrator's. */
-export function storyLines(world: World, story: Story): Line[] {
+/**
+ * The lines to speak and who says them: conversations (the NPC's lines, the hero's answers) and the narrator's
+ * intro and endings. The hero's remarks on things stay text only unless `all`: a game that talks at every click tires.
+ */
+export function storyLines(world: World, story: Story, all = false): Line[] {
   const lines: Line[] = [{ speaker: NARRATOR, text: story.intro }];
-  for (const i of story.interactions) lines.push({ speaker: world.hero.key, text: i.say });
-  for (const l of story.locks) lines.push({ speaker: world.hero.key, text: l.say });
+  if (all) {
+    for (const i of story.interactions) lines.push({ speaker: world.hero.key, text: i.say });
+    for (const l of story.locks) lines.push({ speaker: world.hero.key, text: l.say });
+  }
   for (const d of story.dialogues) {
     for (const l of d.lines) {
       lines.push({ speaker: d.npc, text: l.says });

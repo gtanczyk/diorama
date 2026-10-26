@@ -12,11 +12,14 @@ import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
   name: 'sound',
-  usage: 'sound <slug>             plan and generate ambience, loops, footsteps, one-shots and music [--replan] [--plan-only] [--only bed,loop,step,shot,music]',
+  usage: 'sound <slug>             plan and generate ambience, loops, footsteps, one-shots and music [--replan] [--plan-only] [--only bed,loop,step,shot,music] [--music auto|musicgen|eleven]',
   async run(args) {
     const replan = args.includes('--replan');
     const planOnly = args.includes('--plan-only');
     const only = takeOption(args, 'only', '');
+    // auto: MusicGen when DIORAMA_PYTHON is set up for it, else ElevenLabs.
+    const musicFrom = takeOption(args, 'music', 'auto');
+    if (!['auto', 'musicgen', 'eleven'].includes(musicFrom)) throw new Error('--music takes auto, musicgen or eleven');
     const [slug] = args.filter((a) => !a.startsWith('--'));
     if (!slug) throw new Error('usage: diorama sound <slug>');
     const files = new WorldFiles(slug);
@@ -46,7 +49,8 @@ defineCommand({
       return;
     }
 
-    const python = musicgenPython();
+    const python = musicFrom === 'eleven' ? undefined : musicgenPython();
+    if (musicFrom === 'musicgen' && !python) throw new Error('--music musicgen needs DIORAMA_PYTHON pointing at a Python with torch, transformers and scipy');
     console.log(`music: ${python ? 'MusicGen (Meta open weights) on this machine' : 'ElevenLabs (set DIORAMA_PYTHON to a Python with torch + transformers for MusicGen)'}`);
     const manifestFile = files.path('sound', 'sounds.json');
     const old = fs.existsSync(manifestFile) ? SoundManifest.parse(files.readJson(manifestFile)) : { sounds: {} };

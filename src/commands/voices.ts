@@ -9,7 +9,7 @@ import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
   name: 'voices',
-  usage: 'voices <slug>            cast a voice per character and speak every story line, checked by Muse Voice Transcribe [--recast]',
+  usage: 'voices <slug>            cast a voice per character and speak every story line, checked by Muse Voice Transcribe; conversations, intro and endings [--all: every line] [--recast]',
   async run(args) {
     const recast = args.includes('--recast');
     const [slug] = args.filter((a) => !a.startsWith('--'));
@@ -19,7 +19,7 @@ defineCommand({
     if (!fs.existsSync(files.path('story.json'))) return void console.log('no story.json: nothing to say');
     if (!elevenKey()) return void console.log('no ELEVENLABS_API_KEY: lines stay unspoken');
     const story = Story.parse(files.readJson(files.path('story.json')));
-    const lines = storyLines(world, story);
+    const lines = storyLines(world, story, args.includes('--all'));
     const outFile = files.path('voices.json');
     const old = fs.existsSync(outFile) ? Voices.parse(files.readJson(outFile)) : undefined;
     let cast: Cast;

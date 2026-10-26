@@ -72,7 +72,7 @@ test('a heard line matches by letters, so spelling and spacing cost little and m
   expect(heardMatch('Fill your can from my barrel behind the crates.', 'Fill your can.')).toBeLessThan(0.5);
 });
 
-test('every story line has a speaker: NPC lines are theirs, choices and actions the hero, intro and endings the narrator', () => {
+test('conversations, intro and endings are spoken; the hero\'s remarks on things only with all', () => {
   const world = { hero: { key: 'girl' } } as unknown as World;
   const story = {
     intro: 'Fog.', interactions: [{ say: 'A can.' }], locks: [],
@@ -82,5 +82,6 @@ test('every story line has a speaker: NPC lines are theirs, choices and actions 
   expect(storyLines(world, story)).toEqual([
     { speaker: 'narrator', text: 'Fog.' }, { speaker: 'girl', text: 'A can.' }, { speaker: 'liss', text: 'Hello, love.' },
     { speaker: 'girl', text: 'Hi.' }, { speaker: 'narrator', text: 'Light.' },
-  ]);
+  ].filter((l) => l.text !== 'A can.'));
+  expect(storyLines(world, story, true).map((l) => l.text)).toContain('A can.');
 });
