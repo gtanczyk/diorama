@@ -1,4 +1,4 @@
-// The hero as a 3D model: TRELLIS reconstructs a textured mesh from Muse's front view, then
+// The hero as a 3D model: TRELLIS reconstructs a textured mesh from Muse's four views, then
 // Make-It-Animatable gives it a humanoid skeleton (Mixamo bone names) and skin weights. Both run as
 // public Hugging Face Spaces (MIT); their answers are kept in the world's memo like model calls.
 import { inputHash, type Memo } from '../meta/memo.ts';
@@ -7,17 +7,21 @@ import { filesNamed, Space } from './space.ts';
 export const TRELLIS = 'trellis-community/TRELLIS';
 export const AUTORIG = 'jasongzy/Make-It-Animatable';
 
-/** Front view (PNG) to a textured GLB, about 30 s of GPU. */
-export async function reconstruct(memo: Memo, key: string, front: Buffer, seed = 1): Promise<Buffer> {
-  return memo.remember('space', `${key}-trellis`, inputHash(TRELLIS, String(seed), front), 'glb', async () => {
+/** Muse's views (PNG, front first) to a textured GLB, about 30 s of GPU. With the profiles too, TRELLIS
+ * builds the body as deep as it is painted instead of guessing the depth from the front. */
+export async function reconstruct(memo: Memo, key: string, views: Buffer[], seed = 1): Promise<Buffer> {
+  return memo.remember('space', `${key}-trellis`, inputHash(TRELLIS, String(seed), ...views), 'glb', async () => {
     const space = new Space(TRELLIS);
     // The app keeps each session's files in its own folder, made when the page loads.
     await space.call('start_session', []);
-    const image = await space.upload('front.png', front);
-    const [pre] = await space.call('preprocess_image', [image]);
-    const cut = await space.upload('cut.png', await space.download(pre[0] as { path: string; url?: string }));
+    const uploads = await Promise.all(views.map((png, i) => space.upload(`view-${i}.png`, png)));
+    const [pre] = await space.call('preprocess_images', [uploads.map((image) => ({ image, caption: null }))]);
+    const cuts = await Promise.all((pre[0] as { image: { path: string; url?: string } }[]).map(async ({ image }, i) =>
+      space.upload(`cut-${i}.png`, await space.download(image))));
+    // Selecting the Multiple Images tab is what sets the session's multi-image flag.
+    if (cuts.length > 1) await space.call('lambda_1', []);
     // image, multiimages, seed, ss guidance + steps, slat guidance + steps, multiimage algo, mesh simplify, texture size
-    const events = await space.call('generate_and_extract_glb', [cut, [], seed, 7.5, 12, 3.0, 12, 'stochastic', 0.95, 1024]);
+    const events = await space.call('generate_and_extract_glb', [cuts[0], cuts.map((image) => ({ image, caption: null })), seed, 7.5, 12, 3.0, 12, 'stochastic', 0.95, 1024]);
     const [glb] = filesNamed(events, '.glb');
     if (!glb) throw new Error('TRELLIS answered without a model');
     return space.download(glb);

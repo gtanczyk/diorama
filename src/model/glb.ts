@@ -90,3 +90,53 @@ export function normalise({ positions, triangles }: Shape): Shape {
   const centre = [(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2];
   return { positions: positions.map((v, i) => (v - centre[i % 3]) / h), triangles };
 }
+
+/** How far the body leans: the slope of x and of z against height, over the body between shins and brow. */
+export function lean(shape: Shape): { x: number; z: number } {
+  const { positions: p } = normalise(shape);
+  let [n, sy, syy, sx, sxy, sz, szy] = [0, 0, 0, 0, 0, 0, 0];
+  for (let i = 0; i < p.length; i += 3) {
+    const y = p[i + 1];
+    if (y < 0.1 || y > 0.9) continue;
+    n++; sy += y; syy += y * y; sx += p[i]; sxy += p[i] * y; sz += p[i + 2]; szy += p[i + 2] * y;
+  }
+  const d = n * syy - sy * sy;
+  return d > 0 ? { x: (n * sxy - sx * sy) / d, z: (n * szy - sz * sy) / d } : { x: 0, z: 0 };
+}
+
+const qmul = ([ax, ay, az, aw]: number[], [bx, by, bz, bw]: number[]) => [
+  aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz,
+];
+
+/** The same file with its scene turned so the body stands straight up. A model reconstructed from paintings
+ * can come out pitched or rolled by a few degrees; the fit has no rotation, and a hero should not walk tilted. */
+export function standUp(glb: Buffer): Buffer {
+  const { x, z } = lean(readShape(glb));
+  // Turning about x by -atan(z) takes the forward lean out; about z by atan(x) the sideways one.
+  const [tx, tz] = [-Math.atan(z) / 2, Math.atan(x) / 2];
+  const fix = qmul([0, 0, Math.sin(tz), Math.cos(tz)], [Math.sin(tx), 0, 0, Math.cos(tx)]);
+  if (Math.abs(fix[3]) > Math.cos(0.5 * Math.PI / 180 / 2)) return glb;
+  const jsonLength = glb.readUInt32LE(12);
+  const gltf = JSON.parse(glb.subarray(20, 20 + jsonLength).toString('utf8')) as Gltf & { scenes?: { nodes: number[] }[]; scene?: number };
+  const children = new Set(gltf.nodes.flatMap((n) => n.children ?? []));
+  const roots = gltf.scenes?.[gltf.scene ?? 0]?.nodes ?? gltf.nodes.map((_, i) => i).filter((i) => !children.has(i));
+  const [fx, fy, fz, fw] = fix;
+  const turn = local({ rotation: fix });
+  for (const i of roots) {
+    const n = gltf.nodes[i];
+    if (n.matrix) { n.matrix = multiply(turn, n.matrix); continue; }
+    n.rotation = qmul([fx, fy, fz, fw], n.rotation ?? [0, 0, 0, 1]);
+    const [px, py, pz] = n.translation ?? [0, 0, 0];
+    if (px || py || pz) n.translation = [0, 1, 2].map((r) => turn[r] * px + turn[4 + r] * py + turn[8 + r] * pz);
+  }
+  let json = Buffer.from(JSON.stringify(gltf), 'utf8');
+  json = Buffer.concat([json, Buffer.alloc((4 - (json.length % 4)) % 4, ' ')]);
+  const rest = glb.subarray(20 + jsonLength);
+  const head = Buffer.alloc(20);
+  head.writeUInt32LE(0x46546c67, 0);
+  head.writeUInt32LE(glb.readUInt32LE(4), 4);
+  head.writeUInt32LE(20 + json.length + rest.length, 8);
+  head.writeUInt32LE(json.length, 12);
+  head.writeUInt32LE(0x4e4f534a, 16);
+  return Buffer.concat([head, json, rest]);
+}

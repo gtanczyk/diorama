@@ -50,6 +50,20 @@ async function figureMask(png: Buffer): Promise<{ mask: Uint8Array; aspect: numb
   const bg = [0, 1, 2].map((c) => border.map((b) => b[c]).sort((a, b) => a - b)[border.length >> 1]);
   const mask = new Uint8Array(R * R);
   for (let i = 0; i < R * R; i++) mask[i] = Math.abs(data[i * 3] - bg[0]) + Math.abs(data[i * 3 + 1] - bg[1]) + Math.abs(data[i * 3 + 2] - bg[2]) > 40 ? 1 : 0;
+  // A pale shirt is close to the grey background, so the cut leaves holes in the figure. The background is
+  // what joins the border; everything else is figure.
+  const outside = new Uint8Array(R * R);
+  const queue: number[] = [];
+  for (let i = 0; i < R; i++) for (const at of [i, (R - 1) * R + i, i * R, i * R + R - 1]) if (!mask[at] && !outside[at]) { outside[at] = 1; queue.push(at); }
+  while (queue.length) {
+    const at = queue.pop()!;
+    const [x, y] = [at % R, Math.floor(at / R)];
+    for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+      const next = ny * R + nx;
+      if (nx >= 0 && nx < R && ny >= 0 && ny < R && !mask[next] && !outside[next]) { outside[next] = 1; queue.push(next); }
+    }
+  }
+  for (let i = 0; i < R * R; i++) mask[i] = outside[i] ? 0 : 1;
   return { mask, aspect: (meta.height ?? 1) / (meta.width ?? 1) };
 }
 
