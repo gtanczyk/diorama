@@ -2,3 +2,4 @@
 import './doctor.ts';
 import './world.ts';
 import './layout.ts';
+import './paint.ts';
