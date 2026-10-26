@@ -133,7 +133,12 @@ export function backEdge(g: Geometry, smooth = 7): Float32Array {
 }
 
 /** The far view as flats: the sky (drawn still) and flats farthest first, each a cut-out at `box` in the frame. */
-export type Layers = { sky: string; flats: Array<{ file: string; box: [number, number, number, number] }> };
+export type Layers = {
+  sky: string | null;
+  flats: Array<{ file: string; box: [number, number, number, number] }>;
+  /** Water to set flowing: an opaque texture over `box` (carried past the banks) and its soft mask. */
+  water?: { tex: string; mask: string; box: [number, number, number, number] };
+};
 
 /**
  * How far each far flat slides, as a disparity: spread evenly between the horizon (the sky, still) and the

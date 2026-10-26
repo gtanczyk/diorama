@@ -120,3 +120,37 @@ function inside(a: number[], b: number[]): number {
   const h = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
   return (w * h) / Math.max(1, (a[2] - a[0]) * (a[3] - a[1]));
 }
+
+/** How far the water texture reaches past the water's edge: more than the flow ever moves it in one cycle. */
+export const WATER_PAD = 64;
+
+export type Water = { tex: Buffer; mask: Buffer; box: [number, number, number, number]; phrase: string };
+
+/**
+ * The water of a place (a river, a canal, the sea) for the runtime to set flowing: its pixels, carried past
+ * its edges from its own colours so a shifted copy never shows the bank, and its mask. None without water.
+ */
+export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer): Promise<Water | undefined> {
+  const [W, H]: [number, number] = [FRAME.width, FRAME.height];
+  let mask: Mask | undefined;
+  let phrase = '';
+  for (const p of ['water', 'river', 'sea']) {
+    const hits = await samFind(memo, { label: `water:${place.key}/${p}`, image: backdrop, prompt: p });
+    const m = unionAll(W, H, hits.map((f) => f.mask));
+    if (maskArea(m) >= 8000) [mask, phrase] = [m, p];
+    if (mask) break;
+  }
+  if (!mask) return undefined;
+  const [mx0, my0, mx1, my1] = boxOf(mask);
+  const box: [number, number, number, number] = [Math.max(0, mx0 - WATER_PAD), my0, Math.min(W, mx1 + WATER_PAD), my1];
+  const rgb = new Uint8Array(await sharp(backdrop).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer());
+  // Everything in the box that is not water gets the water's colours, row by row from the nearest water.
+  const reach = emptyMask(W, H);
+  for (let y = box[1]; y < box[3]; y++) reach.bits.fill(1, y * W + box[0], y * W + box[2]);
+  const filled = smearFill(rgb, W, H, subtract(reach, mask), mask);
+  const region = { left: box[0], top: box[1], width: box[2] - box[0], height: box[3] - box[1] };
+  const tex = await sharp(filled, { raw: { width: W, height: H, channels: 3 } }).extract(region).jpeg({ quality: 90 }).toBuffer();
+  // The mask is shrunk a hair and feathered, so the flowing copy fades into the still painting at the banks.
+  const soft = await sharp(await maskToPng(dilate(mask, -2))).blur(2).extract(region).png().toBuffer();
+  return { tex, mask: soft, box, phrase };
+}

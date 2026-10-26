@@ -5,7 +5,7 @@ import { maskFromPng } from '../image/mask.ts';
 import { Geometry } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
 import { backdropFor, smearedBackdrop, type Card } from '../scene/backdrop.ts';
-import { farFlats } from '../scene/layers.ts';
+import { farFlats, waterSheet } from '../scene/layers.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
@@ -51,11 +51,24 @@ defineCommand({
         console.log(`  ${place.key}: no far flats (${error instanceof Error ? error.message.slice(0, 120) : error})`);
         return undefined;
       });
-      if (far) {
-        files.write(at('layers', 'sky.png'), far.sky);
-        far.flats.forEach((f, i) => files.write(at('layers', `${i}.png`), f.png));
-        files.write(at('layers.json'), { sky: 'layers/sky.png', flats: far.flats.map((f, i) => ({ phrase: f.phrase, file: `layers/${i}.png`, box: f.box, px: f.px })) });
-        console.log(`  ${place.key}: far flats, farthest first: ${far.flats.map((f) => f.phrase).join(' · ')}`);
+      // Water to set flowing (layers/water.jpg and its mask), found by SAM on the backdrop.
+      const water = await waterSheet(files.memo, place, png).catch(() => undefined);
+      if (water) {
+        files.write(at('layers', 'water.jpg'), water.tex);
+        files.write(at('layers', 'water-mask.png'), water.mask);
+        console.log(`  ${place.key}: flowing ${water.phrase}`);
+      }
+      if (far || water) {
+        if (far) {
+          files.write(at('layers', 'sky.png'), far.sky);
+          far.flats.forEach((f, i) => files.write(at('layers', `${i}.png`), f.png));
+          console.log(`  ${place.key}: far flats, farthest first: ${far.flats.map((f) => f.phrase).join(' · ')}`);
+        }
+        files.write(at('layers.json'), {
+          sky: far ? 'layers/sky.png' : null,
+          flats: (far?.flats ?? []).map((f, i) => ({ phrase: f.phrase, file: `layers/${i}.png`, box: f.box, px: f.px })),
+          ...(water && { water: { tex: 'layers/water.jpg', mask: 'layers/water-mask.png', box: water.box } }),
+        });
       }
     }));
     console.log(`calls sent: muse ${files.memo.sent.muse}, sam ${files.memo.sent.sam}`);

@@ -26,7 +26,11 @@ export async function exportWorld(slug: string, out: string): Promise<void> {
     if (entry.painting) entry.painting = await copy(entry.painting, true);
     if (entry.backdrop) entry.backdrop = await copy(entry.backdrop, true);
     if (entry.layers) {
-      entry.layers.sky = await copy(entry.layers.sky, true);
+      if (entry.layers.sky) entry.layers.sky = await copy(entry.layers.sky, true);
+      if (entry.layers.water) {
+        entry.layers.water.tex = await copy(entry.layers.water.tex);
+        entry.layers.water.mask = await copy(entry.layers.water.mask);
+      }
       for (const f of entry.layers.flats) f.file = await copy(f.file); // transparent around the flat, so PNG
     }
     for (const thing of entry.geometry?.things ?? []) {

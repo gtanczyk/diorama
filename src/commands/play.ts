@@ -16,7 +16,7 @@ import { Layout } from '../scene/layout.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
 
-type Flats = { sky: string; flats: Array<{ file: string; box: [number, number, number, number] }> };
+type Flats = { sky: string | null; flats: Array<{ file: string; box: [number, number, number, number] }>; water?: { tex: string; mask: string; box: [number, number, number, number] } };
 
 export const WEB = fileURLToPath(new URL('../../web/', import.meta.url));
 const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.mp3': 'audio/mpeg' };
@@ -43,7 +43,12 @@ export function worldData(files: WorldFiles) {
     // layers.json: the far view as flats (sky, then farthest to nearest), from the same backdrop step.
     const layersFile = files.place(place.key, 'layers.json');
     const flats = backdrop && fs.existsSync(layersFile) ? (files.readJson(layersFile) as Flats) : undefined;
-    const layers = flats && { sky: `places/${place.key}/${flats.sky}`, flats: flats.flats.map((f) => ({ file: `places/${place.key}/${f.file}`, box: f.box })) };
+    const rel = (f: string) => `places/${place.key}/${f}`;
+    const layers: Layers | undefined = flats && {
+      sky: flats.sky ? rel(flats.sky) : null,
+      flats: flats.flats.map((f) => ({ file: rel(f.file), box: f.box })),
+      ...(flats.water && { water: { tex: rel(flats.water.tex), mask: rel(flats.water.mask), box: flats.water.box } }),
+    };
     places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, ...(backdrop && { backdrop }), ...(layers && { layers }), issue };
   }
   const castDir = files.path('cast');
