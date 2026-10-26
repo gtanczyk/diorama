@@ -9,6 +9,7 @@ import './masks.ts';
 import './plates.ts';
 import './derive.ts';
 import './backdrop.ts';
+import './sound.ts';
 import './verify.ts';
 import './explore.ts';
 import './build.ts';

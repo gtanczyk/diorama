@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export type ModelName = 'spark' | 'muse' | 'sam';
+/** sound: ElevenLabs effects and music; music: MusicGen run locally; voice: speech and its Muse Voice transcript. */
+export type ModelName = 'spark' | 'muse' | 'sam' | 'sound' | 'music' | 'voice';
 
 export function inputHash(...parts: (string | Buffer)[]): string {
   const h = createHash('sha256');
@@ -14,7 +15,7 @@ export function inputHash(...parts: (string | Buffer)[]): string {
 
 export class Memo {
   /** Calls actually sent to each model in this process (cache hits are not counted). */
-  readonly sent: Record<ModelName, number> = { spark: 0, muse: 0, sam: 0 };
+  readonly sent: Record<ModelName, number> = { spark: 0, muse: 0, sam: 0, sound: 0, music: 0, voice: 0 };
 
   constructor(readonly dir: string) {}
 

@@ -6,6 +6,8 @@ import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
+import { Mixer, type Listened } from './audio.ts';
+import type { SoundData } from '../src/play/sound.ts';
 
 type Data = {
   slug: string;
@@ -16,6 +18,8 @@ type Data = {
   story: Story | null;
   /** Index into story.changes → the painting as it looks once that change holds. */
   changes?: Record<string, string>;
+  /** Music, ambience, loops, footsteps and one-shots (diorama sound); without it the page is silent. */
+  sound?: SoundData;
 };
 
 type Bits = { bits: Uint8Array; area: number };
@@ -987,6 +991,8 @@ function drawFigure(h: number, colour: string) {
 }
 
 const game = new Game();
+// ?sound=0 plays silent; m mutes.
+const mixer = params.get('sound') === '0' ? undefined : new Mixer(game as unknown as Listened, files);
 /** The scene point under the pointer: canvas pixels, then out of the parallax zoom. */
 const toFrame = (e: MouseEvent): Point => {
   const r = canvas.getBoundingClientRect();
@@ -1016,11 +1022,13 @@ canvas.addEventListener('contextmenu', (e) => {
 canvas.addEventListener('mouseleave', () => (pointer = null));
 addEventListener('keydown', (e) => {
   if (e.key === 'g') game.grid = !game.grid;
+  if (e.key === 'm') mixer?.toggleMute();
 });
 if (capture) document.getElementById('bar')!.style.display = 'none';
 
 // For scripts and recorders: drive the hero and listen to what happens.
-Object.assign(window, { diorama: game });
+// diorama.sound.record() / stopRecording() give a recorder the page's audio.
+Object.assign(window, { diorama: Object.assign(game, { sound: mixer }) });
 
 let last = performance.now();
 const frame = (now: number) => {
@@ -1030,6 +1038,7 @@ const frame = (now: number) => {
   const dt = capture ? 1 / 60 : Math.min(0.05, (now - last) / 1000);
   last = now;
   game.update(dt);
+  mixer?.update();
   game.render();
 };
 requestAnimationFrame(frame);

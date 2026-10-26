@@ -1,5 +1,7 @@
 // diorama playthrough <slug> [ending...]: the bot plays the shortest route to each ending in the real page,
-// fails if an ending is not reached, and records each run (playthrough/<ending>.webm) when --video is given.
+// fails if an ending is not reached, and records each run (playthrough/<ending>.webm) when --video is given,
+// with the page's own sound laid under it (playthrough/<ending>.mp4) when the world has sound.
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { defineCommand, takeOption } from '../registry.ts';
@@ -19,6 +21,16 @@ export function toStep(action: Action): Step {
     case 'do': return { use: action.thing, verb: action.verb, ...(action.with ? { with: action.with } : {}) };
     default: return { act: action };
   }
+}
+
+/** The run's video with the page's sound under it, as mp4; the sound started `offset` s into the video. */
+function withSound(webm: string, audio: Buffer, offset: number): string {
+  const sound = webm.replace(/\.webm$/, '.sound.webm');
+  const mp4 = webm.replace(/\.webm$/, '.mp4');
+  fs.writeFileSync(sound, audio);
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', webm, '-itsoffset', offset.toFixed(3), '-i', sound, '-map', '0:v', '-map', '1:a',
+    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', mp4]);
+  return mp4;
 }
 
 type Run = { ending: string; reached: string | null; clicks: number; seconds: number; frames: number; video?: string; error?: string };
@@ -43,10 +55,12 @@ defineCommand({
     fs.rmSync(outDir, { recursive: true, force: true });
 
     const server = await serveWorld(files, port);
-    const browser = await (await chromium()).launch();
+    // Headless pages may play sound without a click, so the recorder hears the game from the first frame.
+    const browser = await (await chromium()).launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
     const runs: Run[] = [];
     try {
       for (const route of routes) {
+        const opened = Date.now();
         const page = (await browser.newPage({
           viewport: { width: 1920, height: 1080 },
           ...(video ? { recordVideo: { dir: outDir, size: { width: 1920, height: 1080 } } } : {}),
@@ -56,6 +70,7 @@ defineCommand({
         await page.waitForFunction('window.diorama && window.diorama.place', undefined, { timeout: 30000 });
         const steps: Step[] = [{ wait: 600 }, ...route.actions.map(toStep), { wait: 2500 }];
         const started = Date.now();
+        const sound = video && (await page.evaluate<boolean>('!!(window.diorama.sound && window.diorama.data.sound && (window.diorama.sound.record(), true))'));
         const run: Run = { ending: route.ending, reached: null, clicks: route.actions.length, seconds: 0, frames: 0 };
         try {
           const result = await page.evaluate<{ ending: string | null; frames: number; time: number }>(`(async (steps) => {
@@ -69,11 +84,13 @@ defineCommand({
         } catch (error) {
           run.error = (error as Error).message.split('\n')[0];
         }
+        const audio = sound ? Buffer.from(await page.evaluate<string>('window.diorama.sound.stopRecording()'), 'base64') : undefined;
         await page.close();
         const recorded = video ? await page.video()?.path() : undefined;
         if (recorded) {
           run.video = path.join(outDir, `${route.ending}.webm`);
           fs.renameSync(recorded, run.video);
+          if (audio?.length) run.video = withSound(run.video, audio, (started - opened) / 1000);
         }
         runs.push(run);
         const ok = run.reached === route.ending;

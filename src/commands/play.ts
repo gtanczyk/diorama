@@ -7,13 +7,14 @@ import { build } from 'esbuild';
 import { Geometry } from '../play/geometry.ts';
 import { previewGeometry } from '../play/preview.ts';
 import { Rig } from '../play/rig.ts';
+import { soundData } from '../sound/data.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { Layout } from '../scene/layout.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
 
 export const WEB = fileURLToPath(new URL('../../web/', import.meta.url));
-const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json' };
+const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.mp3': 'audio/mpeg' };
 
 /** What the page loads: the world, and per place its geometry (measured, or a preview from the layout). */
 export function worldData(files: WorldFiles) {
@@ -51,7 +52,9 @@ export function worldData(files: WorldFiles) {
     const file = `places/${c.place}/changes/${i}.png`;
     if (fs.existsSync(files.path(file))) changes[i] = file;
   });
-  return { slug: files.slug, world, places, cast, story, changes };
+  // sound.json + sound/: what the world sounds like (diorama sound); absent, the page plays silent.
+  const sound = soundData(files);
+  return { slug: files.slug, world, places, cast, story, changes, ...(sound && { sound }) };
 }
 
 export async function bundle(forShip = false): Promise<string> {

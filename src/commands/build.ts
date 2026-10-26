@@ -4,13 +4,13 @@ import { defineCommand, registry, takeOption } from '../registry.ts';
 import type { Finding, Verdict } from '../scene/verify.ts';
 import { WorldFiles } from '../world/files.ts';
 
-const STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'derive', 'backdrop', 'verify'] as const;
+const STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'derive', 'backdrop', 'sound', 'verify'] as const;
 type Step = (typeof STEPS)[number];
 
 /** Model calls sent (not answered from the memo) since `since`, read from the memo's call log. */
 function callsSince(files: WorldFiles, since: string): Record<string, number> {
   const log = files.path('memo', 'calls.jsonl');
-  const counts: Record<string, number> = { spark: 0, muse: 0, sam: 0 };
+  const counts: Record<string, number> = { spark: 0, muse: 0, sam: 0, sound: 0, music: 0 };
   if (!fs.existsSync(log)) return counts;
   for (const line of fs.readFileSync(log, 'utf8').split('\n')) {
     if (!line) continue;
