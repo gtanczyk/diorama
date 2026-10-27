@@ -2052,9 +2052,10 @@ function padPress(b: PadButton, body: Body) {
     if (b === 'use') game.answers.pick();
   } else if (free()) {
     const hot = game.within(body);
-    // Using or looking at something makes this player's hero the one the story follows, unless another is mid-walk.
+    // Using or looking at something makes this player's hero the one the story follows, unless the hero is still busy
+    // with a walk-and-use of its own.
     const act = (verb?: Verb) => {
-      if (!hot || game.busy) return;
+      if (!hot || (game.busy && body !== game.hero)) return;
       game.lead(body);
       void game.use(hot.thing.key, verb);
     };
