@@ -63,9 +63,9 @@ export class History {
     if (!fs.existsSync(this.home)) return [];
     return fs.readdirSync(this.home)
       .filter((f) => /^\d{8}T\d{6}-[0-9a-f]{4}\.json$/.test(f))
-      .sort()
-      .reverse()
-      .map((f) => JSON.parse(fs.readFileSync(path.join(this.home, f), 'utf8')) as Snapshot);
+      .map((f) => JSON.parse(fs.readFileSync(path.join(this.home, f), 'utf8')) as Snapshot)
+      // Newest first by time to the millisecond: ids only say the second.
+      .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
   }
 
   /** Records the world as it is before `label`. Nothing new when nothing changed since the last snapshot. */
@@ -73,7 +73,8 @@ export class History {
     const files = this.current();
     const last = this.list()[0];
     const same = last && Object.keys(last.files).length === Object.keys(files).length && Object.entries(files).every(([f, h]) => last.files[f] === h);
-    const at = new Date();
+    // Strictly after the last one, so two snapshots in the same millisecond keep their order.
+    const at = new Date(Math.max(Date.now(), last ? Date.parse(last.at) + 1 : 0));
     const snap: Snapshot = { id: `${at.toISOString().replace(/[-:]/g, '').slice(0, 15)}-${randomBytes(2).toString('hex')}`, at: at.toISOString(), label, by, files };
     if (same) return last;
     fs.writeFileSync(path.join(this.home, `${snap.id}.json`), JSON.stringify(snap));
