@@ -21,6 +21,21 @@ npx -y github:gtanczyk/diorama doctor   # one live call to each model
 
 `diorama setup` keeps keys encrypted (AES-256-GCM) under `~/.config/diorama/`, with the encryption key in the macOS Keychain or the Linux Secret Service. Environment variables (`META_API_KEY`, `ELEVENLABS_API_KEY`, `HF_TOKEN`) still work and win.
 
+From a checkout, `npm install` once, then the common commands are npm scripts (arguments go after `--`):
+
+```sh
+npm run setup
+npm run doctor
+npm run studio                 # the GUI
+npm run build -- <slug> "<idea>"
+npm run play -- <slug>
+npm run publish -- <slug>
+npm run export -- <slug> --zip
+npm run browsers               # Playwright's Chromium, for explore, playthrough and sprites
+npm run diorama -- <command>   # any other command, e.g. npm run diorama -- masks <slug>
+npm run check                  # typecheck and tests
+```
+
 Model answers are kept by a hash of their inputs under each world's memo folder, so rerunning a step with the same inputs is free.
 
 ## Studio

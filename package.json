@@ -12,8 +12,17 @@
   },
   "scripts": {
     "diorama": "node bin/diorama.mjs",
+    "setup": "node bin/diorama.mjs setup",
+    "doctor": "node bin/diorama.mjs doctor",
+    "studio": "node bin/diorama.mjs studio",
+    "build": "node bin/diorama.mjs build",
+    "play": "node bin/diorama.mjs play",
+    "publish": "node bin/diorama.mjs publish",
+    "export": "node bin/diorama.mjs export",
+    "browsers": "playwright install chromium",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web && tsc --noEmit -p studio",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test"
   },
   "dependencies": {
     "@meta-sam/parser": "^0.1.0",
