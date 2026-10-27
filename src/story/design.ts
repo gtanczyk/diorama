@@ -3,7 +3,7 @@
 import type { Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import type { World } from '../world/schema.ts';
-import { BREVITY, brevityIssues, checkStory, questionIssues, type StoryReport } from './check.ts';
+import { BREVITY, brevityIssues, checkStory, paintingIssues, questionIssues, type StoryReport } from './check.ts';
 import type { Story } from './schema.ts';
 
 const MIN_STEPS = 6;
@@ -56,7 +56,7 @@ export async function designStory(memo: Memo, world: World, wish?: string): Prom
   for (let attempt = 1; attempt <= 4; attempt++) {
     const answer = await askSparkJson(memo, { label: `story#${attempt}`, prompt });
     const report = checkStory(world, answer);
-    if (report.story) report.issues.push(...brevityIssues(report.story), ...questionIssues(report.story));
+    if (report.story) report.issues.push(...brevityIssues(report.story), ...questionIssues(report.story), ...paintingIssues(world, report.story));
     for (const r of report.routes) {
       if (r.steps.length < MIN_STEPS) report.issues.push(`ending "${r.ending}" is reached in only ${r.steps.length} clicks: ${r.steps.join(' → ')}`);
     }

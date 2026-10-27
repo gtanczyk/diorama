@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import { z } from 'zod';
 import { storyLines, Voices } from '../sound/voices.ts';
-import { brevityIssues, checkStory, questionIssues } from '../story/check.ts';
+import { brevityIssues, checkStory, paintingIssues, questionIssues } from '../story/check.ts';
 import { applyTexts, readStoryFixes, StoryFixes, storyFixesFile, textAt } from '../story/fixes.ts';
 import { Story } from '../story/schema.ts';
 import { agentBlocked } from '../studio/locks.ts';
@@ -48,7 +48,7 @@ defineAction({
     return {
       start: world.start, hero: world.hero.key, places, story, fixes,
       issues: report.issues, states: report.states, routes: report.routes.map((r) => ({ ending: r.ending, steps: r.steps })),
-      long: brevityIssues(story), unanswerable: questionIssues(story), unvoiced, unpainted,
+      long: brevityIssues(story), unanswerable: questionIssues(story), unseen: paintingIssues(world, story), unvoiced, unpainted,
     };
   },
 });

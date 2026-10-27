@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
-import { questionIssues } from '../src/story/check.ts';
+import { paintingIssues, questionIssues } from '../src/story/check.ts';
 import { Story } from '../src/story/schema.ts';
+import type { World } from '../src/world/schema.ts';
 
 test('a question in a say, or in a line without answers, is flagged; one with answers is fine', () => {
   const story = Story.parse({
@@ -20,4 +21,13 @@ test('a question in a say, or in a line without answers, is flagged; one with an
   expect(issues).toHaveLength(2);
   expect(issues[0]).toContain('interaction 1');
   expect(issues[1]).toContain('line bye');
+});
+
+test('a change on a person, or an item thing keyed otherwise, is flagged: the painting would not show it', () => {
+  const world = { places: [{ key: 'pier', things: [{ key: 'cat', role: 'npc' }, { key: 'lamp', role: 'item' }] }] } as unknown as World;
+  const story = {
+    interactions: [{ place: 'pier', thing: 'lamp', verb: 'take', say: 'Got it.', do: [{ give: 'light' }], when: [], once: true }],
+    changes: [{ place: 'pier', thing: 'cat', when: ['fed'], looks: 'happy' }],
+  } as unknown as Story;
+  expect(paintingIssues(world, story)).toHaveLength(2);
 });
