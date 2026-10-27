@@ -47,6 +47,7 @@ export async function exportWorld(slug: string, out: string): Promise<void> {
     if (figure.sprites) for (const f of [...Object.values(figure.sprites.info.facings), ...Object.values(figure.sprites.info.talk ?? {})]) await copy(`${figure.sprites.dir}/${f.sheet}`);
     if (figure.model) for (const file of [figure.model.info.glb, ...Object.values(figure.model.info.views).map((v) => v.image)]) await copy(`${figure.model.dir}/${file}`);
   }
+  for (const item of Object.values(data.items ?? {})) await copy(item.icon); // transparent, so PNG
   for (const sound of [...Object.values(data.sound?.files ?? {}), ...Object.values(data.sound?.lines ?? {})]) await copy(sound.file);
   fs.writeFileSync(path.join(out, 'world-data.json'), JSON.stringify(data));
   fs.writeFileSync(path.join(out, 'main.js'), await bundle(true));

@@ -7,6 +7,7 @@ import { actions, activeChanges, apply, hiddenThings, pickInteraction, startStat
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 import { Mixer, type Listened } from './audio.ts';
+import { Answers, Bag, displayName, type ItemLook } from './ui.ts';
 import type { SoundData } from '../src/play/sound.ts';
 import type { Figure3D, ModelInfo } from './hero3d.ts';
 
@@ -21,6 +22,8 @@ type Data = {
   changes?: Record<string, string>;
   /** Music, ambience, loops, footsteps and one-shots (diorama sound); without it the page is silent. */
   sound?: SoundData;
+  /** An icon per story item (diorama icons); an item without one shows its name. */
+  items?: Record<string, { icon: string }>;
 };
 
 type Bits = { bits: Uint8Array; area: number };
@@ -144,6 +147,8 @@ class Game {
   state!: State;
   /** The inventory item the next click uses. */
   holding: string | undefined;
+  readonly bag = new Bag((key) => this.itemLook(key), (key) => this.hold(this.holding === key ? undefined : key), !hideCursor);
+  private readonly answers = new Answers();
   hover: Hot | undefined;
   grid = params.has('grid');
   /** 0 clear, 1 black; eases toward darkTarget. */
@@ -417,6 +422,9 @@ class Game {
       const step = apply(this.data.world, story, this.state, action);
       this.state = step.state;
       say = step.say;
+      // A new item flies into the bag from the thing it was, or from whoever handed it over.
+      const from = action.kind === 'do' ? action.thing : action.kind === 'talk' ? action.npc : before.talk ? story.dialogues[before.talk.dialogue]?.npc : undefined;
+      for (const key of this.state.items.filter((i) => !before.items.includes(i))) void this.bag.pickUp(key, from ? this.pageRect(from) : undefined);
     } else {
       // Without story.json the world alone answers: exits lead on, everything else is looked at.
       const exit = action.kind === 'go' ? this.place.spec.exits.find((e) => e.via === action.via) : undefined;
@@ -445,28 +453,43 @@ class Game {
     return verb === 'look' ? looks : `Nothing happens. ${looks[0].toUpperCase()}${looks.slice(1)}.`;
   }
 
+  /** An item's name from the story and its icon from the icons step. */
+  itemLook(key: string): ItemLook {
+    const icon = this.data.items?.[key]?.icon;
+    return { name: this.data.story?.items.find((i) => i.key === key)?.name ?? key.replace(/-/g, ' '), ...(icon && { icon: files(icon) }) };
+  }
+
+  /** Takes an item in hand (it becomes the cursor), or puts it back with undefined. */
+  hold(key: string | undefined) {
+    this.holding = key;
+    this.ui();
+  }
+
+  /** Where a thing (or a person in this place) is on the page, for an item to fly from. */
+  private pageRect(key: string): DOMRect | undefined {
+    const figure = this.drawn.find((d) => d.hot.thing.key === key)?.rect;
+    const box = figure ?? this.place.hots.find((h) => h.thing.key === key)?.thing.box;
+    if (!box) return undefined;
+    const z = this.zoom();
+    const { width: W, height: H } = this.place.g.frame;
+    const [x0, y0] = [(box[0] - (this.viewX || W / 2)) * z + W / 2, (box[1] - (this.viewY || H / 2)) * z + H / 2];
+    const r = canvas.getBoundingClientRect();
+    const k = r.width / canvas.width;
+    return new DOMRect(r.left + x0 * k, r.top + y0 * k, (box[2] - box[0]) * z * k, (box[3] - box[1]) * z * k);
+  }
+
   /** Inventory, conversation choices and the ending, as plain HTML over the canvas. */
   ui() {
     const story = this.data.story;
-    const inv = document.getElementById('inventory')!;
-    inv.replaceChildren(...this.state.items.map((item) => {
-      const b = document.createElement('button');
-      b.textContent = story?.items.find((i) => i.key === item)?.name ?? item;
-      b.className = this.holding === item ? 'held' : '';
-      b.onclick = () => {
-        this.holding = this.holding === item ? undefined : item;
-        this.ui();
-      };
-      return b;
-    }));
-    const talk = document.getElementById('talk')!;
+    if (this.holding && !this.state.items.includes(this.holding)) this.holding = undefined;
+    this.bag.show(this.state.items, this.holding);
+    this.bag.quiet(!!this.state.talk);
     const options = story && this.state.talk ? actions(this.data.world, story, this.state) : [];
-    talk.replaceChildren(...options.map((a) => {
-      const b = document.createElement('button');
-      b.textContent = a.kind === 'choose' ? lineChoice(story!, this.state, a.index) : 'Goodbye.';
-      b.onclick = () => void this.act(a);
-      return b;
-    }));
+    const hero = this.data.world.hero.key;
+    this.answers.show(options.map((a) => ({
+      text: a.kind === 'choose' ? lineChoice(story!, this.state, a.index) : 'Goodbye.',
+      pick: () => void this.act(a),
+    })), { name: displayName(hero), portrait: this.data.cast[hero] && files(this.data.cast[hero].image) });
     const ending = story?.endings.find((e) => e.key === this.state.ending);
     const end = document.getElementById('ending')!;
     end.hidden = !ending;
@@ -902,7 +925,7 @@ class Game {
     }
     // The bubble sits over whoever says the line; the narrator (no speaker) and the hero use the hero.
     const speaker = this.speech?.who ? this.drawn.find((d) => d.hot.thing.key === this.speech!.who)?.rect : undefined;
-    this.drawSpeech(speaker ?? rect);
+    this.drawSpeech(speaker ?? rect, this.speech?.who && displayName(this.speech.who));
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (this.dark > 0) {
       ctx.fillStyle = `rgba(0,0,0,${this.dark})`;
@@ -1118,28 +1141,67 @@ class Game {
     }
   }
 
-  private drawSpeech([left, top, right]: [number, number, number, number]) {
+  /** A paper bubble over the speaker with their name on a tag; its tail points down at them. The narrator's has no tag. */
+  private drawSpeech([left, top, right]: [number, number, number, number], name?: string) {
     if (!this.speech) return;
+    ctx.save();
     ctx.font = '22px Georgia, serif';
     const words = this.speech.text.split(/\s+/);
     const lines: string[] = [];
     for (const word of words) {
       const last = lines[lines.length - 1];
-      if (last && ctx.measureText(`${last} ${word}`).width < 460) lines[lines.length - 1] = `${last} ${word}`;
+      if (last && ctx.measureText(`${last} ${word}`).width < 420) lines[lines.length - 1] = `${last} ${word}`;
       else lines.push(word);
     }
-    const width = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 28;
-    const height = lines.length * 28 + 16;
-    const cx = Math.min(canvas.width - width / 2 - 8, Math.max(width / 2 + 8, (left + right) / 2));
-    const y = Math.max(8, top - height - 14);
-    ctx.fillStyle = 'rgba(16,14,12,0.82)';
+    const width = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 40;
+    const height = lines.length * 28 + (name ? 30 : 22);
+    const head = (left + right) / 2;
+    const cx = Math.min(canvas.width - width / 2 - 12, Math.max(width / 2 + 12, head));
+    const tail = 22;
+    const y = Math.max(name ? 24 : 10, top - height - tail - 6);
+    const ink = '#2b2118';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = ink;
+    ctx.fillStyle = '#fbf4e2';
+    ctx.shadowColor = 'rgba(43,33,24,0.25)';
+    ctx.shadowOffsetY = 4;
     ctx.beginPath();
-    ctx.roundRect(cx - width / 2, y, width, height, 10);
+    ctx.roundRect(cx - width / 2, y, width, height, 20);
     ctx.fill();
-    ctx.fillStyle = '#f4ecd8';
+    ctx.shadowColor = 'transparent';
+    ctx.stroke();
+    // The tail leans from under the bubble toward the speaker's head; it is filled after the stroke so no line crosses its root.
+    const tx = Math.min(cx + width / 2 - 34, Math.max(cx - width / 2 + 34, head));
+    const tipX = Math.max(tx - 40, Math.min(tx + 40, head));
+    ctx.beginPath();
+    ctx.moveTo(tx - 13, y + height - 1.5);
+    ctx.lineTo(tipX, y + height + tail);
+    ctx.lineTo(tx + 13, y + height - 1.5);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillRect(tx - 11.5, y + height - 4, 23, 3);
+    if (name) {
+      ctx.font = 'bold 16px Georgia, serif';
+      const tw = ctx.measureText(name).width + 24;
+      const tagX = cx - width / 2 + 16;
+      ctx.fillStyle = this.speech.who === this.data.world.hero.key ? '#c9774a' : '#5f8f8a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(tagX, y - 14, tw, 26, 10);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#fbf4e2';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(name, tagX + 12, y - 1);
+    }
+    ctx.font = '22px Georgia, serif';
+    ctx.fillStyle = ink;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    lines.forEach((l, i) => ctx.fillText(l, cx, y + 10 + i * 28));
+    lines.forEach((l, i) => ctx.fillText(l, cx, y + (name ? 18 : 12) + i * 28));
+    ctx.restore();
   }
 
   private drawGrid() {
@@ -1236,7 +1298,8 @@ canvas.addEventListener('mousemove', (e) => {
   const r = canvas.getBoundingClientRect();
   pointer = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   game.hover = game.thingAt(...toFrame(e));
-  canvas.style.cursor = hideCursor ? 'none' : game.hover ? 'pointer' : 'default';
+  canvas.style.cursor = hideCursor || game.holding ? 'none' : game.hover ? 'pointer' : 'default';
+  game.bag.point(e.clientX, e.clientY, game.hover?.thing.key.replace(/-/g, ' '));
   document.getElementById('hover')!.textContent = game.hover ? game.hover.thing.key.replace(/-/g, ' ') : '';
 });
 canvas.addEventListener('click', (e) => {
@@ -1248,6 +1311,8 @@ canvas.addEventListener('click', (e) => {
 });
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
+  // With an item in hand, a right click puts it back in the bag.
+  if (game.holding) return game.hold(undefined);
   const hot = game.place && game.dark === 0 ? game.thingAt(...toFrame(e)) : undefined;
   if (hot) void game.use(hot.thing.key, 'look');
 });
@@ -1255,6 +1320,7 @@ canvas.addEventListener('mouseleave', () => (pointer = null));
 addEventListener('keydown', (e) => {
   if (e.key === 'g') game.grid = !game.grid;
   if (e.key === 'm') mixer?.toggleMute();
+  if (e.key === 'Escape') game.hold(undefined);
 });
 if (capture) document.getElementById('bar')!.style.display = 'none';
 

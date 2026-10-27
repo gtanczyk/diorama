@@ -12,6 +12,7 @@ import type { ModelInfo } from '../../web/hero3d.ts';
 import type { SpriteInfo } from '../../web/main.ts';
 import { soundData } from '../sound/data.ts';
 import { defineCommand, takeOption } from '../registry.ts';
+import { ItemsInfo } from '../scene/icons.ts';
 import { Layout } from '../scene/layout.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
@@ -72,7 +73,12 @@ export function worldData(files: WorldFiles) {
   });
   // sound.json + sound/: what the world sounds like (diorama sound); absent, the page plays silent.
   const sound = soundData(files);
-  return { slug: files.slug, world, places, cast, story, changes, ...(sound && { sound }) };
+  // items/items.json (diorama icons): a painted icon per story item; without it the bag shows names.
+  const itemsFile = files.path('items', 'items.json');
+  const items = fs.existsSync(itemsFile)
+    ? Object.fromEntries(Object.entries(ItemsInfo.parse(files.readJson(itemsFile))).filter(([, i]) => fs.existsSync(files.path(i.icon))).map(([k, i]) => [k, { icon: i.icon }]))
+    : undefined;
+  return { slug: files.slug, world, places, cast, story, changes, ...(sound && { sound }), ...(items && { items }) };
 }
 
 export async function bundle(forShip = false): Promise<string> {

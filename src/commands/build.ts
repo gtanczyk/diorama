@@ -9,7 +9,7 @@ import { withPlay, type Play } from '../scene/playbook.ts';
 import type { Finding, Verdict } from '../scene/verify.ts';
 import { WorldFiles } from '../world/files.ts';
 
-export const STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'derive', 'backdrop', 'cast', 'model', 'sprites', 'sound', 'voices', 'verify'] as const;
+export const STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'icons', 'derive', 'backdrop', 'cast', 'model', 'sprites', 'sound', 'voices', 'verify'] as const;
 type Step = (typeof STEPS)[number];
 /** The steps that work place by place; `--place` runs only these, for that one place. */
 export const PLACE_STEPS: readonly Step[] = ['layout', 'paint', 'masks', 'plates', 'derive', 'backdrop', 'verify'];

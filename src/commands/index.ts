@@ -7,6 +7,7 @@ import './layout.ts';
 import './paint.ts';
 import './masks.ts';
 import './plates.ts';
+import './icons.ts';
 import './derive.ts';
 import './backdrop.ts';
 import './sound.ts';

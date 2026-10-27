@@ -176,6 +176,14 @@ section.agent .row { padding: 12px 14px 0; }
 .cast .voice select { max-width: 320px; }
 .cast .sample { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .cast audio { height: 32px; max-width: 100%; }
+.items { margin-top: 22px; }
+.items h3 { margin: 0 0 10px; font-size: 15px; }
+.items ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.items li { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.items img, .items .noimg { width: 88px; height: 88px; object-fit: contain; border-radius: 10px; background: var(--raised); display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 12px; text-align: center; }
+.items .body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.items .row { display: flex; flex-wrap: wrap; gap: 6px; }
+.items input { flex: 1 1 140px; min-width: 0; }
 @media (max-width: 600px) { .cast .who { grid-template-columns: 1fr; } }
 
 .story { display: flex; flex-direction: column; gap: 14px; }

@@ -18,9 +18,45 @@ export function CastView({ slug, version, onError }: { slug: string; version: nu
   useEffect(() => void call<Character[]>('cast_status', { slug }).then(setCast).catch((e) => onError(e.message)), [slug, version]);
   if (!cast) return <p class="detail">Reading the cast…</p>;
   return (
-    <ul class="cast">
-      {cast.map((c) => <Card key={c.key} slug={slug} c={c} onError={onError} />)}
-    </ul>
+    <>
+      <ul class="cast">
+        {cast.map((c) => <Card key={c.key} slug={slug} c={c} onError={onError} />)}
+      </ul>
+      <Items slug={slug} version={version} onError={onError} />
+    </>
+  );
+}
+
+type Item = { key: string; name: string; from: { place: string; thing: string } | null; how: 'cut' | 'redraw' | 'paint' | null; icon: Pic; fix: { how?: string; hint?: string; take?: number } | null };
+const HOW = { cut: 'cut from the painting', redraw: 'redrawn by Muse', paint: 'painted by Muse' };
+
+/** The inventory: one icon per story item, with where it comes from; a hint or another take is icon_redo. */
+function Items({ slug, version, onError }: { slug: string; version: number; onError: (m: string) => void }) {
+  const [items, setItems] = useState<Item[] | null>(null);
+  const [hints, setHints] = useState<Record<string, string>>({});
+  useEffect(() => void call<Item[]>('icons_status', { slug }).then(setItems).catch(() => setItems([])), [slug, version]);
+  if (!items?.length) return null;
+  const act = (name: string, input: object) => call(name, { slug, ...input }).catch((e) => onError((e as Error).message));
+  return (
+    <section class="items">
+      <h3>Inventory</h3>
+      <ul>
+        {items.map((it) => (
+          <li key={it.key}>
+            {it.icon ? <img src={fileUrl(slug, it.icon.file, it.icon.v)} alt={it.name} /> : <div class="noimg">no icon yet</div>}
+            <div class="body">
+              <strong>{it.name}</strong>
+              <span class="detail">{it.from ? `picked up: ${it.from.place} / ${it.from.thing}` : 'handed over'}{it.how ? ` · ${HOW[it.how]}` : ''}</span>
+              <form class="row" onSubmit={(e) => (e.preventDefault(), (hints[it.key] ?? '').trim().length >= 3 && void act('icon_redo', { item: it.key, hint: hints[it.key].trim() }))}>
+                <input value={hints[it.key] ?? it.fix?.hint ?? ''} placeholder="How it should look" aria-label={`How ${it.name} should look`} onInput={(e) => setHints({ ...hints, [it.key]: e.currentTarget.value })} />
+                <button type="button" class="ghost small" onClick={() => act('icon_redo', { item: it.key, anotherTake: true })}>Another take</button>
+                <button type="submit" class="primary small">Redraw</button>
+              </form>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

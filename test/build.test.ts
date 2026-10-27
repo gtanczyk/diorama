@@ -38,7 +38,7 @@ function world() {
   fs.writeFileSync(path.join(stuck, 'layout.json'), JSON.stringify({ horizon: 100, sky: '#88aacc', ground: '#998877', things: [], lights: [], floors: [{ key: 'deck', is: 'deck', colour: '#aa8844', outline }, { key: 'quay', is: 'quay', colour: '#888888', outline }] }));
   process.chdir(root);
   const ran: string[] = [];
-  for (const step of ['cast', 'model', 'sprites', 'sound', 'voices']) defineCommand({ name: step, usage: step, async run() {} });
+  for (const step of ['icons', 'cast', 'model', 'sprites', 'sound', 'voices']) defineCommand({ name: step, usage: step, async run() {} });
   for (const step of PLACE_STEPS) {
     defineCommand({
       name: step,

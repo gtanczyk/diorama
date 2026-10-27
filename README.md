@@ -70,6 +70,10 @@ In the page, loops pan and fade with where the hero stands, footsteps follow the
 
 The page draws the best a character has: sprite sheets, else the 3D model (`?model=1` prefers it), else the 2D rig, else the plain cut-out.
 
+## Inventory icons
+
+`diorama icons <slug> [item...]` (a build step, after `plates`) makes `items/<key>.png` for each item in `story.json`, and nothing for anything else. An item the hero picks up in a place is cut out of that place's painting with the thing's SAM mask, so it costs no model call and looks exactly like what the player saw lying there. One that is too small there to blow up (under 56 px) is redrawn larger by Muse from the cut-out; one that only a person hands over is painted by Muse in the world's style, then cut out by SAM. `items/items.json` says how each was made. To change one, use the Studio's Cast tab or the agent: `icon_redo` takes a hint in your words, `cut` or `paint`, or another take, and keeps it in `items/fixes.json` for every later build (`icon_fix_clear` takes it back; `icons_status` lists them all).
+
 ## Depth: parallax and moving water
 
 `diorama backdrop <slug>` (a build step, after `derive`) turns each place into a little stage, so it moves like a real diorama:
@@ -85,7 +89,8 @@ The page draws the best a character has: sprite sheets, else the 3D model (`?mod
 - **Walking:** the hero routes over the walk grid; the walk phase follows the distance walked, so feet don't slide. Things in front of a person (per-column floor lines from `derive`) are drawn back over them.
 - **Stairs:** `derive` asks SAM for the steps of any floor or walk-on thing named as stairs (stair, step, schody) and keeps each step's band per column (`steps` in geometry.json). A person on them keeps their size from where they stand, but their feet sit on the tread under them and climb only over each riser; a walk never ends on a riser. Fewer than two clear steps keep the stairs a ramp.
 - **Light and shadow:** `derive` measures the painting's light from the shadows things cast (`light` in geometry.json) and masks those shadows (`masks/shadows.png`). A person then casts a matching soft shadow and darkens inside a painted one. A place where nothing casts a shadow (fog, overcast) gets neither.
-- **Talking:** each line knows who says it; the bubble sits over the speaker, who plays the line's gesture while the other listens.
+- **Inventory:** the items the hero carries sit in a paper bag at the bottom, each as its painted icon (step `icons`, below). Click one to take it in hand: it becomes the cursor, with "Use X on Y" over a thing; right click or Esc puts it back. A picked-up item flies from where it lay in the painting into its slot, and the painting shows the spot empty (the `plates` step).
+- **Talking:** each line knows who says it; the paper bubble sits over the speaker with their name on a tag, and the speaker plays the line's gesture while the other listens. The hero's answers are numbered cards beside his portrait; keys 1 to 4 pick them too.
 - **URL switches:** `place=<key>` start there, `spawn=x,y,left|right` put the hero, `capture=1` fixed 1/60 s steps for recording (flat, no parallax), `parallax=N` parallax strength (`0` flat, default 1 with the mouse), `track=N` a closer camera that pans after the hero, for walks along a place, `sway=1` a slow idle drift for films, `still` water that does not flow, `grid=1` show the walk grid and occluders, `model=1|0` prefer or skip the 3D figure, `sound=0` silent, `cursor=0` hide the cursor. `window.diorama` drives the page from scripts: `walkTo`, `use`, `act`, `play(steps)`, `wait`, `on(event)`.
 
 ## Playing and sharing a world
