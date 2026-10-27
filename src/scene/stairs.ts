@@ -17,7 +17,7 @@ export const STEP_EVERY = 8;
 export const STAIRS = /stair|step|staircase|schod|stopn|stopień/i;
 
 /** A mask at frame size (SAM may answer at the painting's own size). */
-function atFrame(m: Mask): Mask {
+export function atFrame(m: Mask): Mask {
   if (m.width === W && m.height === H) return m;
   const out = emptyMask(W, H);
   for (let y = 0; y < H; y++) {

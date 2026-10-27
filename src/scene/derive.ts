@@ -2,7 +2,7 @@
 // Walkable = floors and walk-on things, minus things in the way, plus the floor hidden behind a
 // standing thing, minus each standing thing's footprint. Then the grid is joined up, the hero's
 // size is measured, and every thing gets a spot to stand at.
-import { emptyMask, type Mask } from '../image/mask.ts';
+import { emptyMask, maskArea, type Mask } from '../image/mask.ts';
 import { dilate, maskBox, polygonMask, subtract, union, unionAll } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import type { Geometry } from '../play/geometry.ts';
@@ -12,9 +12,10 @@ import type { Kind } from './locate.ts';
 import type { MaskSource } from './masks.ts';
 import { blobsOf, footDepth, lineYAt, simplifyLine, type Blob } from './occluders.ts';
 import { findShadows, type Shadows } from './shadows.ts';
-import { findSteps, STAIRS } from './stairs.ts';
+import { atFrame, findSteps, STAIRS } from './stairs.ts';
 import { PERSON_M, probePoints, scaleFrom, sparkPeople, type Sample, type Scale } from './scale.ts';
-import { CELL, connect, gridFromPixels, nearestRoomy, reach, roomy, type Grid } from './walk.ts';
+import { CELL, connect, gridFromPixels, islands, nearestRoomy, reach, roomy, type Grid } from './walk.ts';
+import { samFind } from '../meta/sam.ts';
 
 export type ThingIn = { key: string; kind: Kind; phrase?: string; source: MaskSource; coarse: boolean; mask: Mask };
 /** `plates`: things that have a clean plate (plates/<key>.png), for the runtime to hide them once taken. */
@@ -93,7 +94,7 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   const walkPx = subtract(union(subtract(ground, inTheWay), behind), footprint);
 
   const floorOf = (p: number) => floors.findIndex((f) => f.bits[p]);
-  const grid = gridFromPixels(walkPx, floorOf, floors.length);
+  let grid = gridFromPixels(walkPx, floorOf, floors.length);
   const flagged: string[] = [];
   const flag = (line: string) => {
     flagged.push(line);
@@ -106,10 +107,13 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   const blocked = union(inTheWay, footprint);
   const groundTop = Math.min(...floors.map((f) => maskBox(f)?.[1] ?? H), ...layout.floors.flatMap((f) => f.outline.map(([, y]) => y)));
   const nearFloor = dilate(union(ground, planned), 48);
+  let water: Mask | undefined;
   const cost = (i: number) => {
     const [x, y] = grid.centre(i).map(Math.floor);
     const p = Math.min(H - 1, y) * W + Math.min(W - 1, x);
     if (blocked.bits[p] && !behind.bits[p]) return Infinity;
+    // Nobody walks on painted water, wherever the layout planned a floor.
+    if (water?.bits[p]) return Infinity;
     // Muse moves floors away from the layout, so the ground between them is fair game too, at a price.
     // A corridor between floors stays near them: no paths cut across a lawn or open water.
     return ground.bits[p] ? 1 : planned.bits[p] ? 3 : y >= groundTop && nearFloor.bits[p] ? 6 : Infinity;
@@ -117,13 +121,39 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   // The start is clear of every thing (by about a hero's width), so nobody begins standing in a lamp.
   // Walk-on and flat things (a jetty, a rug) are floor: near them is fine.
   const nearThings = dilate(unionAll(W, H, things.filter((t) => t.kind !== 'walk-on' && t.kind !== 'flat').map((t) => t.mask)), 24);
-  const clear = roomy(grid).map((v, i) => {
-    const [x, y] = grid.centre(i).map(Math.floor);
-    return v && !nearThings.bits[Math.min(H - 1, y) * W + Math.min(W - 1, x)] ? 1 : 0;
-  });
-  let startCell = nearestRoomy(grid, W / 2, H - 40, clear) ?? nearestRoomy(grid, W / 2, H - 40);
+  // The start is on the biggest stretch of floor, as near the front middle as it can be: a strip of
+  // quay cut off by the river is not where the game begins.
+  const startOf = (): number | undefined => {
+    const clear = roomy(grid).map((v, i) => {
+      const [x, y] = grid.centre(i).map(Math.floor);
+      return v && !nearThings.bits[Math.min(H - 1, y) * W + Math.min(W - 1, x)] ? 1 : 0;
+    });
+    const biggest = islands(grid, clear).sort((a, b) => b.length - a.length)[0] ?? [];
+    const main = new Uint8Array(clear.length);
+    biggest.forEach((i) => (main[i] = 1));
+    return nearestRoomy(grid, W / 2, H - 40, main) ?? nearestRoomy(grid, W / 2, H - 40, clear) ?? nearestRoomy(grid, W / 2, H - 40);
+  };
+  let startCell = startOf();
   if (startCell === undefined) throw new Error(`${place.key}: no walkable floor at all`);
-  const joined = connect(grid, startCell, cost);
+  let joined = connect(grid, startCell, cost);
+  // Joining floors may have laid a path across the water between them: SAM finds the water (only then),
+  // and the floor is joined again around it.
+  if (joined.reopened) {
+    const hits = await samFind(memo, { label: `water:${place.key}/painting`, image: painting, prompt: 'water' });
+    const wet = subtract(unionAll(W, H, hits.map((f) => atFrame(f.mask))), ground);
+    const fresh = gridFromPixels(walkPx, floorOf, floors.length);
+    const wetAt = (i: number) => {
+      const [x, y] = grid.centre(i).map(Math.floor);
+      return wet.bits[Math.min(H - 1, y) * W + Math.min(W - 1, x)] === 1;
+    };
+    if (maskArea(wet) >= 4000 && grid.open.some((v, i) => v && !fresh.open[i] && wetAt(i))) {
+      water = wet;
+      grid = fresh;
+      startCell = startOf()!;
+      joined = connect(grid, startCell, cost);
+      log(`water between the floors: joined again around it`);
+    }
+  }
   if (joined.reopened) flag(`opened ${joined.reopened} cells to join the floor up`);
   if (joined.dropped) log(`closed ${joined.dropped} cells in specks cut off from the start`);
   for (const island of joined.stranded) flag(`${island.length} walkable cells can't be reached from the start`);
@@ -171,7 +201,7 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   });
   if (framed) {
     log(`closed ${framed} cells at the frame edge, where the hero would be cut off`);
-    startCell = nearestRoomy(grid, ...grid.centre(startCell), clear.map((v, i) => v & grid.open[i])) ?? nearestRoomy(grid, ...grid.centre(startCell)) ?? startCell;
+    if (!roomy(grid)[startCell]) startCell = startOf() ?? startCell;
     const again = connect(grid, startCell, cost);
     for (const island of again.stranded) flag(`${island.length} walkable cells can't be reached from the start after the frame gate`);
     joined.stranded = again.stranded;
@@ -236,7 +266,10 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   occluders.sort((a, b) => (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]) - (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]));
 
   // Painted shadows on the open floor, and the light they tell of.
-  const shadows = await findShadows(memo, place.key, painting, subtract(ground, dilate(inTheWay, 2)), sharpOnFloor);
+  // Casters: sharp things on the floor, and things resting on walkable ground (a basket on the steps) too.
+  const restsOnGround = (b: Blob) => ground.bits[Math.min(H - 1, Math.round(b.baseY) + 3) * W + Math.round((b.box[0] + b.box[2]) / 2)] === 1;
+  const casters = [...sharpOnFloor, ...blobs.filter((b) => !onFloor.includes(b) && !isCoarse(b) && restsOnGround(b))];
+  const shadows = await findShadows(memo, place.key, painting, subtract(ground, dilate(inTheWay, 2)), casters);
   if (shadows.light) log(`light ${shadows.light.dir.join(', ')} x${shadows.light.length}, strength ${shadows.light.strength} (${shadows.source})`);
 
   // Stairs: the walk-on things and floors named as stairs get their steps, so feet land on the treads.
