@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { CastFixes, castFixesFile, readCastFixes } from '../scene/cast-fixes.ts';
-import { stockVoices, voiceCandidates, Voices } from '../sound/voices.ts';
+import { DESIGNED, designDescriptions, needsDesign, stockVoices, voiceCandidates, Voices } from '../sound/voices.ts';
 import { agentBlocked } from '../studio/locks.ts';
 import { WorldFiles } from '../world/files.ts';
 import { Slug } from '../world/schema.ts';
@@ -83,7 +83,8 @@ defineAction({
   name: 'voice_list',
   reads: true,
   description: 'The stock ElevenLabs voices a character can be given: id, name and what they sound like. With slug and key, '
-    + 'the voices that fit that character (gender and age Spark saw in their figure) come first, marked fits; a child or teen is read a few semitones higher.',
+    + 'the voices that fit that character (gender and age Spark saw in their figure) come first, marked fits. The first entry, id "design", is a voice ElevenLabs Voice Design makes from a description: '
+    + 'children, teens and the old always get one, since no stock voice is a child or truly old.',
   input: z.object({ slug: Slug.optional(), key: z.string().min(1).optional() }),
   async run({ slug, key }, ctx) {
     let stock;
@@ -96,7 +97,9 @@ defineAction({
     const voices = files && fs.existsSync(files.path('voices.json')) ? Voices.safeParse(files.readJson(files.path('voices.json'))) : null;
     const profile = key && voices?.success ? voices.data.cast[key]?.profile : undefined;
     const fit = new Set(profile ? voiceCandidates(stock, profile).map((v) => v.voice_id) : []);
-    const list = stock.map((v) => ({ id: v.voice_id, name: v.name, sounds: [...Object.values(v.labels ?? {}), v.description].filter(Boolean).join(', '), ...(profile && { fits: fit.has(v.voice_id) }) }));
+    const list = stock.map((v) => ({ id: v.voice_id, name: v.name, sounds: [...Object.values(v.labels ?? {}), v.description].filter(Boolean).join(', '), ...(profile && { fits: fit.has(v.voice_id) && !needsDesign(profile) }) }));
+    const now = key && voices?.success ? voices.data.cast[key]?.design?.description : undefined;
+    list.unshift({ id: DESIGNED, name: 'Designed for this character', sounds: now ?? (profile ? designDescriptions(profile)[0] : 'made from a description'), ...(profile && { fits: true }) });
     return profile ? { character: { key, ...profile }, voices: [...list.filter((v) => v.fits), ...list.filter((v) => !v.fits)] } : list;
   },
 });
@@ -104,11 +107,13 @@ defineAction({
 defineAction({
   name: 'voice_set',
   description: 'Give a character another voice (an id from voice_list), optionally steadier (stability up) or more expressive (style up). '
+    + 'voice "design" with design (English, how they sound: "a very old man, gravelly, slow") makes a new voice with ElevenLabs Voice Design; never name a child or an age in years there, ElevenLabs refuses it nor "girl" or "boy" ("youthful high-pitched male character voice for an animated game" works). '
     + 'Kept across rebuilds; speaks the lines again (only that character\'s lines cost anything). Runs as a job.',
-  input: z.object({ slug: Slug, key: z.string().min(1), voice: z.string().min(1), stability: z.number().min(0).max(1).optional(), style: z.number().min(0).max(1).optional() }),
+  input: z.object({ slug: Slug, key: z.string().min(1), voice: z.string().min(1), design: z.string().min(10).optional(), stability: z.number().min(0).max(1).optional(), style: z.number().min(0).max(1).optional() }),
   job: true,
-  async run({ slug, key, voice, stability, style }, ctx) {
-    writeFix(ctx, slug, key, (f) => void (f.voice = { voice, why: 'chosen by the person', ...(stability !== undefined && { stability }), ...(style !== undefined && { style }) }));
+  async run({ slug, key, voice, design, stability, style }, ctx) {
+    if (design && voice !== DESIGNED) throw new ActionError(400, `design goes with voice "${DESIGNED}"`);
+    writeFix(ctx, slug, key, (f) => void (f.voice = { voice, why: 'chosen by the person', ...(design && { design }), ...(stability !== undefined && { stability }), ...(style !== undefined && { style }) }));
     return ctx.jobs.start(slug, ['voices', slug], `voice ${key}`, ctx.by);
   },
 });

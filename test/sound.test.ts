@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 import { placeSound, zoneAt } from '../src/play/sound.ts';
-import { loopProblem, RATE, seamless, steps, type Pcm } from '../src/sound/pcm.ts';
+import { loopProblem, pitchHz, RATE, seamless, steps, type Pcm } from '../src/sound/pcm.ts';
 import { planIssues, soundIds, type SoundPlan } from '../src/sound/plan.ts';
-import { heardMatch, heardOk, storyLines, voiceCandidates } from '../src/sound/voices.ts';
+import { designDescriptions, heardMatch, heardOk, needsDesign, storyLines, voiceCandidates } from '../src/sound/voices.ts';
 import type { Story } from '../src/story/schema.ts';
 import type { World } from '../src/world/schema.ts';
 
@@ -97,4 +97,22 @@ test('a voice is cast from who speaks: a boy never gets a woman or an old man, a
   expect(voiceCandidates(stock, { gender: 'male', age: 'child', sound: '' }).map((x) => x.voice_id)).toEqual(['young-man']);
   expect(voiceCandidates(stock, { gender: 'female', age: 'old', sound: '' }).map((x) => x.voice_id)).toEqual(['river']);
   expect(voiceCandidates(stock, { gender: 'male', age: 'old', sound: '' }).map((x) => x.voice_id)).toEqual(['old-man']);
+});
+
+test('children and the old get a designed voice, described without the words ElevenLabs refuses', () => {
+  const kid = { gender: 'female' as const, age: 'child' as const, sound: 'bright, 10-year-old, little child, eager' };
+  expect(needsDesign(kid)).toBe(true);
+  expect(needsDesign({ ...kid, age: 'middle_aged' })).toBe(false);
+  const [d, plain] = designDescriptions(kid);
+  expect(d).toMatch(/youthful high-pitched female/i);
+  expect(d).not.toMatch(/child|girl|boy|\d|year|little/i);
+  expect(d).toMatch(/eager/);
+  expect(plain).not.toMatch(/eager/);
+  expect(designDescriptions({ gender: 'male', age: 'old', sound: 'gravelly' })[0]).toMatch(/very old man.*gravelly/);
+});
+
+test('pitch is measured in Hz, so a designed child voice pitched like an adult is caught', () => {
+  const voiced = (hz: number) => pcm((t) => 0.3 * Math.sin(2 * Math.PI * hz * t) + 0.1 * Math.sin(4 * Math.PI * hz * t), 1);
+  expect(Math.abs(pitchHz(voiced(120)) - 120)).toBeLessThan(6);
+  expect(Math.abs(pitchHz(voiced(300)) - 300)).toBeLessThan(15);
 });

@@ -3,14 +3,14 @@
 import fs from 'node:fs';
 import { defineCommand } from '../registry.ts';
 import { elevenKey } from '../sound/sources.ts';
-import { castVoices, stockVoices, storyLines, voiceLine, Voices, type Cast } from '../sound/voices.ts';
+import { castVoices, DESIGNED, DesignedVoices, designDescriptions, designVoice, needsDesign, stockVoices, storyLines, voiceLine, Voices, type Cast } from '../sound/voices.ts';
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
   name: 'voices',
-  usage: 'voices <slug>            cast a voice per character and speak every story line, checked by Muse Voice Transcribe; conversations, intro and endings [--all: every line] [--recast]',
+  usage: 'voices <slug>            cast a voice per character (stock, or designed by ElevenLabs Voice Design for children, teens and the old) and speak every story line, checked by Muse Voice Transcribe; conversations, intro and endings [--all: every line] [--recast]',
   async run(args) {
     const recast = args.includes('--recast');
     const [slug] = args.filter((a) => !a.startsWith('--'));
@@ -24,8 +24,11 @@ defineCommand({
     const outFile = files.path('voices.json');
     const old = fs.existsSync(outFile) ? Voices.parse(files.readJson(outFile)) : undefined;
     let cast: Cast;
-    // A cast is kept only when it was made from profiles (who Spark saw in each figure); older casts are redone.
-    if (old && !recast && lines.every((l) => old.cast[l.speaker]?.profile)) cast = old.cast;
+    // A cast is kept only when it was made from profiles (who Spark saw in each figure) and every child, teen and old
+    // speaker has a designed voice; older casts are redone.
+    const fixes = readCastFixes(files);
+    const current = (k: string) => { const c = old?.cast[k]; return !!c?.profile && (!needsDesign(c.profile) || !!c.design || !!fixes[k]?.voice); };
+    if (old && !recast && lines.every((l) => current(l.speaker))) cast = old.cast;
     else {
       const figure = (key: string) => (fs.existsSync(files.path('cast', `${key}.png`)) ? fs.readFileSync(files.path('cast', `${key}.png`)) : undefined);
       const people = [world.hero, ...world.places.flatMap((p) => p.things).filter((t) => t.role === 'npc')];
@@ -33,27 +36,51 @@ defineCommand({
       cast = await castVoices(files.memo, world, lines, await stockVoices(), speakers);
     }
     // The voices the person picked (cast/fixes.json) replace Spark's casting.
-    for (const [key, fix] of Object.entries(readCastFixes(files))) if (fix.voice && cast[key]) cast = { ...cast, [key]: { ...cast[key], ...fix.voice } };
-    for (const [who, v] of Object.entries(cast)) console.log(`  ${who.padEnd(16)} ${v.profile ? `${v.profile.age} ${v.profile.gender}`.padEnd(18) : ''} ${v.voice}${v.pitch ? ` +${v.pitch} st` : ''}  ${v.why}`);
+    for (const [key, fix] of Object.entries(fixes)) {
+      if (!fix.voice || !cast[key]) continue;
+      const { design: wish, ...voice } = fix.voice;
+      const entry = { ...cast[key], ...voice };
+      if (voice.voice === DESIGNED) {
+        // A designed voice: from the person's description, or from the profile; designed again only when that changes.
+        const description = wish ?? (cast[key].profile ? designDescriptions(cast[key].profile!)[0] : 'A clear warm voice.');
+        const says = lines.filter((l) => l.speaker === key).map((l) => l.text);
+        entry.design = cast[key].design?.description === description ? cast[key].design : await designVoice(cast[key].profile ?? { gender: 'any', age: 'middle_aged', sound: '' }, says, description);
+        entry.pitch = 0;
+      } else delete entry.design;
+      cast = { ...cast, [key]: entry };
+    }
+    for (const [who, v] of Object.entries(cast)) console.log(`  ${who.padEnd(16)} ${v.profile ? `${v.profile.age} ${v.profile.gender}`.padEnd(18) : ''} ${v.design ? 'designed' : v.voice}${v.pitch ? ` +${v.pitch} st` : ''}  ${v.why}`);
 
     fs.rmSync(files.path('sound', 'voice'), { recursive: true, force: true });
     const done: Voices['lines'] = new Array(lines.length);
-    let next = 0;
-    await Promise.all(Array.from({ length: 4 }, async () => {
-      while (next < lines.length) {
-        const i = next++;
-        try {
-          done[i] = await voiceLine(files.memo, lines[i], cast[lines[i].speaker], (id, mp3) => {
-            files.write(files.path('sound', 'voice', `${id}.mp3`), mp3);
-            return `sound/voice/${id}.mp3`;
-          });
-          const l = done[i];
-          console.log(`  ${!l.flags.some((f) => f.startsWith('heard')) ? 'ok  ' : 'FLAG'} ${l.speaker.padEnd(14)} ${l.seconds.toFixed(1).padStart(5)} s  ${l.text.slice(0, 60)}${l.flags.length ? `  (${l.flags.join('; ')}; heard "${l.heard.slice(0, 60)}")` : ''}`);
-        } catch (error) {
-          console.log(`  FAIL ${lines[i].speaker}: ${lines[i].text.slice(0, 50)}: ${error instanceof Error ? error.message : error}`);
-        }
+    // Designed voices live on the account only while their character's lines are read, one character at a time,
+    // so a world needs a single free voice slot.
+    const designed = new DesignedVoices(`diorama ${slug}`);
+    const index = lines.map((_, i) => i);
+    const groups = [index.filter((i) => !cast[lines[i].speaker].design), ...Object.keys(cast).filter((k) => cast[k].design).map((k) => index.filter((i) => lines[i].speaker === k))];
+    try {
+      for (const group of groups) {
+        let next = 0;
+        await Promise.all(Array.from({ length: 4 }, async () => {
+          while (next < group.length) await read(group[next++]);
+        }));
+        await designed.close();
       }
-    }));
+    } finally {
+      await designed.close();
+    }
+    async function read(i: number) {
+      try {
+        done[i] = await voiceLine(files.memo, lines[i], cast[lines[i].speaker], (id, mp3) => {
+          files.write(files.path('sound', 'voice', `${id}.mp3`), mp3);
+          return `sound/voice/${id}.mp3`;
+        }, designed);
+        const l = done[i];
+        console.log(`  ${!l.flags.some((f) => f.startsWith('heard')) ? 'ok  ' : 'FLAG'} ${l.speaker.padEnd(14)} ${l.seconds.toFixed(1).padStart(5)} s  ${l.text.slice(0, 60)}${l.flags.length ? `  (${l.flags.join('; ')}; heard "${l.heard.slice(0, 60)}")` : ''}`);
+      } catch (error) {
+        console.log(`  FAIL ${lines[i].speaker}: ${lines[i].text.slice(0, 50)}: ${error instanceof Error ? error.message : error}`);
+      }
+    }
     const spoken = done.filter(Boolean);
     files.write(outFile, { cast, lines: spoken });
     const s = files.memo.sent;

@@ -54,6 +54,34 @@ export function pitchShift(pcm: Pcm, semitones: number): Pcm {
 
 export const seconds = (pcm: Pcm) => pcm.left.length / RATE;
 
+/**
+ * The median pitch of a voice in Hz (autocorrelation over voiced 40 ms frames): about 100-130 for a man,
+ * 180-230 for a woman, 260 and up for a child. 0 when nothing voiced is found.
+ */
+export function pitchHz(pcm: Pcm): number {
+  const step = 3; // 44.1 kHz down to 14.7 kHz is plenty for 70-500 Hz
+  const sr = RATE / step;
+  const x = new Float32Array(Math.floor(pcm.left.length / step)).map((_, i) => (pcm.left[i * step] + pcm.right[i * step]) / 2);
+  const w = Math.round(sr * 0.04);
+  const lo = Math.floor(sr / 500);
+  const hi = Math.ceil(sr / 70);
+  const found: number[] = [];
+  for (let at = 0; at + w + hi < x.length; at += w >> 1) {
+    let energy = 0;
+    for (let i = 0; i < w; i++) energy += x[at + i] ** 2;
+    if (Math.sqrt(energy / w) < 0.02) continue;
+    let best = 0;
+    let lag = 0;
+    for (let k = lo; k <= hi; k++) {
+      let sum = 0;
+      for (let i = 0; i < w; i++) sum += x[at + i] * x[at + i + k];
+      if (sum > best) (best = sum), (lag = k);
+    }
+    if (lag && best > 0.4 * energy) found.push(sr / lag);
+  }
+  return Math.round(quantile(found, 0.5));
+}
+
 /** RMS per window of `ms`, both channels. */
 export function envelope(pcm: Pcm, ms: number): number[] {
   const w = Math.max(1, Math.round((RATE * ms) / 1000));
@@ -66,10 +94,10 @@ export function envelope(pcm: Pcm, ms: number): number[] {
   return out;
 }
 
-const quantile = (values: number[], q: number) => {
+function quantile(values: number[], q: number) {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0;
-};
+}
 
 /**
  * Whether a take meant to loop is really one event (a crash, a single gust) with silence around it.

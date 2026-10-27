@@ -6,7 +6,7 @@ import { askSparkJson } from '../meta/spark.ts';
 import { transcribe } from '../meta/voice.ts';
 import type { Story } from '../story/schema.ts';
 import type { World } from '../world/schema.ts';
-import { decode, encodeMp3, normalise, pitchShift, RATE, seconds, trim, type Pcm } from './pcm.ts';
+import { decode, encodeMp3, normalise, pitchHz, pitchShift, RATE, seconds, trim, type Pcm } from './pcm.ts';
 import { elevenKey } from './sources.ts';
 
 export const NARRATOR = 'narrator';
@@ -52,8 +52,13 @@ export const Cast = z.record(z.string(), z.object({
   style: z.number().min(0).max(1).default(0.2),
   /** Who Spark saw in the figure; the voice was picked to match it. Missing on casts made before profiles. */
   profile: Profile.optional(),
-  /** Semitones the takes are raised: stock voices are adults, so a child or a teen is a young voice read higher. */
+  /** Semitones the takes are raised. Only a stand-in: raising an adult voice sounds sped up, not young. */
   pitch: z.number().default(0),
+  /**
+   * A voice made for this character by ElevenLabs Voice Design (voice is then DESIGNED): no stock voice is a child or
+   * truly old. `generated` is the design ElevenLabs returned; the voice is created from it only while lines are read.
+   */
+  design: z.object({ description: z.string(), generated: z.string(), hz: z.number().optional() }).optional(),
 }));
 export type Cast = z.infer<typeof Cast>;
 
@@ -88,7 +93,95 @@ export async function stockVoices(): Promise<Voice[]> {
   return body.voices.filter((v) => v.category === 'premade' && (v.labels?.language ?? 'en') === 'en');
 }
 
-const PITCH: Partial<Record<Profile['age'], number>> = { child: 4, teen: 2.5 };
+/** The voice id of a character whose voice is designed for them rather than picked from stock. */
+export const DESIGNED = 'design';
+
+/** Who stock voices cannot play: every stock voice is an adult, and the old ones are mature narrators, not old people. */
+export const needsDesign = (p: Profile) => p.age === 'child' || p.age === 'teen' || p.age === 'old';
+
+/**
+ * What Voice Design is asked for, best first. ElevenLabs refuses descriptions that name a child, a girl or a boy, or an
+ * age in years, so a child is a "youthful high-pitched female character voice for an animated game", which it accepts.
+ */
+export function designDescriptions(p: Profile): string[] {
+  const sound = p.sound.replace(/\b(child(ren)?|kids?|girls?|boys?|little|young(ster)?|tiny|baby|teen(age(r|d)?)?|\d+[- ]?(years?|yo)[- ]?(old)?|year[- ]old|aged? \d+)\b/gi, '')
+    .replace(/\s+/g, ' ').replace(/\s*,\s*(,\s*)+/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '');
+  const tail = sound ? `, ${sound}` : '';
+  const sex = p.gender === 'female' ? 'female' : 'male';
+  const ladder = (base: string, fallback: string) => [`${base}${tail}.`, `${base}.`, fallback];
+  if (p.age === 'child') return ladder(`Youthful high-pitched ${sex} character voice for an animated adventure game, light and bright`, `High-pitched cheerful cartoon ${sex === 'female' ? 'heroine' : 'hero'} voice, light, bright and eager.`);
+  if (p.age === 'teen') return ladder(`Youthful ${sex} character voice for an animated adventure game, not yet adult, light`, `Youthful cheerful cartoon ${sex === 'female' ? 'heroine' : 'hero'} voice, light and eager.`);
+  if (p.age === 'old') return ladder(`A very old ${p.gender === 'female' ? 'woman' : 'man'} in their late seventies, aged weathered voice, slower and a little creaky`, `An elderly ${p.gender === 'female' ? 'woman' : 'man'}, aged thin voice, slow.`);
+  return ladder(`A ${p.age.replace('_', '-')} ${p.gender === 'female' ? 'woman' : 'man'}`, `A clear warm ${sex} voice.`);
+}
+
+/** How high a designed voice must be to pass for its age: Voice Design often answers a youthful wish with a young adult. */
+const MIN_HZ: Partial<Record<Profile['age'], number>> = { child: 260, teen: 150 };
+
+const PREVIEW_PAD = ' And so the evening goes on, quiet and slow, while the lanterns are lit one by one along the way.';
+
+/**
+ * Voice Design: ElevenLabs makes three voices from a description, reading `says` as the sample. A refused description
+ * is asked again in plainer words. For a child or a teen the highest voice is kept, and the next description is
+ * tried while even that is pitched like an adult (code measures each sample's pitch).
+ */
+export async function designVoice(p: Profile, says: string[], description?: string): Promise<NonNullable<Cast[string]['design']>> {
+  let text = says.join(' ');
+  while (text.length < 100) text += PREVIEW_PAD;
+  const tries = [...new Set(description ? [description, ...designDescriptions(p).slice(1)] : designDescriptions(p))];
+  const min = MIN_HZ[p.age] ?? 0;
+  let best: { description: string; generated: string; hz: number } | undefined;
+  let last: unknown;
+  for (const d of tries) {
+    try {
+      const res = await eleven('/text-to-voice/design', { method: 'POST', body: JSON.stringify({ voice_description: d, model_id: 'eleven_multilingual_ttv_v2', text: text.slice(0, 1000), auto_generate_text: false }) });
+      const body = (await res.json()) as { previews: Array<{ generated_voice_id: string; audio_base_64: string }> };
+      for (const v of body.previews ?? []) {
+        const hz = min ? pitchHz(decode(Buffer.from(v.audio_base_64, 'base64'))) : 0;
+        if (!best || hz > best.hz) best = { description: d, generated: v.generated_voice_id, hz };
+        if (!min) break;
+      }
+      if (best && best.hz >= min) break;
+    } catch (error) {
+      last = error;
+    }
+  }
+  if (!best) throw new Error(`Voice Design refused "${tries[0]}": ${last instanceof Error ? last.message : last}`);
+  return { description: best.description, generated: best.generated, ...(best.hz && { hz: best.hz }) };
+}
+
+/**
+ * Designed voices exist on the account only while their lines are read: a voice is created from its design when a
+ * line needs it, and deleted by `close`, so a world takes no voice slot. ElevenLabs allows few voices per account.
+ */
+export class DesignedVoices {
+  private made = new Map<string, Promise<string>>();
+  constructor(private readonly tag: string) {}
+
+  /** The live voice id for a design, created on first use. */
+  idFor(design: NonNullable<Cast[string]['design']>): Promise<string> {
+    let id = this.made.get(design.generated);
+    if (!id) {
+      id = (async () => {
+        const res = await eleven('/text-to-voice', { method: 'POST', body: JSON.stringify({ voice_name: `${this.tag} ${design.generated.slice(0, 6)}`, voice_description: design.description, generated_voice_id: design.generated }) });
+        return ((await res.json()) as { voice_id: string }).voice_id;
+      })();
+      this.made.set(design.generated, id);
+    }
+    return id;
+  }
+
+  /** Deletes the voices this run created, and any a crashed run of the same world left behind. */
+  async close() {
+    const ids = new Set((await Promise.allSettled(this.made.values())).flatMap((r) => (r.status === 'fulfilled' ? [r.value] : [])));
+    try {
+      const all = (await (await eleven('/voices')).json()) as { voices: Voice[] };
+      for (const v of all.voices) if (v.name.startsWith(`${this.tag} `)) ids.add(v.voice_id);
+    } catch { /* listing is best effort */ }
+    await Promise.allSettled([...ids].map((id) => eleven(`/voices/${id}`, { method: 'DELETE' })));
+    this.made.clear();
+  }
+}
 const ageOf = (v: Voice) => AGES.indexOf((v.labels?.age as Profile['age']) ?? 'middle_aged');
 
 /** How far a stock voice is from who should speak: a wrong gender rules it out, then age steps apart. */
@@ -125,12 +218,21 @@ Reply with JSON only: {"gender": "male | female", "age": "child | teen | young |
 /**
  * Casts a stock voice for each speaker. Spark sees each figure and says who they are; code keeps only the voices
  * of that gender and age; Spark picks among those for temperament; code checks the pick and falls back to the
- * nearest unused voice. Children and teens are read higher (pitch), since no stock voice is a child.
+ * nearest unused voice. Children, teens and the old get a voice designed for them (no stock voice fits them).
  */
 export async function castVoices(memo: Memo, world: World, lines: Line[], voices: Voice[], speakers: Speaker[]): Promise<Cast> {
   const keys = [...new Set(lines.map((l) => l.speaker))];
   const byKey = new Map(speakers.map((s) => [s.key, s]));
   const profiles = Object.fromEntries(await Promise.all(keys.map(async (k) => [k, await profileOf(memo, world, { ...(byKey.get(k) ?? { key: k, looks: k }), says: lines.filter((l) => l.speaker === k).slice(0, 4).map((l) => l.text) })] as const)));
+  const designs = Object.fromEntries(await Promise.all(keys.filter((k) => needsDesign(profiles[k])).map(async (k) => {
+    try {
+      return [k, await designVoice(profiles[k], lines.filter((l) => l.speaker === k).map((l) => l.text))] as const;
+    } catch (error) {
+      console.log(`  ${k}: ${error instanceof Error ? error.message : error}; a stock voice stands in`);
+      return [k, undefined] as const;
+    }
+  })));
+  const stock = keys.filter((k) => !designs[k]);
   const candidates = Object.fromEntries(keys.map((k) => [k, voiceCandidates(voices, profiles[k])]));
   const sample = (key: string) => lines.filter((l) => l.speaker === key).slice(0, 2).map((l) => `"${l.text}"`).join(' ');
   const describe = (v: Voice) => `${v.voice_id}: ${v.name}; ${Object.values(v.labels ?? {}).join(', ')}; ${v.description ?? ''}`;
@@ -138,15 +240,20 @@ export async function castVoices(memo: Memo, world: World, lines: Line[], voices
 
 For each character pick ONE voice from that character's own list (the lists already match their gender and age). Pick by temperament and how they talk. Give different characters different voices when you can. Set "stability" 0.3-0.7 (lower is more expressive) and "style" 0-0.5.
 
-${keys.map((k) => `## ${k}: ${profiles[k].age.replace('_', ' ')} ${profiles[k].gender === 'any' ? '' : profiles[k].gender}, ${profiles[k].sound}. Says: ${sample(k)}
+${stock.map((k) => `## ${k}: ${profiles[k].age.replace('_', ' ')} ${profiles[k].gender === 'any' ? '' : profiles[k].gender}, ${profiles[k].sound}. Says: ${sample(k)}
 ${candidates[k].map((v) => `- ${describe(v)}`).join('\n')}`).join('\n\n')}
 
 Reply with JSON only: {"<character key>": {"voice": "<voice id>", "why": "few words", "stability": 0.45, "style": 0.2}}`;
-  const picked = Cast.safeParse(await askSparkJson<unknown>(memo, { label: 'cast-voices', prompt }).catch(() => ({})));
+  const picked = Cast.safeParse(stock.length ? await askSparkJson<unknown>(memo, { label: 'cast-voices', prompt }).catch(() => ({})) : {});
   const cast: Cast = {};
   const used = new Set<string>();
   for (const k of keys) {
     const p = profiles[k];
+    const design = designs[k];
+    if (design) {
+      cast[k] = { voice: DESIGNED, why: design.description, stability: 0.45, style: 0.2, profile: p, pitch: 0, design };
+      continue;
+    }
     const allowed = candidates[k];
     let choice = picked.success ? picked.data[k] : undefined;
     // A pick outside the character's list is not trusted: the nearest unused voice that fits takes its place.
@@ -155,7 +262,8 @@ Reply with JSON only: {"<character key>": {"voice": "<voice id>", "why": "few wo
       choice = { voice: v.voice_id, why: `nearest ${p.age.replace('_', ' ')} ${p.gender} voice`, stability: 0.45, style: 0.2, pitch: 0 };
     }
     used.add(choice.voice);
-    cast[k] = { ...choice, profile: p, pitch: PITCH[p.age] ?? 0 };
+    // No design (refused, or no ElevenLabs Voice Design): a young stock voice raised a little is the stand-in.
+    cast[k] = { ...choice, profile: p, pitch: p.age === 'child' ? 3 : p.age === 'teen' ? 1.5 : 0 };
   }
   return cast;
 }
@@ -192,10 +300,14 @@ function pcm24k(pcm: Pcm): Buffer {
   return out;
 }
 
-function speak(memo: Memo, label: string, text: string, voice: Cast[string], take: number): Promise<Buffer> {
+function speak(memo: Memo, label: string, text: string, voice: Cast[string], take: number, designed?: DesignedVoices): Promise<Buffer> {
   const body = { text, model_id: TTS_MODEL, voice_settings: { stability: voice.stability, similarity_boost: 0.8, style: voice.style, use_speaker_boost: true }, ...(take > 1 && { seed: 1000 + take }) };
-  return memo.remember('voice', label, inputHash('eleven-tts', voice.voice, JSON.stringify(body)), 'mp3', async () =>
-    Buffer.from(await (await eleven(`/text-to-speech/${voice.voice}?output_format=mp3_44100_128`, { method: 'POST', body: JSON.stringify(body) })).arrayBuffer()));
+  // A designed voice gets a new id each time it is created, so its takes are remembered by the design.
+  return memo.remember('voice', label, inputHash('eleven-tts', voice.design?.generated ?? voice.voice, JSON.stringify(body)), 'mp3', async () => {
+    if (voice.design && !designed) throw new Error('a designed voice needs DesignedVoices to speak');
+    const id = voice.design ? await designed!.idFor(voice.design) : voice.voice;
+    return Buffer.from(await (await eleven(`/text-to-speech/${id}?output_format=mp3_44100_128`, { method: 'POST', body: JSON.stringify(body) })).arrayBuffer());
+  });
 }
 
 export const lineId = (line: Line) => `line-${inputHash(line.speaker, line.text).slice(0, 10)}`;
@@ -204,11 +316,11 @@ export const lineId = (line: Line) => `line-${inputHash(line.speaker, line.text)
 export const heardOk = (line: string, match: number) => match >= 0.9 || (1 - match) * letters(line).length <= 2.01;
 
 /** Reads one line, listens back, and reads it again (up to 3 takes) until the transcript matches. */
-export async function voiceLine(memo: Memo, line: Line, voice: Cast[string], write: (id: string, mp3: Buffer) => string): Promise<z.infer<typeof VoiceLine>> {
+export async function voiceLine(memo: Memo, line: Line, voice: Cast[string], write: (id: string, mp3: Buffer) => string, designed?: DesignedVoices): Promise<z.infer<typeof VoiceLine>> {
   const id = lineId(line);
   let best: { pcm: Pcm; heard: string; match: number; take: number } | undefined;
   for (let take = 1; take <= 3; take++) {
-    const pcm = pitchShift(trim(decode(await speak(memo, `${id}-${take}`, line.text, voice, take)), 0.005), voice.pitch ?? 0);
+    const pcm = pitchShift(trim(decode(await speak(memo, `${id}-${take}`, line.text, voice, take, designed)), 0.005), voice.pitch ?? 0);
     const heard = await transcribe(memo, `${id}-${take}`, pcm24k(pcm), 10);
     const match = heardMatch(line.text, heard);
     if (!best || match > best.match) best = { pcm, heard, match, take };
