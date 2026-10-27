@@ -176,6 +176,16 @@ test('MCP over HTTP: the agent token only, every action a tool, calls tagged as 
   expect(bad.result.isError).toBe(true);
 });
 
+test("a call without slug means the agent session's world", async () => {
+  const send = (path: string) => request(path, { method: 'POST', headers: { authorization: `Bearer ${studio.agentToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'play_reload', arguments: {} } }) });
+  expect(JSON.parse((await send('/mcp')).body).result.isError).toBe(true);
+  const seen: Array<{ type: string; slug?: unknown }> = [];
+  const off = studio.events.subscribe((e) => seen.push(e));
+  expect(JSON.parse((await send('/mcp?world=foghorn')).body).result.isError).toBe(false);
+  off();
+  expect(seen.find((e) => e.type === 'ui.focus')?.slug).toBe('foghorn');
+});
+
 test('job_wait answers when the job ends, with its last lines', async () => {
   const job = studio.jobs.start('foghorn', ['build', 'foghorn'], 'quick', 'agent');
   const call = JSON.parse((await mcp({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'job_wait', arguments: { id: job.id, timeoutSeconds: 20 } } })).body);

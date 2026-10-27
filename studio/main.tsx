@@ -75,7 +75,7 @@ function JobProgress({ job, plan, build, running, done, last }: { job: Job; plan
       <div class="row">
         <strong>{job.by === 'agent' ? 'Agent: ' : ''}{job.label}</strong>
         <span class="grow" />
-        <span class="detail">{job.state === 'queued' ? 'waiting for the job before it' : `${clock(elapsed)}${known ? ` · about ${Math.max(1, Math.round(left / 60_000))} min left` : ''}`}</span>
+        <span class="detail">{job.state === 'queued' ? 'waiting for the job before it' : `${clock(elapsed)}${!known ? '' : left > 30_000 ? ` · about ${Math.max(1, Math.round(left / 60_000))} min left` : running && Object.values(running).includes('run') && left === 0 ? ' · longer than last time' : ' · almost done'}`}</span>
       </div>
       {own.length > 0 && <ol class="steps" aria-label="Steps of this job">
         {own.map((s) => {
@@ -288,6 +288,8 @@ function Workshop({ slug }: { slug: string }) {
   /** What the last undo or redo put back, until the next job. */
   const [undone, setUndone] = useState<string | null>(null);
   const undoneJob = useRef<string | null>(null);
+  /** Activity shows what happened; what each step prints is there too, on request (the job card shows its last line). */
+  const [allLines, setAllLines] = useState(false);
   /** Places the build is mending right now, with what it tries. */
   const [repairing, setRepairing] = useState<Record<string, string>>({});
   const [calls, setCalls] = useState(0);
@@ -446,7 +448,8 @@ function Workshop({ slug }: { slug: string }) {
           <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} />
           <section class="log">
             <div class="row"><h2>Activity</h2><span class="grow" /><span class="detail" title={status ? `this world: ${Object.entries(status.calls).map(([m, n]) => `${m} ${n}`).join(', ') || 'no calls yet'}` : undefined}>{calls} calls this session{budget ? ` · ${spend(budget.today)} today · ${spend(budget.total)}${budget.limitUsd !== null ? ` of $${budget.limitUsd}` : ''} total` : ''}</span></div>
-            <ol>{[...lines].reverse().map((l) => <li key={l.seq} class={l.kind}>{l.text}</li>)}</ol>
+            <label class="detail"><input type="checkbox" checked={allLines} onChange={(e) => setAllLines(e.currentTarget.checked)} /> Every line the steps print</label>
+            <ol>{[...lines].reverse().filter((l) => allLines || l.kind !== 'out').map((l) => <li key={l.seq} class={l.kind}>{l.text}</li>)}</ol>
           </section>
         </aside>
       </main>

@@ -191,7 +191,8 @@ export class AgentHub {
       task: {
         env: withoutProviderCredentials(withoutSecrets(process.env)) as Record<string, string>,
         // genaicode hands the server to Muse as -c overrides, the token through an environment variable, never argv.
-        mcpServers: [{ name: 'diorama', url: this.opts.mcpUrl, headers: { Authorization: `Bearer ${this.opts.agentToken}` } }],
+        // The URL names the world this session is about, so a call that leaves out `slug` means this world.
+        mcpServers: [{ name: 'diorama', url: `${this.opts.mcpUrl}?world=${slug}`, headers: { Authorization: `Bearer ${this.opts.agentToken}` } }],
         permissions: { approval: 'ask' },
       },
       // The agent may use any tool; the brief steers it to the Studio's. Each turn starts from a snapshot, so

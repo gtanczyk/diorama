@@ -22,7 +22,8 @@ export function mcpTools() {
 }
 
 /** Answers one JSON-RPC message; null for a notification. */
-export async function handleMcp(message: Message, ctx: ActionContext): Promise<Reply | null> {
+/** `world`: the world the calling agent session is about; a tool call that leaves out `slug` gets it. */
+export async function handleMcp(message: Message, ctx: ActionContext, world?: string): Promise<Reply | null> {
   if (message.id === undefined || message.id === null) return null;
   const id = message.id;
   const ok = (result: unknown): Reply => ({ jsonrpc: '2.0', id, result });
@@ -42,7 +43,9 @@ export async function handleMcp(message: Message, ctx: ActionContext): Promise<R
       const name = String(message.params?.name ?? '');
       if (!actions.has(name)) return { jsonrpc: '2.0', id, error: { code: -32602, message: `no tool ${name}` } };
       try {
-        const { result, images } = withoutImages(await runAction(name, message.params?.arguments ?? {}, ctx));
+        const args = { ...((message.params?.arguments ?? {}) as Record<string, unknown>) };
+        if (world && args.slug === undefined && takesSlug(name)) args.slug = world;
+        const { result, images } = withoutImages(await runAction(name, args, ctx));
         const content = [{ type: 'text', text: redact(JSON.stringify(result, null, 1)) }, ...images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType }))];
         return ok({ content, structuredContent: wrap(result), isError: false });
       } catch (error) {
@@ -64,4 +67,10 @@ function withoutImages(result: unknown): { result: unknown; images: Image[] } {
   if (!result || typeof result !== 'object' || !Array.isArray((result as { images?: unknown }).images)) return { result, images: [] };
   const { images, ...rest } = result as { images: Image[] };
   return { result: rest, images };
+}
+
+/** Whether a tool's input has a top-level `slug`. */
+function takesSlug(name: string): boolean {
+  const input = actions.get(name)?.input;
+  return !!input && 'shape' in input && typeof input.shape === 'object' && input.shape !== null && 'slug' in input.shape;
 }

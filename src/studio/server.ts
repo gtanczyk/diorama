@@ -212,7 +212,8 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
         if (error) return json(error[0], { jsonrpc: '2.0', id: null, error: { code: -32700, message: error[1] } });
         const ctx: ActionContext = { by: 'agent', root, jobs, events };
         const batch = Array.isArray(value) ? value : [value];
-        const replies = (await Promise.all(batch.map((m) => handleMcp(m as Parameters<typeof handleMcp>[0], ctx)))).filter(Boolean);
+        const world = Slug.safeParse(url.searchParams.get('world'));
+        const replies = (await Promise.all(batch.map((m) => handleMcp(m as Parameters<typeof handleMcp>[0], ctx, world.success ? world.data : undefined)))).filter(Boolean);
         if (!replies.length) {
           res.writeHead(202, headers);
           return res.end();
