@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import { defineCommand } from '../registry.ts';
 import { elevenKey } from '../sound/sources.ts';
-import { castVoices, DESIGNED, DesignedVoices, designDescriptions, designVoice, needsDesign, stockVoices, storyLines, voiceLine, Voices, type Cast } from '../sound/voices.ts';
+import { castVoices, DESIGNED, freeVoiceSlot, voiceCandidates, DesignedVoices, designDescriptions, designVoice, needsDesign, stockVoices, storyLines, voiceLine, Voices, type Cast } from '../sound/voices.ts';
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
@@ -52,6 +52,16 @@ defineCommand({
     for (const [who, v] of Object.entries(cast)) console.log(`  ${who.padEnd(16)} ${v.profile ? `${v.profile.age} ${v.profile.gender}`.padEnd(18) : ''} ${v.design ? 'designed' : v.voice}${v.pitch ? ` +${v.pitch} st` : ''}  ${v.why}`);
 
     fs.rmSync(files.path('sound', 'voice'), { recursive: true, force: true });
+    // No free voice slot on the account: a designed voice cannot be created, so the nearest stock voice stands in.
+    if (Object.values(cast).some((c) => c.design) && !(await freeVoiceSlot())) {
+      const stock = await stockVoices();
+      for (const [k, c] of Object.entries(cast)) {
+        if (!c.design || !c.profile) continue;
+        const v = voiceCandidates(stock, c.profile)[0] ?? stock[0];
+        console.log(`  ${k}: no free voice slot on the ElevenLabs account for a designed voice; ${v.name} stands in`);
+        cast = { ...cast, [k]: { ...c, voice: v.voice_id, design: undefined, pitch: c.profile.age === 'child' ? 3 : c.profile.age === 'teen' ? 1.5 : 0 } };
+      }
+    }
     const done: Voices['lines'] = new Array(lines.length);
     // Designed voices live on the account only while their character's lines are read, one character at a time,
     // so a world needs a single free voice slot.

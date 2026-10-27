@@ -150,6 +150,16 @@ export async function designVoice(p: Profile, says: string[], description?: stri
   return { description: best.description, generated: best.generated, ...(best.hz && { hz: best.hz }) };
 }
 
+/** Whether the ElevenLabs account can hold one more voice (a designed voice needs it while its lines are read). */
+export async function freeVoiceSlot(): Promise<boolean> {
+  try {
+    const sub = (await (await eleven('/user/subscription')).json()) as { voice_slots_used?: number; voice_limit?: number };
+    return sub.voice_limit === undefined || (sub.voice_slots_used ?? 0) < sub.voice_limit;
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Designed voices exist on the account only while their lines are read: a voice is created from its design when a
  * line needs it, and deleted by `close`, so a world takes no voice slot. ElevenLabs allows few voices per account.
