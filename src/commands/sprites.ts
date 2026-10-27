@@ -6,6 +6,7 @@ import { defineCommand, takeOption } from '../registry.ts';
 import { planSprites, type CharacterPlan } from '../model/plan.ts';
 import { cutSheet, FACINGS, flatGuide, onGrey, paintSheet, renderGuides, SHEET, TRACED, type Facing } from '../model/sprites.ts';
 import { Story } from '../story/schema.ts';
+import { fixedLooks } from '../scene/cast-fixes.ts';
 import { WorldFiles } from '../world/files.ts';
 
 const LEGS_OK = 0.6;
@@ -49,7 +50,7 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
   const { key } = plan;
   const world = files.world();
   const who = [world.hero, ...world.places.flatMap((p) => p.things)].find((w) => w.key === key);
-  const looks = who?.looks ?? '';
+  const looks = who ? fixedLooks(files, who).looks : '';
   const modelDir = files.path('cast', key, 'model');
   const view = (name: string) => fs.readFileSync(`${modelDir}/${name}.png`);
   const out = (name: string) => files.path('cast', key, 'sprites', name);

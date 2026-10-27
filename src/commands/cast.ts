@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { defineCommand, takeOption } from '../registry.ts';
 import { paintFigure, type Who } from '../scene/cast.ts';
 import { rigFigure } from '../scene/rig.ts';
+import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
@@ -19,9 +20,11 @@ defineCommand({
     const kept = files.path('cast', `${world.hero.key}-photo.png`);
     const photo = photoPath ? fs.readFileSync(photoPath) : fs.existsSync(kept) ? fs.readFileSync(kept) : undefined;
     const npcs = world.places.flatMap((p) => p.things.filter((t) => t.role === 'npc'));
-    const cast: Who[] = [world.hero, ...new Map(npcs.map((n) => [n.key, n])).values()].filter((w) => !only.length || only.includes(w.key));
+    const fixes = readCastFixes(files);
+    const cast: Who[] = [world.hero, ...new Map(npcs.map((n) => [n.key, n])).values()].filter((w) => !only.length || only.includes(w.key)).map((w) => fixedLooks(files, w));
     await Promise.all(cast.map(async (who) => {
-      const { painting, figure } = await paintFigure(files.memo, world, who, take, who.key === world.hero.key ? photo : undefined);
+      // The person's description and chosen take (cast/fixes.json) win over the world's.
+      const { painting, figure } = await paintFigure(files.memo, world, who, fixes[who.key]?.take ?? take, who.key === world.hero.key ? photo : undefined);
       files.write(files.path('cast', `${who.key}-painting.png`), painting);
       files.write(files.path('cast', `${who.key}.png`), figure);
       // The same painting cut into parts, so the runtime can walk the figure.

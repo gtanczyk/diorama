@@ -8,3 +8,4 @@ import './fix.ts';
 import './feedback.ts';
 import './budget.ts';
 import './view.ts';
+import './cast.ts';

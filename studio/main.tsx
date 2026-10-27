@@ -5,6 +5,7 @@ import { signal } from '@preact/signals';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { askAgent, call, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
 import { AgentPanel } from './agent.tsx';
+import { CastView } from './cast.tsx';
 import { PlaceEditor } from './place.tsx';
 
 type Check = { id: string; label: string; state: 'ok' | 'missing' | 'optional' | 'fail'; detail: string; fix?: string[] };
@@ -289,6 +290,7 @@ function Workshop({ slug }: { slug: string }) {
   const stepState = (s: string): 'ok' | 'run' | 'fail' | 'todo' => running[s] ?? (status?.build[s] ? 'ok' : 'todo');
   const placeFocus = useMemo(() => status?.placeDetail.find((p) => p.key === focus), [status, focus]);
   const [playing, setPlaying] = useState<{ place?: string } | null>(null);
+  const [view, setView] = useState<'places' | 'cast'>('places');
   const playable = !!status?.placeDetail.some((p) => p.stages.layout);
   const playLine = (text: string) => setLines((l) => [...l.slice(-400), { seq: -Date.now() - Math.random(), text, kind: 'play' }]);
 
@@ -314,7 +316,12 @@ function Workshop({ slug }: { slug: string }) {
           <ol class="steps" aria-label="Build steps">
             {steps.map((s) => <li class={stepState(s)} title={status?.build[s] ? `${status.build[s].seconds}s` : undefined}><Mark state={stepState(s)} />{s}</li>)}
           </ol>
-          <ul class="places">
+          <div class="seg" role="tablist" aria-label="Show">
+            <button type="button" role="tab" aria-selected={view === 'places'} class={view === 'places' ? 'on' : ''} onClick={() => setView('places')}>Places</button>
+            <button type="button" role="tab" aria-selected={view === 'cast'} class={view === 'cast' ? 'on' : ''} onClick={() => setView('cast')}>Cast</button>
+          </div>
+          {view === 'cast' && <CastView slug={slug} version={tick} onError={setError} />}
+          {view === 'places' && <ul class="places">
             {status?.placeDetail.map((p) => (
               <li class={focus === p.key ? 'focus' : ''}>
                 <button type="button" class="card" onClick={() => setFocus(focus === p.key ? null : p.key)}>
@@ -326,8 +333,8 @@ function Workshop({ slug }: { slug: string }) {
                 </button>
               </li>
             ))}
-          </ul>
-          {placeFocus && (
+          </ul>}
+          {view === 'places' && placeFocus && (
             <section class="inspect">
               <p class="detail">{placeFocus.shows}</p>
               {placeFocus.verdict && [...placeFocus.verdict.errors.map((f) => ['error', f] as const), ...placeFocus.verdict.flags.map((f) => ['flag', f] as const)].map(([kind, f]) => (

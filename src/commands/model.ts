@@ -8,6 +8,7 @@ import { lean, normalise, readShape, standUp } from '../model/glb.ts';
 import { paintViews } from '../model/views.ts';
 import { planSprites } from '../model/plan.ts';
 import { Story } from '../story/schema.ts';
+import { fixedLooks } from '../scene/cast-fixes.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
@@ -29,8 +30,9 @@ defineCommand({
 
 async function buildModel(files: WorldFiles, key: string, take: number, given: string) {
   const world = files.world();
-  const who = [world.hero, ...world.places.flatMap((p) => p.things)].find((w) => w.key === key);
-  if (!who) throw new Error(`no hero or NPC called ${key}`);
+  const found = [world.hero, ...world.places.flatMap((p) => p.things)].find((w) => w.key === key);
+  if (!found) throw new Error(`no hero or NPC called ${key}`);
+  const who = fixedLooks(files, found);
   const painting = fs.readFileSync(files.path('cast', `${key}-painting.png`));
   const out = (name: string) => files.path('cast', key, 'model', name);
 

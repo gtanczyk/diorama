@@ -1,9 +1,10 @@
-// diorama voices <slug>: every line of the story spoken. Spark casts the voices (kept in voices.json, edit to recast),
+// diorama voices <slug>: every line of the story spoken. Spark casts the voices (kept in voices.json; voice_set in the Studio recasts one),
 // ElevenLabs reads, Muse Voice Transcribe checks each take says its line.
 import fs from 'node:fs';
 import { defineCommand } from '../registry.ts';
 import { elevenKey } from '../sound/sources.ts';
 import { castVoices, stockVoices, storyLines, voiceLine, Voices, type Cast } from '../sound/voices.ts';
+import { readCastFixes } from '../scene/cast-fixes.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
 
@@ -25,6 +26,8 @@ defineCommand({
     let cast: Cast;
     if (old && !recast && lines.every((l) => old.cast[l.speaker])) cast = old.cast;
     else cast = await castVoices(files.memo, world, story, lines, await stockVoices());
+    // The voices the person picked (cast/fixes.json) replace Spark's casting.
+    for (const [key, fix] of Object.entries(readCastFixes(files))) if (fix.voice && cast[key]) cast = { ...cast, [key]: { ...cast[key], ...fix.voice } };
     for (const [who, v] of Object.entries(cast)) console.log(`  ${who.padEnd(16)} ${v.voice}  ${v.why}`);
 
     fs.rmSync(files.path('sound', 'voice'), { recursive: true, force: true });
