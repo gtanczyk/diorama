@@ -10,9 +10,8 @@ export type PadFrame = { dir: Point | null; pressed: PadButton[]; pads: number }
 
 // The standard layout (Xbox names): A 0, B 1, X 2, Y 3, LB 4, RB 5, LT 6, RT 7, select 8, start 9, d-pad 12-15.
 const STANDARD: Array<[number, PadButton]> = [[0, 'use'], [1, 'back'], [2, 'prev'], [3, 'next'], [4, 'prev'], [5, 'next'], [6, 'prev'], [7, 'next'], [9, 'start'], [12, 'up'], [13, 'down'], [14, 'left'], [15, 'right']];
-// A pad the browser does not map (an 8BitDo in D-input on a Mac): the face buttons come first, in no fixed order, so the
-// two lowest both use (a child presses whichever), the rest go through the bag (its last step is empty hands), and the
-// highest start.
+// Another pad the browser does not map: the face buttons come first, in no fixed order, so the two lowest both use (a
+// child presses whichever), the rest go through the bag (its last step is empty hands), and the highest start.
 const LOOSE: Array<[number, PadButton]> = [[0, 'use'], [1, 'use'], [2, 'next'], [3, 'next'], [4, 'next'], [5, 'prev'], [6, 'prev'], [7, 'next'], [8, 'prev'], [9, 'next'], [10, 'start'], [11, 'start']];
 const DEAD = 0.4;
 const IDLE_S = 25;
@@ -25,16 +24,18 @@ export function readEachPad(): Map<number, PadFrame> {
   for (const pad of navigator.getGamepads?.() ?? []) {
     if (!pad?.connected) continue;
     const down = new Set<PadButton>();
-    const map = pad.mapping === 'standard' ? STANDARD : LOOSE;
-    for (const [i, b] of map) if (pad.buttons[i]?.pressed) down.add(b);
-    // The left stick, then the d-pad as buttons, then a d-pad reported as one "hat" axis (D-input pads).
-    let [x, y] = [pad.axes[0] ?? 0, pad.axes[1] ?? 0];
+    // The 8BitDo Micro (D-input or the Mac's MFi profile) is seen as a standard pad, its buttons by face position.
+    const micro = microButtons(pad);
+    const map = pad.mapping === 'standard' || micro ? STANDARD : LOOSE;
+    for (const [i, b] of map) if (micro ? micro[i] : pad.buttons[i]?.pressed) down.add(b);
+    // The left stick (the Micro has none), then the d-pad as buttons, then a d-pad reported as one "hat" axis.
+    let [x, y] = micro ? [0, 0] : [pad.axes[0] ?? 0, pad.axes[1] ?? 0];
     if (Math.hypot(x, y) < DEAD) [x, y] = [0, 0];
     if (down.has('left')) x = -1;
     if (down.has('right')) x = 1;
     if (down.has('up')) y = -1;
     if (down.has('down')) y = 1;
-    const hat = pad.mapping === 'standard' ? undefined : hatDir(pad.axes[9]);
+    const hat = pad.mapping === 'standard' || micro ? undefined : hatDir(pad.axes[9]);
     if (hat) [x, y] = hat;
     // Directions as presses too, for moving through answer cards.
     if (x < -0.5) down.add('left');
@@ -60,6 +61,41 @@ export function readPads(only?: number): PadFrame {
   }
   const dir: Point | null = Math.hypot(dx, dy) < DEAD ? null : eighth(dx, dy);
   return { dir, pressed: [...pressed], pads: each.size };
+}
+
+// The 8BitDo Micro, as the gamedev.pl site projects it (apps/web/src/gamepad.ts): standard slot to raw button.
+const MICRO_ORDER = {
+  hid: [1, 0, 4, 3, 6, 7, 8, 9, 10, 11, 13, 14, -1, -1, -1, -1, 12],
+  mfi: [0, 1, 5, 6, 11, 13, 12, 14, 4, 3, -1, -1, 10, 7, 8, 9, 2],
+} as const;
+
+/** An 8BitDo Micro's buttons in the standard slots (A 0, B 1, ... d-pad 12-15); undefined for any other pad. */
+export function microButtons(pad: Pick<Gamepad, 'id' | 'mapping' | 'axes' | 'buttons'>): boolean[] | undefined {
+  if (pad.mapping === 'standard') return undefined;
+  if (!/^8bitdo micro(?: gamepad)?(?:$|[ (])/i.test(pad.id) && !/vendor:\s*2dc8\s+product:\s*9020/i.test(pad.id)) return undefined;
+  // D-input reports 10 axes and 16 buttons; the Mac's MFi profile no axes and 15 buttons.
+  const layout = pad.axes.length === 10 && pad.buttons.length === 16 ? 'hid' : pad.axes.length === 0 && pad.buttons.length === 15 ? 'mfi' : undefined;
+  if (!layout) return undefined;
+  const slots = MICRO_ORDER[layout].map((n) => n >= 0 && !!pad.buttons[n]?.pressed);
+  if (layout === 'hid') {
+    // Chrome on a Mac puts the cross on the first two axes; others use the hat.
+    const cross: number[] = [];
+    if (pad.axes[0] < -0.5) cross.push(14);
+    if (pad.axes[0] > 0.5) cross.push(15);
+    if (pad.axes[1] < -0.5) cross.push(12);
+    if (pad.axes[1] > 0.5) cross.push(13);
+    for (const n of cross.length ? cross : microHat(pad.axes[9])) slots[n] = true;
+  }
+  return slots;
+}
+
+/** A hat value as d-pad slots (12 up, 13 down, 14 left, 15 right); none when let go (the value is then outside -1..1). */
+function microHat(value: number | undefined): number[] {
+  if (value === undefined || !Number.isFinite(value) || value < -1.01 || value > 1.01) return [];
+  const step = (value + 1) * 3.5;
+  const n = Math.round(step);
+  if (Math.abs(step - n) > 0.08 || n < 0 || n > 7) return [];
+  return [[12], [12, 15], [15], [13, 15], [13], [13, 14], [14], [12, 14]][n];
 }
 
 /** The nearest of the eight ways (straight or diagonal), so a wobbly thumb does not turn the hero every frame. */
