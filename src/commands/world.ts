@@ -68,7 +68,12 @@ defineCommand({
       console.log(`hero from photo: ${hero.key}, ${hero.looks}`);
     }
     const other = language && !/^english$/i.test(language) ? language : undefined;
-    const asks = [drawn.length ? drawingsBrief(drawn) : '', other ? `Write the title and pitch in ${other}, the language of the players; everything else (style, shows, mood, looks, keys) stays in English for the painters.` : ''].filter(Boolean);
+    const asks = [
+      drawn.length ? drawingsBrief(drawn) : '',
+      other ? `Write the title and pitch in ${other}, the language of the players; everything else (style, shows, mood, looks, keys) stays in English for the painters.` : '',
+      // The game shows a name over each speaker: in the players' language, as they call them.
+      other || kids ? `Add "names": {"<key>": "name"} for the hero and every npc: a short name ${other ? `in ${other} ` : ''}the players would call them by (the name the children gave them, if they gave one; else a short friendly name a child would give).` : '',
+    ].filter(Boolean);
     const extra: Extra | undefined = asks.length ? { brief: asks.join('\n\n'), issues: (w) => drawnIssues(w, drawn) } : undefined;
     const designed = await designWorld(files.memo, hero ? `${idea}\nThe hero is ${hero.looks}` : idea, places, room, extra);
     const world = { ...designed, ...(drawn.length && { style: KIDS_STYLE }), ...(hero && { hero }), ...(other && { language: other }), ...(kids && { audience: 'kids' as const }) };

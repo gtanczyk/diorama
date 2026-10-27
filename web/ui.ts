@@ -15,7 +15,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text 
 };
 
 /** A key like "ornitolog-mila" as a name to show: "Ornitolog Mila". */
-export const displayName = (key: string) => key.split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+/** A speaker's name: the world's own (world.json names, in its language), else one made from the key. */
+export const displayName = (key: string, names?: Record<string, string>) => names?.[key] ?? key.split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
 
 export class Bag {
   private readonly root = document.getElementById('inventory')!;
@@ -133,6 +134,8 @@ export class Answers {
   private texts = '';
   /** The card a gamepad would pick; lit only once a pad has been used. */
   private focus = 0;
+  /** Says an answer aloud when it is pointed at or lit by a pad (a world for kids, who cannot read the cards). */
+  hear?: (text: string) => void;
 
   constructor() {
     addEventListener('keydown', (e) => {
@@ -146,7 +149,8 @@ export class Answers {
     this.root.hidden = options.length === 0;
     // New answers start from the first card; the same ones redrawn keep the lit one.
     const texts = options.map((o) => o.text).join('\n');
-    if (texts !== this.texts) [this.texts, this.focus] = [texts, 0];
+    const fresh = texts !== this.texts;
+    if (fresh) [this.texts, this.focus] = [texts, 0];
     this.cards = [];
     if (!options.length) return this.root.replaceChildren();
     const who = el('div', 'who');
@@ -163,10 +167,14 @@ export class Answers {
       const b = el('button', 'answer');
       b.append(el('span', 'key', String(i + 1)), document.createTextNode(o.text));
       b.onclick = o.pick;
+      b.onpointerenter = () => this.hear?.(o.text);
+      b.onfocus = () => this.hear?.(o.text);
       return b;
     });
     this.root.replaceChildren(who, ...this.cards);
     this.light();
+    // Playing with a pad, the lit card is said as soon as the answers come up.
+    if (fresh && document.body.classList.contains('pad')) this.hear?.(options[0].text);
   }
 
   /** Moves the lit card up (-1) or down (1), round from the last to the first. */
@@ -174,6 +182,7 @@ export class Answers {
     if (!this.picks.length) return;
     this.focus = (this.focus + by + this.picks.length) % this.picks.length;
     this.light();
+    this.hear?.(this.texts.split('\n')[this.focus]);
   }
 
   /** Picks the lit card; false when no answers are up. */

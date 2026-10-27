@@ -672,7 +672,7 @@ class Game {
     this.answers.show(options.map((a) => ({
       text: a.kind === 'choose' ? lineChoice(story!, this.state, a.index) : words.goodbye,
       pick: () => void this.act(a),
-    })), { name: displayName(hero), portrait: this.data.cast[hero] && files(this.data.cast[hero].image) });
+    })), { name: displayName(hero, this.data.world.names), portrait: this.data.cast[hero] && files(this.data.cast[hero].image) });
     const ending = story?.endings.find((e) => e.key === this.state.ending);
     // Drawn once per ending, so the card's entrance plays once.
     if ((ending?.key ?? '') !== this.endingShown) {
@@ -1150,7 +1150,7 @@ class Game {
     }
     // The bubble sits over whoever says the line; the narrator (no speaker) and the hero use the hero.
     const speaker = this.speech?.who ? this.drawn.find((d) => d.hot.thing.key === this.speech!.who)?.rect : undefined;
-    this.drawSpeech(speaker ?? rect, this.speech?.who && displayName(this.speech.who));
+    this.drawSpeech(speaker ?? rect, this.speech?.who && displayName(this.speech.who, this.data.world.names));
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (this.dark > 0) {
       ctx.fillStyle = `rgba(0,0,0,${this.dark})`;
@@ -1983,6 +1983,10 @@ function drawFigure(c: CanvasRenderingContext2D, h: number, colour: string) {
 const game = new Game();
 // ?sound=0 plays silent; m mutes.
 const mixer = params.get('sound') === '0' ? undefined : new Mixer(game as unknown as Listened, files);
+// Children who cannot read hear each answer card as they point at it or light it with a pad.
+game.answers.hear = (text) => {
+  if (game.data?.world.audience === 'kids') mixer?.hear(text);
+};
 /** The scene point under the pointer: canvas pixels, then out of the parallax zoom. */
 const toFrame = (e: MouseEvent): Point => {
   const r = canvas.getBoundingClientRect();

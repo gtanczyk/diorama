@@ -28,6 +28,8 @@ export const World = z.object({
   language: z.string().min(2).optional(),
   /** Who plays: "kids" are 5 to 7 and cannot read yet, so the story is gentler, simpler and heard. */
   audience: z.enum(['kids']).optional(),
+  /** What the players call the hero and each npc, in the world's language ("Smok Zielek" in a Polish world); else a name made from the key. */
+  names: z.record(z.string(), z.string().min(1).max(40)).optional(),
 });
 
 export type World = z.infer<typeof World>;

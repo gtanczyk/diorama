@@ -125,15 +125,20 @@ export class Mixer {
   /** ?voices=npc: only the people the hero meets speak (for a film with a voice-over); ?voices=0: nobody. */
   private voiced = new URLSearchParams(location.search).get('voices') ?? 'all';
 
+  /** Says an answer card aloud as it is pointed at, even with no line up (the cards are voiced as the hero's lines). */
+  hear(text: string) {
+    void this.speak(text, true);
+  }
+
   /** Says a line in its cast voice, cutting off the one before. */
-  private async speak(text: string) {
+  private async speak(text: string, card = false) {
     this.hush();
     const line = this.sound?.lines?.[text];
     if (!line || this.voiced === '0') return;
     if (this.voiced === 'npc' && (line.speaker === 'narrator' || line.speaker === this.game.data.world?.hero.key)) return;
     if (!this.lines.has(text)) this.lines.set(text, fetch(this.url(line.file)).then((r) => r.arrayBuffer()).then((b) => this.ctx.decodeAudioData(b)).catch(() => undefined));
     const buf = await this.lines.get(text);
-    if (!buf || this.game.speech === null) return;
+    if (!buf || (this.game.speech === null && !card)) return;
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     src.connect(this.voiceBus);
