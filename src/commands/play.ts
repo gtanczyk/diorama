@@ -20,7 +20,7 @@ import { Story } from '../story/schema.ts';
 import { players } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
 
-type Flats = { sky: string | null; flats: Array<{ file: string; box: [number, number, number, number] }>; water?: { tex: string; mask: string; box: [number, number, number, number]; flow?: [number, number] } };
+type Flats = { sky: string | null; flats: Array<{ file: string; box: [number, number, number, number] }>; water?: { tex: string; mask: string; box: [number, number, number, number]; flow?: [number, number] }; mist?: { tex: string; mask: string; box: [number, number, number, number]; drift?: -1 | 0 | 1 | null; speed?: number } };
 
 export const WEB = fileURLToPath(new URL('../../web/', import.meta.url));
 const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.mp3': 'audio/mpeg' };
@@ -52,6 +52,7 @@ export function worldData(files: WorldFiles) {
       sky: flats.sky ? rel(flats.sky) : null,
       flats: flats.flats.map((f) => ({ file: rel(f.file), box: f.box })),
       ...(flats.water && { water: { tex: rel(flats.water.tex), mask: rel(flats.water.mask), box: flats.water.box, flow: flats.water.flow } }),
+      ...(flats.mist && { mist: { ...flats.mist, tex: rel(flats.mist.tex), mask: rel(flats.mist.mask) } }),
     };
     // weather.json (diorama weather): what falls here and where water drips, for the page to animate.
     const weatherFile = files.place(place.key, 'weather.json');

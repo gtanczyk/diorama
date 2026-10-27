@@ -71,6 +71,8 @@ type Place = {
   /** The far view as flats: the sky drawn still, then each flat (farthest first) at its own disparity. */
   /** Water set flowing: a texture over box (reaching past the banks), its soft mask, a canvas to compose in. */
   water?: { tex: HTMLImageElement; mask: HTMLImageElement; box: [number, number, number, number]; flow: [number, number]; canvas: HTMLCanvasElement };
+  /** Painted fog set drifting: its veil over box (reaching past its edges), where it may show, which way (-1, 1; 0 with the wind) and how fast. */
+  mist?: { tex: HTMLImageElement; mask: HTMLImageElement; box: [number, number, number, number]; drift: number; speed: number; canvas: HTMLCanvasElement };
   far?: { sky?: HTMLImageElement; flats: Array<{ img: HTMLImageElement; box: [number, number, number, number]; d: number }> };
   hots: Hot[];
   cuts: Cut[];
@@ -154,6 +156,9 @@ const TRACK_ZOOM = 0.2;
 const FLOW = 20;
 /** How far the water texture reaches past the banks (WATER_PAD in src/scene/layers.ts). */
 const WATER_PAD = 64;
+/** Painted fog drifts this many px per second (times its speed), and its texture reaches this far past it (MIST_PAD in src/scene/layers.ts). */
+const MIST_DRIFT = 14;
+const MIST_PAD = 160;
 /** The pointer over the canvas, 0..1 across and down; null when it is elsewhere. */
 let pointer: { x: number; y: number } | null = null;
 const LONG_PRESS_MS = 500;
@@ -369,6 +374,12 @@ class Game {
       const [tex, mask] = await Promise.all([loadImage(files(w.tex)), loadImage(files(w.mask))].map((p) => p.catch(() => undefined)));
       if (tex && mask) water = { tex, mask, box: w.box, flow: w.flow ?? [1, 0], canvas: Object.assign(document.createElement('canvas'), { width: w.box[2] - w.box[0], height: w.box[3] - w.box[1] }) };
     }
+    let mist: Place['mist'];
+    const m = entry.layers?.mist;
+    if (backdrop && m && !params.has('still')) {
+      const [tex, mask] = await Promise.all([loadImage(files(m.tex)), loadImage(files(m.mask))].map((p) => p.catch(() => undefined)));
+      if (tex && mask) mist = { tex, mask, box: m.box, drift: m.drift ?? 0, speed: m.speed ?? 1, canvas: Object.assign(document.createElement('canvas'), { width: m.box[2] - m.box[0], height: m.box[3] - m.box[1] }) };
+    }
     const maskOf = (p?: string) => (p ? loadBits(dir(p), g.frame.width, g.frame.height).catch(() => undefined) : Promise.resolve(undefined));
     const byPath = new Map<string, Promise<Bits | undefined>>();
     const shared = (p?: string) => {
@@ -400,7 +411,7 @@ class Game {
     const ripples = wx?.ripples ? await loadBits(files(wx.ripples), g.frame.width, g.frame.height).catch(() => undefined) : undefined;
     const weather = wx && new WeatherFx(wx, g, ripples?.bits, key);
     const focus = focusScale > 0 || separateScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather };
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather };
     this.cache.set(key, place);
     return place;
   }
@@ -1057,6 +1068,40 @@ class Game {
     ctx.restore();
   }
 
+  /**
+   * The painted fog drifts. Like running water: two copies of its veil (its colour, shaped like its denser and
+   * lighter patches) slide sideways half a cycle apart, each fading in and out, so their sum weighs one and none
+   * is seen jumping back; with the wind (or the way the author set with fog_drift). Cut to where the fog may
+   * show and laid over the still painting, so wisps roll across the land, breathing a little, and sliding with
+   * the parallax as its lowest row.
+   */
+  private drawMist(p: Parallax) {
+    const mist = this.place.mist;
+    if (!mist) return;
+    const [x0, y0, x1, y1] = mist.box;
+    const dir = mist.drift || ((this.place.weather?.w.wind ?? 0) < 0 ? -1 : 1);
+    const v = MIST_DRIFT * mist.speed;
+    // At most the texture's reach past the fog per cycle, so a shifted copy never runs out of fog.
+    const period = Math.min(16, (2 * MIST_PAD - 8) / v);
+    const phase = (this.time / period) % 1;
+    const c = mist.canvas.getContext('2d')!;
+    c.globalCompositeOperation = 'source-over';
+    c.clearRect(0, 0, x1 - x0, y1 - y0);
+    for (const k of [0, 0.5]) {
+      const ph = (phase + k) % 1;
+      c.globalAlpha = k === 0 ? 1 : 1 - Math.abs(2 * ((phase + 0.5) % 1) - 1);
+      c.drawImage(mist.tex, dir * v * period * (ph - 0.5), Math.sin(this.time * 0.21 + k * 3) * 3);
+    }
+    c.globalAlpha = 1;
+    c.globalCompositeOperation = 'destination-in';
+    c.drawImage(mist.mask, 0, 0);
+    const [sx, sy] = shiftAt(this.place.g, p, y1);
+    ctx.save();
+    ctx.globalAlpha = 0.6 + 0.12 * Math.sin(this.time * 0.35);
+    ctx.drawImage(mist.canvas, x0 + sx, y0 + sy);
+    ctx.restore();
+  }
+
   /** Draws `draw` moved by the parallax shift of floor row y. */
   private at(y: number, draw: () => void) {
     const [dx, dy] = this.shift(y);
@@ -1115,6 +1160,7 @@ class Game {
         ctx.drawImage(backdrop, x0, h, w, e - h + 1, x0 + sx, h + sy, w, e - h + 1);
       }
       this.drawWater(p);
+      this.drawMist(p);
       this.place.weather?.drawGround(ctx, (y) => this.shift(y));
       const carded = new Set(this.place.cuts.map((c) => c.occ.thing ?? c.occ.key));
       for (const hot of this.place.hots) {

@@ -49,9 +49,12 @@ test('a post SAM cut into a cap and a foot becomes one card standing on the foot
   expect(cards[0]).toMatchObject({ box: [315, 497, 423, 734], baseY: 734, stacked: true });
 });
 
-test('depth.json: flow setting defaults to auto and rejects unknown values', async () => {
+test('depth.json: flow and fog settings default to auto and reject unknown values', async () => {
   const { Depth } = await import('../src/scene/layers.ts');
-  expect(Depth.parse({})).toEqual({ flow: 'auto' });
+  expect(Depth.parse({})).toEqual({ flow: 'auto', fog: 'auto' });
+  expect(Depth.parse({ fog: 'left', fogSpeed: 2 })).toMatchObject({ fog: 'left', fogSpeed: 2 });
+  expect(() => Depth.parse({ fog: 'up' })).toThrow();
+  expect(() => Depth.parse({ fogSpeed: 9 })).toThrow();
   expect(Depth.parse({ flow: 'reverse', flowHint: 'toward the bridge' }).flowHint).toBe('toward the bridge');
   expect(() => Depth.parse({ flow: 'sideways' })).toThrow();
 });

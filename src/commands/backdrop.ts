@@ -8,7 +8,7 @@ import { Geometry } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
 import { BACKDROP_GROW, backdropFor, smearedBackdrop, type Card } from '../scene/backdrop.ts';
 import { carryBetween, carryFrom, paintingFor, ran, remakes, tilesLine, withChange } from '../scene/carry.ts';
-import { Depth, farFlats, waterSheet } from '../scene/layers.ts';
+import { Depth, farFlats, mistSheet, waterSheet } from '../scene/layers.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
@@ -74,13 +74,27 @@ defineCommand({
       const floors = fs.existsSync(floorDir) ? await Promise.all(fs.readdirSync(floorDir).filter((f) => f.endsWith('.png')).map(async (f) => maskFromPng(fs.readFileSync(`${floorDir}/${f}`)))) : [];
       const dry = dilate(unionAll(FRAME.width, FRAME.height, [...floors, ...cards.map((c) => c.mask)]), 6);
       const depth = Depth.parse(fs.existsSync(at('depth.json')) ? files.readJson(at('depth.json')) : {});
-      const [far, water] = await Promise.all([farAsked, waterSheet(files.memo, place, paintingFor(moved || undefined, png, lastWater ?? []), dry, depth).catch(() => undefined)]);
+      // Painted fog to set drifting (layers/mist.jpg and its mask), found by SAM on the backdrop too.
+      const things = dilate(unionAll(FRAME.width, FRAME.height, cards.map((c) => c.mask)), 4);
+      const [far, water, mist] = await Promise.all([
+        farAsked,
+        waterSheet(files.memo, place, paintingFor(moved || undefined, png, lastWater ?? []), dry, depth).catch(() => undefined),
+        mistSheet(files.memo, place, png, things, unionAll(FRAME.width, FRAME.height, floors), depth).catch((error) => {
+          console.log(`  ${place.key}: no drifting fog (${error instanceof Error ? error.message.slice(0, 120) : error})`);
+          return undefined;
+        }),
+      ]);
       if (water) {
         files.write(at('layers', 'water.jpg'), water.tex);
         files.write(at('layers', 'water-mask.png'), water.mask);
         console.log(`  ${place.key}: ${water.phrase} ${water.flow[0] || water.flow[1] ? `flowing [${water.flow}]` : 'still'}`);
       }
-      if (far || water) {
+      if (mist) {
+        files.write(at('layers', 'mist.png'), mist.tex);
+        files.write(at('layers', 'mist-mask.png'), mist.mask);
+        console.log(`  ${place.key}: painted ${mist.phrase} drifting ${mist.drift === null ? 'with the wind' : mist.drift < 0 ? 'left' : 'right'}${mist.speed !== 1 ? ` x${mist.speed}` : ''}`);
+      }
+      if (far || water || mist) {
         if (far) {
           files.write(at('layers', 'sky.png'), far.sky);
           far.flats.forEach((f, i) => files.write(at('layers', `${i}.png`), f.png));
@@ -90,6 +104,7 @@ defineCommand({
           sky: far ? 'layers/sky.png' : null,
           flats: (far?.flats ?? []).map((f, i) => ({ phrase: f.phrase, file: `layers/${i}.png`, box: f.box, px: f.px })),
           ...(water && { water: { tex: 'layers/water.jpg', mask: 'layers/water-mask.png', box: water.box, flow: water.flow } }),
+          ...(mist && { mist: { tex: 'layers/mist.png', mask: 'layers/mist-mask.png', box: mist.box, drift: mist.drift, speed: mist.speed } }),
         });
       }
       ran(at(), 'backdrop', carry?.old ?? painting);

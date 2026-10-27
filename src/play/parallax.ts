@@ -138,6 +138,8 @@ export type Layers = {
   flats: Array<{ file: string; box: [number, number, number, number] }>;
   /** Water to set flowing: an opaque texture over `box` (carried past the banks), its soft mask, and which way it runs on screen (unit vector; [0, 0] still; left to right when missing). */
   water?: { tex: string; mask: string; box: [number, number, number, number]; flow?: [number, number] };
+  /** Painted fog to set drifting: a soft copy over `box` (carried past its edges), its mask, which way (-1 left, 1 right, null with the wind) and how fast. */
+  mist?: { tex: string; mask: string; box: [number, number, number, number]; drift?: -1 | 0 | 1 | null; speed?: number };
 };
 
 /**

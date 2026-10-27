@@ -155,16 +155,20 @@ Answer with JSON only: {"flows": true, "from": [x, y], "to": [x, y]}, two points
  * its edges from its own colours so a shifted copy never shows the bank, and its mask. None without water.
  * `notWater`: the floors and the cards, which SAM's water may take in when they are wet.
  */
-/** How the author wants a place's depth: places/<key>/depth.json, set by the water_flow action, kept across rebuilds. */
+/** How the author wants a place's depth: places/<key>/depth.json, set by the water_flow and fog_drift actions, kept across rebuilds. */
 export const Depth = z.object({
   /** auto: as Spark reads it; reverse: the other way round; still: the water does not flow. */
   flow: z.enum(['auto', 'reverse', 'still']).default('auto'),
   /** What the author said about the flow ("toward the bridge"), handed to Spark. */
   flowHint: z.string().optional(),
+  /** Which way the painted fog drifts (the fog_drift action): auto with the wind, left, right, or still. */
+  fog: z.enum(['auto', 'left', 'right', 'still']).default('auto'),
+  /** How fast it drifts, 0.25 (barely) .. 3 (rolling); 1 by default. */
+  fogSpeed: z.number().min(0.25).max(3).optional(),
 });
 export type Depth = z.infer<typeof Depth>;
 
-export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer, notWater: Mask, depth: Depth = { flow: 'auto' }): Promise<Water | undefined> {
+export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer, notWater: Mask, depth: Depth = Depth.parse({})): Promise<Water | undefined> {
   const [W, H]: [number, number] = [FRAME.width, FRAME.height];
   let mask: Mask | undefined;
   let phrase = '';
@@ -196,4 +200,144 @@ export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer, not
   });
   const flow: Flow = depth.flow === 'reverse' ? [-read[0] || 0, -read[1] || 0] : read;
   return { tex, mask: soft, box, phrase, flow };
+}
+
+/** How far the mist texture reaches past the fog's edge: more than it ever drifts in one cycle. */
+export const MIST_PAD = 160;
+/** Painted fog drifts only as a band: a frame-wide haze is the weather's mist (weather_set fog), not a layer. */
+const MIST_MAX_SHARE = 0.55;
+
+/** Painted fog for the runtime to set drifting: a veil of its colour shaped like it (reaching past its edges), and where it may show. */
+export type Mist = { tex: Buffer; mask: Buffer; box: [number, number, number, number]; phrase: string; drift: -1 | 0 | 1 | null; speed: number };
+
+const FogBands = z.object({ bands: z.array(z.object({ box: z.tuple([z.number(), z.number(), z.number(), z.number()]), what: z.string().optional() })).max(4) });
+
+/** Soft wide streaks 0.35..1 over w x h, the same for the same place: smooth value noise, three octaves, stretched sideways. */
+function wisps(key: string, w: number, h: number): Float32Array {
+  let seed = [...key].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const out = new Float32Array(w * h).fill(0);
+  const smooth = (t: number) => t * t * (3 - 2 * t);
+  let total = 0;
+  for (const [cx, cy, amp] of [[280, 70, 1], [140, 36, 0.5], [70, 18, 0.25]]) {
+    const [gw, gh] = [Math.ceil(w / cx) + 2, Math.ceil(h / cy) + 2];
+    const grid = Float32Array.from({ length: gw * gh }, rand);
+    for (let y = 0; y < h; y++) {
+      const gy = y / cy;
+      const [j, ty] = [Math.floor(gy), smooth(gy - Math.floor(gy))];
+      for (let x = 0; x < w; x++) {
+        const gx = x / cx;
+        const [i, tx] = [Math.floor(gx), smooth(gx - Math.floor(gx))];
+        const a = grid[j * gw + i] + (grid[j * gw + i + 1] - grid[j * gw + i]) * tx;
+        const b = grid[(j + 1) * gw + i] + (grid[(j + 1) * gw + i + 1] - grid[(j + 1) * gw + i]) * tx;
+        out[y * w + x] += amp * (a + (b - a) * ty);
+      }
+    }
+    total += amp;
+  }
+  for (let k = 0; k < out.length; k++) out[k] = 0.35 + 0.65 * Math.min(1, Math.max(0, (out[k] / total - 0.3) / 0.45));
+  return out;
+}
+
+/**
+ * How foggy each pixel of a box is, 0..255: fog is pale and greyed, lighter than the box's own darker half. A
+ * lit window or a white wall is pale too, but small: the blur after it keeps only wide soft veils.
+ */
+async function fogness(rgb: Uint8Array, W: number, H: number, [x0, y0, x1, y1]: number[]): Promise<Uint8Array> {
+  const lumas: number[] = [];
+  const out = new Uint8Array(W * H);
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x += 3) {
+    const i = (y * W + x) * 3;
+    lumas.push(0.3 * rgb[i] + 0.59 * rgb[i + 1] + 0.11 * rgb[i + 2]);
+  }
+  lumas.sort((a, b) => a - b);
+  const lo = lumas[Math.floor(lumas.length * 0.35)] ?? 0;
+  const hi = Math.max(lo + 12, lumas[Math.floor(lumas.length * 0.95)] ?? 255);
+  const [bw, bh] = [x1 - x0, y1 - y0];
+  const f = new Float32Array(bw * bh);
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    const i = (y * W + x) * 3;
+    const [r, g, b] = [rgb[i], rgb[i + 1], rgb[i + 2]];
+    const max = Math.max(r, g, b);
+    const sat = max ? (max - Math.min(r, g, b)) / max : 0;
+    const light = Math.min(1, Math.max(0, (0.3 * r + 0.59 * g + 0.11 * b - lo) / (hi - lo)));
+    const grey = Math.min(1, Math.max(0, (0.6 - sat) / 0.35));
+    // The box's rim fades out, so a band has no straight edge.
+    const rim = Math.min(1, Math.min(x - x0, x1 - 1 - x) / (0.15 * bw), Math.min(y - y0, y1 - 1 - y) / (0.2 * bh));
+    f[(y - y0) * bw + x - x0] = light * grey * rim;
+  }
+  // As foggy as the box's foggiest tenth: a night fog is blue and dim, yet it is the fog of that picture.
+  const top = Math.max(0.15, [...f].sort((a, b) => a - b)[Math.floor(f.length * 0.9)]);
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) out[y * W + x] = Math.round(255 * Math.min(1, f[(y - y0) * bw + x - x0] / top));
+  return new Uint8Array(await sharp(out, { raw: { width: W, height: H, channels: 1 } }).blur(8).extractChannel(0).raw().toBuffer());
+}
+
+/**
+ * The fog or mist painted into a place (a bank over the land, haze round a far lighthouse), for the page to
+ * drift: the painting holds it still, so a veil of the fog's own colour, shaped like its denser and lighter
+ * patches, slides over it, and the wisps roll along. Only colour and density move, so the land under the fog
+ * never slides or blurs. SAM cuts the fog when it knows it; it often does not (fog has no outline), so Spark
+ * then names the boxes where fog bands lie, and the fog in them is read from the pixels. None without fog, or
+ * when the whole picture is haze (that is the weather's mist). `notMist`: the standing things, which cover it
+ * anyway; `floors`: where people walk, where the veil is thin, so they never wade in milk.
+ */
+export async function mistSheet(memo: Memo, place: Place, backdrop: Buffer, notMist: Mask, floors?: Mask, depth: Depth = Depth.parse({})): Promise<Mist | undefined> {
+  if (depth.fog === 'still') return undefined;
+  const [W, H]: [number, number] = [FRAME.width, FRAME.height];
+  const fits = (px: number) => px >= 8000 && px <= MIST_MAX_SHARE * W * H;
+  const rgb = new Uint8Array(await sharp(backdrop).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer());
+  const density = new Uint8Array(W * H);
+  let phrase = '';
+  for (const p of ['fog', 'mist', 'haze']) {
+    const hits = await samFind(memo, { label: `mist:${place.key}/${p}`, image: backdrop, prompt: p });
+    const m = subtract(unionAll(W, H, hits.map((f) => f.mask)), notMist);
+    if (!fits(maskArea(m))) continue;
+    const soft = new Uint8Array(await sharp(dilate(m, -6).bits.map((b) => b * 255), { raw: { width: W, height: H, channels: 1 } }).blur(14).extractChannel(0).raw().toBuffer());
+    const f = await fogness(rgb, W, H, boxOf(m));
+    for (let i = 0; i < density.length; i++) density[i] = (f[i] * soft[i]) / 255;
+    phrase = p;
+    break;
+  }
+  if (!phrase) {
+    const prompt = `This is a painted game scene, ${W}x${H} px. Is there fog, mist or haze painted in it: a bank of fog over the land or the water, mist round a far building, a veil over hills?
+Answer with JSON only: {"bands": [{"box": [x0, y0, x1, y1], "what": "low fog over the dunes"}]}, one box in px round each band of fog (at most 4), or {"bands": []} when the air is clear. Not clouds high in the sky, not smoke from a chimney.`;
+    const { bands } = FogBands.parse(await askSparkJson(memo, { label: `mist-bands:${place.key}`, prompt, images: [backdrop] }));
+    for (const b of bands) {
+      const [x0, y0, x1, y1] = [Math.max(0, Math.round(b.box[0])), Math.max(0, Math.round(b.box[1])), Math.min(W, Math.round(b.box[2])), Math.min(H, Math.round(b.box[3]))];
+      if (x1 - x0 < 40 || y1 - y0 < 20) continue;
+      const f = await fogness(rgb, W, H, [x0, y0, x1, y1]);
+      for (let i = 0; i < f.length; i++) if (f[i] > density[i]) density[i] = f[i];
+    }
+    phrase = bands.map((b) => b.what ?? 'fog').join(' · ');
+  }
+  for (let i = 0; i < density.length; i++) {
+    if (notMist.bits[i]) density[i] = 0;
+    else if (floors?.bits[i]) density[i] = Math.round(density[i] * 0.35);
+  }
+  const mask = emptyMask(W, H);
+  for (let i = 0; i < density.length; i++) mask.bits[i] = density[i] > 40 ? 1 : 0;
+  if (!phrase || !fits(maskArea(mask))) return undefined;
+  const [mx0, my0, mx1, my1] = boxOf(mask);
+  // Fog drifts sideways: the veil reaches past its left and right edges, a little above and below for the rim.
+  const box: [number, number, number, number] = [Math.max(0, mx0 - MIST_PAD), Math.max(0, my0 - 32), Math.min(W, mx1 + MIST_PAD), Math.min(H, my1 + 32)];
+  const region = { left: box[0], top: box[1], width: box[2] - box[0], height: box[3] - box[1] };
+  // The fog's own colour: the painting where it is foggiest.
+  const sum = [0, 0, 0, 0];
+  for (let i = 0; i < density.length; i++) {
+    const w = density[i] > 160 ? density[i] : 0;
+    for (let c = 0; c < 3; c++) sum[c] += w * rgb[i * 3 + c];
+    sum[3] += w;
+  }
+  const colour = sum[3] ? sum.slice(0, 3).map((v) => Math.round(v / sum[3])) : [220, 224, 230];
+  // Lifted a little toward white, so the veil shows over its own fog.
+  const veil = colour.map((v) => Math.round(v + (255 - v) * 0.25));
+  // Wisps: the veil is the fog's density broken by soft wide streaks, so even an even fog has patches to drift.
+  const wisp = wisps(place.key, region.width, region.height);
+  const cut = Buffer.from((await sharp(density, { raw: { width: W, height: H, channels: 1 } }).extract(region).extractChannel(0).raw().toBuffer()).map((v, i) => Math.round(v * wisp[i])));
+  const tex = await sharp({ create: { width: region.width, height: region.height, channels: 3, background: { r: veil[0], g: veil[1], b: veil[2] } } }).joinChannel(cut, { raw: { width: region.width, height: region.height, channels: 1 } }).png().toBuffer();
+  // Where the veil may show: the fog grown and feathered wide, so drifting wisps fade out at its edge.
+  const reach = await sharp(dilate(mask, 24).bits.map((b) => b * 255), { raw: { width: W, height: H, channels: 1 } }).blur(20).extract(region).extractChannel(0).raw().toBuffer();
+  const soft = await sharp({ create: { width: region.width, height: region.height, channels: 3, background: '#ffffff' } }).joinChannel(reach, { raw: { width: region.width, height: region.height, channels: 1 } }).png().toBuffer();
+  const drift = depth.fog === 'left' ? -1 : depth.fog === 'right' ? 1 : null;
+  return { tex, mask: soft, box, phrase, drift, speed: depth.fogSpeed ?? 1 };
 }
