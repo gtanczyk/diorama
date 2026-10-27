@@ -1,0 +1,221 @@
+// What the runtime will move for a character, seen without opening the game: the 3D model turned by hand
+// (walking, standing or talking with the same posing as the page), the 2D cut-out rig walking, and the
+// sprite sheets Muse painted playing as loops. Everything loads only when the preview opens.
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { GESTURES } from '../src/play/gestures.ts';
+import { pose, type PartName, type Rig } from '../src/play/rig.ts';
+import type { Figure3D, ModelInfo } from '../web/hero3d.ts';
+import { fileUrl } from './api.ts';
+
+type Stamps = { rig: number | null; model: number | null; sprites: number | null };
+type Facing = { sheet: string; yaw: number; stand?: number; off?: number[]; gestures?: string[] };
+type SpriteInfo = { cols: number; rows: number; frames: number; facings: Record<string, Facing>; talk?: Record<string, Facing> };
+type Mode = 'walk' | 'stand' | 'talk';
+
+/** Seconds per walk cycle and per talking gesture: about what the game shows at a stroll. */
+const STRIDE = 1.1;
+const GESTURE = 1.4;
+const TALL = 320;
+
+const json = <T,>(url: string): Promise<T> => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${url}: ${r.status}`))));
+async function image(src: string) {
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  return img;
+}
+
+/** Calls `draw` every animation frame with the seconds since the preview opened, until it unmounts. */
+function useFrames(draw: (t: number) => void, deps: unknown[]) {
+  useEffect(() => {
+    const t0 = performance.now();
+    let raf = requestAnimationFrame(function tick(now) {
+      draw((now - t0) / 1000);
+      raf = requestAnimationFrame(tick);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, deps);
+}
+
+export function FigurePreview({ slug, who, stamps }: { slug: string; who: string; stamps: Stamps }) {
+  const tabs = ([['model', '3D model'], ['rig', '2D rig'], ['sprites', 'Sprites']] as const).filter(([k]) => stamps[k]);
+  const [tab, setTab] = useState(tabs[0]?.[0]);
+  if (!tab) return <p class="detail">No rig, model or sprites yet: run the build's cast, model and sprites steps.</p>;
+  return (
+    <div class="figure-preview">
+      <div class="tabs">
+        {tabs.map(([k, label]) => <button type="button" class={`ghost small${tab === k ? ' on' : ''}`} onClick={() => setTab(k)}>{label}</button>)}
+      </div>
+      {tab === 'model' && <ModelView slug={slug} dir={`cast/${who}/model`} v={stamps.model} />}
+      {tab === 'rig' && <RigView slug={slug} who={who} v={stamps.rig} />}
+      {tab === 'sprites' && <SpritesView slug={slug} dir={`cast/${who}/sprites`} v={stamps.sprites} />}
+    </div>
+  );
+}
+
+function Modes({ modes, mode, set }: { modes: Mode[]; mode: Mode; set: (m: Mode) => void }) {
+  return (
+    <div class="tabs">
+      {modes.map((m) => <button type="button" class={`ghost small${mode === m ? ' on' : ''}`} onClick={() => set(m)}>{m}</button>)}
+    </div>
+  );
+}
+
+/** The rigged model in its own WebGL canvas; drag turns it (and tilts the camera), left alone it turns slowly. */
+function ModelView({ slug, dir, v }: { slug: string; dir: string; v: number | null }) {
+  const host = useRef<HTMLDivElement>(null);
+  const label = useRef<HTMLSpanElement>(null);
+  const [fig, setFig] = useState<Figure3D | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>('walk');
+  const [spin, setSpin] = useState(true);
+  const view = useRef({ yaw: 0.6, elevation: 0.18, drag: null as { x: number; y: number } | null, last: 0 });
+  useEffect(() => {
+    let gone = false;
+    let loaded: Figure3D | undefined;
+    const url = (f: string) => fileUrl(slug, `${dir}/${f}`, v);
+    (async () => {
+      const info = await json<ModelInfo>(url('model.json'));
+      const { Figure3D } = await import('../web/hero3d.ts');
+      loaded = await Figure3D.load(info, url);
+      if (gone) return loaded.dispose();
+      host.current!.append(loaded.canvas);
+      setFig(loaded);
+    })().catch((e) => !gone && setError((e as Error).message));
+    return () => {
+      gone = true;
+      loaded?.canvas.remove();
+      loaded?.dispose();
+    };
+  }, [slug, dir, v]);
+  useFrames((t) => {
+    if (!fig) return;
+    const s = view.current;
+    if (spin && !s.drag) s.yaw += Math.max(0, t - s.last) * 0.5;
+    s.last = t;
+    const gesture = mode === 'talk' ? Math.floor(t / GESTURE) % GESTURES.length : undefined;
+    if (label.current) label.current.textContent = gesture === undefined ? '' : GESTURES[gesture].name;
+    const c = fig.draw({ phase: t / STRIDE, walking: mode === 'walk', gesture, yaw: s.yaw, elevation: s.elevation, px: TALL * devicePixelRatio });
+    c.style.height = `${(c.height / devicePixelRatio).toFixed(0)}px`;
+  }, [fig, mode, spin]);
+  const drag = {
+    onPointerDown: (e: PointerEvent) => ((view.current.drag = { x: e.clientX, y: e.clientY }), (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)),
+    onPointerMove: (e: PointerEvent) => {
+      const s = view.current;
+      if (!s.drag) return;
+      s.yaw += (e.clientX - s.drag.x) * 0.012;
+      s.elevation = Math.max(-0.2, Math.min(1.2, s.elevation + (e.clientY - s.drag.y) * 0.006));
+      s.drag = { x: e.clientX, y: e.clientY };
+    },
+    onPointerUp: () => void (view.current.drag = null),
+  };
+  return (
+    <div class="moves">
+      <div class="row">
+        <Modes modes={['walk', 'stand', 'talk']} mode={mode} set={setMode} />
+        <label class="detail"><input type="checkbox" checked={spin} onChange={(e) => setSpin(e.currentTarget.checked)} /> turn</label>
+        <span class="grow" />
+        <span class="detail" ref={label} />
+      </div>
+      <div class="model" ref={host} {...drag} title="Drag to turn">
+        {!fig && <span class="detail">{error ?? 'Loading the model…'}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** The cut-out rig (rig.json and its part images) posed by src/play/rig.ts, as the 2D page draws it. */
+function RigView({ slug, who, v }: { slug: string; who: string; v: number | null }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [rig, setRig] = useState<{ rig: Rig; parts: Map<PartName, HTMLImageElement> } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>('walk');
+  useEffect(() => {
+    let gone = false;
+    (async () => {
+      const r = await json<Rig>(fileUrl(slug, `cast/${who}/rig.json`, v));
+      const parts = new Map<PartName, HTMLImageElement>();
+      await Promise.all(r.parts.map(async (p) => parts.set(p.name, await image(fileUrl(slug, `cast/${who}/${p.file}`, v)))));
+      if (!gone) setRig({ rig: r, parts });
+    })().catch((e) => !gone && setError((e as Error).message));
+    return () => void (gone = true);
+  }, [slug, who, v]);
+  useFrames((t) => {
+    const c = canvas.current?.getContext('2d');
+    if (!rig || !c) return;
+    [c.canvas.width, c.canvas.height] = rig.rig.size;
+    const at = pose(rig.rig, t / STRIDE, mode === 'walk');
+    for (const part of rig.rig.parts) {
+      const img = rig.parts.get(part.name);
+      const p = at[part.name];
+      if (!img || !p) continue;
+      c.save();
+      c.translate(p.to[0], p.to[1]);
+      c.rotate(p.turn);
+      c.translate(-p.from[0], -p.from[1]);
+      c.drawImage(img, part.at[0], part.at[1]);
+      c.restore();
+    }
+    c.fillStyle = 'rgba(255,255,255,0.25)';
+    c.fillRect(0, rig.rig.ground, c.canvas.width, 2);
+  }, [rig, mode]);
+  return (
+    <div class="moves">
+      <Modes modes={['walk', 'stand']} mode={mode} set={setMode} />
+      {rig ? <canvas ref={canvas} class="rig" /> : <span class="detail">{error ?? 'Loading the rig…'}</span>}
+    </div>
+  );
+}
+
+/** Every painted sheet as a loop: the walk facings (left ones are these mirrored in the game) and the talking cells. */
+function SpritesView({ slug, dir, v }: { slug: string; dir: string; v: number | null }) {
+  const [sheets, setSheets] = useState<Array<{ name: string; talk: boolean; f: Facing; img: HTMLImageElement }> | null>(null);
+  const [info, setInfo] = useState<SpriteInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [walking, setWalking] = useState(true);
+  useEffect(() => {
+    let gone = false;
+    (async () => {
+      const i = await json<SpriteInfo>(fileUrl(slug, `${dir}/sprites.json`, v));
+      const list = [...Object.entries(i.facings ?? {}).map(([name, f]) => ({ name, talk: false, f })), ...Object.entries(i.talk ?? {}).map(([name, f]) => ({ name: `talk ${name}`, talk: true, f }))];
+      const loaded = await Promise.all(list.map(async (s) => ({ ...s, img: await image(fileUrl(slug, `${dir}/${s.f.sheet}`, v)) })));
+      if (!gone) (setInfo(i), setSheets(loaded));
+    })().catch((e) => !gone && setError((e as Error).message));
+    return () => void (gone = true);
+  }, [slug, dir, v]);
+  const canvases = useRef<Array<HTMLCanvasElement | null>>([]);
+  const labels = useRef<Array<HTMLSpanElement | null>>([]);
+  useFrames((t) => {
+    if (!info || !sheets) return;
+    sheets.forEach((s, k) => {
+      const c = canvases.current[k]?.getContext('2d');
+      if (!c) return;
+      const [cw, ch] = [s.img.width / info.cols, s.img.height / info.rows];
+      [c.canvas.width, c.canvas.height] = [cw, ch];
+      let cell: number;
+      if (s.talk) {
+        const n = s.f.gestures?.length ?? 1;
+        cell = Math.floor(t / GESTURE) % n;
+        if (labels.current[k]) labels.current[k]!.textContent = s.f.gestures?.[cell] ?? '';
+      } else {
+        const steps = [...Array(info.frames).keys()].filter((i) => !s.f.off?.includes(i));
+        cell = walking ? steps[Math.floor(((t / STRIDE) % 1) * steps.length) % steps.length] : s.f.stand ?? 0;
+      }
+      c.drawImage(s.img, (cell % info.cols) * cw, Math.floor(cell / info.cols) * ch, cw, ch, 0, 0, cw, ch);
+    });
+  }, [info, sheets, walking]);
+  if (!sheets) return <span class="detail">{error ?? 'Loading the sheets…'}</span>;
+  return (
+    <div class="moves">
+      <Modes modes={['walk', 'stand']} mode={walking ? 'walk' : 'stand'} set={(m) => setWalking(m === 'walk')} />
+      <ul class="sheets">
+        {sheets.map((s, k) => (
+          <li key={s.name}>
+            <canvas ref={(el) => void (canvases.current[k] = el)} />
+            <span class="detail">{s.name} <span ref={(el) => void (labels.current[k] = el)} /></span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

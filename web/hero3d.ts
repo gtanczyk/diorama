@@ -114,6 +114,13 @@ export class Figure3D {
     return f;
   }
 
+  /** Frees the WebGL context (a browser keeps only a few), for a page that shows figures one after another. */
+  dispose() {
+    this.rt.dispose();
+    this.renderer.dispose();
+    this.renderer.forceContextLoss();
+  }
+
   /** Untextured: plain grey clay, so a guide shows only the form and the pose. */
   plain() {
     this.holder.traverse((o) => {

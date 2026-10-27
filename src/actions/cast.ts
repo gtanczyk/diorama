@@ -60,6 +60,8 @@ defineAction({
         rig: fs.existsSync(files.path('cast', c.key, 'rig.json')),
         model: fs.existsSync(files.path('cast', c.key, 'model', 'model.json')),
         sprites: fs.existsSync(files.path('cast', c.key, 'sprites', 'sprites.json')),
+        // When each was last written, so Studio's preview reloads them after a rebuild.
+        stamps: { rig: stamp(files.path('cast', c.key, 'rig.json')), model: stamp(files.path('cast', c.key, 'model', 'model.json')), sprites: stamp(files.path('cast', c.key, 'sprites', 'sprites.json')) },
         voice: voices?.success ? voices.data.cast[c.key] ?? null : null,
         lines: lines.length,
         flagged: lines.filter((l) => l.flags.some((f) => f.startsWith('heard'))).length,

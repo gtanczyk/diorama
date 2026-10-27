@@ -2,12 +2,14 @@
 // their voice. Every change is an action (cast_redo, voice_set) kept in cast/fixes.json.
 import { useEffect, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
+import { FigurePreview } from './figure.tsx';
 
 type Pic = { file: string; v: number | null } | null;
 type Character = {
   key: string; role: 'hero' | 'npc' | 'player' | 'narrator'; place: string | null; looks: string; looksNow: string;
   fix: { looks?: string; take?: number; voice?: { voice: string } } | null;
   figure: Pic; painting: Pic; rig: boolean; model: boolean; sprites: boolean;
+  stamps: { rig: number | null; model: number | null; sprites: number | null };
   voice: { voice: string; why: string; stability: number; style: number } | null;
   lines: number; flagged: number; sample: { text: string; file: string } | null;
 };
@@ -67,6 +69,7 @@ function Card({ slug, c, onError }: { slug: string; c: Character; onError: (m: s
     .then((r) => setVoices(Array.isArray(r) ? r : r.voices)).catch((e) => onError(e.message));
   const [looks, setLooks] = useState(c.looksNow);
   const [busy, setBusy] = useState(false);
+  const [moving, setMoving] = useState(false);
   useEffect(() => setLooks(c.looksNow), [c.looksNow]);
   const act = async (name: string, input: object) => {
     setBusy(true);
@@ -88,6 +91,7 @@ function Card({ slug, c, onError }: { slug: string; c: Character; onError: (m: s
           <span class="badge">{c.role === 'hero' ? 'hero' : c.role === 'player' ? 'hero for another gamepad' : c.role === 'narrator' ? 'narrator' : `NPC · ${c.place}`}</span>
           <span class="grow" />
           {parts.length > 0 && <span class="detail">{parts.join(' · ')}</span>}
+          {(c.rig || c.model || c.sprites) && <button type="button" class={`ghost small${moving ? ' on' : ''}`} onClick={() => setMoving(!moving)}>{moving ? 'Hide' : 'See it move'}</button>}
         </div>
         {c.role !== 'narrator' && (
           <form class="say" onSubmit={(e) => (e.preventDefault(), changed && void act('cast_redo', { looks: looks.trim() }))}>
@@ -112,6 +116,7 @@ function Card({ slug, c, onError }: { slug: string; c: Character; onError: (m: s
         </div>
         {c.sample && <div class="sample"><audio controls preload="none" src={fileUrl(slug, c.sample.file)} /><span class="detail">“{c.sample.text}”</span></div>}
       </div>
+      {moving && <FigurePreview slug={slug} who={c.key} stamps={c.stamps} />}
     </li>
   );
 }
