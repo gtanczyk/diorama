@@ -14,3 +14,4 @@ import './items.ts';
 import './story.ts';
 import './kids.ts';
 import './share.ts';
+import './pictures.ts';

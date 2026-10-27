@@ -1,3 +1,4 @@
+import sharp from 'sharp';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -200,4 +201,15 @@ test('ui_focus with a world or place never leaves it', async () => {
   await runAction('ui_focus', { view: 'worlds' }, { by: 'agent', root: studio.root, jobs: studio.jobs, events: studio.events });
   off();
   expect(seen.filter((e) => e.type === 'ui.focus').map((e) => e.view)).toEqual(['workshop', 'start']);
+});
+
+test('a picture handed to the agent is kept with the world and shown back as an image', async () => {
+  const ctx = { by: 'user' as const, root: studio.root, jobs: studio.jobs, events: studio.events };
+  const png = (await sharp({ create: { width: 40, height: 30, channels: 4, background: '#3a6' } }).png().toBuffer()).toString('base64');
+  const { file } = await runAction('picture_add', { slug: 'foghorn', name: 'pasted.png', data: `data:image/png;base64,${png}` }, ctx) as { file: string };
+  expect(file).toBe('studio/pictures/01.jpg');
+  const seen = await runAction('picture_view', { slug: 'foghorn', file }, { ...ctx, by: 'agent' }) as { images: Array<{ mimeType: string; data: string }> };
+  expect(seen.images[0].mimeType).toBe('image/jpeg');
+  await expect(runAction('picture_view', { slug: 'foghorn', file: '../world.json' }, ctx)).rejects.toThrow();
+  await expect(runAction('picture_add', { slug: 'foghorn', name: 'notes.txt', data: png }, ctx)).rejects.toThrow();
 });

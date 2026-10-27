@@ -269,3 +269,12 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 .studio-note summary::before { content: 'ⓘ '; }
 .studio-note[open] { white-space: pre-wrap; }
 .studio-note[open] summary { margin-bottom: 4px; }
+
+/* Pictures for the agent: the tray under the composer and the thumbnails in a sent prompt. */
+.agent .pics { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.agent .pic { position: relative; display: inline-flex; }
+.agent .pics img { height: 48px; max-width: 80px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+.agent .pic button { position: absolute; top: -6px; right: -6px; padding: 0 6px; min-height: 0; line-height: 18px; background: var(--panel); }
+.agent .pics.sent { margin-bottom: 6px; }
+.agent .pics.sent img { height: 72px; max-width: 120px; }
+.agent .camera video { width: 100%; border-radius: 8px; }

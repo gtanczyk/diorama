@@ -39,7 +39,7 @@ function base64(blob: Blob): Promise<string> {
 }
 
 /** The webcam held up to a drawing: a live preview and a button that keeps one frame. */
-function Camera({ onSnap, onClose }: { onSnap: (jpeg: string) => void; onClose: () => void }) {
+export function Camera({ onSnap, onClose, tip = 'Hold the drawing up to the camera, flat and filling the picture.' }: { onSnap: (jpeg: string) => void; onClose: () => void; tip?: string }) {
   const video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -65,7 +65,7 @@ function Camera({ onSnap, onClose }: { onSnap: (jpeg: string) => void; onClose: 
       <div class="row">
         <button type="button" class="primary" onClick={snap} disabled={!!error}>Take the photo</button>
         <button type="button" class="ghost" onClick={onClose}>Done</button>
-        <span class="detail">Hold the drawing up to the camera, flat and filling the picture.</span>
+        <span class="detail">{tip}</span>
       </div>
     </div>
   );
