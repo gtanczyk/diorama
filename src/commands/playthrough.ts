@@ -54,7 +54,8 @@ defineCommand({
     if (report.issues.length) throw new Error(`story.json does not check out:\n- ${report.issues.join('\n- ')}`);
     const routes = report.routes.filter((r) => only.length === 0 || only.includes(r.ending));
     const outDir = files.path('playthrough');
-    fs.rmSync(outDir, { recursive: true, force: true });
+    // Only this run's endings start over, so recording one ending keeps the others' videos.
+    for (const r of routes) for (const ext of ['.webm', '.sound.webm', '.mp4']) fs.rmSync(path.join(outDir, `${r.ending}${ext}`), { force: true });
 
     const server = await serveWorld(files, port);
     // Headless pages may play sound without a click, so the recorder hears the game from the first frame.
@@ -102,7 +103,9 @@ defineCommand({
       await browser.close();
       server.close();
     }
-    files.write(path.join(outDir, 'report.json'), runs);
+    const reportFile = path.join(outDir, 'report.json');
+    const earlier = fs.existsSync(reportFile) ? (files.readJson(reportFile) as Run[]).filter((r) => !runs.some((n) => n.ending === r.ending)) : [];
+    files.write(reportFile, [...earlier, ...runs]);
     const failed = runs.filter((r) => r.reached !== r.ending);
     if (failed.length) throw new Error(`${failed.length} of ${runs.length} ending(s) not reached in the page`);
   },
