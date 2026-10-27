@@ -12,11 +12,47 @@
       "src": "footage/pitch.mp4"
     },
     {
-      "name": "3 WOW: the world, no talking",
-      "dur": 34,
+      "name": "3 WOW: the hero in the painted study",
+      "dur": 3.5,
+      "src": "footage/mist.mp4",
+      "from": 6.5,
+      "fade": 0.6
+    },
+    {
+      "name": "3 WOW: the harbour, the ferrywoman",
+      "dur": 3.5,
       "src": "footage/tour.mp4",
-      "fade": 0.6,
-      "audio": 0.9
+      "from": 6.5,
+      "fade": 0.25
+    },
+    {
+      "name": "3 WOW: up the harbour steps",
+      "dur": 3,
+      "src": "footage/tour.mp4",
+      "from": 30.5,
+      "fade": 0.25
+    },
+    {
+      "name": "3 WOW: the beacon catches fire",
+      "dur": 5,
+      "src": "footage/mist.mp4",
+      "from": 79.5,
+      "fade": 0.25,
+      "audio": 0.8
+    },
+    {
+      "name": "3 WOW: the harbour lit",
+      "dur": 3.5,
+      "src": "footage/mist.mp4",
+      "from": 96,
+      "fade": 0.25
+    },
+    {
+      "name": "3 WOW: back at the desk by dawn",
+      "dur": 3,
+      "src": "footage/tour.mp4",
+      "from": 61.5,
+      "fade": 0.3
     },
     {
       "name": "4 Terminal: one command builds the world",
@@ -50,9 +86,9 @@
     },
     {
       "name": "7 Technique: depth, shadows and parallax in play",
-      "dur": 8,
+      "dur": 4,
       "src": "footage/mist.mp4",
-      "from": 40,
+      "from": 20,
       "fade": 0.4
     },
     {
@@ -97,15 +133,15 @@
     },
     {
       "src": "footage/vo/how.wav",
-      "at": 67
+      "at": 54.5
     },
     {
       "src": "footage/vo/studio.wav",
-      "at": 96.7
+      "at": 84.2
     },
     {
       "src": "footage/vo/techniques.wav",
-      "at": 132.7
+      "at": 120.2
     }
   ]
 }
