@@ -89,3 +89,13 @@ test('the agent can be switched between turns; Muse Code is the default', async 
   expect((await post('api/agent/harbour/use', { name: 'gemini' })).status).toBe(400);
   expect((await post('api/agent/harbour/use', { name: 'muse' })).status).toBe(200);
 });
+
+test('each conversation is recorded turn by turn, so the film can replay it', async () => {
+  await new Promise((r) => setTimeout(r, 400));
+  const { runAction } = await import('../src/actions/registry.ts');
+  await import('../src/actions/index.ts');
+  const list = (await runAction('agent_sessions', { slug: 'harbour' }, { by: 'user', root, events: studio.events, jobs: studio.jobs })) as Array<{ replayable: boolean; turns: number; prompts: string[]; agents: string[] }>;
+  expect(list[0]).toMatchObject({ replayable: true, agents: ['muse'] });
+  expect(list[0].turns).toBeGreaterThanOrEqual(2);
+  expect(list[0].prompts).toContain('what worlds are there?');
+});

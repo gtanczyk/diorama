@@ -2,7 +2,7 @@
 // for this world. The page holds no agent and no key: it sends what the person types and answers approvals.
 import { AgentChat, type SessionState } from 'genaicode/react';
 import { useEffect, useState } from 'preact/hooks';
-import { token } from './api.ts';
+import { call, fileUrl, token } from './api.ts';
 
 /** What each Studio tool does, as the person would say it. */
 const SAYS: Record<string, string> = {
@@ -21,6 +21,7 @@ function useSession(slug: string): [SessionState | null, boolean] {
   const [state, setState] = useState<SessionState | null>(null);
   const [live, setLive] = useState(false);
   useEffect(() => {
+    if (!slug) return;
     let stopped = false;
     let ctrl: AbortController | null = null;
     (async () => {
@@ -56,14 +57,56 @@ function useSession(slug: string): [SessionState | null, boolean] {
   return [state, live];
 }
 
+type Recorded = { at: string; type: string; agent?: string; status?: SessionState['status']; turn?: SessionState['turns'][number] };
+
+/**
+ * Plays a recorded conversation back (studio/sessions/<file>), at `speed` times real time, for the film:
+ * the chat grows as it did, steps and all. Long pauses are cut to two seconds.
+ */
+function useReplay(slug: string, file: string | null, speed: number): [SessionState | null, boolean] {
+  const [state, setState] = useState<SessionState | null>(null);
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!file) return;
+    let stopped = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    fetch(fileUrl(slug, `studio/sessions/${file}`)).then((r) => r.text()).then((text) => {
+      const lines = text.split('\n').filter(Boolean).map((l) => JSON.parse(l) as Recorded).filter((l) => l.type === 'state' && l.turn);
+      const turns = new Map<number, SessionState['turns'][number]>();
+      let clock = 0;
+      let last = lines[0] ? Date.parse(lines[0].at) : 0;
+      lines.forEach((l, i) => {
+        clock += Math.min(2000, Date.parse(l.at) - last) / speed;
+        last = Date.parse(l.at);
+        timers.push(setTimeout(() => {
+          if (stopped) return;
+          turns.set(l.turn!.id, l.turn!);
+          setState({ agent: l.agent ?? 'muse', cwd: '', status: l.status ?? 'idle', turns: [...turns.values()], queued: [], approvals: [], usage: {}, canSteer: false });
+          if (i === lines.length - 1) setDone(true);
+        }, 600 + clock));
+      });
+    }).catch(() => setDone(true));
+    return () => {
+      stopped = true;
+      timers.forEach(clearTimeout);
+    };
+  }, [slug, file, speed]);
+  return [state, done];
+}
+
 type Offer = { name: string; label: string; installed: boolean; using: boolean };
 
-export function AgentPanel({ slug }: { slug: string }) {
-  const [state, live] = useSession(slug);
+type Session = { file: string; started: string | null; agents: string[]; prompts: string[]; turns: number; replayable: boolean };
+
+export function AgentPanel({ slug, replay, speed = 1 }: { slug: string; replay?: string | null; speed?: number }) {
+  const [liveState, live] = useSession(replay ? '' : slug);
+  const [replayed, replayDone] = useReplay(slug, replay ?? null, speed);
+  const state = replay ? replayed : liveState;
+  const [sessions, setSessions] = useState<Session[] | null>(null);
   const [error, setError] = useState('');
   const [offers, setOffers] = useState<Offer[]>([]);
   const loadOffers = () => fetch(`/api/agent/${slug}/agents`, { headers: auth }).then((r) => r.json()).then(setOffers).catch(() => {});
-  useEffect(() => void loadOffers(), [slug]);
+  useEffect(() => void (replay || loadOffers()), [slug]);
   const current = offers.find((o) => o.using);
   const running = state?.status === 'running';
   const post = async (verb: string, body: object = {}) => {
@@ -85,7 +128,7 @@ export function AgentPanel({ slug }: { slug: string }) {
         formatToolName={(name) => (name.startsWith('mcp__diorama__') ? SAYS[name.slice(14)] ?? name.slice(14).replace(/_/g, ' ') : name)}
         foldSteps
         theme="dark"
-        disabled={!live}
+        disabled={!!replay || !live}
         header={
           <div class="row">
             {offers.length > 1
@@ -94,12 +137,23 @@ export function AgentPanel({ slug }: { slug: string }) {
                 </select>
               : <h2>{current?.label ?? 'Muse Code'}</h2>}
             <span class="grow" />
-            <span class={`live ${live ? 'on' : ''}`}>{running ? 'working…' : live ? 'ready' : 'reconnecting'}</span>
+            {replay
+              ? <span class="live on">{replayDone ? 'replay done' : 'replay'}</span>
+              : <span class={`live ${live ? 'on' : ''}`}>{running ? 'working…' : live ? 'ready' : 'reconnecting'}</span>}
           </div>
         }
         emptyState={<p class="note">Ask for a world, a fix or a check. Each step shows here and in Activity, and Undo takes back everything the agent did in its last turn.</p>}
         hint={error ? <span class="error">{error}</span> : null}
       />
+      {!replay && (
+        <details class="replays" onToggle={(e) => (e.currentTarget as HTMLDetailsElement).open && call<Session[]>('agent_sessions', { slug }).then(setSessions).catch(() => {})}>
+          <summary>Recorded sessions</summary>
+          {sessions && sessions.filter((x) => x.replayable).length === 0 && <p class="note">None yet: every conversation is recorded from now on.</p>}
+          <ul>{sessions?.filter((x) => x.replayable).map((x) => (
+            <li><a href={`/w/${slug}?replay=${encodeURIComponent(x.file)}`}>{x.started?.slice(0, 16).replace('T', ' ')}</a> <span class="detail">{x.agents.join(', ')} · {x.turns} turn{x.turns === 1 ? '' : 's'}{x.prompts[0] ? ` · ${x.prompts[0]}` : ''}</span></li>
+          ))}</ul>
+        </details>
+      )}
     </section>
   );
 }

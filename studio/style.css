@@ -161,3 +161,6 @@ section.agent .row { padding: 12px 14px 0; }
 .play { display: flex; flex-direction: column; gap: 8px; }
 .play iframe { width: 100%; aspect-ratio: 1200 / 896; max-width: 100%; border: 0; border-radius: 10px; background: #0b0b0e; }
 .log li.play { color: var(--ok); }
+.replays { padding: 0 14px 12px; font-size: 13px; color: var(--muted); }
+.replays summary { cursor: pointer; padding: 6px 0; }
+.replays ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }

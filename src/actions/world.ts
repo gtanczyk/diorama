@@ -151,3 +151,33 @@ defineAction({
     };
   },
 });
+
+defineAction({
+  name: 'agent_sessions',
+  reads: true,
+  description: 'The recorded conversations with the agent on a world (studio/sessions), newest first: when, which agent, the prompts, how long. Open one in the Studio with ?replay=<file>.',
+  input: z.object({ slug: Slug }),
+  async run({ slug }, ctx) {
+    const dir = path.join(ctx.root, slug, 'studio', 'sessions');
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl')).map((file) => {
+      const lines = fs.readFileSync(path.join(dir, file), 'utf8').split('\n').filter(Boolean).flatMap((l) => {
+        try {
+          return [JSON.parse(l) as { at: string; type: string; text?: string; agent?: string; turn?: { id: number } }];
+        } catch {
+          return [];
+        }
+      });
+      const states = lines.filter((l) => l.type === 'state');
+      return {
+        file,
+        started: lines[0]?.at ?? null,
+        ended: lines.at(-1)?.at ?? null,
+        agents: [...new Set(states.map((l) => l.agent).filter(Boolean))],
+        prompts: lines.filter((l) => l.type === 'user').map((l) => String(l.text).slice(0, 120)),
+        turns: new Set(states.map((l) => l.turn?.id)).size,
+        replayable: states.length > 0,
+      };
+    }).sort((a, b) => String(b.started).localeCompare(String(a.started)));
+  },
+});

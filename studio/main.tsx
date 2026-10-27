@@ -225,6 +225,11 @@ function Start() {
 
 type Line = { seq: number; text: string; kind: string };
 
+// ?replay=<session file> plays a recorded conversation back in the agent panel (for the film); ?speed=2 doubles it.
+const query = new URLSearchParams(location.search);
+const replay = query.get('replay');
+const speed = Number(query.get('speed') ?? '1') || 1;
+
 function Workshop({ slug }: { slug: string }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState('');
@@ -335,7 +340,7 @@ function Workshop({ slug }: { slug: string }) {
           <Notes slug={slug} notes={notes} onPlace={setFocus} onError={setError} />
         </div>
         <aside class="right">
-          <AgentPanel slug={slug} />
+          <AgentPanel slug={slug} replay={replay} speed={speed} />
           <section class="log">
             <div class="row"><h2>Activity</h2><span class="grow" /><span class="detail" title={status ? `this world: ${Object.entries(status.calls).map(([m, n]) => `${m} ${n}`).join(', ') || 'no calls yet'}` : undefined}>{calls} calls this session{budget ? ` · ${spend(budget.today)} today · ${spend(budget.total)}${budget.limitUsd !== null ? ` of $${budget.limitUsd}` : ''} total` : ''}</span></div>
             <ol>{[...lines].reverse().map((l) => <li key={l.seq} class={l.kind}>{l.text}</li>)}</ol>

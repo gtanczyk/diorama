@@ -55,7 +55,32 @@ class Talk {
   constructor(readonly slug: string, readonly session: AgentSession, dir: string, private readonly events: Events) {
     const id = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
     this.log = path.join(dir, 'studio', 'sessions', `${id}-${randomBytes(2).toString('hex')}.jsonl`);
-    session.subscribe((state) => this.announce(state));
+    session.subscribe((state) => {
+      this.announce(state);
+      this.film(state);
+    });
+  }
+
+  private filmTimer: NodeJS.Timeout | undefined;
+  private filmLatest: SessionState | null = null;
+  private filmed = new Map<number, SessionState['turns'][number]>();
+
+  /**
+   * For replay in the film: the running turn as it grows, at most four times a second. Each line holds that
+   * turn whole (turns are small), so a replay rebuilds the chat from the lines alone.
+   */
+  private film(state: SessionState) {
+    this.filmLatest = state;
+    this.filmTimer ??= setTimeout(() => {
+      this.filmTimer = undefined;
+      const s = this.filmLatest!;
+      // Every turn that changed since the last line: a turn can end and the next begin within one beat.
+      for (const turn of s.turns) {
+        if (this.filmed.get(turn.id) === turn) continue;
+        this.filmed.set(turn.id, turn);
+        this.record({ type: 'state', agent: s.agent, status: turn === s.turns.at(-1) ? s.status : 'idle', turn });
+      }
+    }, 250);
   }
 
   /** The feed (Activity, the terminal) gets the gist: what was said, each tool, refusals, how a turn ended. */
