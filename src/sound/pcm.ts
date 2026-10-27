@@ -119,6 +119,34 @@ export function loopProblem(pcm: Pcm): string | undefined {
   return undefined;
 }
 
+/** How much of the sound is hiss: the energy of the change from sample to sample over the energy (white noise 2, music about 0.06). */
+export function hiss(pcm: Pcm): number {
+  let e = 0, d = 0;
+  for (let i = 1; i < pcm.left.length; i++) {
+    const x = (pcm.left[i] + pcm.right[i]) / 2;
+    const y = (pcm.left[i - 1] + pcm.right[i - 1]) / 2;
+    e += x * x;
+    d += (x - y) ** 2;
+  }
+  return e > 0 ? d / e : 0;
+}
+
+/** Takes off what is above `hz`: two passes of a one-pole low-pass, each way. */
+export function lowpass(pcm: Pcm, hz: number): Pcm {
+  const a = Math.exp((-2 * Math.PI * hz) / RATE);
+  const pass = (ch: Float32Array) => {
+    const out = Float32Array.from(ch);
+    for (let k = 0; k < 2; k++) {
+      let y = out[0];
+      for (let i = 0; i < out.length; i++) out[i] = y = (1 - a) * out[i] + a * y;
+      y = out[out.length - 1];
+      for (let i = out.length - 1; i >= 0; i--) out[i] = y = (1 - a) * out[i] + a * y;
+    }
+    return out;
+  };
+  return { left: pass(pcm.left), right: pass(pcm.right) };
+}
+
 /** Folds the last `fade` seconds over the start with an equal-power crossfade, so the take repeats without a seam. */
 export function seamless(pcm: Pcm, fade = 1): Pcm {
   const f = Math.min(Math.round(fade * RATE), Math.floor(pcm.left.length / 3));

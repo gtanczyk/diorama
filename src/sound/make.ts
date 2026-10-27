@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Memo } from '../meta/memo.ts';
 import { sharedDir, soundQuality } from './cost.ts';
-import { decode, encodeMp3, loopProblem, normalise, seamless, seconds, steps, trim, type Pcm } from './pcm.ts';
+import { decode, encodeMp3, hiss, loopProblem, lowpass, normalise, seamless, seconds, steps, trim, type Pcm } from './pcm.ts';
 import { soundIds, type SoundPlan } from './plan.ts';
 import { elevenKey, elevenMusic, musicgen, MUSICGEN_MODEL, soundEffect } from './sources.ts';
 
@@ -24,13 +24,21 @@ export const SoundEntry = z.object({
   flags: z.array(z.string()).default([]),
   /** Made in draft or final quality; sounds made before qualities existed were full length. */
   quality: z.enum(['draft', 'final']).default('final'),
+  /** How ambience was mixed: below MIX it is made again (from the memo, at no cost) with the current levels and hiss check. */
+  mix: z.number().optional(),
 });
 export const SoundManifest = z.object({ sounds: z.record(z.string(), SoundEntry) });
 export type SoundEntry = z.infer<typeof SoundEntry>;
 export type SoundManifest = z.infer<typeof SoundManifest>;
 
 /** Loudness each kind is levelled to before the mixer's own gains, dBFS RMS. */
-const TARGET_DB: Record<Kind, number> = { music: -20, bed: -24, loop: -22, step: -16, shot: -17 };
+// Ambience sits well under the music: at -24 a bed of wind and leaves was a constant hiss over the whole game.
+const TARGET_DB: Record<Kind, number> = { music: -20, bed: -31, loop: -28, step: -16, shot: -17 };
+/** Ambience made with the levels and the hiss check above; older beds and loops are made again. */
+export const MIX = 2;
+/** Above this a bed or loop is mostly hiss (energy of the sample-to-sample change over the energy: white noise is 2, music 0.06). */
+export const HISS = 0.4;
+const NO_HISS = '. Not wind, not rustling, no hiss or air noise: soft distant life and warm low tones, gentle and quiet';
 const LENGTH: Record<Exclude<Kind, 'shot'>, number> = { music: 30, bed: 20, loop: 10, step: 6 };
 /** Draft lengths: ElevenLabs bills effects by the second, and a seamless loop repeats fine at half the length. */
 const DRAFT: Record<Exclude<Kind, 'shot'>, number> = { music: 30, bed: 10, loop: 6, step: 4 };
@@ -101,7 +109,16 @@ async function makeOne(memo: Memo, job: Job, music: { python?: string }): Promis
       else flags.push(`does not loop well: ${again}`);
       flags.push(`first take ${problem}${again ? '' : ', second take used'}`);
     }
-    return entry(normalise(seamless(pcm, job.kind === 'bed' ? 1.5 : 0.8), TARGET_DB[job.kind]), 'elevenlabs');
+    // Wind, leaves and "air tone" come back as hiss, which tires the ear under a whole game: ask for a warmer take,
+    // keep the less hissy one, and take the top off what still hisses.
+    if (hiss(pcm) > HISS) {
+      const warmer = decode(await soundEffect(memo, { label: `${job.id}-warm`, prompt: job.prompt + NO_HISS, seconds: job.seconds, loop: true, take: 3 }));
+      const before = hiss(pcm);
+      if (!loopProblem(warmer) && hiss(warmer) < before) pcm = warmer;
+      flags.push(`hiss ${before.toFixed(2)}${pcm === warmer ? `, warmer take used (${hiss(warmer).toFixed(2)})` : ''}`);
+      if (hiss(pcm) > HISS) (pcm = lowpass(pcm, 2500), flags.push('still hissy: softened above 2.5 kHz'));
+    }
+    return entry(normalise(seamless(pcm, job.kind === 'bed' ? 1.5 : 0.8), TARGET_DB[job.kind]), 'elevenlabs', { mix: MIX });
   }
 
   if (job.kind === 'step') {
@@ -143,7 +160,7 @@ export async function makeSounds(memo: Memo, plan: SoundPlan, write: (id: string
   const sounds: Record<string, SoundEntry> = {};
   const jobs = jobsOf(plan).filter((j) => !opts.only || opts.only.includes(j.kind)).filter((j) => {
     const old = opts.old?.[j.id];
-    const keep = old && old.kind === j.kind && old.prompt === j.prompt && (old.quality === 'final' || soundQuality() === 'draft') && opts.have?.(old);
+    const keep = old && old.kind === j.kind && old.prompt === j.prompt && (old.quality === 'final' || soundQuality() === 'draft') && ((j.kind !== 'bed' && j.kind !== 'loop') || (old.mix ?? 0) >= MIX) && opts.have?.(old);
     if (keep) sounds[j.id] = old;
     return !keep;
   });

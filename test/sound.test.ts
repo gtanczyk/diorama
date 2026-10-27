@@ -116,3 +116,13 @@ test('pitch is measured in Hz, so a designed child voice pitched like an adult i
   expect(Math.abs(pitchHz(voiced(120)) - 120)).toBeLessThan(6);
   expect(Math.abs(pitchHz(voiced(300)) - 300)).toBeLessThan(15);
 });
+
+test('hiss: white noise is mostly hiss, a low tone is not; the low-pass takes the hiss off', async () => {
+  const { hiss, lowpass, RATE } = await import('../src/sound/pcm.ts');
+  const n = RATE;
+  const noise = { left: new Float32Array(n).map(() => Math.random() - 0.5), right: new Float32Array(n).map(() => Math.random() - 0.5) };
+  const tone = { left: new Float32Array(n).map((_, i) => Math.sin((2 * Math.PI * 220 * i) / RATE)), right: new Float32Array(n).map((_, i) => Math.sin((2 * Math.PI * 220 * i) / RATE)) };
+  expect(hiss(noise)).toBeGreaterThan(1.5);
+  expect(hiss(tone)).toBeLessThan(0.01);
+  expect(hiss(lowpass(noise, 2500))).toBeLessThan(0.4);
+});

@@ -113,8 +113,8 @@ ${storyLines(story).join('\n') || '- (no story yet)'}
 
 Plan:
 - music: one instrumental music bed for the whole game, under everything: instruments, tempo, mood. No vocals.
-- per place: "bed", the constant ambience of the place (weather, water, room tone, distant life) that loops for minutes without a single event standing out. No footsteps, no voices, no music in it.
-- per place: "loops", up to 4 sounds that come from one of its things (thing key from its Things) and loop: water, fire, machines, wind in cloth, animals. Only for things that would really sound. "when" lists story facts that must hold for it to play, e.g. ["lamp-lit"] for a fire that starts in the story (use [] when always). level 1 quiet, 2 normal, 3 loud.
+- per place: "bed", the quiet ambience of the place (water, distant life, birds far off, a room's warm hum) that loops for minutes without a single event standing out. Not wind, rustling leaves, "air tone" or breathing: those come out as hiss that tires the ear under the whole game. No footsteps, no voices, no music in it.
+- per place: "loops", up to 4 sounds that come from one of its things (thing key from its Things) and loop: water, fire, machines, animals. Only for things that would really sound; not trees, bushes or grass in the wind, and not someone breathing. "when" lists story facts that must hold for it to play, e.g. ["lamp-lit"] for a fire that starts in the story (use [] when always). level 1 quiet, 2 normal, 3 loud.
 - per place: "floors", each floor key to a surface name such as "wood", "wet-wood", "stone", "gravel", "grass", "sand", "metal", "carpet". Reuse surface names across places.
 - "steps": each surface name used to a prompt for a few separate footsteps of one person walking on it, e.g. "slow footsteps of boots on wet wooden planks, 6 separate steps, dry close recording".
 - "shots": short one-shot effects. "on" is one of: ${SHOT_TRIGGERS.join(', ')}. Give one for "take" (picking up an item), "click" (a soft UI click), "talk" (a short sound as a conversation starts), "ending", one "exit:<thing>" per exit thing, and "use:<thing>" for things the story changes when used. "seconds" 0.5 to 4.
