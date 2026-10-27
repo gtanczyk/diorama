@@ -4,12 +4,12 @@ import { defineCommand, takeOption } from '../registry.ts';
 import { castBodies, paintFigure, readBodies, type Who } from '../scene/cast.ts';
 import { rigFigure } from '../scene/rig.ts';
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
-import { drawingFor, readDrawn } from '../world/drawings.ts';
+import { drawingFor, players, readDrawn } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
   name: 'cast',
-  usage: 'cast <slug> [key...]     paint the hero and NPCs with Muse, cut them out with SAM 3.1 (cast/<key>.png) [--take N] [--photo me.jpg: paint the hero from a full-body photo] (a character a child drew, drawings.json, is painted from the drawing)',
+  usage: 'cast <slug> [key...]     paint the hero, NPCs and players (heroes for more gamepads, drawings marked player) with Muse, cut them out with SAM 3.1 (cast/<key>.png) [--take N] [--photo me.jpg: paint the hero from a full-body photo] (a character a child drew, drawings.json, is painted from the drawing)',
   async run(args) {
     const take = Number(takeOption(args, 'take', '0'));
     const photoPath = takeOption(args, 'photo', '');
@@ -22,10 +22,10 @@ defineCommand({
     const photo = photoPath ? fs.readFileSync(photoPath) : fs.existsSync(kept) ? fs.readFileSync(kept) : undefined;
     // A character a child drew is painted from what was read off the drawing, as its preview was, so the preview is the figure.
     const drawn = readDrawn(files);
-    const drawnLooks = (w: Who): Who => ({ ...w, looks: drawn.find((d) => d.key === w.key && (d.kind === 'hero' || d.kind === 'npc'))?.looks ?? w.looks });
+    const drawnLooks = (w: Who): Who => ({ ...w, looks: drawn.find((d) => d.key === w.key && (d.kind === 'hero' || d.kind === 'npc' || d.kind === 'player'))?.looks ?? w.looks });
     const npcs = world.places.flatMap((p) => p.things.filter((t) => t.role === 'npc'));
     const fixes = readCastFixes(files);
-    const cast: Who[] = [world.hero, ...new Map(npcs.map((n) => [n.key, n])).values()].filter((w) => !only.length || only.includes(w.key)).map((w) => fixedLooks(files, drawnLooks(w)));
+    const cast: Who[] = [world.hero, ...new Map(npcs.map((n) => [n.key, n])).values(), ...players(files)].filter((w) => !only.length || only.includes(w.key)).map((w) => fixedLooks(files, drawnLooks(w)));
     const missing: string[] = [];
     // cast/figures.json: how tall each one stands and whether upright, so a cat or a child is drawn at its own
     // size and only those walking like a person get a rig (and later a model and sprites).

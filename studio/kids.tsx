@@ -12,7 +12,7 @@ type Material = {
   built: boolean;
 };
 
-const KIND: Record<string, string> = { hero: 'Hero', npc: 'Character', item: 'Item to pick up', prop: 'Thing in a place', place: 'Place' };
+const KIND: Record<string, string> = { hero: 'Hero', player: 'Another hero (one per gamepad)', npc: 'Character', item: 'Item to pick up', prop: 'Thing in a place', place: 'Place' };
 
 /** A photo shrunk to 1600 px as JPEG, so a phone picture travels light; what the browser cannot read goes as it is. */
 async function shrink(file: Blob): Promise<string> {
@@ -248,7 +248,7 @@ export function KidsStart({ slug, taken, places, onBuild, onError }: { slug: str
           <img src={fileUrl(slug, big.file, big.v)} alt="" />
           <span class="arrow">→</span>
           <img class={`alive${big.drawn?.kind === 'place' ? ' place' : ''}`} src={fileUrl(slug, big.preview!.file, big.preview!.v)} alt="" />
-          <p>{big.drawn?.kind === 'hero' ? 'Our hero' : big.drawn?.key.replace(/-/g, ' ')} · click to close</p>
+          <p>{big.drawn?.kind === 'hero' ? 'Our hero' : big.drawn?.kind === 'player' ? `A hero for a gamepad: ${big.drawn.key.replace(/-/g, ' ')}` : big.drawn?.key.replace(/-/g, ' ')} · click to close</p>
         </div>
       )}
     </div>

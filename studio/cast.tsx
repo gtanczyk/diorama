@@ -5,7 +5,7 @@ import { call, fileUrl } from './api.ts';
 
 type Pic = { file: string; v: number | null } | null;
 type Character = {
-  key: string; role: 'hero' | 'npc' | 'narrator'; place: string | null; looks: string; looksNow: string;
+  key: string; role: 'hero' | 'npc' | 'player' | 'narrator'; place: string | null; looks: string; looksNow: string;
   fix: { looks?: string; take?: number; voice?: { voice: string } } | null;
   figure: Pic; painting: Pic; rig: boolean; model: boolean; sprites: boolean;
   voice: { voice: string; why: string; stability: number; style: number } | null;
@@ -85,7 +85,7 @@ function Card({ slug, c, onError }: { slug: string; c: Character; onError: (m: s
       <div class="body">
         <div class="row">
           <strong>{c.key}</strong>
-          <span class="badge">{c.role === 'hero' ? 'hero' : c.role === 'narrator' ? 'narrator' : `NPC · ${c.place}`}</span>
+          <span class="badge">{c.role === 'hero' ? 'hero' : c.role === 'player' ? 'hero for another gamepad' : c.role === 'narrator' ? 'narrator' : `NPC · ${c.place}`}</span>
           <span class="grow" />
           {parts.length > 0 && <span class="detail">{parts.join(' · ')}</span>}
         </div>

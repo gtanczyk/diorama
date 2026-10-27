@@ -156,7 +156,7 @@ async function setKind(files: WorldFiles, file: string, kind: Kind | null) {
   const entry = drawn.find((d) => d.file === name);
   if (entry && kind) {
     entry.kind = kind;
-    files.write(files.path('drawings.json'), kind === 'hero' || kind === 'npc' ? oneHero(drawn, kind === 'hero' ? entry.key : drawn.find((d) => d.kind === 'hero' && d !== entry)?.key) : drawn);
+    files.write(files.path('drawings.json'), kind === 'hero' || kind === 'npc' || kind === 'player' ? oneHero(drawn, kind === 'hero' ? entry.key : drawn.find((d) => d.kind === 'hero' && d !== entry)?.key) : drawn);
   }
   return status(files);
 }

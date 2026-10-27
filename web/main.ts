@@ -29,6 +29,8 @@ type Data = {
   sound?: SoundData;
   /** An icon per story item (diorama icons); an item without one shows its name. */
   items?: Record<string, { icon: string }>;
+  /** Heroes for more gamepads (cast keys, drawings marked player): player 2 plays the first. */
+  players?: string[];
 };
 
 type Bits = { bits: Uint8Array; area: number };
@@ -492,12 +494,18 @@ class Game {
     const offsets = [k * gap, -k * gap, (k + 1) * gap, -(k + 1) * gap, 0];
     const spot = offsets.map((dx) => this.place.grid.snap(this.hero.x + dx, this.hero.y)).find((p) => !!p) ?? [this.hero.x, this.hero.y];
     [b.x, b.y] = spot;
-    Object.assign(b, { path: [], foot: undefined, along: undefined, facing: this.hero.facing, figure: this.hero.figure });
+    Object.assign(b, { path: [], foot: undefined, along: undefined, facing: this.hero.facing, figure: b.figure ?? this.hero.figure });
   }
 
-  /** A new party member next to the hero, in a player's colour. */
-  join(colour: string): Body {
-    const b = { ...newBody(), colour };
+  /** The figure player n (from 1) plays: the hero's, then each drawn player's; the hero's when there are too few. */
+  playerFigure(n: number): Figure | undefined {
+    const key = n > 1 ? this.data.players?.[n - 2] : undefined;
+    return (key && this.figures.get(key)) || this.figures.get(this.data.world.hero.key);
+  }
+
+  /** A new party member next to the hero, in a player's colour, as its own drawn hero when it has one. */
+  join(colour: string, figure?: Figure): Body {
+    const b = { ...newBody(), colour, figure };
     this.party.push(b);
     if (this.place) this.beside(b);
     return b;
@@ -1178,7 +1186,9 @@ class Game {
     const h = who.body ?? this.hero;
     // In a party each hero stands on a ring in its player's colour, so a child finds theirs.
     if (h.colour && this.party.length && layer === 'shadow') this.drawRing(h);
-    const figure = h.colour && this.party.length ? this.tinted(h.figure, h.colour) : h.figure;
+    // Copies of one figure are dressed in their player's colours; a child's own drawn hero stays as drawn.
+    const copies = h.figure && [this.hero, ...this.party].filter((b) => b.figure === h.figure).length > 1;
+    const figure = h.colour && copies ? this.tinted(h.figure, h.colour) : h.figure;
     const rect = this.drawPerson(h.x, h.y, h.facing, h.phase, h.path.length > 0, figure, '#2b2733', false, this.shift(h.y), h.yaw, h === this.hero ? this.talking(this.data.world.hero.key) : undefined, h.foot, layer, this.party.length ? h.colour : undefined);
     if (h.colour && this.party.length && layer === 'body') this.drawTag(h, rect);
     return rect;
@@ -2112,6 +2122,8 @@ function padInput() {
     }
     only = turns.current(now);
     if (only !== before || ((turns.connected().length > 1) === document.getElementById('player')!.hidden)) showTurn(only, before !== undefined && only !== before);
+    // Each player plays their own drawn hero, when the children drew one each.
+    if (only !== before && only !== undefined && game.data?.players?.length) game.hero.figure = game.playerFigure(turns.player(only));
     if (only === undefined) return void (pad = { dir: null, pressed: [], pads: 0 });
   }
   pad = readPads(only);
@@ -2171,7 +2183,7 @@ function partyInput() {
     if (!body) {
       const colour = PLAYER_COLOURS[bodies.size % PLAYER_COLOURS.length];
       // The first pad takes the hero already there; each next one a new hero beside it.
-      body = bodies.size === 0 ? Object.assign(game.hero, { colour }) : game.join(colour);
+      body = bodies.size === 0 ? Object.assign(game.hero, { colour }) : game.join(colour, game.playerFigure(bodies.size + 1));
       bodies.set(index, body);
     }
     woke();

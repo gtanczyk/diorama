@@ -13,7 +13,8 @@ export const PICTURE = /\.(png|jpe?g|webp|heic|heif|gif|tiff?)$/i;
 
 export const Drawn = z.object({
   file: z.string(),
-  kind: z.enum(['hero', 'npc', 'item', 'prop', 'place']),
+  /** player: another hero, for another gamepad (only the grown-up marks one, kinds.json); it walks beside the hero, in no place. */
+  kind: z.enum(['hero', 'npc', 'player', 'item', 'prop', 'place']),
   key: Slug,
   looks: z.string().min(3),
 });
@@ -118,6 +119,16 @@ export function oneHero(drawn: Drawn[], hero?: string): Drawn[] {
   return drawn;
 }
 
+/**
+ * The other heroes, one per extra gamepad: characters a child drew and the grown-up marked "player". They are painted
+ * and rigged with the cast and walk beside the hero; they belong to no place and say nothing in the story.
+ */
+export function players(files: WorldFiles): Array<{ key: string; looks: string }> {
+  const world = files.world();
+  const taken = new Set([world.hero.key, ...world.places.flatMap((p) => p.things.map((t) => t.key))]);
+  return [...new Map(readDrawn(files).filter((d) => d.kind === 'player' && !taken.has(d.key)).map((d) => [d.key, { key: d.key, looks: d.looks }])).values()];
+}
+
 /** What the world designer is told: every drawing is in the world, under its key, as drawn. */
 export function drawingsBrief(drawn: Drawn[]): string {
   const once = [...new Map(drawn.map((d) => [d.key, d])).values()];
@@ -127,9 +138,10 @@ export function drawingsBrief(drawn: Drawn[]): string {
     item: `- an item to pick up in one of the places, key "${d.key}", role "item": ${d.looks}`,
     prop: `- a prop in one of the places, key "${d.key}", role "prop": ${d.looks}`,
     place: `- a place, key "${d.key}": ${d.looks}`,
+    player: '',
   })[d.kind];
   return `The children drew these, and every one of them must be in the world, under exactly this key, looking as drawn:
-${once.map(line).join('\n')}
+${once.filter((d) => d.kind !== 'player').map(line).join('\n')}
 The style is exactly: "${KIDS_STYLE}".`;
 }
 
@@ -139,6 +151,7 @@ export function drawnIssues(world: World, drawn: Drawn[]): string[] {
   const places = new Set(world.places.map((p) => p.key));
   return [...new Map(drawn.map((d) => [d.key, d])).values()].flatMap((d) => {
     if (d.kind === 'hero') return world.hero.key === d.key ? [] : [`the hero's key must be "${d.key}" (a child drew the hero)`];
+    if (d.kind === 'player') return [];
     if (d.kind === 'place') return places.has(d.key) ? [] : [`a child drew the place "${d.key}": it must be one of the places, with that key`];
     const role = things.get(d.key);
     if (!role) return [`a child drew "${d.key}": it must be a thing with role "${d.kind}" in one of the places`];

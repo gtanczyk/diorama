@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { CastFixes, castFixesFile, readCastFixes } from '../scene/cast-fixes.ts';
 import { DESIGNED, designDescriptions, needsDesign, stockVoices, voiceCandidates, Voices } from '../sound/voices.ts';
 import { agentBlocked } from '../studio/locks.ts';
+import { players } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
 import { Slug } from '../world/schema.ts';
 import { ActionError, defineAction, type ActionContext } from './registry.ts';
@@ -15,7 +16,12 @@ const stamp = (file: string) => (fs.existsSync(file) ? Math.round(fs.statSync(fi
 function characters(files: WorldFiles) {
   const world = files.world();
   const npcs = new Map(world.places.flatMap((p) => p.things.filter((t) => t.role === 'npc').map((t) => [t.key, { ...t, place: p.key }] as const)));
-  return [{ key: world.hero.key, looks: world.hero.looks, role: 'hero' as const, place: null as string | null }, ...[...npcs.values()].map((n) => ({ key: n.key, looks: n.looks, role: 'npc' as const, place: n.place }))];
+  return [
+    { key: world.hero.key, looks: world.hero.looks, role: 'hero' as 'hero' | 'npc' | 'player', place: null as string | null },
+    ...[...npcs.values()].map((n) => ({ key: n.key, looks: n.looks, role: 'npc' as const, place: n.place })),
+    // Heroes for more gamepads (drawings marked player): painted and rigged like the hero, in no place.
+    ...players(files).map((p) => ({ key: p.key, looks: p.looks, role: 'player' as const, place: null })),
+  ];
 }
 
 function writeFix(ctx: ActionContext, slug: string, key: string, change: (f: CastFixes[string]) => void) {

@@ -17,6 +17,7 @@ import { defineCommand, takeOption } from '../registry.ts';
 import { ItemsInfo } from '../scene/icons.ts';
 import { Layout } from '../scene/layout.ts';
 import { Story } from '../story/schema.ts';
+import { players } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
 
 type Flats = { sky: string | null; flats: Array<{ file: string; box: [number, number, number, number] }>; water?: { tex: string; mask: string; box: [number, number, number, number]; flow?: [number, number] } };
@@ -89,7 +90,9 @@ export function worldData(files: WorldFiles) {
   const items = fs.existsSync(itemsFile)
     ? Object.fromEntries(Object.entries(ItemsInfo.parse(files.readJson(itemsFile))).filter(([, i]) => fs.existsSync(files.path(i.icon))).map(([k, i]) => [k, { icon: i.icon }]))
     : undefined;
-  return { slug: files.slug, world, places, cast, story, changes, ...(sound && { sound }), ...(items && { items }) };
+  // The heroes of more gamepads (drawings marked player), in drawing order: pad 2 plays the first.
+  const others = players(files).map((p) => p.key).filter((k) => cast[k]);
+  return { slug: files.slug, world, places, cast, story, changes, ...(sound && { sound }), ...(items && { items }), ...(others.length && { players: others }) };
 }
 
 export async function bundle(forShip = false): Promise<string> {

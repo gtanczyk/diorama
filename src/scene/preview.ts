@@ -9,7 +9,7 @@ import { paintFigure } from './cast.ts';
 import { FRAME } from './layout.ts';
 
 export async function previewDrawing(memo: Memo, drawn: Drawn, drawing: Buffer): Promise<Buffer> {
-  if (drawn.kind === 'hero' || drawn.kind === 'npc') {
+  if (drawn.kind === 'hero' || drawn.kind === 'npc' || drawn.kind === 'player') {
     const { figure } = await paintFigure(memo, { style: KIDS_STYLE } as World, { key: drawn.key, looks: drawn.looks }, 0, { drawing });
     return figure;
   }
