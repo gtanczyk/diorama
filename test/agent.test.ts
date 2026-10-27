@@ -59,3 +59,15 @@ test('the agent cannot post to its own conversation', async () => {
   const res = await fetch(`${studio.url}api/agent/harbour/say`, { method: 'POST', headers: { authorization: `Bearer ${studio.agentToken}`, 'content-type': 'application/json' }, body: '{"text":"hi"}' });
   expect(res.status).toBe(404);
 });
+
+test('only the Studio\'s own MCP tools run without asking: a path with "diorama" in it is not one', async () => {
+  const { studioTool } = await import('../src/studio/agent.ts');
+  const mcp = { id: '1', kind: 'other' as const, detail: { toolName: 'mcp__diorama__world_status', subject: { kind: 'mcpTool' } } };
+  const bash = { id: '2', kind: 'command' as const, summary: 'ls /Users/g/src/diorama/worlds', detail: { subject: { kind: 'shell', command: 'ls /Users/g/src/diorama/worlds' } } };
+  const read = { id: '3', kind: 'other' as const, summary: '/Users/g/src/diorama/worlds/w/build.json', detail: { subject: { kind: 'fileAccess', access: 'read', path: '/Users/g/src/diorama/worlds/w/build.json' } } };
+  const other = { id: '4', kind: 'other' as const, detail: { toolName: 'mcp__github__search', note: 'mcp__diorama__ mentioned in passing' } };
+  expect(studioTool(mcp)).toBe(true);
+  expect(studioTool(bash)).toBe(false);
+  expect(studioTool(read)).toBe(false);
+  expect(studioTool(other)).toBe(false);
+});

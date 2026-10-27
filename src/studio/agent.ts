@@ -14,16 +14,34 @@ Start long work with world_build or run_step and follow it with job_wait. Call u
 Every place moves as a diorama (the backdrop step: cut-out things over a painted backdrop, far flats, flowing water). When the person says the water runs the wrong way or should stand still, call water_flow (reverse, still, or auto with a hint in their words), then show the place; never edit files by hand.
 To fix a place use the fix tools, which are kept across rebuilds: mask_fix (a better SAM phrase, the real box, or the kind of a thing), floor_cells, mask_brush, stand_set, repaint_region (costs a Muse edit); corrections_get shows what is fixed already, corrections_clear takes fixes back. When asked to go through the person's notes, read feedback_pending, fix each one and close it with feedback_done in one sentence. Check budget before a rebuild of many places.
 Before a risky change, say what you will do; history_undo can take back a job. Respect locks. Keys are never yours: if a key is missing, ask the person to run \`diorama setup\` in a terminal.
+You have no shell and no file tools here: Muse's own bash, read_file and edits are refused. Everything you need to know comes from world_status, place_status, job_wait, corrections_get and feedback_pending.
 Answer briefly, in the person's language.`;
 
 type Turn = { role: 'user' | 'agent'; text: string };
 type Card = { id: string; kind: ApprovalRequest['kind']; summary?: string; detail?: string };
 type Pending = { card: Card; resolve: (d: ApprovalDecision) => void };
 
+const clip = (v: unknown, n: number) => {
+  const text = typeof v === 'string' ? v : JSON.stringify(v);
+  return text.length > n ? `${text.slice(0, n)}…` : text;
+};
+
 /** What the approval card shows: the summary and the request itself, shortened and with secrets blanked. */
 function card(request: ApprovalRequest): Card {
   const detail = request.detail === undefined ? undefined : redact(typeof request.detail === 'string' ? request.detail : JSON.stringify(request.detail, null, 1));
   return { id: request.id, kind: request.kind, ...(request.summary && { summary: redact(request.summary) }), ...(detail && { detail: detail.length > 600 ? `${detail.slice(0, 600)}…` : detail }) };
+}
+
+/**
+ * A call of one of the Studio's MCP tools: not a shell, process or file access, and named for the diorama
+ * server. A path that merely contains "diorama" (every world lives under it) is not enough.
+ */
+export function studioTool(request: ApprovalRequest): boolean {
+  if (request.kind !== 'other') return false;
+  const detail = (request.detail ?? {}) as { subject?: { kind?: string } };
+  if (['shell', 'process', 'fileAccess'].includes(String(detail.subject?.kind))) return false;
+  const text = JSON.stringify(detail);
+  return /"mcp__diorama__[a-z_]+"/.test(text) || /"(server|serverName|mcpServer)"\s*:\s*"diorama"/.test(text);
 }
 
 class Conversation {
@@ -126,8 +144,14 @@ export class AgentHub {
   }
 
   private ask(c: Conversation, request: ApprovalRequest, signal?: AbortSignal): Promise<ApprovalDecision> {
-    // The Studio's own tools are logged and undoable: they run without asking. Anything else asks the person.
-    if (JSON.stringify(request.detail ?? '').includes('diorama')) return Promise.resolve('approve');
+    // The Studio's own tools are logged and undoable: they run without asking. The agent works only through
+    // them, so Muse's own shell and file tools are refused (DIORAMA_AGENT_TOOLS=ask puts them to the person).
+    if (studioTool(request)) return Promise.resolve('approve');
+    this.record(c, { type: 'refused', kind: request.kind, detail: request.detail });
+    if (process.env.DIORAMA_AGENT_TOOLS !== 'ask') {
+      this.publish(c, { type: 'blocked', kind: request.kind, summary: card(request).summary ?? request.kind });
+      return Promise.resolve('deny');
+    }
     return new Promise((resolve) => {
       const done = (d: ApprovalDecision) => {
         c.approvals.delete(request.id);
@@ -145,8 +169,8 @@ export class AgentHub {
     switch (event.type) {
       case 'text-delta': return this.publish(c, { type: 'delta', text: event.text });
       case 'message': return this.publish(c, { type: 'message', text: event.text });
-      case 'tool-start': return this.publish(c, { type: 'tool', name: event.name.replace(/^mcp__diorama__/, ''), id: event.id });
-      case 'tool-end': return this.publish(c, { type: 'tool.end', name: event.name?.replace(/^mcp__diorama__/, ''), id: event.id, isError: !!event.isError });
+      case 'tool-start': return this.publish(c, { type: 'tool', name: event.name.replace(/^mcp__diorama__/, ''), id: event.id, studio: event.name.startsWith('mcp__diorama__'), ...(event.input !== undefined && { input: clip(event.input, 600) }) });
+      case 'tool-end': return this.publish(c, { type: 'tool.end', name: event.name?.replace(/^mcp__diorama__/, ''), id: event.id, isError: !!event.isError, ...(event.output && { output: clip(event.output, 1200) }) });
       case 'error': return this.publish(c, { type: 'error', text: event.message });
       case 'stderr': return void this.record(c, { type: 'stderr', text: redact(event.text) });
       default: return;

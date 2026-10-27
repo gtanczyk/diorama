@@ -20,6 +20,8 @@ export type Job = {
   endedAt?: string;
   step?: string;
   error?: string;
+  /** Places verify found not playable, with why: the reason a build that finished still fails. */
+  unplayable?: Array<{ place: string; errors: string[] }>;
   /** The last lines it printed. */
   tail: string[];
 };
@@ -120,7 +122,7 @@ export class Jobs {
     child.on('close', (code) => {
       this.children.delete(job.id);
       if (job.state === 'cancelled') this.finish(job, 'cancelled');
-      else this.finish(job, code === 0 ? 'done' : 'failed', code === 0 ? undefined : job.error ?? `exited with ${code}`);
+      else this.finish(job, code === 0 ? 'done' : 'failed', code === 0 ? undefined : job.error ?? (job.unplayable?.length ? `not playable: ${job.unplayable.map((u) => `${u.place} (${u.errors.join('; ') || 'see verify.json'})`).join(', ')}` : `exited with ${code}`));
     });
   }
 
@@ -131,6 +133,10 @@ export class Jobs {
         const { type, ...data } = JSON.parse(line.slice('@@diorama '.length)) as { type: string };
         if (type === 'step.start') job.step = (data as { step?: string }).step;
         if (type === 'step.fail') job.error = String((data as { error?: unknown }).error ?? '');
+        if (type === 'place.verdict') {
+          const v = data as { place: string; ok: boolean; errors?: string[] };
+          if (!v.ok) (job.unplayable ??= []).push({ place: v.place, errors: v.errors ?? [] });
+        }
         this.events.publish(type, { ...data, world: job.world, job: job.id });
         return;
       } catch {}

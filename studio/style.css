@@ -136,3 +136,18 @@ table.things select { padding: 4px 6px; }
 .budget { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; }
 .budget .prices { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .budget label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.chat { scroll-behavior: smooth; }
+.chat li.thinking { color: var(--faint); font-size: 13px; animation: pulse 1.6s ease-in-out infinite; }
+.chat li.steps-card { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border-left: 2px solid var(--line-strong); }
+.chat li.steps-card ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.chat .step summary { display: flex; align-items: baseline; gap: 8px; cursor: pointer; list-style: none; font-size: 13px; padding: 2px 0; }
+.chat .step summary::-webkit-details-marker { display: none; }
+.chat .step summary.plain { cursor: default; }
+.chat .step .mark { width: 18px; height: 18px; font-size: 10px; align-self: center; }
+.chat .step .what { color: var(--text); }
+.chat .step.fail .what { color: var(--bad); }
+.chat .step .args { color: var(--faint); font-family: ui-monospace, Menlo, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.chat .step .io { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 8px 26px; }
+.chat .step .io pre { max-height: 220px; overflow: auto; font-size: 11.5px; padding: 8px 10px; }
+button.link { all: unset; cursor: pointer; color: var(--accent); font-size: 12px; }
+button.link:focus-visible { outline: 2px solid var(--accent); }

@@ -4,6 +4,7 @@ import { render } from 'preact';
 import { signal } from '@preact/signals';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { askAgent, call, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
+import { AgentPanel } from './agent.tsx';
 import { PlaceEditor } from './place.tsx';
 
 type Check = { id: string; label: string; state: 'ok' | 'missing' | 'optional' | 'fail'; detail: string; fix?: string[] };
@@ -17,7 +18,7 @@ type PlaceDetail = {
   image: { file: string; v: number | null } | null;
   verdict: { ok: boolean; errors: Finding[]; flags: Finding[] } | null;
 };
-type Job = { id: string; label: string; args: string[]; state: string; by: string; step?: string; error?: string; startedAt?: string; endedAt?: string; tail: string[] };
+type Job = { id: string; label: string; args: string[]; unplayable?: Array<{ place: string; errors: string[] }>; state: string; by: string; step?: string; error?: string; startedAt?: string; endedAt?: string; tail: string[] };
 type Note = { id: string; at: string; by: string; place?: string; point?: [number, number]; text: string; state: 'open' | 'done'; reply?: string };
 type Spend = { usd: number; priced: boolean; calls: Record<string, number> };
 type Budget = { total: Spend; today: Spend; limitUsd: number | null; over: boolean; prices: Record<string, number> };
@@ -298,7 +299,7 @@ function Workshop({ slug }: { slug: string }) {
           </div>
           {status?.pitch && <p class="lead">{status.pitch}</p>}
           {error && <p class="error">{error}</p>}
-          {failed && !job && <Failed slug={slug} job={failed} onError={setError} />}
+          {failed && !job && <Failed slug={slug} job={failed} onError={setError} onPlace={setFocus} />}
           {budget?.over && <p class="banner">Budget: ${budget.total.usd} spent of the ${budget.limitUsd} limit. Check Setup before the next big build.</p>}
           <ol class="steps" aria-label="Build steps">
             {steps.map((s) => <li class={stepState(s)} title={status?.build[s] ? `${status.build[s].seconds}s` : undefined}><Mark state={stepState(s)} />{s}</li>)}
@@ -342,16 +343,18 @@ function Workshop({ slug }: { slug: string }) {
 const spend = (s: Spend) => (s.priced ? `$${s.usd.toFixed(2)}` : `${Object.values(s.calls).reduce((a, b) => a + b, 0)} calls${s.usd ? ` ($${s.usd.toFixed(2)}+)` : ''}`);
 
 /** The last job failed: where, why, its last lines, and what to do next. */
-function Failed({ slug, job, onError }: { slug: string; job: Job; onError: (m: string) => void }) {
+function Failed({ slug, job, onError, onPlace }: { slug: string; job: Job; onError: (m: string) => void; onPlace: (p: string) => void }) {
   const [more, setMore] = useState(false);
   const lines = job.tail.filter((l) => l.trim());
   const step = job.step;
   const retry = () => call('job_retry', { id: job.id }).catch((e) => onError(e.message));
-  const ask = () => askAgent(slug, `The job "${job.label}" failed${step ? ` at the ${step} step` : ''}: ${job.error ?? 'see its output'}. Find out why with job_wait or world_status, fix what you can with the fix tools, and tell me what you did.`).catch((e) => onError(e.message));
+  const ask = () => askAgent(slug, `The job "${job.label}" failed${step ? ` at the ${step} step` : ''}: ${job.error ?? 'see its output'}. Find out why with world_status and place_status, fix it only with the Studio fix tools (never by editing files), and tell me what you did.`).catch((e) => onError(e.message));
   return (
     <section class="failed" role="alert">
       <div class="row"><strong>{job.label} failed{step ? ` at ${step}` : ''}</strong><span class="detail">by {job.by}</span></div>
-      {job.error && <p class="error">{job.error}</p>}
+      {job.unplayable?.length ? job.unplayable.map((u) => (
+        <div class="row"><button type="button" class="ghost small" onClick={() => onPlace(u.place)}>{u.place}</button><span class="error">{u.errors.join(' · ') || 'not playable: see verify.json'}</span></div>
+      )) : job.error && <p class="error">{job.error}</p>}
       {lines.length > 0 && <pre>{(more ? lines : lines.slice(-6)).join('\n')}</pre>}
       <div class="row">
         <button type="button" class="primary small" onClick={retry}>Try again</button>
@@ -401,96 +404,6 @@ function Notes({ slug, notes, onPlace, onError }: { slug: string; notes: Note[];
       <form class="row" onSubmit={add}>
         <input class="grow" placeholder="A note on the whole world (or pick a place and use Note on its picture)" value={text} onInput={(e) => setText(e.currentTarget.value)} />
         <button type="submit" class="ghost small" disabled={text.trim().length < 2}>Add</button>
-      </form>
-    </section>
-  );
-}
-
-type Ask = { id: string; kind: string; summary?: string; detail?: string };
-const ASK_TITLE: Record<string, string> = { command: 'The agent wants to run a command on your computer', 'file-change': 'The agent wants to change files directly' };
-
-type Bubble = { key: number; kind: 'user' | 'agent' | 'tool' | 'error' | 'note'; text: string; ok?: boolean };
-
-/** Chat with the Muse Code agent about this world. Its tool calls are Studio actions, so they also show in Activity. */
-function AgentPanel({ slug }: { slug: string }) {
-  const [items, setItems] = useState<Bubble[]>([]);
-  const [stream, setStream] = useState('');
-  const [running, setRunning] = useState(false);
-  const [asks, setAsks] = useState<Ask[]>([]);
-  const [text, setText] = useState('');
-  const [error, setError] = useState('');
-  useEffect(() => {
-    let n = 0;
-    let after: number | null = null;
-    const push = (kind: Bubble['kind'], body: string, ok?: boolean) => setItems((l) => [...l.slice(-200), { key: n++, kind, text: body, ok }]);
-    fetch(`/api/agent/${slug}`, { headers: { authorization: `Bearer ${token}` } })
-      .then((r) => r.json())
-      .then((s: { seq: number; running: boolean; turns: Array<{ role: 'user' | 'agent'; text: string }>; approvals: Ask[] }) => {
-        s.turns.forEach((t) => push(t.role, t.text));
-        after = s.seq;
-        setRunning(s.running);
-        setAsks(s.approvals);
-      })
-      .catch(() => {});
-    return follow(slug, (e) => {
-      // The feed replays from the start on connect; the conversation up to `after` came from the state call above.
-      if (!e.type.startsWith('agent.') || after === null || e.seq <= after) return;
-      const v = e as unknown as Record<string, string | boolean | undefined>;
-      switch (e.type) {
-        case 'agent.user': return push('user', String(v.text));
-        case 'agent.turn.start': setRunning(true); return setStream('');
-        case 'agent.delta': return setStream((t) => t + String(v.text));
-        case 'agent.message': setStream(''); return push('agent', String(v.text));
-        case 'agent.tool': return push('tool', String(v.name));
-        case 'agent.tool.end': return setItems((l) => l.map((b) => (b.kind === 'tool' && b.text === v.name && b.ok === undefined ? { ...b, ok: !v.isError } : b)));
-        case 'agent.error': return push('error', String(v.text));
-        case 'agent.approval': return setAsks((a) => [...a, (e as unknown as { request: Ask }).request]);
-        case 'agent.approval.resolved': return setAsks((a) => a.filter((x) => x.id !== v.id));
-        case 'agent.turn.end':
-          setRunning(false);
-          setStream('');
-          if (v.status !== 'completed' && v.status !== 'aborted') push('error', /ENOENT|spawn|not found/i.test(String(v.error)) ? 'Muse Code is not installed or not on PATH: see Setup.' : `The agent stopped: ${v.error ?? v.status}`);
-          return;
-      }
-    });
-  }, [slug]);
-  const send = async (e?: Event) => {
-    e?.preventDefault();
-    const say = text.trim();
-    if (!say) return;
-    setText('');
-    setError('');
-    const res = await fetch(`/api/agent/${slug}/say`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ text: say }) });
-    if (!res.ok) setError(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `could not send (${res.status})`);
-  };
-  const post = (verb: string, body: object = {}) => fetch(`/api/agent/${slug}/${verb}`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  return (
-    <section class="agent">
-      <div class="row"><h2>Muse Code</h2><span class="grow" /><span class={`live ${running ? 'on' : ''}`}>{running ? 'working…' : 'ready'}</span></div>
-      <ol class="chat">
-        {items.length === 0 && <li class="note">Ask for a world, a fix or a check. Everything the agent does runs through the same actions as the buttons, and you can undo its jobs.</li>}
-        {items.map((b) => (
-          <li key={b.key} class={b.kind}>{b.kind === 'tool' ? <><span class={`mark ${b.ok === undefined ? 'run' : b.ok ? 'ok' : 'fail'}`}>{b.ok === undefined ? '◌' : b.ok ? '✓' : '✕'}</span>{b.text}</> : b.text}</li>
-        ))}
-        {stream && <li class="agent streaming">{stream}</li>}
-      </ol>
-      {asks.map((a) => (
-        <div class="ask" key={a.id} role="alert">
-          <strong>{ASK_TITLE[a.kind] ?? 'The agent asks to do something outside the Studio'}</strong>
-          {a.summary && <code>{a.summary}</code>}
-          {a.detail && a.detail !== a.summary && <details><summary>Exactly what it asked</summary><pre>{a.detail}</pre></details>}
-          <span class="detail">Studio tools never ask: they are logged and undoable. This one is not, so it is your call.</span>
-          <div class="row"><button type="button" class="primary small" onClick={() => post('approval', { id: a.id, decision: 'approve' })}>Allow once</button><button type="button" class="ghost small" onClick={() => post('approval', { id: a.id, decision: 'deny' })}>Deny</button></div>
-        </div>
-      ))}
-      <form class="say" onSubmit={send}>
-        <textarea id="agent-say" rows={2} placeholder={running ? 'Add to what it is doing…' : 'Ask Muse Code…'} value={text} onInput={(e) => setText(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }} />
-        <div class="row">
-          {error && <span class="error">{error}</span>}
-          <span class="grow" />
-          {running && <button type="button" class="ghost small" onClick={() => post('stop')}>Stop</button>}
-          <button type="submit" class="primary small" disabled={!text.trim()}>Send</button>
-        </div>
       </form>
     </section>
   );
