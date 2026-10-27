@@ -171,7 +171,7 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer): Prom
 
   // Two boots, nearest-first by size; a figure in long trousers or a dress may show none.
   const feet = boots.map(inPerson).filter((b) => maskArea(b) > H * 2).sort((a, b) => maskArea(b) - maskArea(a)).slice(0, 2);
-  if (feet.length < 2) issues.push(`found ${feet.length} boot(s), legs end at the knee split instead`);
+  if (feet.length < 2) issues.push(`found ${feet.length} boot(s), bare feet stay on the shins`);
   const footless = (m: Mask) => feet.reduce((acc, f) => subtract(acc, f), m);
   // The lower body without the feet: SAM's trousers, else every leg it found.
   const lower = footless(inPerson(trousers[0] ?? unionAll(W, Hh, legsFound)));
@@ -207,7 +207,7 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer): Prom
   }
   // Each boot belongs to the leg it touches most.
   const touching = (legMask: Mask, f: Mask) => overlap(dilate(legMask, 4), f);
-  const [nearBoot, farBoot] = feet.length === 2 && touching(near, feet[1]) > touching(near, feet[0]) ? [feet[1], feet[0]] : [feet[0], feet[1] ?? emptyMask(W, Hh)];
+  const [nearBoot, farBoot] = feet.length === 2 && touching(near, feet[1]) > touching(near, feet[0]) ? [feet[1], feet[0]] : [feet[0] ?? emptyMask(W, Hh), feet[1] ?? emptyMask(W, Hh)];  // barefoot: no boots at all
 
   const handMasks = (await find('hand')).map(inPerson);
   // SAM's arm often stops at the cuff; each hand joins the arm it touches.
