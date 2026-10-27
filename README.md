@@ -63,6 +63,8 @@ On the Start screen, **Drawings and voices** makes a world from what children dr
 2. **The story, told**: press **Record**, let a child tell their piece, press again. Each clip is kept in `told/` and heard at once by Muse Voice Transcribe (`told/<clip>.txt`, in any language it hears; long clips are cut at pauses).
 3. **Write the story**: Spark reads every drawing (hero, character, item to pick up, thing in a place, or place; change any with its menu, say who the hero is) and joins what the children said into a short story in their language. Edit it, then **Build their game**.
 
+The workshop screens speak Polish by default, every word the children see included (the EN/PL button beside the tabs switches them; the story is then written in Polish whatever was spoken). While their game builds, a full-screen show plays: each drawing beside what it became, every place the moment it is painted, the story read aloud, and their hero walking a road to the finish flag as the build goes on. When the game is ready, one big **Zagrajmy!** starts it on the whole screen.
+
 The world keeps every drawing under its key (`drawings.json`): characters are painted from their drawing (`cast`), places and the things drawn in them follow theirs (`paint`), and the style is their crayons come alive. A world with drawings or recordings is for kids (`audience: kids` in world.json): the story is gentle and simple, every line is voiced since the players cannot read, and the text is in the language they spoke (`language`). From a terminal: `diorama build <slug> --drawings photos/ --told recordings/ --places 3`, with no idea, or an idea of your own instead of the recordings.
 
 ## Sound

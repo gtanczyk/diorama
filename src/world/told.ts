@@ -79,11 +79,11 @@ export const Idea = z.object({ language: z.string().min(2), title: z.string().mi
 export type Idea = z.infer<typeof Idea>;
 
 /** Spark turns what the children said (messy, several voices, half sentences) and drew into one short idea. */
-export async function ideaFromTold(memo: Memo, said: string[], drawn: Drawn[], note = ''): Promise<Idea> {
+export async function ideaFromTold(memo: Memo, said: string[], drawn: Drawn[], note = '', language?: string): Promise<Idea> {
   const prompt = `Children of 5 and 6 are making a 2D point-and-click adventure game together. ${said.length ? `They told their story into a microphone; this is what the speech recogniser heard, recording by recording (it mishears children, so read through the mistakes):
 ${said.map((s, i) => `${i + 1}. """${s}"""`).join('\n')}` : 'They did not tell it aloud: their drawings are the story.'}
 ${drawn.length ? `\nThey also drew:\n${drawn.map((d) => `- ${d.kind} "${d.key}": ${d.looks}`).join('\n')}\n` : ''}${note ? `\nThe grown-up running the workshop adds: ${note}\n` : ''}
-Write the idea of their game: who the hero is, where it happens, what goes wrong and how it gets put right, in 4 to 6 short sentences. Keep every idea of theirs that fits one story, and every drawing; join them kindly, add only what the story needs to hang together. Nothing scary or sad; a happy ending. Write it in the language the children spoke (with no recordings, the language of the grown-up's note, else English).
+Write the idea of their game: who the hero is, where it happens, what goes wrong and how it gets put right, in 4 to 6 short sentences. Keep every idea of theirs that fits one story, and every drawing; join them kindly, add only what the story needs to hang together. Nothing scary or sad; a happy ending. ${language ? `Write it in ${language}: the workshop is held in ${language}.` : "Write it in the language the children spoke (with no recordings, the language of the grown-up's note, else English)."}
 
 ${drawn.some((d) => d.kind === 'hero' || d.kind === 'npc') ? `The hero is one of the drawn characters (${[...new Set(drawn.filter((d) => d.kind === 'hero' || d.kind === 'npc').map((d) => d.key))].join(', ')}): the one their story is most about.\n` : ''}
 Reply with JSON only: {"language": "the language they spoke, in English, like Polish", "title": "a short title in that language", "idea": "...", "hero": "<key of the drawn character who is the hero, if any>"}`;

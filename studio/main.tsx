@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { askAgent, call, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
 import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
-import { KidsStart, KidsWait } from './kids.tsx';
+import { KidsStart, KidsWait, polish, setPolish, t } from './kids.tsx';
 import { StoryView } from './story.tsx';
 import { PlaceEditor } from './place.tsx';
 
@@ -117,7 +117,8 @@ function Share({ slug, jobs, onError }: { slug: string; jobs: Job[]; onError: (m
   );
 }
 
-function Header({ world, live }: { world?: string; live?: boolean }) {
+/** In a workshop run in Polish (pl), the header says nothing in English. */
+function Header({ world, live, pl }: { world?: string; live?: boolean; pl?: boolean }) {
   return (
     <header class="top">
       <a href="/" class="brand" onClick={(e) => (e.preventDefault(), go('/'))}>
@@ -127,8 +128,8 @@ function Header({ world, live }: { world?: string; live?: boolean }) {
       {world && <><span class="sep">/</span><span class="crumb">{world}</span></>}
       <span class="grow" />
       {live !== undefined && <span class={`live ${live ? 'on' : ''}`}>{live ? 'live' : 'reconnecting'}</span>}
-      <label class="follow"><input type="checkbox" checked={followAgent.value} onChange={(e) => (followAgent.value = e.currentTarget.checked)} /> Follow agent</label>
-      <a href="/setup" class="navlink" onClick={(e) => (e.preventDefault(), go('/setup'))}>Setup</a>
+      <label class="follow"><input type="checkbox" checked={followAgent.value} onChange={(e) => (followAgent.value = e.currentTarget.checked)} /> {pl ? 'Śledź agenta' : 'Follow agent'}</label>
+      <a href="/setup" class="navlink" onClick={(e) => (e.preventDefault(), go('/setup'))}>{pl ? 'Ustawienia' : 'Setup'}</a>
     </header>
   );
 }
@@ -260,30 +261,34 @@ function Start() {
       setError((err as Error).message);
     }
   };
+  // A workshop run in Polish shows no English: the children may be looking.
+  const pl = kids && polish.value;
+  const say = (inPolish: string, english: string) => (pl ? inPolish : english);
   const shown = (worlds ?? []).filter((w) => !query || `${w.title} ${w.slug} ${w.pitch ?? ''}`.toLowerCase().includes(query.toLowerCase()));
   return (
     <>
-      <Header />
+      <Header pl={pl} />
       <main class="wide">
         {needs.length > 0 && (
           <a class="banner" href="/setup" onClick={(e) => (e.preventDefault(), go('/setup'))}>
-            Setup: {needs.map((n) => n.label).join(', ')} {needs.length > 1 ? 'are' : 'is'} missing. Open Setup →
+            {say(`Ustawienia: brakuje ${needs.map((n) => n.label).join(', ')}. Otwórz ustawienia →`, `Setup: ${needs.map((n) => n.label).join(', ')} ${needs.length > 1 ? 'are' : 'is'} missing. Open Setup →`)}
           </a>
         )}
         <form class="idea" onSubmit={build}>
           <div class="row">
-            <h1 class="grow">{kids ? 'A game from children\'s drawings' : 'What should the world be?'}</h1>
+            <h1 class="grow">{kids ? say('Gra z dziecięcych rysunków', 'A game from children\'s drawings') : 'What should the world be?'}</h1>
             <div class="tabs">
-              <button type="button" class={`ghost small${kids ? '' : ' on'}`} onClick={() => (setKids(false), setPlaces(4))}>Describe it</button>
-              <button type="button" class={`ghost small${kids ? ' on' : ''}`} onClick={() => (setKids(true), setPlaces(3))}>Drawings and voices</button>
+              <button type="button" class={`ghost small${kids ? '' : ' on'}`} onClick={() => (setKids(false), setPlaces(4))}>{say('Opisz', 'Describe it')}</button>
+              <button type="button" class={`ghost small${kids ? ' on' : ''}`} onClick={() => (setKids(true), setPlaces(3))}>{say('Rysunki i głosy', 'Drawings and voices')}</button>
+              {kids && <button type="button" class="ghost small" title={say('Warsztat po angielsku', 'Run the workshop in Polish')} onClick={() => setPolish(!polish.value)}>{polish.value ? 'EN' : 'PL'}</button>}
             </div>
           </div>
           {!kids && <textarea rows={3} placeholder="A lighthouse keeper's last night before the foghorn is switched off for good…" value={idea} onInput={(e) => setIdea(e.currentTarget.value)} />}
           {(() => {
             const settings = (
               <div class="row">
-                <label>Name <input value={name} onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
-                <label>Places <select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
+                <label>{say('Nazwa', 'Name')} <input value={name} onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
+                <label>{say('Miejsca', 'Places')} <select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
                 <span class="grow" />
                 {!kids && <button type="submit" class="primary" disabled={idea.trim().length < 10 || !!taken || noKey}>{taken ? 'Name taken' : noKey ? 'Needs the Meta key' : 'Build it'}</button>}
               </div>
@@ -298,11 +303,11 @@ function Start() {
         </form>
         <section>
           <div class="row">
-            <h2>Worlds{worlds ? ` · ${worlds.length}` : ''}</h2>
+            <h2>{say('Światy', 'Worlds')}{worlds ? ` · ${worlds.length}` : ''}</h2>
             <span class="grow" />
-            {(worlds?.length ?? 0) > 6 && <input type="search" placeholder="Find a world" value={query} onInput={(e) => setQuery(e.currentTarget.value)} />}
+            {(worlds?.length ?? 0) > 6 && <input type="search" placeholder={say('Znajdź świat', 'Find a world')} value={query} onInput={(e) => setQuery(e.currentTarget.value)} />}
           </div>
-          {worlds && worlds.length === 0 && <p class="note">No worlds yet. Describe one above.</p>}
+          {worlds && worlds.length === 0 && <p class="note">{say('Nie ma jeszcze światów.', 'No worlds yet. Describe one above.')}</p>}
           <ul class="worlds">
             {shown.map((w) => (
               <li>
@@ -314,7 +319,7 @@ function Start() {
                 }}>
                   {w.cover ? <img src={fileUrl(w.slug, w.cover.file, w.cover.v)} alt="" loading="lazy" /> : <div class="noimg" />}
                   <strong>{w.title}</strong>
-                  <span class="detail">{w.issue ?? `${w.places} places · ${w.playable} playable`}</span>
+                  <span class="detail">{w.issue === 'no world.json yet' && pl ? 'jeszcze niezbudowany' : w.issue ?? say(`miejsca: ${w.places} · grywalne: ${w.playable}`, `${w.places} places · ${w.playable} playable`)}</span>
                 </a>
               </li>
             ))}
@@ -356,7 +361,7 @@ function Workshop({ slug }: { slug: string }) {
   const [tick, setTick] = useState(0);
   /** Right after an undo the person can take it back. */
   const [canRedo, setCanRedo] = useState(false);
-  const [playing, setPlaying] = useState<{ place?: string; round?: number } | null>(null);
+  const [playing, setPlaying] = useState<{ place?: string; round?: number; full?: boolean } | null>(null);
   const [view, setView] = useState<'places' | 'story' | 'cast'>('places');
   const [notes, setNotes] = useState<Note[]>([]);
   const [budget, setBudget] = useState<Budget | null>(null);
@@ -461,7 +466,7 @@ function Workshop({ slug }: { slug: string }) {
       <Header world={slug} live={live} />
       {shown && status && <KidsWait slug={slug} places={status.placeDetail} progress={total ? 1 - left / total : 0} left={shown.state === 'running' ? left : null}
         ready={shown.state === 'done' && playable} failed={shown.state === 'failed' || shown.state === 'cancelled'}
-        onPlay={() => (setHidden(shown.id), setPlaying({}))} onHide={() => setHidden(shown.id)} />}
+        onPlay={() => (setHidden(shown.id), setPlaying({ full: true }))} onHide={() => setHidden(shown.id)} />}
       <main class="workshop">
         <div class="left">
           <div class="row">
@@ -484,7 +489,7 @@ function Workshop({ slug }: { slug: string }) {
           {job && status && <JobProgress job={job} plan={jobPlan} build={status.build} typical={status.typical ?? {}} running={running} done={jobDone} last={jobTail} />}
           {failed && !job && <Failed slug={slug} job={failed} noAgent={noAgent} onError={setError} onPlace={setFocus} />}
           {budget?.over && <p class="banner">Budget: ${budget.total.usd} spent of the ${budget.limitUsd} limit. Check Setup before the next big build.</p>}
-          {playing && <Play slug={slug} place={playing.place} round={playing.round ?? 0} onRestart={() => setPlaying({ ...playing, round: (playing.round ?? 0) + 1 })} version={tick} onLine={playLine} onError={setError} />}
+          {playing && <Play slug={slug} place={playing.place} round={playing.round ?? 0} full={playing.full} onRestart={() => setPlaying({ ...playing, round: (playing.round ?? 0) + 1 })} version={tick} onLine={playLine} onError={setError} />}
           <ol class="steps" aria-label="Build steps">
             {steps.map((s) => <li class={stepState(s)} title={status?.build[s] ? `${status.build[s].seconds}s` : undefined}><Mark state={stepState(s)} />{s}</li>)}
           </ol>
@@ -545,11 +550,13 @@ function Workshop({ slug }: { slug: string }) {
 }
 
 /** The game in a frame: the same page `diorama play` serves. What happens in it goes to Activity. */
-function Play({ slug, place, round, onRestart, version, onLine, onError }: { slug: string; place?: string; round: number; onRestart: () => void; version: number; onLine: (t: string) => void; onError: (m: string) => void }) {
+function Play({ slug, place, round, full, onRestart, version, onLine, onError }: { slug: string; place?: string; round: number; full?: boolean; onRestart: () => void; version: number; onLine: (t: string) => void; onError: (m: string) => void }) {
   const [fresh, setFresh] = useState(true);
   const [loadedAt, setLoadedAt] = useState(version);
   const loadedTime = useRef(0);
   const frame = useRef<HTMLIFrameElement>(null);
+  // Started from the children's Let's play: straight onto the whole screen, still inside the click that asked for it.
+  useEffect(() => void (full && frame.current?.requestFullscreen().then(() => frame.current?.focus()).catch(() => {})), []);
   // The refresh that follows a reload (an undo, a finished job) is not a change since the game started.
   useEffect(() => void (version !== loadedAt && (Date.now() - loadedTime.current < 3000 ? setLoadedAt(version) : setFresh(false))), [version]);
   // Gamepads: all steer one hero, take turns, or each steers its own hero (a party); kept for the next visit.

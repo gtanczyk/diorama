@@ -2,6 +2,7 @@
 // the paper), recordings of them telling the story, and the idea Spark writes from both; then the usual build.
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { signal } from '@preact/signals';
 import { call, fileUrl } from './api.ts';
 
 type Drawn = { kind: string; key: string; looks: string };
@@ -13,7 +14,29 @@ type Material = {
   built: boolean;
 };
 
-const KIND: Record<string, string> = { hero: 'Hero', player: 'Another hero (one per gamepad)', npc: 'Character', item: 'Item to pick up', prop: 'Thing in a place', place: 'Place' };
+/** A workshop is run in Polish (the default) or English: every word the children and the grown-up see on its screens. */
+export const polish = signal(read() !== 'en');
+function read() {
+  try {
+    return localStorage.getItem('diorama.workshop.lang');
+  } catch {
+    return null;
+  }
+}
+export function setPolish(on: boolean) {
+  polish.value = on;
+  try {
+    localStorage.setItem('diorama.workshop.lang', on ? 'pl' : 'en');
+  } catch {
+    // A private window keeps it for this visit only.
+  }
+}
+/** The Polish or the English words, as the workshop is run. */
+export const t = (pl: string, en: string) => (polish.value ? pl : en);
+
+const KIND = (): Record<string, string> => polish.value
+  ? { hero: 'Bohater', player: 'Drugi bohater (na drugi pad)', npc: 'Postać', item: 'Rzecz do zabrania', prop: 'Coś w miejscu', place: 'Miejsce' }
+  : { hero: 'Hero', player: 'Another hero (one per gamepad)', npc: 'Character', item: 'Item to pick up', prop: 'Thing in a place', place: 'Place' };
 
 /** A photo shrunk to 1600 px as JPEG, so a phone picture travels light; what the browser cannot read goes as it is. */
 async function shrink(file: Blob): Promise<string> {
@@ -40,7 +63,7 @@ function base64(blob: Blob): Promise<string> {
 }
 
 /** The webcam held up to a drawing: a live preview and a button that keeps one frame. */
-export function Camera({ onSnap, onClose, tip = 'Hold the drawing up to the camera, flat and filling the picture.' }: { onSnap: (jpeg: string) => void; onClose: () => void; tip?: string }) {
+export function Camera({ onSnap, onClose, tip = 'Hold the drawing up to the camera, flat and filling the picture.', words = { snap: 'Take the photo', done: 'Done', none: 'No camera' } }: { onSnap: (jpeg: string) => void; onClose: () => void; tip?: string; words?: { snap: string; done: string; none: string } }) {
   const video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -48,7 +71,7 @@ export function Camera({ onSnap, onClose, tip = 'Hold the drawing up to the came
     navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 } } }).then((s) => {
       stream = s;
       if (video.current) video.current.srcObject = s;
-    }).catch((e) => setError(`No camera: ${e.message}`));
+    }).catch((e) => setError(`${words.none}: ${e.message}`));
     return () => stream?.getTracks().forEach((t) => t.stop());
   }, []);
   const snap = () => {
@@ -64,8 +87,8 @@ export function Camera({ onSnap, onClose, tip = 'Hold the drawing up to the came
     <div class="camera">
       {error ? <p class="error">{error}</p> : <video ref={video} autoPlay playsInline muted />}
       <div class="row">
-        <button type="button" class="primary" onClick={snap} disabled={!!error}>Take the photo</button>
-        <button type="button" class="ghost" onClick={onClose}>Done</button>
+        <button type="button" class="primary" onClick={snap} disabled={!!error}>{words.snap}</button>
+        <button type="button" class="ghost" onClick={onClose}>{words.done}</button>
         <span class="detail">{tip}</span>
       </div>
     </div>
@@ -100,14 +123,14 @@ function Recorder({ onClip, big }: { onClip: (blob: Blob, ext: string) => void; 
       setSeconds(0);
       setRec(r);
     } catch (e) {
-      setError(`No microphone: ${(e as Error).message}`);
+      setError(`${t('Brak mikrofonu', 'No microphone')}: ${(e as Error).message}`);
     }
   };
   const stop = () => (rec?.stop(), setRec(null));
   return (
     <div class="row">
-      <button type="button" class={`record${rec ? ' on' : big ? ' primary' : ''}`} onClick={rec ? stop : start}>{rec ? `■ Stop · ${seconds} s` : '● Record'}</button>
-      <span class="detail">{rec ? 'Listening… one child at a time, close to the microphone.' : 'One child at a time tells a piece of the story, a minute or two at most.'}</span>
+      <button type="button" class={`record${rec ? ' on' : big ? ' primary' : ''}`} onClick={rec ? stop : start}>{rec ? `■ ${t('Stop', 'Stop')} · ${seconds} s` : `● ${t('Nagrywaj', 'Record')}`}</button>
+      <span class="detail">{rec ? t('Słucham… jedno dziecko naraz, blisko mikrofonu.', 'Listening… one child at a time, close to the microphone.') : t('Jedno dziecko naraz opowiada kawałek historii, najwyżej minutę lub dwie.', 'One child at a time tells a piece of the story, a minute or two at most.')}</span>
       {error && <span class="error">{error}</span>}
     </div>
   );
@@ -154,7 +177,7 @@ export function KidsStart({ slug, taken, onBuild, onError, children }: { slug: s
       setPainting((p) => p.filter((x) => x !== file));
     }
   };
-  const keep = (name: string, data: () => Promise<string>) => void work(`Reading ${name}`, async () => {
+  const keep = (name: string, data: () => Promise<string>) => void work(t('Czytam rysunek', `Reading ${name}`), async () => {
     const kept = await call<{ file: string }>('kids_add', { slug, kind: 'drawing', name, data: await data() });
     void bringToLife(kept.file);
   });
@@ -163,14 +186,14 @@ export function KidsStart({ slug, taken, onBuild, onError, children }: { slug: s
   };
   const snapped = (jpeg: string) => keep(`camera-${Date.now() % 100000}.jpg`, async () => jpeg);
   /** Each recording is heard, and (when the story grows) the story is written again with it and read aloud. */
-  const recorded = (blob: Blob, ext: string) => void work('Hearing the recording', async () => {
+  const recorded = (blob: Blob, ext: string) => void work(t('Słucham nagrania', 'Hearing the recording'), async () => {
     await call('kids_add', { slug, kind: 'told', name: `story.${ext}`, data: await base64(blob) });
     if (grow) await writeNow();
   });
-  const setKind = (file: string, kind: string | null) => void work('Changing what it is', () => call('kids_kind', { slug, file, kind }));
-  const remove = (file: string) => void work('Taking it out', () => call('kids_remove', { slug, file }));
+  const setKind = (file: string, kind: string | null) => void work(t('Zmieniam', 'Changing what it is'), () => call('kids_kind', { slug, file, kind }));
+  const remove = (file: string) => void work(t('Usuwam', 'Taking it out'), () => call('kids_remove', { slug, file }));
   const writeNow = async () => {
-    const s = await call<Material>('kids_idea', { slug, note: note.trim() || undefined });
+    const s = await call<Material>('kids_idea', { slug, note: note.trim() || undefined, ...(polish.value && { language: 'Polish' }) });
     if (s.idea) setIdea(s.idea.idea);
     setM(s);
     if (s.reading) {
@@ -181,11 +204,11 @@ export function KidsStart({ slug, taken, onBuild, onError, children }: { slug: s
       } catch {}
     }
   };
-  const write = () => void work('Writing the story', writeNow);
+  const write = () => void work(t('Piszę historię', 'Writing the story'), writeNow);
   const big = m?.drawings.find((d) => d.file === shown && d.preview);
   const [editing, setEditing] = useState(false);
-  if (taken && m && m.built) return <p class="note">{slug} is already built: pick another name for a new workshop world.</p>;
-  if (!m) return <p class="note">Loading…</p>;
+  if (taken && m && m.built) return <p class="note">{t(`${slug} jest już zbudowany: wybierz inną nazwę pod „Więcej”.`, `${slug} is already built: pick another name for a new workshop world.`)}</p>;
+  if (!m) return <p class="note">{t('Wczytuję…', 'Loading…')}</p>;
   // One step at a time: the next one lights up when the one before has something in it.
   const drew = m.drawings.length > 0;
   const told = m.told.length > 0 || !!m.idea;
@@ -194,49 +217,49 @@ export function KidsStart({ slug, taken, onBuild, onError, children }: { slug: s
     <div class="kids">
       {busy.length > 0 && <p class="busy" aria-live="polite">{busy[busy.length - 1]}…</p>}
       <section class={`card${step === 1 ? ' now' : ''}`}>
-        <h2><span class="n">{drew ? '✓' : '1'}</span> Their drawings</h2>
+        <h2><span class="n">{drew ? '✓' : '1'}</span> {t('Rysunki', 'Their drawings')}</h2>
         <div class="row big">
-          <button type="button" class={step === 1 ? 'primary' : 'ghost'} onClick={() => setCamera(!camera)}>📷 {camera ? 'Close the camera' : 'Take a photo'}</button>
+          <button type="button" class={step === 1 ? 'primary' : 'ghost'} onClick={() => setCamera(!camera)}>📷 {camera ? t('Zamknij aparat', 'Close the camera') : t('Zrób zdjęcie', 'Take a photo')}</button>
           <label class="button ghost">
             <input type="file" accept="image/*" multiple onChange={(e) => (addPhotos(e.currentTarget.files), (e.currentTarget.value = ''))} />
-            Add photos
+            {t('Dodaj zdjęcia', 'Add photos')}
           </label>
         </div>
-        {camera && <Camera onSnap={snapped} onClose={() => setCamera(false)} />}
+        {camera && <Camera onSnap={snapped} onClose={() => setCamera(false)} tip={t('Trzymaj rysunek przed kamerą, płasko, na cały kadr.', 'Hold the drawing up to the camera, flat and filling the picture.')} words={{ snap: t('Pstryk!', 'Take the photo'), done: t('Gotowe', 'Done'), none: t('Brak kamery', 'No camera') }} />}
         <div class="drawings"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => (e.preventDefault(), addPhotos(e.dataTransfer?.files ?? null))}>
           {m.drawings.map((d) => (
             <figure class={painting.includes(d.file) ? 'painting' : ''}>
-              <button type="button" class="pic" title={d.preview ? 'Show it big' : ''} onClick={() => d.preview && setShown(d.file)}>
+              <button type="button" class="pic" title={d.preview ? t('Pokaż w dużym', 'Show it big') : ''} onClick={() => d.preview && setShown(d.file)}>
                 <img src={fileUrl(slug, d.file, d.v)} alt="" />
                 {d.preview && <img class={`alive${d.drawn?.kind === 'place' ? ' place' : ''}`} src={fileUrl(slug, d.preview.file, d.preview.v)} alt="" />}
-                {painting.includes(d.file) && <span class="spark">Coming to life…</span>}
+                {painting.includes(d.file) && <span class="spark">{t('Ożywa…', 'Coming to life…')}</span>}
               </button>
               <figcaption>
-                <select value={d.drawn?.kind ?? ''} title={d.drawn ? `${d.drawn.key}: ${d.drawn.looks}` : 'What it is in the game'} onChange={(e) => setKind(d.file, e.currentTarget.value || null)}>
-                  <option value="">{d.drawn ? `${KIND[d.drawn.kind] ?? d.drawn.kind}?` : 'Reading…'}</option>
-                  {Object.entries(KIND).map(([k, label]) => <option value={k}>{label}</option>)}
+                <select value={d.drawn?.kind ?? ''} title={d.drawn ? `${d.drawn.key}: ${d.drawn.looks}` : t('Czym jest w grze', 'What it is in the game')} onChange={(e) => setKind(d.file, e.currentTarget.value || null)}>
+                  <option value="">{d.drawn ? `${KIND()[d.drawn.kind] ?? d.drawn.kind}?` : t('Czytam…', 'Reading…')}</option>
+                  {Object.entries(KIND()).map(([k, label]) => <option value={k}>{label}</option>)}
                 </select>
               </figcaption>
-              <button type="button" class="ghost small" title="Take out" onClick={() => remove(d.file)}>×</button>
+              <button type="button" class="ghost small" title={t('Usuń', 'Take out')} onClick={() => remove(d.file)}>×</button>
             </figure>
           ))}
-          {!drew && <p class="detail empty">Photograph each drawing, flat and filling the picture. Each one comes to life in about half a minute. You can also drop photos here.</p>}
+          {!drew && <p class="detail empty">{t('Sfotografuj każdy rysunek, płasko, na cały kadr. Każdy ożyje po mniej więcej pół minucie. Zdjęcia można też tu upuścić.', 'Photograph each drawing, flat and filling the picture. Each one comes to life in about half a minute. You can also drop photos here.')}</p>}
         </div>
       </section>
       <section class={`card${step === 2 ? ' now' : ''}`}>
-        <h2><span class="n">{m.idea ? '✓' : '2'}</span> The story, told</h2>
+        <h2><span class="n">{m.idea ? '✓' : '2'}</span> {t('Opowiadanie', 'The story, told')}</h2>
         <Recorder onClip={recorded} big={step === 2} />
         {m.told.length > 0 && (
           <details class="told">
-            <summary class="detail">{m.told.length} recording{m.told.length === 1 ? '' : 's'}: what was heard</summary>
+            <summary class="detail">{t(`Nagrania: ${m.told.length}, co usłyszałem`, `${m.told.length} recording${m.told.length === 1 ? '' : 's'}: what was heard`)}</summary>
             <ul>
-              {m.told.map((t) => (
+              {m.told.map((clip) => (
                 <li>
-                  <audio controls preload="none" src={fileUrl(slug, t.file)} />
-                  <span class="grow">{t.text ?? <span class="detail">not heard yet</span>}</span>
-                  <button type="button" class="ghost small" title="Take out" onClick={() => remove(t.file)}>×</button>
+                  <audio controls preload="none" src={fileUrl(slug, clip.file)} />
+                  <span class="grow">{clip.text ?? <span class="detail">{t('jeszcze nie usłyszane', 'not heard yet')}</span>}</span>
+                  <button type="button" class="ghost small" title={t('Usuń', 'Take out')} onClick={() => remove(clip.file)}>×</button>
                 </li>
               ))}
             </ul>
@@ -244,37 +267,37 @@ export function KidsStart({ slug, taken, onBuild, onError, children }: { slug: s
         )}
       </section>
       <section class={`card${step === 3 ? ' now' : ''}`}>
-        <h2><span class="n">3</span> {m.idea ? m.idea.title : 'Their game'}</h2>
+        <h2><span class="n">3</span> {m.idea ? m.idea.title : t('Ich gra', 'Their game')}</h2>
         {m.idea ? (
           <>
             {m.reading && <audio controls preload="none" src={fileUrl(slug, m.reading.file, m.reading.v)} />}
             {editing
               ? <textarea rows={5} value={idea} onInput={(e) => setIdea(e.currentTarget.value)} />
-              : <p class="story" onClick={() => setEditing(true)} title="Click to change">{idea}</p>}
+              : <p class="story" onClick={() => setEditing(true)} title={t('Kliknij, żeby zmienić', 'Click to change')}>{idea}</p>}
           </>
-        ) : <p class="detail">{drew || told ? 'The story is written from the recordings and drawings, and read aloud.' : 'The story appears here once they have drawn and told it.'}</p>}
+        ) : <p class="detail">{drew || told ? t('Historia powstanie z nagrań i rysunków i zostanie przeczytana na głos.', 'The story is written from the recordings and drawings, and read aloud.') : t('Historia pojawi się tu, gdy dzieci narysują i opowiedzą.', 'The story appears here once they have drawn and told it.')}</p>}
         <div class="row big">
-          {!m.idea && <button type="button" class="ghost" onClick={write} disabled={busy.length > 0 || (!drew && !told)}>Write the story</button>}
+          {!m.idea && <button type="button" class="ghost" onClick={write} disabled={busy.length > 0 || (!drew && !told)}>{t('Napisz historię', 'Write the story')}</button>}
           <span class="grow" />
-          <button type="button" class="primary" disabled={idea.trim().length < 10 || busy.length > 0 || m.built} onClick={() => onBuild(idea.trim())}>Build their game</button>
+          <button type="button" class="primary" disabled={idea.trim().length < 10 || busy.length > 0 || m.built} onClick={() => onBuild(idea.trim())}>{t('Budujemy grę!', 'Build their game')}</button>
         </div>
       </section>
       <details class="more">
-        <summary>More</summary>
+        <summary>{t('Więcej', 'More')}</summary>
         {children}
         <div class="row">
-          <input class="grow" placeholder="Anything to add (optional): 'the cat finds the hat', 'make it funny'" value={note} onInput={(e) => setNote(e.currentTarget.value)} />
-          <button type="button" class="ghost" onClick={write} disabled={busy.length > 0 || (!drew && !told)}>{m.idea ? 'Write it again' : 'Write the story'}</button>
+          <input class="grow" placeholder={t('Coś do dodania (nieobowiązkowe): „kotek znajduje czapkę”, „niech będzie śmiesznie”', "Anything to add (optional): 'the cat finds the hat', 'make it funny'")} value={note} onInput={(e) => setNote(e.currentTarget.value)} />
+          <button type="button" class="ghost" onClick={write} disabled={busy.length > 0 || (!drew && !told)}>{m.idea ? t('Napisz od nowa', 'Write it again') : t('Napisz historię', 'Write the story')}</button>
         </div>
-        <label class="detail"><input type="checkbox" checked={grow} onChange={(e) => setGrow(e.currentTarget.checked)} /> The story is written again after every recording and read aloud</label>
-        {m.idea && !editing && <button type="button" class="ghost small" onClick={() => setEditing(true)}>Change the story text</button>}
+        <label class="detail"><input type="checkbox" checked={grow} onChange={(e) => setGrow(e.currentTarget.checked)} /> {t('Po każdym nagraniu historia pisze się od nowa i jest czytana na głos', 'The story is written again after every recording and read aloud')}</label>
+        {m.idea && !editing && <button type="button" class="ghost small" onClick={() => setEditing(true)}>{t('Zmień tekst historii', 'Change the story text')}</button>}
       </details>
       {big && (
         <div class="show" onClick={() => setShown(null)}>
           <img src={fileUrl(slug, big.file, big.v)} alt="" />
           <span class="arrow">→</span>
           <img class={`alive${big.drawn?.kind === 'place' ? ' place' : ''}`} src={fileUrl(slug, big.preview!.file, big.preview!.v)} alt="" />
-          <p>{big.drawn?.kind === 'hero' ? 'Our hero' : big.drawn?.kind === 'player' ? `A hero for a gamepad: ${big.drawn.key.replace(/-/g, ' ')}` : big.drawn?.key.replace(/-/g, ' ')} · click to close</p>
+          <p>{big.drawn?.kind === 'hero' ? t('Nasz bohater', 'Our hero') : big.drawn?.kind === 'player' ? t('Bohater na drugi pad', `A hero for a gamepad: ${big.drawn.key.replace(/-/g, ' ')}`) : polish.value ? '' : big.drawn?.key.replace(/-/g, ' ')}</p>
         </div>
       )}
     </div>
@@ -311,7 +334,7 @@ export function KidsWait({ slug, places, progress, left, ready, failed, onPlay, 
   useEffect(() => void call<Material>('kids_status', { slug }).then(setM).catch(() => {}), [slug]);
   // The world step names the characters in the children's language; read it again as places arrive.
   useEffect(() => void fetch(fileUrl(slug, 'world.json', Date.now())).then((r) => (r.ok ? r.json() : null)).then(setWorld).catch(() => {}), [slug, painted]);
-  const words = WAIT_WORDS[m?.idea?.language === 'Polish' ? 'Polish' : 'English'];
+  const words = WAIT_WORDS[polish.value || m?.idea?.language === 'Polish' ? 'Polish' : 'English'];
   // English keys are for the painters; in another language a thing goes unnamed until the world step names it.
   const name = (key: string) => world?.names?.[key] ?? (words === WAIT_WORDS.English ? key.replace(/-/g, ' ') : '');
   const slides: Slide[] = [

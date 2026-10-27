@@ -116,13 +116,13 @@ defineAction({
   name: 'kids_idea',
   description: 'Write the idea of a workshop world from everything the children said and drew: Spark joins what they told and drew into one short story in their language, says which drawn character is the hero, and a storyteller voice reads it aloud (idea.mp3). '
     + 'The idea can be edited before world_build.',
-  input: z.object({ slug: Slug, note: z.string().max(2000).optional().describe('what the grown-up adds or wants'), read: z.boolean().optional().describe('read it aloud (idea.mp3); default true') }),
-  async run({ slug, note, read }, ctx) {
+  input: z.object({ slug: Slug, note: z.string().max(2000).optional().describe('what the grown-up adds or wants'), read: z.boolean().optional().describe('read it aloud (idea.mp3); default true'), language: z.string().min(2).max(30).optional().describe('the workshop\'s language ("Polish"), whatever was spoken') }),
+  async run({ slug, note, read, language }, ctx) {
     const files = new WorldFiles(slug, ctx.root);
     const said = await hearAll(files);
     if (said.length === 0 && drawingFiles(files).length === 0) throw new ActionError(400, 'record the children telling their story or add a drawing first');
     const drawn = await readDrawings(files.memo, files);
-    const idea = await ideaFromTold(files.memo, said.map((s) => s.text), drawn, note ?? '');
+    const idea = await ideaFromTold(files.memo, said.map((s) => s.text), drawn, note ?? '', language);
     // The story says who leads, unless the grown-up picked the hero.
     if (idea.hero && !Object.values(readKinds(files)).includes('hero')) oneHero(drawn, idea.hero);
     await serial(slug, async () => {
