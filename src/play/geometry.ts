@@ -155,8 +155,15 @@ export function stepFootY(g: Geometry, x: number, y: number): number {
   return y;
 }
 
-/** A walker's resting y on stairs: the middle of the tread band it is in, so nobody stops mid-step. */
-export function stepRestY(g: Geometry, x: number, y: number): number {
-  for (const [t, b] of stepBands(g, x)) if (y >= t && y <= b) return (t + b) / 2;
+/**
+ * A walker's resting y on stairs: where it is when the feet stand on a tread, otherwise the next spot
+ * ahead (`dir` -1 walking up the picture, 1 down) where they do, so nobody stops mid-step or steps back.
+ */
+export function stepRestY(g: Geometry, x: number, y: number, dir = 1): number {
+  const flat = (v: number) => Math.abs(stepFootY(g, x, v + 1) - stepFootY(g, x, v - 1)) < 0.01;
+  const bands = stepBands(g, x);
+  if (!bands.length || flat(y)) return y;
+  const step = dir < 0 ? -1 : 1;
+  for (let v = y + step; v > bands[0][0] - 2 && v < bands[bands.length - 1][1] + 2; v += step) if (flat(v)) return v;
   return y;
 }

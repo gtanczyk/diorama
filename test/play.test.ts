@@ -84,6 +84,13 @@ test('on stairs the feet rest on each tread and step over the risers', () => {
   expect(stepFootY(g, 110, 666)).toBeCloseTo(stepFootY(g, 110, 680));
   const ys = Array.from({ length: 151 }, (_, i) => stepFootY(g, 110, 600 + i));
   for (let i = 1; i < ys.length; i++) expect(ys[i]).toBeGreaterThanOrEqual(ys[i - 1] - 1e-9);
-  expect(stepRestY(g, 110, 690)).toBe(675);
+  // On a tread the walker stays; on a riser it goes on to the next tread the way it walks.
+  expect(stepRestY(g, 110, 675)).toBe(675);
+  const up = stepRestY(g, 110, 645, -1);
+  const down = stepRestY(g, 110, 645, 1);
+  expect(up).toBeLessThan(645);
+  expect(down).toBeGreaterThan(645);
+  expect(stepFootY(g, 110, up)).toBeCloseTo(stepFootY(g, 110, up - 1));
+  expect(stepFootY(g, 110, down)).toBeCloseTo(stepFootY(g, 110, down + 1));
   expect(stepRestY(g, 300, 690)).toBe(690);
 });

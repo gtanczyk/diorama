@@ -142,7 +142,7 @@ class Game {
   private cache = new Map<string, Place>();
   private figures = new Map<string, Figure>();
   /** phase counts walk cycles; it only advances with distance walked, so feet keep pace with the floor. */
-  hero = { x: 0, y: 0, path: [] as Point[], facing: 1, phase: 0, yaw: Math.PI / 2, figure: undefined as Figure | undefined };
+  hero = { x: 0, y: 0, path: [] as Point[], facing: 1, phase: 0, yaw: Math.PI / 2, figure: undefined as Figure | undefined, foot: undefined as number | undefined };
   speech: { text: string; until: number; who?: string; from: number } | null = null;
   state!: State;
   /** The inventory item the next click uses. */
@@ -345,6 +345,7 @@ class Game {
       if (spawn[2]) this.hero.facing = spawn[2] === 'left' ? -1 : 1;
     }
     this.hero.path = [];
+    this.hero.foot = undefined;
     this.speech = null;
     this.darkTarget = 0;
     canvas.width = place.g.frame.width;
@@ -357,7 +358,7 @@ class Game {
   walkTo(x: number, y: number): Promise<boolean> {
     this.pending?.();
     // Nobody stops on a riser: on stairs the walk ends in the middle of a step.
-    const ry = stepRestY(this.place.g, x, y);
+    const ry = stepRestY(this.place.g, x, y, y < this.hero.y ? -1 : 1);
     if (ry !== y && this.place.grid.walkable(x, ry)) y = ry;
     const path = this.place.grid.route([this.hero.x, this.hero.y], [x, y]);
     this.hero.path = path;
@@ -585,6 +586,7 @@ class Game {
     }
     this.swayCamera(dt);
     let budget = personPx(this.place.g, hero.y) * 0.85 * dt;
+    const fromY = hero.y;
     while (budget > 0 && hero.path.length) {
       const [tx, ty] = hero.path[0];
       const d = Math.hypot(tx - hero.x, ty - hero.y);
@@ -607,6 +609,13 @@ class Game {
         this.pending?.();
       }
     }
+    // On stairs the feet only go the way the hero goes: a curved tread would otherwise sink them back
+    // as he crosses it, and they stay put when he stops. Off the stairs (or after a jump) they follow.
+    const tread = stepFootY(this.place.g, hero.x, hero.y);
+    const dy = hero.y - fromY;
+    if (hero.foot === undefined || tread === hero.y || Math.abs(hero.foot - tread) > 0.3 * personPx(this.place.g, hero.y)) hero.foot = tread;
+    else if (dy < 0) hero.foot = Math.min(hero.foot, tread);
+    else if (dy > 0) hero.foot = Math.max(hero.foot, tread);
   }
 
   /** The parallax of this frame, or undefined when the place is drawn flat (no backdrop, or turned off). */
@@ -917,7 +926,7 @@ class Game {
         this.drawn.push({ hot: who.npc, rect: drawn });
         this.occlude(union(drawn, this.shadowRect), y1, gone);
       } else {
-        rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.path.length > 0, this.hero.figure, '#2b2733', false, this.shift(this.hero.y), this.hero.yaw, this.talking(this.data.world.hero.key));
+        rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.path.length > 0, this.hero.figure, '#2b2733', false, this.shift(this.hero.y), this.hero.yaw, this.talking(this.data.world.hero.key), this.hero.foot);
         this.occlude(union(rect, this.shadowRect), this.hero.y, gone);
       }
     }
@@ -957,11 +966,11 @@ class Game {
   }
 
   /** Draws a person with feet at (x, y); returns the box the figure covers (its cast shadow's box is in shadowRect). */
-  private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0], yaw = facing * Math.PI / 3, talk?: 'speak' | 'listen'): Rect {
+  private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0], yaw = facing * Math.PI / 3, talk?: 'speak' | 'listen', foot?: number): Rect {
     const g = this.place.g;
     // Size comes from where the person stands on the floor; on stairs the feet sit on the tread under them.
     const h = personPx(g, y);
-    y = stepFootY(g, x, y);
+    y = foot ?? stepFootY(g, x, y);
     const sprites = figure?.sprites;
     const model = sprites ? undefined : figure?.model;
     const rig = model || sprites ? undefined : figure?.rig;
