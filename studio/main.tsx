@@ -496,6 +496,7 @@ function Play({ slug, place, round, onRestart, version, onLine, onError }: { slu
   const [fresh, setFresh] = useState(true);
   const [loadedAt, setLoadedAt] = useState(version);
   const loadedTime = useRef(0);
+  const frame = useRef<HTMLIFrameElement>(null);
   // The refresh that follows a reload (an undo, a finished job) is not a change since the game started.
   useEffect(() => void (version !== loadedAt && (Date.now() - loadedTime.current < 3000 ? setLoadedAt(version) : setFresh(false))), [version]);
   const src = `/play/${slug}/${place ? `?place=${encodeURIComponent(place)}` : ''}`;
@@ -518,6 +519,8 @@ function Play({ slug, place, round, onRestart, version, onLine, onError }: { slu
         <span class="detail">click to walk or use, right click to look</span>
         <span class="grow" />
         <button type="button" class="ghost small" onClick={onRestart}>Restart</button>
+        {/* For a big screen: the game letterboxes to it, keyboard and gamepads keep working; Esc comes back. */}
+        <button type="button" class="ghost small" title="Play on the whole screen (Esc to come back)" onClick={() => frame.current?.requestFullscreen().then(() => frame.current?.focus()).catch((err) => onError(err.message))}>Full screen</button>
         <button type="button" class="ghost small" title="The bot plays every route to an ending and says where it got stuck" onClick={() => call('playthrough', { slug }).catch((err) => onError(err.message))}>Bot playthrough</button>
       </div>
       {!fresh && (
@@ -527,7 +530,7 @@ function Play({ slug, place, round, onRestart, version, onLine, onError }: { slu
           <button type="button" class="primary small" onClick={onRestart}>Reload the game</button>
         </div>
       )}
-      <iframe key={`${src}#${round}`} src={src} title={`${slug}, playable`} onLoad={hook} allow="autoplay" />
+      <iframe ref={frame} key={`${src}#${round}`} src={src} title={`${slug}, playable`} onLoad={hook} allow="autoplay; fullscreen; gamepad" allowFullScreen />
     </section>
   );
 }
