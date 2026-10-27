@@ -113,7 +113,7 @@ The page draws the best a character has: sprite sheets, else the 3D model (`?mod
 `--smear` skips Muse and smears the gaps instead. Places with a `photo.png` stay flat.
 
 - **Separation.** Each person throws a soft shade on what stands just behind them: their silhouette blurred and pushed a little away from the light, only on pixels the depth map (from `derive`; without one, the floor plane with each card on its floor row) puts a short way past their feet. So a hero passing a painted plinth reads as standing in front of it, not pasted on it. `?separate=0` turns it off, `?separate=1.5` darker.
-- **Rim light.** Each person gets a thin warm edge on the side the light comes from (against the way shadows fall; from the sky up and left without a measured light), as illustrators separate a figure from a busy background. `?rim=0` off, `?rim=1.5` wider.
+- **Rim light.** Each person gets a thin warm edge on the side the light comes from (against the way shadows fall; a place with no measured light gets none), as illustrators separate a figure from a busy background. `?rim=0` off, `?rim=1.5` wider.
 - **Focus** (off by default). `?focus=1` softens and pales what is behind the hero with its depth, like a close-up camera. It only separates far things, so it stays opt-in.
 
 ## Weather: rain, snow and drips

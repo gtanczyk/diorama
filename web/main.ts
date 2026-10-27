@@ -1261,10 +1261,9 @@ class Game {
 
   /**
    * A rim of light on the person's edge facing the light: the silhouette minus itself shifted away from the
-   * light, tinted warm and laid over the figure. ctx stands at the feet (as paint draws).
+   * light, tinted warm and laid over the figure. ctx stands at the feet, not mirrored (paint mirrors itself).
    */
-  private rim(h: number, paint: (c: CanvasRenderingContext2D) => number, bright: number) {
-    const g = this.place.g;
+  private rim(h: number, paint: (c: CanvasRenderingContext2D) => number, bright: number, light: NonNullable<Geometry['light']>) {
     const [bw, bh] = [Math.ceil(h * 1.3), Math.ceil(h * 1.2)];
     const [ox, oy] = [Math.round(bw / 2), Math.ceil(h * 1.12)];
     for (const c of [this.rimA, this.rimB]) if (c.width < bw || c.height < bh) Object.assign(c, { width: Math.max(c.width, bw), height: Math.max(c.height, bh) });
@@ -1274,8 +1273,8 @@ class Game {
     a.translate(ox, oy);
     paint(a);
     a.setTransform(1, 0, 0, 1, 0, 0);
-    // Toward the light: against the way shadows fall; without a measured light, from the sky up and left.
-    const dir = g.light?.dir ?? [0.4, 0.9];
+    // Toward the light: against the way shadows fall. Without a measured light there is no rim at all.
+    const dir = light.dir;
     const n = Math.hypot(dir[0], dir[1]) || 1;
     const k = Math.max(1.5, h * RIM_WIDTH * rimScale);
     const b = this.rimB.getContext('2d')!;
@@ -1606,8 +1605,14 @@ class Game {
     ctx.filter = `brightness(${bright.toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}${edge}`;
     ctx.translate(x, y - bob);
     ctx.rotate(rock);
+    // paint mirrors ctx for a figure facing left; the rim is drawn already mirrored, so it goes on the unmirrored frame.
+    const feetAt = ctx.getTransform();
     const half = paint(ctx);
-    if (rimScale > 0) this.rim(h, paint, bright);
+    // The light on this person here (the sun, or a lamp's own way); none measured, no rim.
+    if (rimScale > 0 && light && light.strength > 0.02 && Math.hypot(light.dir[0], light.dir[1]) > 0) {
+      ctx.setTransform(feetAt);
+      this.rim(h, paint, bright * (1 - shaded), light);
+    }
     ctx.restore();
     return [x - half - 2 + sx, y - h * 1.04 - bob - 2 + sy, x + half + 2 + sx, y + Math.max(3, h * 0.04) + sy];
   }
