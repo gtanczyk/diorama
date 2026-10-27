@@ -49,6 +49,10 @@
   #talk .answer:hover { background: var(--glow); border-color: var(--clay); transform: translateX(-6px); }
   body.pad #talk .answer.focus { background: var(--glow); border: 3px solid var(--clay); box-shadow: 0 0 0 4px #ffd37a88, 0 4px 0 #2b211840; transform: translateX(-10px) scale(1.03); }
   body.pad #ending .again { box-shadow: 0 0 0 4px #ffd37a88, 0 4px 0 #2b211840; }
+  #player { position: absolute; left: 18px; top: 18px; padding: 6px 16px 6px 12px; display: flex; align-items: center; gap: 10px; background: var(--paper); border: 3px solid var(--player); border-radius: 999px; color: var(--ink); font-weight: bold; font-size: 22px; box-shadow: 0 4px 0 #2b211840; pointer-events: none; }
+  #player::before { content: ''; width: 22px; height: 22px; border-radius: 50%; background: var(--player); }
+  #player[hidden], #handover[hidden] { display: none; }
+  #handover { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); padding: 22px 48px; background: var(--player); color: #fff; border: 5px solid #fff; border-radius: 28px; font-size: 64px; font-weight: bold; text-shadow: 0 3px 0 #0005; box-shadow: 0 10px 30px #0008; pointer-events: none; }
   #talk .key { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border: 2px solid var(--ink); border-radius: 7px; background: var(--paper-hi); font-size: 14px; }
   button { font: inherit; cursor: pointer; text-align: left; }
   #ending { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at center, #0006, #000b); padding: 24px; }
@@ -64,7 +68,7 @@
 </head>
 <body>
 <div id="stage"><canvas id="view" width="1200" height="896"></canvas></div>
-<div id="hud"><div id="inventory" hidden></div><div id="talk" hidden></div><div id="ending" hidden></div></div>
+<div id="hud"><div id="inventory" hidden></div><div id="talk" hidden></div><div id="player" hidden></div><div id="handover" hidden></div><div id="ending" hidden></div></div>
 <div id="turn"><svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true"><rect x="20" y="8" width="24" height="42" rx="4" fill="none" stroke="#e8e2d6" stroke-width="3"/><path d="M14 52 a22 22 0 0 0 36 0" fill="none" stroke="#e9c46a" stroke-width="3"/><path d="M46 46 l4 6 l-7 1" fill="none" stroke="#e9c46a" stroke-width="3" stroke-linejoin="round"/></svg><div>Turn your phone sideways to play.</div><button type="button" onclick="this.parentElement.hidden = true">Play upright anyway</button></div>
 <div id="bar"><span id="where"></span><span id="hover"></span><span class="hint">click to walk or use · right click or long press to look or put back · WASD or arrows walk, E uses · 1-9 items · g grid · m sound</span></div>
 <script type="module" src="main.js"></script>

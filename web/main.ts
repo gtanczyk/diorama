@@ -8,7 +8,7 @@ import { actions, activeChanges, apply, hiddenThings, pickInteraction, startStat
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 import { Mixer, type Listened } from './audio.ts';
-import { readPads, type PadFrame } from './pad.ts';
+import { PLAYER_COLOURS, readPads, Turns, type PadFrame } from './pad.ts';
 import { Answers, Bag, displayName, fitHud, showEnding, type ItemLook } from './ui.ts';
 import type { SoundData } from '../src/play/sound.ts';
 import type { Figure3D, ModelInfo } from './hero3d.ts';
@@ -1859,9 +1859,49 @@ function usePad(on: boolean) {
   const hint = document.querySelector('#bar .hint');
   if (hint) hint.textContent = on ? PAD_HINT : KEY_HINT;
 }
+// ?pads=turns: the pads take turns (see Turns); ?turn=60 sets the seconds of a turn.
+const turns = params.get('pads') === 'turns' ? new Turns(Number(params.get('turn')) || 60) : undefined;
+let talked = false;
+let talkEnded = false;
+/** The turn badge (whose turn, in the player's colour) and the hand-over card when it passes. */
+function showTurn(index: number | undefined, handOver: boolean) {
+  const badge = document.getElementById('player')!;
+  const many = !!turns && turns.connected().length > 1 && index !== undefined;
+  badge.hidden = !many;
+  if (!many) return;
+  const n = turns!.player(index!);
+  const colour = PLAYER_COLOURS[(n - 1) % PLAYER_COLOURS.length];
+  badge.style.setProperty('--player', colour);
+  badge.textContent = `Player ${n}`;
+  if (handOver) {
+    const card = document.getElementById('handover')!;
+    card.style.setProperty('--player', colour);
+    card.textContent = `Player ${n}`;
+    card.hidden = false;
+    card.animate([{ opacity: 0, transform: 'translate(-50%, -50%) scale(.6)' }, { opacity: 1, transform: 'translate(-50%, -50%) scale(1.05)', offset: 0.2 }, { opacity: 1, transform: 'translate(-50%, -50%) scale(1)', offset: 0.8 }, { opacity: 0, transform: 'translate(-50%, -50%) scale(1)' }], { duration: 2600, easing: 'ease-out' }).finished.then(() => (card.hidden = true), () => undefined);
+  }
+}
 function padInput() {
-  pad = readPads();
+  let only: number | undefined;
+  if (turns) {
+    const now = performance.now();
+    const before = turns.active;
+    // A turn passes when a conversation has ended, or its time is up, but never mid-line, mid-talk or mid-walk.
+    const talking = !!game.state?.talk;
+    if (talked && !talking) talkEnded = true;
+    talked = talking;
+    const calm = free() && !game.speech && !game.hero?.path.length;
+    if (calm && (talkEnded || turns.due(now))) {
+      turns.pass(now);
+      talkEnded = false;
+    }
+    only = turns.current(now);
+    if (only !== before || ((turns.connected().length > 1) === document.getElementById('player')!.hidden)) showTurn(only, before !== undefined && only !== before);
+    if (only === undefined) return void (pad = { dir: null, pressed: [], pads: 0 });
+  }
+  pad = readPads(only);
   if (!pad.dir && !pad.pressed.length) return;
+  turns?.touched(performance.now());
   usePad(true);
   keyboard = true;
   // A pad press is not a gesture that unlocks sound everywhere, but where it is allowed this starts it.

@@ -15,17 +15,22 @@ const STANDARD: Array<[number, PadButton]> = [[0, 'use'], [1, 'back'], [2, 'prev
 // highest start.
 const LOOSE: Array<[number, PadButton]> = [[0, 'use'], [1, 'use'], [2, 'next'], [3, 'next'], [4, 'next'], [5, 'prev'], [6, 'prev'], [7, 'next'], [8, 'prev'], [9, 'next'], [10, 'start'], [11, 'start']];
 const DEAD = 0.4;
+const IDLE_S = 25;
 
 const seen = new Map<number, Set<PadButton>>();
 
-/** Reads all connected pads once; call it each frame. */
-export function readPads(): PadFrame {
+/** Reads the connected pads once (only pad `only` when given); call it each frame. */
+export function readPads(only?: number): PadFrame {
   const pressed = new Set<PadButton>();
   let [dx, dy] = [0, 0];
   let pads = 0;
   for (const pad of navigator.getGamepads?.() ?? []) {
     if (!pad?.connected) continue;
     pads++;
+    if (only !== undefined && pad.index !== only) {
+      seen.delete(pad.index);
+      continue;
+    }
     const down = new Set<PadButton>();
     const map = pad.mapping === 'standard' ? STANDARD : LOOSE;
     for (const [i, b] of map) if (pad.buttons[i]?.pressed) down.add(b);
@@ -63,4 +68,66 @@ function hatDir(v: number | undefined): Point | null {
   if (v === undefined || v > 1.05 || v < -1.05) return null;
   const step = Math.round((v + 1) / (2 / 7));
   return ([[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]] as Point[])[step] ?? null;
+}
+
+/** Colours for players 1 to 6, the same on the badge and the hand-over card; stickers on the pads can match. */
+export const PLAYER_COLOURS = ['#d9534f', '#3b7dd8', '#3fa34d', '#e8b923', '#9b59b6', '#e67e22'];
+
+/**
+ * Pads take turns with one hero (?pads=turns): only the pad whose turn it is steers. The turn passes to the next
+ * connected pad after a conversation ends, or after `seconds` from the player's first press (a player who never
+ * presses loses the turn after IDLE_S), never in the middle of a line or a talk.
+ */
+export class Turns {
+  /** The gamepad index whose turn it is; undefined until a pad is pressed. */
+  active: number | undefined;
+  /** When the turn began, and when its player first pressed (undefined until then). */
+  private given = 0;
+  private started: number | undefined;
+
+  constructor(private readonly seconds: number) {}
+
+  /** Connected pads, by index. */
+  connected(): number[] {
+    return [...(navigator.getGamepads?.() ?? [])].filter((p): p is Gamepad => !!p?.connected).map((p) => p.index).sort((a, b) => a - b);
+  }
+
+  /** Who plays now: keeps the turn while its pad is there, else the first pad that presses anything takes it. */
+  current(now: number): number | undefined {
+    const pads = this.connected();
+    if (this.active !== undefined && pads.includes(this.active)) return this.active;
+    this.active = undefined;
+    for (const p of navigator.getGamepads?.() ?? []) {
+      if (p?.connected && p.buttons.some((b) => b.pressed)) {
+        [this.active, this.given, this.started] = [p.index, now, now];
+        break;
+      }
+    }
+    return this.active;
+  }
+
+  /** The player whose turn it is pressed or steered. */
+  touched(now: number) {
+    this.started ??= now;
+  }
+
+  /** Whether the time is up (only counted while more than one pad is there). */
+  due(now: number): boolean {
+    if (this.active === undefined || this.connected().length < 2) return false;
+    return this.started === undefined ? now - this.given > IDLE_S * 1000 : now - this.started > this.seconds * 1000;
+  }
+
+  /** Passes the turn to the next connected pad; returns it when it changed. */
+  pass(now: number): number | undefined {
+    const pads = this.connected();
+    if (pads.length < 2 || this.active === undefined) return undefined;
+    const next = pads.find((i) => i > this.active!) ?? pads[0];
+    [this.active, this.given, this.started] = [next, now, undefined];
+    return next;
+  }
+
+  /** "Player N" is the pad's place among the connected ones, so it stays 1 to 6 whatever indexes the browser gave. */
+  player(index: number): number {
+    return this.connected().indexOf(index) + 1 || index + 1;
+  }
 }
