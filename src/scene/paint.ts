@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import type { Memo } from '../meta/memo.ts';
 import { museEdit } from '../meta/muse.ts';
 import type { Place, World } from '../world/schema.ts';
+import { fallsIn } from '../play/weather.ts';
 import type { Brief } from './brief.ts';
 import { FRAME, type Layout } from './layout.ts';
 
@@ -26,7 +27,7 @@ Style: ${world.style}
 The masses:
 ${[...masses, ...floors].join('\n')}
 
-Seen a little from above, like a stage. Keep the floor areas clear to walk on. No people, no animals, no text or letters, no border.`;
+Seen a little from above, like a stage. Keep the floor areas clear to walk on. No people, no animals, no text or letters, no border.${fallsIn(`${place.shows} ${place.mood}`) ? '\nThe rain or snow itself is animated over the picture later: paint no falling streaks, drops or flakes in the air, only what the weather leaves (wet sheen, puddles, snow lying on the ground).' : ''}`;
 }
 
 /** Children's drawings of the place or of things in it, as more images after the block-in. */

@@ -13,11 +13,13 @@ import { Answers, Bag, displayName, fitHud, showEnding, type ItemLook } from './
 import { useLanguage, words } from './words.ts';
 import type { SoundData } from '../src/play/sound.ts';
 import type { Figure3D, ModelInfo } from './hero3d.ts';
+import type { Weather } from '../src/play/weather.ts';
+import { WeatherFx } from './weather.ts';
 
 type Data = {
   slug: string;
   world: World;
-  places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; issue?: string }>;
+  places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; weather?: Weather; issue?: string }>;
   /** Figure per hero or NPC key: a cut-out image, and its rig when `diorama cast` could cut it into parts. */
   cast: Record<string, { image: string; height?: number; rig?: Rig; parts?: string; model?: { dir: string; info: ModelInfo }; sprites?: { dir: string; info: SpriteInfo } }>;
   story: Story | null;
@@ -80,6 +82,8 @@ type Place = {
   wet?: Uint8Array;
   /** The fire or lamp's work here (see Game.fireOf), made on first use. */
   fire?: Fire;
+  /** Rain or snow, rings, splashes and drips (weather.json). */
+  weather?: WeatherFx;
 };
 
 /**
@@ -351,7 +355,11 @@ class Game {
     const shade = await shared(g.shadows);
     const depth = g.depth ? await loadDepth(dir(g.depth)).catch(() => undefined) : undefined;
     const wet = depth && entry.layers?.water ? await loadWet(files(entry.layers.water.mask), entry.layers.water.box, g.frame.width, g.frame.height).catch(() => undefined) : undefined;
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, wet, hots, cuts: kept, byKey };
+    // ?weather=0 (or ?still) keeps the place dry, for pixel checks.
+    const wx = entry.weather && !params.has('still') && params.get('weather') !== '0' ? entry.weather : undefined;
+    const ripples = wx?.ripples ? await loadBits(files(wx.ripples), g.frame.width, g.frame.height).catch(() => undefined) : undefined;
+    const weather = wx && new WeatherFx(wx, g, ripples?.bits, key);
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, wet, hots, cuts: kept, byKey, weather };
     this.cache.set(key, place);
     return place;
   }
@@ -691,6 +699,7 @@ class Game {
       this.emit('silent', {});
     }
     this.swayCamera(dt);
+    this.place.weather?.update(dt);
     let budget = personPx(this.place.g, hero.y) * 0.85 * dt;
     const fromY = hero.y;
     while (budget > 0 && hero.path.length) {
@@ -998,6 +1007,7 @@ class Game {
         ctx.drawImage(backdrop, x0, h, w, e - h + 1, x0 + sx, h + sy, w, e - h + 1);
       }
       this.drawWater(p);
+      this.place.weather?.drawGround(ctx, (y) => this.shift(y));
       const carded = new Set(this.place.cuts.map((c) => c.occ.thing ?? c.occ.key));
       for (const hot of this.place.hots) {
         // A carried-off card is simply not drawn; a flat thing gets its clean plate, on the floor it lies on.
@@ -1019,6 +1029,7 @@ class Game {
       if (bg) ctx.drawImage(bg, 0, 0, W, H);
       // What the story has changed here (a beacon lit): each change is the thing as it looks after, transparent elsewhere.
       for (const { img } of this.changed()) ctx.drawImage(img, 0, 0, W, H);
+      this.place.weather?.drawGround(ctx, () => [0, 0]);
       for (const hot of this.place.hots) {
         if (!hot.plate || !gone.has(hot.thing.key)) continue;
         // The plate differs from the painting only near the thing, so its grown box is enough.
@@ -1031,6 +1042,7 @@ class Game {
       for (const cut of this.place.cuts) if (!cut.occ.thing || !gone.has(cut.occ.thing)) this.drawCard(cut);
       this.drawClimbs();
     }
+    this.place.weather?.drawDrips(ctx, (y) => this.shift(y));
     // Everyone is drawn far to near, and each one gets the things in front of them put back.
     let rect: Rect = [0, 0, 0, 0];
     const lit = this.hover && !hideCursor ? this.hover : undefined;
@@ -1055,6 +1067,8 @@ class Game {
       }
     }
     burn();
+    // The rain falls in front of everyone; the speech bubble stays over it.
+    this.place.weather?.drawAir(ctx);
     if (this.grid) {
       ctx.save();
       if (p) ctx.transform(...(backdropTransforms(g, p).below as [number, number, number, number, number, number]));

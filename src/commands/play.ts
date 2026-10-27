@@ -8,6 +8,7 @@ import { Geometry } from '../play/geometry.ts';
 import { previewGeometry } from '../play/preview.ts';
 import type { Layers } from '../play/parallax.ts';
 import { Rig } from '../play/rig.ts';
+import { Weather } from '../play/weather.ts';
 import type { ModelInfo } from '../../web/hero3d.ts';
 import type { SpriteInfo } from '../../web/main.ts';
 import { soundData } from '../sound/data.ts';
@@ -25,7 +26,7 @@ const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg
 /** What the page loads: the world, and per place its geometry (measured, or a preview from the layout). */
 export function worldData(files: WorldFiles) {
   const world = files.world();
-  const places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; issue?: string }> = {};
+  const places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; weather?: Weather; issue?: string }> = {};
   for (const place of world.places) {
     const painted = ['painting.png', 'blockin.png'].find((f) => fs.existsSync(files.place(place.key, f)));
     let geometry: Geometry | null = null;
@@ -50,7 +51,11 @@ export function worldData(files: WorldFiles) {
       flats: flats.flats.map((f) => ({ file: rel(f.file), box: f.box })),
       ...(flats.water && { water: { tex: rel(flats.water.tex), mask: rel(flats.water.mask), box: flats.water.box, flow: flats.water.flow } }),
     };
-    places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, ...(backdrop && { backdrop }), ...(layers && { layers }), issue };
+    // weather.json (diorama weather): what falls here and where water drips, for the page to animate.
+    const weatherFile = files.place(place.key, 'weather.json');
+    const read = painted === 'painting.png' && fs.existsSync(weatherFile) ? Weather.safeParse(files.readJson(weatherFile)) : undefined;
+    const weather = read?.success ? { ...read.data, ...(read.data.ripples && { ripples: rel(read.data.ripples) }) } : undefined;
+    places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, ...(backdrop && { backdrop }), ...(layers && { layers }), ...(weather && { weather }), issue };
   }
   const castDir = files.path('cast');
   // cast/heights.json (diorama cast): metres each one stands, a grown-up 1.62.

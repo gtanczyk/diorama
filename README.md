@@ -107,6 +107,17 @@ The page draws the best a character has: sprite sheets, else the 3D model (`?mod
 
 `--smear` skips Muse and smears the gaps instead. Places with a `photo.png` stay flat.
 
+## Weather: rain, snow and drips
+
+`diorama weather <slug>` (a build step, after `backdrop`) reads what falls on each place and where water drips, into `places/<key>/weather.json`; the page animates it all, so nothing in the painting is a frozen streak:
+
+- **Fall.** Spark looks at the painting and the place's mood: `rain`, `snow` or `none` (indoors, a cave, wet ground after the rain), how hard (0.3 drizzle, 1 a downpour) and how much the wind slants it. The page drops rain or snow over the whole frame in three depths; each drop ends on the floor row as far away as it is.
+- **Rings and splashes.** SAM finds the water and the puddles (`weather/ripples.png`, minus the floors and cards SAM takes for water). Drops that land there ring; drops that land on a walkable floor splash; on a roof or the sky nothing shows.
+- **Drips.** Spark names up to four edges that drip (eaves, a gutter, an awning, a pipe, a cave ceiling), SAM finds each, and its lowest edge is where drops swell and let go. Each falls under gravity, at the scale of the place, to the floor row under it (the depth map, else the first walkable cell below) and splashes or rings there. A dry place can still drip.
+- **Painting.** When a place's words say rain or snow, the paint step asks Muse for the weather's marks only (wet sheen, puddles, snow lying), no streaks in the air.
+
+To change it, tell the Studio agent ("no rain in the hut", "it should pour", "water drips from the tavern sign"): its `weather_set` action keeps `fall`, `strength` and a hint in words in `places/<key>/weather-wish.json`, which every later build follows. `?weather=0` in the play page keeps every place dry.
+
 ## In the play page
 
 - **Walking:** `derive` joins the floors up, but never across painted water (SAM finds it only when a join would cross it), and the game starts on the biggest stretch of floor. The hero routes over the walk grid; the walk phase follows the distance walked, so feet don't slide. Things in front of a person (per-column floor lines from `derive`) are drawn back over them.

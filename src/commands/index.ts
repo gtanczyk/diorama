@@ -10,6 +10,7 @@ import './plates.ts';
 import './icons.ts';
 import './derive.ts';
 import './backdrop.ts';
+import './weather.ts';
 import './sound.ts';
 import './voices.ts';
 import './verify.ts';
