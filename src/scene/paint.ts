@@ -38,7 +38,7 @@ export function drawingsPrompt(place: Place, drawings: Drawing[]): string {
   const which = drawings.map((d, i) => `image ${i + 2} is ${d.key === place.key ? 'this place' : `the ${d.key}`}`);
   return `
 
-The other images are children's drawings on paper: ${which.join(', ')}. Paint what they drew so the children know it at once: their colours, shapes and ideas. The composition still comes only from the first image; leave out the paper, the table and any written names.`;
+The other images are children's drawings on paper: ${which.join(', ')}. Paint what they drew so the children know it at once: their colours, shapes and ideas. A drawing fills its paper, but its thing does not fill the place: paint each at its real size beside the others (a hat is smaller than a log, a person comes up to a door's top). The composition still comes only from the first image; leave out the paper, the table and any written names.`;
 }
 
 /** One Muse edit, scaled back to the layout frame (Muse answers larger than asked). */

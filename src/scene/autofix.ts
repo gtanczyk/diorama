@@ -25,6 +25,9 @@ const MAX_GAP_WALK_ON = 6 * GRID;
 /** Things the hero walks around, not over: a gap through one is not bridged blindly. */
 const SOLID = new Set(['standing', 'wall']);
 
+/** How tall a person may be at the front after the floor is cut back (verify allows up to 760). */
+const NEAR_PX = 720;
+
 /** How far a walk-on mask may stop short of a floor and still be taken to join it. */
 const JOIN = 16;
 
@@ -96,6 +99,28 @@ export function autoFixes(g: Geometry, floorKeys: string[], errors: Finding[], m
       if (!wanted.has(s.thing) || !s.nearest) continue;
       const at = s.nearest;
       fixes.push({ what: `moved the stand spot of ${s.thing} to (${at.join(', ')}), the nearest reachable floor`, from: 'derive', apply: (c) => void ((c.things[s.thing] ??= { strokes: [] }).stand = at) });
+    }
+  }
+  // The hero would be a giant at the very front (a close camera, a big thing in the foreground): the bottom of
+  // the floor goes, up to where a person is NEAR_PX tall, as long as most of the floor stays walkable.
+  if (codes.has('SCALE_NEAR') && g.scale.pxPerY > 0) {
+    const cut = Math.floor(g.scale.horizonY + NEAR_PX / g.scale.pxPerY);
+    const rows = g.walk.map((row, r) => (row.includes('#') ? r : -1)).filter((r) => r >= 0);
+    const kept = rows.filter((r) => (r + 1) * g.cell <= cut).length;
+    const bottom = rows.length ? (rows[rows.length - 1] + 1) * g.cell : 0;
+    if (cut < bottom && kept >= rows.length / 2) {
+      const width = g.walk[0].length * g.cell;
+      const lines: [number, number][][] = [];
+      for (let y = cut + 12; y < bottom + 12; y += 16) lines.push([[0, y], [width, y]]);
+      fixes.push({
+        what: `took the floor below y ${cut} out of the walk, where a person would be over ${NEAR_PX} px tall`,
+        from: 'masks',
+        apply: (c) => {
+          // Walk-on things (a path, a jetty) are walked on too, so they lose the same strip.
+          const all = [...floorKeys.map((k) => (c.floors[k] ??= { add: [], remove: [], strokes: [] })), ...Object.keys(masks).map((k) => (c.things[k] ??= { strokes: [] }))];
+          for (const f of all) for (const points of lines) if (!f.strokes.some((x) => JSON.stringify(x.points) === JSON.stringify(points))) f.strokes.push({ mode: 'erase', radius: 12, points });
+        },
+      });
     }
   }
   // Spark found the thing in another box: give SAM that box (one SAM call when the place is rebuilt).
