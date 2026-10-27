@@ -28,6 +28,8 @@ type Status = Summary & { placeDetail: PlaceDetail[]; build: Record<string, { se
 
 const route = signal(location.pathname);
 const followAgent = signal(true);
+/** The world the agent moved the view away from, so the person can go back. */
+const movedFrom = signal<string | null>(null);
 let steps: string[] = [];
 let quiet = new Set<string>();
 
@@ -43,6 +45,47 @@ const slugify = (text: string) => text.toLowerCase().normalize('NFKD').replace(/
 function Mark({ state }: { state: Check['state'] | 'run' | 'todo' }) {
   const glyph = { ok: '✓', missing: '!', optional: '·', fail: '✕', run: '◌', todo: '' }[state];
   return <span class={`mark ${state}`} aria-label={state}>{glyph}</span>;
+}
+
+const clock = (ms: number) => {
+  const t = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+};
+
+/** A running job at a glance: which of its steps are done, how long it has run, and about how long is left (from the last build's step times). */
+function JobProgress({ job, plan, build, running, done, last }: { job: Job; plan: string[] | null; build: Status['build']; running: Record<string, 'run' | 'fail'>; done: Record<string, number>; last?: string }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const arg = (name: string) => (job.args.includes(name) ? job.args[job.args.indexOf(name) + 1] : undefined);
+  const from = arg('--from');
+  const to = arg('--to');
+  // The build says which steps it will run; until it does, read them off the job's own arguments.
+  const own = plan ?? (job.args[0] === 'build' ? steps.slice(from ? steps.indexOf(from) : 0, to ? steps.indexOf(to) + 1 : steps.length) : []);
+  const started = job.startedAt ? Date.parse(job.startedAt) : null;
+  const elapsed = started ? now - started : 0;
+  // What is left: the steps not done yet, each as long as it took last time; the running one minus what it has already run.
+  const runningSince = started ? started + Object.values(done).reduce((a, b) => a + b * 1000, 0) : now;
+  const left = own.filter((s) => done[s] === undefined).reduce((sum, s) => sum + Math.max(0, (build[s]?.seconds ?? 0) * 1000 - (running[s] === 'run' ? now - runningSince : 0)), 0);
+  const known = own.length > 0 && own.every((s) => done[s] !== undefined || build[s]);
+  return (
+    <section class="progress" aria-live="polite">
+      <div class="row">
+        <strong>{job.by === 'agent' ? 'Agent: ' : ''}{job.label}</strong>
+        <span class="grow" />
+        <span class="detail">{job.state === 'queued' ? 'waiting for the job before it' : `${clock(elapsed)}${known ? ` · about ${Math.max(1, Math.round(left / 60_000))} min left` : ''}`}</span>
+      </div>
+      {own.length > 0 && <ol class="steps" aria-label="Steps of this job">
+        {own.map((s) => {
+          const state = running[s] === 'fail' ? 'fail' : done[s] !== undefined ? 'ok' : running[s] === 'run' ? 'run' : 'todo';
+          return <li class={state}><Mark state={state} />{s}{done[s] !== undefined ? <span class="detail"> {Math.round(done[s])}s</span> : null}</li>;
+        })}
+      </ol>}
+      {last && <p class="detail tail">{last}</p>}
+    </section>
+  );
 }
 
 function Header({ world, live }: { world?: string; live?: boolean }) {
@@ -238,6 +281,12 @@ function Workshop({ slug }: { slug: string }) {
   const [live, setLive] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
   const [running, setRunning] = useState<Record<string, 'run' | 'fail'>>({});
+  /** Steps the running job finished, with their seconds; the last thing it printed. */
+  const [jobDone, setJobDone] = useState<Record<string, number>>({});
+  const [jobTail, setJobTail] = useState('');
+  const [jobPlan, setJobPlan] = useState<string[] | null>(null);
+  /** What the last undo or redo put back, until the next job. */
+  const [undone, setUndone] = useState<string | null>(null);
   /** Places the build is mending right now, with what it tries. */
   const [repairing, setRepairing] = useState<Record<string, string>>({});
   const [calls, setCalls] = useState(0);
@@ -266,22 +315,26 @@ function Workshop({ slug }: { slug: string }) {
     const add = (e: StudioEvent, text: string, kind: string) => setLines((l) => [...l.slice(-400), { seq: e.seq, text, kind }]);
     const stop = follow(slug, (e) => {
       switch (e.type) {
-        case 'log': return add(e, String(e.line), e.stream === 'err' ? 'err' : 'out');
+        // Verify's notes on a playable place live in the place's inspector; Activity sums them up in one line.
+        case 'log': if (/^\s+flag\s|^# |^calls sent:/.test(String(e.line))) return; if (String(e.line).trim()) setJobTail(String(e.line).trim().slice(0, 160)); return add(e, String(e.line), e.stream === 'err' ? 'err' : 'out');
+        case 'build.start': return setJobPlan(e.steps as string[]);
         case 'step.start': setRunning((r) => ({ ...r, [String(e.step)]: 'run' })); return add(e, `▸ ${e.step}`, 'step');
-        case 'step.end': setRunning((r) => { const n = { ...r }; delete n[String(e.step)]; return n; }); soon(); return add(e, `✓ ${e.step} · ${e.seconds}s`, 'step');
+        case 'step.end': setJobDone((d) => ({ ...d, [String(e.step)]: Number(e.seconds) })); setRunning((r) => { const n = { ...r }; delete n[String(e.step)]; return n; }); soon(); return add(e, `✓ ${e.step} · ${e.seconds}s`, 'step');
         case 'step.fail': setRunning((r) => ({ ...r, [String(e.step)]: 'fail' })); return add(e, `✕ ${e.step}: ${e.error}`, 'err');
         case 'call': if (!e.hit) setCalls((c) => c + 1); return;
         case 'file.changed': case 'feedback.changed': return soon();
         case 'job.start': case 'job.end': case 'job.queued': {
-          if (e.type === 'job.start') setCanRedo(false);
+          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null));
           const job = e.job as Job;
           soon();
+          // What the agent changed shows in an open game at once; after the person's own builds the banner offers it.
+          if (e.type === 'job.end' && job.by === 'agent' && job.state === 'done') setPlaying((p) => (p ? { ...p, round: (p.round ?? 0) + 1 } : p));
           return add(e, `${e.type === 'job.end' ? (job.state === 'done' ? 'done' : job.state) : e.type === 'job.start' ? 'started' : 'queued'}: ${job.label} (by ${job.by})${job.error ? ` · ${job.error}` : ''}`, e.type === 'job.end' && job.state !== 'done' ? 'err' : 'job');
         }
-        case 'history.undo': soon(); setCanRedo(!e.redo); setPlaying((p) => (p ? { ...p, round: (p.round ?? 0) + 1 } : p)); return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.redo ? 'redo' : `undo to ${e.id}`} · ${(e.restored as string[]).length} restored, ${(e.removed as string[]).length} removed`, e.by === 'agent' ? 'agent' : 'act');
+        case 'history.undo': soon(); setCanRedo(!e.redo); setUndone(`${e.by === 'agent' ? 'The agent ' : ''}${e.by === 'agent' ? (e.redo ? 'redid' : 'undid') : e.redo ? 'Redone' : 'Undone'}: ${e.redo ? 'the undo' : String(e.label ?? '').replace(/^before /, '') || 'the last job'} · ${(e.restored as string[]).length + (e.removed as string[]).length} files`); setPlaying((p) => (p ? { ...p, round: (p.round ?? 0) + 1 } : p)); return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.redo ? 'redo' : `undo to ${e.id}`} · ${(e.restored as string[]).length} restored, ${(e.removed as string[]).length} removed`, e.by === 'agent' ? 'agent' : 'act');
         // The build mending itself: free fixes first, then the agent is asked.
         case 'place.fail': return add(e, `✕ ${e.place}: ${e.step} failed, set aside · ${e.error}`, 'err');
-        case 'place.verdict': if (e.ok) return; return add(e, `✕ ${e.place}: not playable · ${(e.errors as string[] | undefined)?.join('; ') || 'see verify'}`, 'err');
+        case 'place.verdict': if (e.ok) { const n = (e.flagged as string[] | undefined)?.length ?? 0; return add(e, `✓ ${e.place}: playable${n ? ` · ${n} note${n === 1 ? '' : 's'}, nothing to do (open the place to read them)` : ''}`, 'step'); } return add(e, `✕ ${e.place}: not playable · ${(e.errors as string[] | undefined)?.join('; ') || 'see verify'}`, 'err');
         case 'repair.start': setRepairing((r) => ({ ...r, [String(e.place)]: `repairing: ${(e.fixes as string[]).join('; ')}` })); return add(e, `↻ ${e.place}: repairing · ${(e.fixes as string[]).join('; ')}`, 'step');
         case 'repair.end': setRepairing((r) => { const n = { ...r }; delete n[String(e.place)]; return n; }); soon(); return add(e, `${e.ok ? '✓' : '✕'} ${e.place}: ${e.ok ? 'repaired, playable' : 'still not playable, left for the agent'}`, e.ok ? 'step' : 'err');
         case 'repair.agent': return add(e, `agent asked to repair ${(e.places as string[]).join(', ')}`, 'agent');
@@ -332,6 +385,9 @@ function Workshop({ slug }: { slug: string }) {
           </div>
           {status?.pitch && <p class="lead">{status.pitch}</p>}
           {error && <p class="error">{error}</p>}
+          {movedFrom.value && movedFrom.value !== slug && <p class="banner">The agent moved the view here from {movedFrom.value}. <button type="button" class="ghost" onClick={() => { const back = movedFrom.value!; movedFrom.value = null; go(`/w/${back}`); }}>Back to {movedFrom.value}</button> <button type="button" class="ghost" onClick={() => (movedFrom.value = null)}>Stay</button></p>}
+          {undone && !job && <p class="banner">{undone}{canRedo ? ' · Redo puts it back.' : ''}</p>}
+          {job && status && <JobProgress job={job} plan={jobPlan} build={status.build} running={running} done={jobDone} last={jobTail} />}
           {failed && !job && <Failed slug={slug} job={failed} onError={setError} onPlace={setFocus} />}
           {budget?.over && <p class="banner">Budget: ${budget.total.usd} spent of the ${budget.limitUsd} limit. Check Setup before the next big build.</p>}
           {playing && <Play slug={slug} place={playing.place} round={playing.round ?? 0} onRestart={() => setPlaying({ ...playing, round: (playing.round ?? 0) + 1 })} version={tick} onLine={playLine} onError={setError} />}
@@ -515,7 +571,10 @@ function App() {
       .catch((e) => setReady(e.message));
     // The agent can move the view to another world.
     return follow(null, (e) => {
-      if (e.type === 'ui.focus' && e.by === 'agent' && followAgent.value && e.slug) go(`/w/${e.slug}`);
+      if (e.type !== 'ui.focus' || e.by !== 'agent' || !followAgent.value || !e.slug) return;
+      const here = /^\/w\/([a-z][a-z0-9-]*)/.exec(route.value)?.[1];
+      if (here && here !== e.slug) movedFrom.value = here;
+      go(`/w/${e.slug}`);
     });
   }, []);
   if (!token) return <NoToken />;

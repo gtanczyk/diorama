@@ -43,8 +43,9 @@ defineAction({
     const history = new History(dir);
     const target = id ?? history.list()[0]?.id;
     if (!target) throw new ActionError(404, `${slug} has no snapshots yet`);
+    const label = history.list().find((x) => x.id === target)?.label;
     const result = history.restore(target, ctx.by);
-    ctx.events.publish('history.undo', { world: slug, id: target, by: ctx.by, ...result });
+    ctx.events.publish('history.undo', { world: slug, id: target, by: ctx.by, label, ...result });
     return { id: target, ...result };
   },
 });
