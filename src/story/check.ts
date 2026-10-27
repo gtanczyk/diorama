@@ -46,6 +46,10 @@ export function storyNameIssues(world: World, story: Story): string[] {
     const exit = place(it.place)?.things.find((t) => t.key === it.thing)?.role === 'exit';
     if (exit && it.verb !== 'look') issues.push(`${where}: "${it.thing}" is an exit; clicking it goes through, so it can only have "look" interactions (use a lock to stop it)`);
     if (it.with && !items.has(it.with)) issues.push(`${where}: unknown item "${it.with}"`);
+    // Taking an item thing carries it off the painting only when the item has the thing's key.
+    const role = place(it.place)?.things.find((t) => t.key === it.thing)?.role;
+    const gives = it.do.flatMap((e) => ('give' in e ? [e.give] : []));
+    if (it.verb === 'take' && role === 'item' && gives.length && !gives.includes(it.thing)) issues.push(`${where}: "${it.thing}" is an item thing, so the item it gives must have the key "${it.thing}"`);
     checkWhen(where, it.when);
   });
   for (const lock of story.locks) {
@@ -54,6 +58,8 @@ export function storyNameIssues(world: World, story: Story): string[] {
   }
   story.changes.forEach((c, i) => {
     thingIn(`change ${i + 1} (${c.thing})`, c.place, c.thing);
+    // People are drawn as characters over the painting; a change repaints only the painting.
+    if (place(c.place)?.things.find((t) => t.key === c.thing)?.role === 'npc') issues.push(`change ${i + 1} (${c.thing}): "${c.thing}" is a person; a change can only repaint a thing in the painting, not a person`);
     checkWhen(`change ${i + 1} (${c.thing})`, c.when);
   });
   for (const d of story.dialogues) {

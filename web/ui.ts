@@ -97,8 +97,9 @@ export class Bag {
       const ghost = el('img', 'flying');
       ghost.src = item.icon;
       document.body.append(ghost);
-      // The icon is square and the item fills most of it, so it starts as big as the thing it was.
-      const size = Math.max(from.width, from.height) * 1.12;
+      // The icon is square and the item fills most of it, so it starts as big as the thing it was; an item found in
+      // something big (a fish from the stalls) comes out of its middle at a few slots' size.
+      const size = Math.min(Math.max(from.width, from.height) * 1.12, to.width * 2.5);
       const start = { x: from.left + from.width / 2 - size / 2, y: from.top + from.height / 2 - size / 2 };
       const end = { x: to.left + to.width / 2 - size / 2, y: to.top + to.height / 2 - size / 2 };
       const scale = (to.width * 0.8) / size;

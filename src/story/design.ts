@@ -34,10 +34,10 @@ Write story.json for it. Rules:
 - A fact is "flag", "!flag", "has:item", "!has:item" or "at:place". A condition is a list of facts that must all hold.
 - Effects: {"set": flag}, {"clear": flag}, {"give": item}, {"take": item}, {"go": place}, {"ending": ending key}.
 - Clicking picks the first interaction listed for that thing, verb and item whose condition holds, so list special cases before the plain one.
-- Every thing should answer "look". Every item thing has a "take" with "once": true and gives the item.
+- Every thing should answer "look". Every item thing has a "take" with "once": true and gives the item keyed like the thing; taking it lifts it out of the painting. Something found in another thing (a fish from a stall) is a new item key; that thing stays.
 - Exits move the hero by themselves when clicked: give an exit only "look" interactions, never use/take/talk or a go effect; stop it with a lock.
 - Unlock with a flag set when the problem is solved, not with "has:item", so the player is never locked out after giving the item away.
-- When solving something visibly changes a thing (a fire lit, a gate open, a lamp glowing), add a change for it; the painting is updated when its condition holds. At least one change.
+- When solving something visibly changes a thing (a fire lit, a gate open, a lamp glowing), add a change for it; the painting is updated when its condition holds. At least one change, never on a person (npc).
 - No ending may be reachable in fewer than ${MIN_STEPS} clicks; each ending needs a solved puzzle.
 - Every ending must be reachable, and from any state the player must still be able to reach an ending.
 - Only a dialogue line with choices may ask the player something. A "say", and a line without choices, ends on a statement, never a question: the player has no way to answer it.

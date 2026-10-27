@@ -2,19 +2,23 @@ import sharp from 'sharp';
 import { expect, test } from 'vitest';
 import { emptyMask, maskArea } from '../src/image/mask.ts';
 import { cutIcon, ICON_PX, itemSources, offGround, peelGround } from '../src/scene/icons.ts';
+import { removableThings } from '../src/story/engine.ts';
 import { Story } from '../src/story/schema.ts';
 
 test('an item comes from the thing the hero takes it from, or is handed over', () => {
   const story = Story.parse({
     intro: 'Hi.',
-    items: [{ key: 'boat', name: 'paper boat' }, { key: 'ticket', name: 'tram ticket' }],
+    items: [{ key: 'paper-boat', name: 'paper boat' }, { key: 'ticket', name: 'tram ticket' }, { key: 'fish', name: 'dried fish' }],
     interactions: [
-      { place: 'steps', thing: 'paper-boat', verb: 'take', say: 'Got it.', do: [{ give: 'boat' }], once: true },
-      { place: 'kiosk', thing: 'basia', verb: 'use', with: 'boat', say: 'Thanks.', do: [{ take: 'boat' }, { give: 'ticket' }] },
+      { place: 'steps', thing: 'paper-boat', verb: 'take', say: 'Got it.', do: [{ give: 'paper-boat' }], once: true },
+      { place: 'kiosk', thing: 'basia', verb: 'use', with: 'paper-boat', say: 'Thanks.', do: [{ take: 'paper-boat' }, { give: 'ticket' }] },
+      // Found in the stalls: the stalls stay in the painting, and the fish is painted.
+      { place: 'steps', thing: 'stalls', verb: 'take', say: 'A fish.', do: [{ give: 'fish' }], once: true },
     ],
     endings: [{ key: 'end', title: 'End', text: 'The end.' }],
   });
-  expect(itemSources(story)).toEqual({ boat: { place: 'steps', thing: 'paper-boat' }, ticket: null });
+  expect(itemSources(story)).toEqual({ 'paper-boat': { place: 'steps', thing: 'paper-boat' }, ticket: null, fish: null });
+  expect(removableThings(story)).toEqual([{ place: 'steps', thing: 'paper-boat' }]);
 });
 
 test('a cut-out icon is square, transparent around the thing, and the thing fills it', async () => {

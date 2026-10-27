@@ -5,10 +5,11 @@ import fs from 'node:fs';
 import sharp from 'sharp';
 import { z } from 'zod';
 import { emptyMask, imageSize, maskArea, maskFromPng, maskToPng, type Mask } from '../image/mask.ts';
-import { clampRect, components, dilate, maskBox, subtract } from '../image/raster.ts';
+import { clampRect, components, dilate, intersect, maskBox, subtract } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import { museEdit, musePaint } from '../meta/muse.ts';
 import { samFind } from '../meta/sam.ts';
+import { carriesOff } from '../story/engine.ts';
 import type { Story } from '../story/schema.ts';
 import type { WorldFiles } from '../world/files.ts';
 import type { World } from '../world/schema.ts';
@@ -19,10 +20,13 @@ const ICON_FILL = 168;
 /** A cut-out whose longer side is shorter than this in the painting looks blurry blown up: Muse redraws it. */
 export const MIN_CUT_PX = 56;
 
-/** Where the hero gets each item: picked up from a thing in a place, or handed over (a talk, a use, a choice). */
+/**
+ * Where the hero gets each item: picked up from a thing in a place (the thing of the same key, the one the painting
+ * shows), or handed over (a talk, a use, a choice, or found in something else, like a fish taken from the stalls).
+ */
 export function itemSources(story: Story): Record<string, { place: string; thing: string } | null> {
   return Object.fromEntries(story.items.map((item) => {
-    const take = story.interactions.find((it) => it.verb === 'take' && it.do.some((e) => 'give' in e && e.give === item.key));
+    const take = story.interactions.find((it) => it.thing === item.key && carriesOff(it));
     return [item.key, take ? { place: take.place, thing: take.thing } : null];
   }));
 }
@@ -70,12 +74,16 @@ export async function cutIcon(image: Buffer, mask: Mask, pad = 3): Promise<Buffe
  * it), else everything that stands out from the plain ground Muse was asked for, read from the picture's border.
  */
 async function samCut(memo: Memo, label: string, picture: Buffer, phrase: string): Promise<Buffer> {
+  const mask = await offGround(picture);
   for (const prompt of [phrase, 'object']) {
     const found = await samFind(memo, { label, image: picture, prompt });
     const best = found.sort((a, b) => maskArea(b.mask) - maskArea(a.mask))[0];
-    if (best) return cutIcon(picture, await peelGround(picture, best.mask));
+    if (!best) continue;
+    // SAM may name a part ("hot tea" is the tea in the cup): when what stands out from the ground holds SAM's find
+    // and is much bigger, the item is all of that.
+    const whole = mask && maskArea(intersect(mask, best.mask)) > 0.8 * maskArea(best.mask) && maskArea(mask) > 1.5 * maskArea(best.mask);
+    return cutIcon(picture, await peelGround(picture, whole ? mask : best.mask));
   }
-  const mask = await offGround(picture);
   if (!mask) throw new Error(`${label}: SAM did not find "${phrase}" on Muse's picture, and nothing stands out from its ground`);
   return cutIcon(picture, await peelGround(picture, mask));
 }
@@ -162,7 +170,7 @@ const look = (name: string, hint?: string) => (hint ? `${name} (${hint})` : name
 
 /** Muse redraws a small cut-out larger: same thing, same style, alone on a plain ground. */
 export async function redrawIcon(memo: Memo, world: World, item: { key: string; name: string }, crop: Buffer, hint?: string, take = 0): Promise<Buffer> {
-  const prompt = `This is a small ${item.name} cut from a painting. Paint the same ${look(item.name, hint)} large, whole and centred, alone on a plain flat pale background, `
+  const prompt = `This is a small ${item.name} cut from a painting. Paint the same ${look(item.name, hint)} large, whole and centred, alone on a plain flat pale background with no shadow or ground under it, `
     + `as an inventory icon for a point-and-click adventure game. Keep its shape, colours and details, in this style: ${world.style}. No hands, no people, no text, no frame.`;
   const picture = await museEdit(memo, { label: `icon:${item.key}:redraw`, prompt, images: [crop], take });
   return samCut(memo, `icon:${item.key}`, picture, item.name);
@@ -170,7 +178,7 @@ export async function redrawIcon(memo: Memo, world: World, item: { key: string; 
 
 /** Muse paints an item nobody can see in any place. */
 export async function paintIcon(memo: Memo, world: World, item: { key: string; name: string }, hint?: string, take = 0): Promise<Buffer> {
-  const prompt = `A single ${look(item.name, hint)}, whole and centred, alone on a plain flat pale background, as an inventory icon for a point-and-click adventure game `
+  const prompt = `A single ${look(item.name, hint)}, whole and centred, alone on a plain flat pale background with no shadow or ground under it, as an inventory icon for a point-and-click adventure game `
     + `set in "${world.title}". Style: ${world.style}. No hands, no people, no text, no frame.`;
   const picture = await musePaint(memo, { label: `icon:${item.key}:paint`, prompt, take });
   return samCut(memo, `icon:${item.key}`, picture, item.name);

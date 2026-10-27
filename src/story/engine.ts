@@ -158,14 +158,20 @@ export function describe(action: Action): string {
 }
 
 /** Things the player can carry off: a once-only "take" that gives an item. Each one needs a clean plate under it. */
+/**
+ * A take carries the thing itself off only when it gives the item of the same key (the brief keys an item after its
+ * thing). Taking a dried fish from the market stalls gives an item and leaves the stalls standing.
+ */
+export const carriesOff = (it: Story['interactions'][number]) => it.verb === 'take' && it.do.some((e) => 'give' in e && e.give === it.thing);
+
 export function removableThings(story: Story): { place: string; thing: string }[] {
-  const out = story.interactions.filter((it) => it.verb === 'take' && it.once && it.do.some((e) => 'give' in e));
+  const out = story.interactions.filter((it) => it.once && carriesOff(it));
   return [...new Map(out.map((it) => [`${it.place}|${it.thing}`, { place: it.place, thing: it.thing }])).values()];
 }
 
 /** Things already carried off in this state, to be painted over with their clean plate. */
 export function hiddenThings(story: Story, state: State): { place: string; thing: string }[] {
-  return state.spent.map((i) => story.interactions[i]).filter((it) => it.verb === 'take' && it.do.some((e) => 'give' in e))
+  return state.spent.map((i) => story.interactions[i]).filter(carriesOff)
     .map((it) => ({ place: it.place, thing: it.thing }));
 }
 
