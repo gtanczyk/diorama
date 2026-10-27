@@ -1178,7 +1178,8 @@ class Game {
     const h = who.body ?? this.hero;
     // In a party each hero stands on a ring in its player's colour, so a child finds theirs.
     if (h.colour && this.party.length && layer === 'shadow') this.drawRing(h);
-    const rect = this.drawPerson(h.x, h.y, h.facing, h.phase, h.path.length > 0, h.figure, '#2b2733', false, this.shift(h.y), h.yaw, h === this.hero ? this.talking(this.data.world.hero.key) : undefined, h.foot, layer, this.party.length ? h.colour : undefined);
+    const figure = h.colour && this.party.length ? this.tinted(h.figure, h.colour) : h.figure;
+    const rect = this.drawPerson(h.x, h.y, h.facing, h.phase, h.path.length > 0, figure, '#2b2733', false, this.shift(h.y), h.yaw, h === this.hero ? this.talking(this.data.world.hero.key) : undefined, h.foot, layer, this.party.length ? h.colour : undefined);
     if (h.colour && this.party.length && layer === 'body') this.drawTag(h, rect);
     return rect;
   }
@@ -1201,6 +1202,29 @@ class Game {
     ctx.textBaseline = 'middle';
     ctx.fillText(String(PLAYER_COLOURS.indexOf(h.colour!) + 1), x, y + r * 0.08);
     ctx.restore();
+  }
+
+  private tints = new Map<string, Figure | null>();
+
+  /**
+   * The figure dressed in a player's colour, so each child's hero looks their own: made once per colour in the
+   * background (the plain figure stands in meanwhile). A rig or 3D figure keeps its look and only gets the edge.
+   */
+  private tinted(figure: Figure | undefined, colour: string): Figure | undefined {
+    if (!figure || figure.rig || (figure.model && !figure.sprites)) return figure;
+    const done = this.tints.get(colour);
+    if (done !== undefined) return done ?? figure;
+    this.tints.set(colour, null);
+    setTimeout(() => {
+      const sprites = figure.sprites;
+      const sheet = (s: Sheet): Sheet => ({ ...s, img: dressSheet(s.img, colour, sprites!.info) });
+      this.tints.set(colour, {
+        ...figure,
+        img: dressSheet(figure.img, colour),
+        ...(sprites && { sprites: { ...sprites, sheets: sprites.sheets.map(sheet), talk: sprites.talk.map(sheet) } }),
+      });
+    }, 0);
+    return figure;
   }
 
   /** A coloured ring on the floor round a party member's feet. */
@@ -1845,6 +1869,66 @@ function drawRig(fig: NonNullable<Figure['rig']>, at: ReturnType<typeof pose>) {
     c.drawImage(img, part.at[0], part.at[1]);
     c.restore();
   }
+}
+
+/**
+ * A figure (one image, or a sprite sheet of cells) with its clothes in a player's colour: everything but skin and the
+ * head (the top fifth of each figure, so hair and face stay) takes the colour's hue, keeping its own light and shade.
+ */
+function dressSheet(img: HTMLImageElement, colour: string, grid?: SpriteInfo): HTMLImageElement {
+  const c = Object.assign(document.createElement('canvas'), { width: img.width, height: img.height });
+  const cx = c.getContext('2d', { willReadFrequently: true })!;
+  cx.drawImage(img, 0, 0);
+  const data = cx.getImageData(0, 0, c.width, c.height);
+  const px = data.data;
+  const [hp, sp] = hsl(parseInt(colour.slice(1, 3), 16), parseInt(colour.slice(3, 5), 16), parseInt(colour.slice(5, 7), 16));
+  const rows = grid ? grid.rows : 1;
+  const ch = c.height / rows;
+  // Where the head ends in a cell: a fifth of the figure down from its top (feet at feetAt, about px tall).
+  const headEnd = grid ? ch * grid.feetAt - grid.px * 0.8 : 0;
+  // A plain cut-out fills its image: its head is the top fifth of what is not transparent.
+  let top = 0;
+  if (!grid) {
+    outer: for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) if (px[(y * c.width + x) * 4 + 3] > 40) { top = y; break outer; }
+  }
+  const plainHead = top + (c.height - top) * 0.2;
+  for (let y = 0; y < c.height; y++) {
+    const inCell = y % ch;
+    if (grid ? inCell < headEnd : y < plainHead) continue;
+    for (let x = 0; x < c.width; x++) {
+      const i = (y * c.width + x) * 4;
+      if (px[i + 3] < 8) continue;
+      const [h, s, l] = hsl(px[i], px[i + 1], px[i + 2]);
+      // Skin (warm, a little saturated, not too dark or bright) keeps its colour: hands, arms, bare legs.
+      if (h <= 50 && s >= 0.18 && s <= 0.8 && l >= 0.28 && l <= 0.88) continue;
+      const [r, g, b] = rgb(hp, Math.max(0.45, sp * 0.85), 0.16 + l * 0.62);
+      px[i] = px[i] * 0.15 + r * 0.85;
+      px[i + 1] = px[i + 1] * 0.15 + g * 0.85;
+      px[i + 2] = px[i + 2] * 0.15 + b * 0.85;
+    }
+  }
+  cx.putImageData(data, 0, 0);
+  return c as unknown as HTMLImageElement;
+}
+
+/** Hue in degrees, saturation and lightness 0..1. */
+function hsl(r: number, g: number, b: number): [number, number, number] {
+  [r, g, b] = [r / 255, g / 255, b / 255];
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r ? ((g - b) / d + (g < b ? 6 : 0)) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s, l];
+}
+
+function rgb(h: number, s: number, l: number): [number, number, number] {
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+  return [f(0) * 255, f(8) * 255, f(4) * 255];
 }
 
 /** The mask's edge pixels inside the box (plus 2 px), as a light line to draw over the painting. */
