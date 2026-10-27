@@ -4,7 +4,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { expect, test } from 'vitest';
 import { rectMask } from '../src/image/raster.ts';
-import { carryFrom, MOST, paintingFor, ran, reaches, withChange } from '../src/scene/carry.ts';
+import { carryFrom, MOST, paintingFor, ran, reaches, seedRan, withChange } from '../src/scene/carry.ts';
 import { pasteRegions } from '../src/scene/critic.ts';
 import { FRAME } from '../src/scene/layout.ts';
 
@@ -43,4 +43,19 @@ test('a small repaint carries what it does not reach; a new painting carries not
   const repainted = await solid('#ffffff');
   expect(MOST).toBeLessThan(1);
   expect(await carryFrom(dir, 'masks', repainted)).toBeUndefined();
+});
+
+test('a place built before the steps kept their painting carries on its first repaint', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'seed-'));
+  const before = await solid('#203040');
+  fs.writeFileSync(path.join(dir, 'painting.png'), before);
+  // masks and derive ran on this painting; plates never ran.
+  fs.writeFileSync(path.join(dir, 'masks.json'), '{}');
+  fs.writeFileSync(path.join(dir, 'geometry.json'), '{}');
+  seedRan(dir);
+  expect(fs.existsSync(path.join(dir, '.ran', 'masks.png'))).toBe(true);
+  expect(fs.existsSync(path.join(dir, '.ran', 'derive.png'))).toBe(true);
+  expect(fs.existsSync(path.join(dir, '.ran', 'plates.png'))).toBe(false);
+  const after = await pasteRegions(before, await solid('#ffcc00'), [[100, 100, 220, 200]]);
+  expect((await carryFrom(dir, 'masks', after))?.old.equals(before)).toBe(true);
 });
