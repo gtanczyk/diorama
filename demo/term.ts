@@ -23,7 +23,12 @@ function colour(line: string): string {
 
 function frameSvg(command: string, typed: number, lines: string[], cursor: boolean): string {
   const prompt = `<tspan fill="#7ee08f">~/diorama</tspan><tspan fill="#9a9aa8"> $ </tspan>`;
-  const rows = [`${prompt}${esc(command.slice(0, typed))}${typed < command.length && cursor ? '█' : ''}`,
+  // A long command wraps under itself, as a terminal would, instead of running off the window.
+  const shown = `${command.slice(0, typed)}${typed < command.length && cursor ? '█' : ''}`;
+  const width = COLS - '~/diorama $ '.length;
+  const wrapped = shown.match(new RegExp(`.{1,${width}}(?:\\s|$)|.{1,${width}}`, 'g')) ?? [''];
+  const typedRows = wrapped.map((part, i) => `${i ? ' '.repeat(12) : prompt}<tspan fill="#f2f2f6">${esc(part)}</tspan>`);
+  const rows = [...typedRows,
     ...lines.map((l) => `<tspan fill="${colour(l)}">${esc(l.length > COLS ? `${l.slice(0, COLS - 1)}…` : l)}</tspan>`)].slice(-ROWS);
   const text = rows.map((r, i) => `<text x="${LEFT}" y="${TOP + i * LINE}" xml:space="preserve">${r}</text>`).join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
