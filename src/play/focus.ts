@@ -54,7 +54,7 @@ export function planeDepth(frame: { width: number; height: number }, horizonY: n
 }
 
 /** The separation shade: its darkness, blur and push away from the light, per person height. */
-export const SEPARATE_ALPHA = 0.5;
+export const SEPARATE_ALPHA = 0.8;
 export const SEPARATE_BLUR = 0.05;
 export const SEPARATE_SHIFT = 0.12;
 /** Things up to this share of the feet's depth farther still take the shade, fading to none there. */
@@ -70,3 +70,8 @@ export function behindWeight(rows: number, feet: number): number {
   const t = (feet - rows) / (feet * BEHIND);
   return Math.max(0, 1 - Math.max(0, t));
 }
+
+/** The rim light on a person's lit edge: how wide per height, its colour and how strong. */
+export const RIM_WIDTH = 0.022;
+export const RIM_COLOUR = '#ffe9c8';
+export const RIM_ALPHA = 0.85;

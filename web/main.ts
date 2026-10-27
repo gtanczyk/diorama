@@ -2,7 +2,7 @@
 import { FLAME_GLOW, FLAME_SWAY_M, flameAt, flicker, floorYAt, hiddenRuns, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
-import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, SEPARATE_ALPHA, SEPARATE_BLUR, SEPARATE_SHIFT } from '../src/play/focus.ts';
+import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, RIM_ALPHA, RIM_COLOUR, RIM_WIDTH, SEPARATE_ALPHA, SEPARATE_BLUR, SEPARATE_SHIFT } from '../src/play/focus.ts';
 import { decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, pickDialogue, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
@@ -148,6 +148,9 @@ const focusScale = Number(params.get('focus') ?? '0') || 0;
 // ?separate=0 turns off the soft shade a person throws on what stands just behind them; ?separate=1.5 darker.
 // Capture runs keep it off unless asked, since they read frame pixels.
 const separateScale = Number(params.get('separate') ?? (capture ? '0' : '1')) || 0;
+// ?rim=0 turns off the light edge on each person on the side the light comes from; ?rim=1.5 wider.
+// Capture runs keep it off unless asked.
+const rimScale = Number(params.get('rim') ?? (capture ? '0' : '1')) || 0;
 // ?track=1: walking along a place, the camera is closer in and pans after the hero, so near things pass faster
 // than far ones, like a side-scroller. It only drives the parallax, so a flat place stays as it was.
 const track = Number(params.get('track') ?? '0') || 0;
@@ -1241,6 +1244,46 @@ class Game {
     }
   }
 
+  private rimA = document.createElement('canvas');
+  private rimB = document.createElement('canvas');
+
+  /**
+   * A rim of light on the person's edge facing the light: the silhouette minus itself shifted away from the
+   * light, tinted warm and laid over the figure. ctx stands at the feet (as paint draws).
+   */
+  private rim(h: number, paint: (c: CanvasRenderingContext2D) => number, bright: number) {
+    const g = this.place.g;
+    const [bw, bh] = [Math.ceil(h * 1.3), Math.ceil(h * 1.2)];
+    const [ox, oy] = [Math.round(bw / 2), Math.ceil(h * 1.12)];
+    for (const c of [this.rimA, this.rimB]) if (c.width < bw || c.height < bh) Object.assign(c, { width: Math.max(c.width, bw), height: Math.max(c.height, bh) });
+    const a = this.rimA.getContext('2d')!;
+    a.setTransform(1, 0, 0, 1, 0, 0);
+    a.clearRect(0, 0, this.rimA.width, this.rimA.height);
+    a.translate(ox, oy);
+    paint(a);
+    a.setTransform(1, 0, 0, 1, 0, 0);
+    // Toward the light: against the way shadows fall; without a measured light, from the sky up and left.
+    const dir = g.light?.dir ?? [0.4, 0.9];
+    const n = Math.hypot(dir[0], dir[1]) || 1;
+    const k = Math.max(1.5, h * RIM_WIDTH * rimScale);
+    const b = this.rimB.getContext('2d')!;
+    b.setTransform(1, 0, 0, 1, 0, 0);
+    b.globalCompositeOperation = 'copy';
+    b.drawImage(this.rimA, 0, 0);
+    b.globalCompositeOperation = 'source-in';
+    b.fillStyle = RIM_COLOUR;
+    b.fillRect(0, 0, bw, bh);
+    b.globalCompositeOperation = 'destination-out';
+    b.drawImage(this.rimA, (dir[0] / n) * k, (dir[1] / n) * k);
+    b.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.filter = `blur(${Math.max(0.5, k * 0.35).toFixed(1)}px)`;
+    ctx.globalAlpha = Math.min(1, RIM_ALPHA * Math.min(1.2, bright));
+    ctx.globalCompositeOperation = 'screen';
+    ctx.drawImage(this.rimB, 0, 0, bw, bh, -ox, -oy, bw, bh);
+    ctx.restore();
+  }
+
   private sepCanvas = document.createElement('canvas');
   private sepMask = document.createElement('canvas');
 
@@ -1551,6 +1594,7 @@ class Game {
     ctx.translate(x, y - bob);
     ctx.rotate(rock);
     const half = paint(ctx);
+    if (rimScale > 0) this.rim(h, paint, bright);
     ctx.restore();
     return [x - half - 2 + sx, y - h * 1.04 - bob - 2 + sy, x + half + 2 + sx, y + Math.max(3, h * 0.04) + sy];
   }
