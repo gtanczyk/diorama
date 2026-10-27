@@ -55,6 +55,16 @@ The agent panel is genaicode's chat with Muse Code (default), Claude Code or Cod
 
 **Setup** shows what this machine still needs, which agents it found, and the model calls sent across all worlds, priced once you enter the per-call prices from your billing pages. Keys are only ever typed in the terminal (`diorama setup`).
 
+### A game from children's drawings
+
+On the Start screen, **Drawings and voices** makes a world from what children drew and said, for a workshop:
+
+1. **Drawings**: add photos of the drawings (files, dropped, or **Use the camera** and hold each drawing up to it). Each one is kept in `drawings/`, upright and evened out.
+2. **The story, told**: press **Record**, let a child tell their piece, press again. Each clip is kept in `told/` and heard at once by Muse Voice Transcribe (`told/<clip>.txt`, in any language it hears; long clips are cut at pauses).
+3. **Write the story**: Spark reads every drawing (hero, character, item to pick up, thing in a place, or place; change any with its menu, say who the hero is) and joins what the children said into a short story in their language. Edit it, then **Build their game**.
+
+The world keeps every drawing under its key (`drawings.json`): characters are painted from their drawing (`cast`), places and the things drawn in them follow theirs (`paint`), and the style is their crayons come alive. A world with drawings or recordings is for kids (`audience: kids` in world.json): the story is gentle and simple, every line is voiced since the players cannot read, and the text is in the language they spoke (`language`). From a terminal: `diorama build <slug> --drawings photos/ --told recordings/ --places 3`, with no idea, or an idea of your own instead of the recordings.
+
 ## Sound
 
 `diorama sound <slug>` (also a build step) has Spark plan what the world sounds like from its places, the brief of each painting and the story: a music bed, the ambience of every place, loops on things that sound (a lantern flame, a flag in the wind, a lamp that only roars once the story lights it), the surface of every floor, and one-shots for taking, using, exits, talking and the ending. The plan is `sound.json`; edit it and run the step again to regenerate only what changed.

@@ -26,13 +26,14 @@ import { handleMcp } from './mcp.ts';
 
 export const STUDIO_WEB = fileURLToPath(new URL('../../studio/', import.meta.url));
 const CHAT_CSS = createRequire(import.meta.url).resolve('genaicode/react/styles.css');
-const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.mp3': 'audio/mpeg', '.jsonl': 'text/plain; charset=utf-8' };
-const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self'; connect-src 'self'; font-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.mp3': 'audio/mpeg', '.jsonl': 'text/plain; charset=utf-8', '.webm': 'audio/webm', '.m4a': 'audio/mp4', '.mp4': 'audio/mp4', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.txt': 'text/plain; charset=utf-8' };
+const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 /** The game page: its own inline styles, framed only by the Studio. */
 const PLAY_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
 let playJs: Promise<string> | null = null;
 const COOKIE = 'diorama_studio';
-const MAX_BODY = 1 << 20;
+// Photos of drawings and recordings arrive as base64 JSON.
+const MAX_BODY = 16 << 20;
 
 /** token opens the page; agentToken is the agent's (MCP, `diorama mcp`), so its calls show as the agent's. */
 export type Studio = { url: string; port: number; token: string; agentToken: string; root: string; events: Events; jobs: Jobs; close(): Promise<void> };

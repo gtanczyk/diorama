@@ -8,6 +8,7 @@ import { Layout } from '../scene/layout.ts';
 import { paintPlace } from '../scene/paint.ts';
 import { paintPhoto } from '../scene/photo.ts';
 import { defineCommand, takeOption } from '../registry.ts';
+import { drawingsIn } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
@@ -46,7 +47,7 @@ defineCommand({
         const fromPhoto = fs.existsSync(files.place(place.key, 'photo.png'));
         first = fromPhoto
           ? await paintPhoto(files.memo, world, place, blockin, brief, take)
-          : await paintPlace(files.memo, world, place, layout, blockin, brief, take);
+          : await paintPlace(files.memo, world, place, layout, blockin, brief, take, drawingsIn(files, place));
         files.write(files.place(place.key, 'painting-first.png'), first);
         found = await critique(files.memo, place, brief, first);
         files.write(files.place(place.key, 'critique.json'), found);

@@ -222,3 +222,24 @@ section.agent .row { padding: 12px 14px 0; }
 .progress .tail { font-family: ui-monospace, Menlo, monospace; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
 /* A turn that ended well: a step that failed on the way was retried, so its summary says no "errors" (the step itself still shows it). */
 section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-err { display: none; }
+/* A workshop with children: drawings, recordings, their story. */
+.tabs { display: flex; gap: 6px; }
+.tabs button.on { border-color: var(--accent); color: var(--text); }
+.kids { display: flex; flex-direction: column; gap: 22px; }
+.kids section { display: flex; flex-direction: column; gap: 10px; }
+.kids h2 { margin: 0; font-size: 16px; }
+.drawings { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.drawings figure { position: relative; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.drawings img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; background: var(--raised); }
+.drawings figure button { position: absolute; top: 4px; right: 4px; }
+.drawings figcaption { font-size: 13px; color: var(--muted); }
+.drawings .add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; aspect-ratio: 3 / 4; border: 2px dashed var(--line); border-radius: 10px; cursor: pointer; color: var(--muted); text-align: center; padding: 8px; }
+.drawings .add input { display: none; }
+.camera { display: flex; flex-direction: column; gap: 8px; }
+.camera video { width: 100%; max-width: 720px; border-radius: 10px; background: #000; }
+.record { font-size: 18px; padding: 12px 22px; border-radius: 999px; }
+.record.on { background: var(--bad); border-color: var(--bad); color: #fff; }
+.told { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.told li { display: flex; gap: 10px; align-items: center; }
+.told audio { height: 32px; flex: none; width: 220px; }
+.drawings figcaption select { min-height: 28px; padding: 2px 6px; font-size: 13px; }

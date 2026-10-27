@@ -24,6 +24,10 @@ export const World = z.object({
   start: Slug,
   hero: z.object({ key: Slug, looks: z.string().min(10) }),
   places: z.array(Place).min(1).max(8),
+  /** The language the game's text is written and voiced in, as a name ("Polish"); English when left out. */
+  language: z.string().min(2).optional(),
+  /** Who plays: "kids" are 5 to 7 and cannot read yet, so the story is gentler, simpler and heard. */
+  audience: z.enum(['kids']).optional(),
 });
 
 export type World = z.infer<typeof World>;

@@ -9,6 +9,8 @@ import { Layout } from '../scene/layout.ts';
 import { withPlay, type Play } from '../scene/playbook.ts';
 import type { Finding, Verdict } from '../scene/verify.ts';
 import { WorldFiles } from '../world/files.ts';
+import { drawingFiles } from '../world/drawings.ts';
+import { toldFiles } from '../world/told.ts';
 
 export const STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'icons', 'derive', 'backdrop', 'cast', 'model', 'sprites', 'sound', 'voices', 'verify'] as const;
 type Step = (typeof STEPS)[number];
@@ -34,22 +36,30 @@ function callsSince(files: WorldFiles, since: string): Record<string, number> {
 
 defineCommand({
   name: 'build',
-  usage: 'build <slug> ["<idea>"] run every step, world to verify, in order [--from STEP] [--to STEP] [--places N] [--photo room.jpg] [--hero-photo me.jpg] [--place KEY: only the place steps, for one place] [--repair off: leave errors for the agent and the person, no free fixes]',
+  usage: 'build <slug> ["<idea>"] run every step, world to verify, in order [--from STEP] [--to STEP] [--places N] [--photo room.jpg] [--hero-photo me.jpg] [--drawings DIR] [--told DIR] [--kids] [--language L] [--place KEY: only the place steps, for one place] [--repair off: leave errors for the agent and the person, no free fixes]',
   async run(args) {
     const from = takeOption(args, 'from', STEPS[0]) as Step;
     const to = takeOption(args, 'to', STEPS[STEPS.length - 1]) as Step;
     const places = takeOption(args, 'places', '4');
     const photo = takeOption(args, 'photo', '');
     const heroPhoto = takeOption(args, 'hero-photo', '');
+    // Children's drawings and recordings of their story, and the game's language, go to the world step as they are.
+    const told = takeOption(args, 'told', '');
+    const worldArgs = ['drawings', 'told', 'language'].flatMap((o) => {
+      const value = o === 'told' ? told : takeOption(args, o, '');
+      return value ? [`--${o}`, value] : [];
+    });
+    const kids = args.indexOf('--kids');
+    if (kids >= 0) (args.splice(kids, 1), worldArgs.push('--kids'));
     const only = takeOption(args, 'place', '');
     const repair = takeOption(args, 'repair', 'auto');
     const [slug, idea] = args;
     if (!slug) throw new Error('usage: diorama build <slug> ["<idea>"] [--from STEP] [--to STEP]');
     const range = STEPS.slice(STEPS.indexOf(from), STEPS.indexOf(to) + 1).filter((s) => !only || PLACE_STEPS.includes(s));
     if (range.length === 0) throw new Error(`steps run ${STEPS.join(' > ')}; --from ${from} --to ${to} selects none`);
-    if (range[0] === 'world' && !idea) throw new Error('the world step needs an idea: diorama build <slug> "<idea>"');
-
     const files = new WorldFiles(slug);
+    if (range[0] === 'world' && !idea && !told && toldFiles(files).length === 0 && drawingFiles(files).length === 0) throw new Error('the world step needs an idea: diorama build <slug> "<idea>" (or --told DIR, recordings of the story)');
+
     if (only && !files.world().places.some((p) => p.key === only)) throw new Error(`${slug} has no place ${only}`);
     const logFile = files.path('build.json');
     const log = (fs.existsSync(logFile) ? files.readJson(logFile) : { steps: {} }) as { steps: Record<string, unknown>; places?: Report[]; repairs?: Array<Repair & { at: string }> };
@@ -101,7 +111,7 @@ defineCommand({
         }
       } else {
         try {
-          await registry.get(step)!.run(step === 'world' ? [slug, idea, '--places', places, ...(photo ? ['--photo', photo] : []), ...(heroPhoto ? ['--hero-photo', heroPhoto] : [])] : [slug]);
+          await registry.get(step)!.run(step === 'world' ? [slug, ...(idea ? [idea] : []), '--places', places, ...worldArgs, ...(photo ? ['--photo', photo] : []), ...(heroPhoto ? ['--hero-photo', heroPhoto] : [])] : [slug]);
         } catch (error) {
           emit('step.fail', { step, error: error instanceof Error ? error.message : String(error) });
           throw error;

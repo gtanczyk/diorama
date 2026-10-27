@@ -4,11 +4,12 @@ import { defineCommand, takeOption } from '../registry.ts';
 import { castHeights, paintFigure, type Who } from '../scene/cast.ts';
 import { rigFigure } from '../scene/rig.ts';
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
+import { drawingFor } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
   name: 'cast',
-  usage: 'cast <slug> [key...]     paint the hero and NPCs with Muse, cut them out with SAM 3.1 (cast/<key>.png) [--take N] [--photo me.jpg: paint the hero from a full-body photo]',
+  usage: 'cast <slug> [key...]     paint the hero and NPCs with Muse, cut them out with SAM 3.1 (cast/<key>.png) [--take N] [--photo me.jpg: paint the hero from a full-body photo] (a character a child drew, drawings.json, is painted from the drawing)',
   async run(args) {
     const take = Number(takeOption(args, 'take', '0'));
     const photoPath = takeOption(args, 'photo', '');
@@ -26,7 +27,7 @@ defineCommand({
     await Promise.all(cast.map(async (who) => {
       // The person's description and chosen take (cast/fixes.json) win over the world's.
       // An NPC that cannot be cut out is set aside (the game draws a stand-in) so the rest of the cast is made.
-      const made = await paintFigure(files.memo, world, who, fixes[who.key]?.take ?? take, who.key === world.hero.key ? photo : undefined).catch((error: Error) => {
+      const made = await paintFigure(files.memo, world, who, fixes[who.key]?.take ?? take, { photo: who.key === world.hero.key ? photo : undefined, drawing: drawingFor(files, who.key) }).catch((error: Error) => {
         if (who.key === world.hero.key) throw error;
         missing.push(`${who.key}: ${error.message}`);
         return null;

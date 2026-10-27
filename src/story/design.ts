@@ -25,6 +25,12 @@ const EXAMPLE = `{
   "endings": [{ "key": "kebab-key", "title": "short", "text": "two sentences" }]
 }`;
 
+/** For players of 5 to 7 who cannot read yet: they hear every line, so it has to be plain and kind. */
+const KIDS = `
+- The players are 5 to 7 years old and cannot read: every line is read aloud to them. Use the words a small child uses, short sentences, no irony.
+- Puzzles a small child solves by trying: give the thing to someone who asks for it, use an item on the thing that obviously needs it. The npc says plainly what they need.
+- Friendly and gentle: nobody is hurt, nothing is scary, both endings are happy (one may be a little funny).`;
+
 function brief(world: World): string {
   return `You write the puzzles and dialogue of a short 2D point-and-click adventure. The world is fixed:
 ${JSON.stringify(world, null, 2)}
@@ -42,7 +48,7 @@ Write story.json for it. Rules:
 - Every ending must be reachable, and from any state the player must still be able to reach an ending.
 - Only a dialogue line with choices may ask the player something. A "say", and a line without choices, ends on a statement, never a question: the player has no way to answer it.
 - Say little. Players read or hear every line, so be terse: the intro at most ${BREVITY.intro} words, a "say" at most ${BREVITY.say}, an npc line at most ${BREVITY.npcLine}, an answer choice at most ${BREVITY.choice}, an ending at most ${BREVITY.ending}, an item's \"nope\" at most ${BREVITY.nope} (the hero's own remark about that item, true wherever it is tried, with a little character and never the words \"won't help\": for a crust of bread, \"Crumbs. Nobody here wants crumbs.\"), and at most ${BREVITY.linesPerDialogue} lines per conversation. One idea per line; no small talk.
-- Text is English, short and specific to this world. No names from existing films, books, games or brands.
+- Text is ${world.language ?? 'English'}, short and specific to this world. No names from existing films, books, games or brands.${world.audience === 'kids' ? KIDS : ''}
 
 Reply with JSON only, shaped like:
 ${EXAMPLE}`;

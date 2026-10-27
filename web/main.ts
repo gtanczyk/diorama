@@ -10,6 +10,7 @@ import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 import { Mixer, type Listened } from './audio.ts';
 import { PLAYER_COLOURS, readPads, Turns, type PadFrame } from './pad.ts';
 import { Answers, Bag, displayName, fitHud, showEnding, type ItemLook } from './ui.ts';
+import { useLanguage, words } from './words.ts';
 import type { SoundData } from '../src/play/sound.ts';
 import type { Figure3D, ModelInfo } from './hero3d.ts';
 
@@ -218,6 +219,7 @@ class Game {
 
   async start() {
     this.data = await (await fetch('world-data.json')).json();
+    useLanguage(this.data.world.language);
     await Promise.all(Object.entries(this.data.cast).map(async ([key, cast]) => {
       const img = await loadImage(files(cast.image)).catch(() => undefined);
       if (!img) return;
@@ -551,7 +553,7 @@ class Game {
   /** An item tried where it does not help: the story's own line for it, else a plain one. */
   private nopeLine(item: string): string {
     const it = this.data.story?.items.find((i) => i.key === item);
-    return it?.nope ?? `The ${it?.name ?? item.replace(/-/g, ' ')} won't help here.`;
+    return it?.nope ?? words.nope(it?.name ?? item.replace(/-/g, ' '));
   }
 
   private lookLine(thing: string, verb: string): string {
@@ -594,7 +596,7 @@ class Game {
     const options = story && this.state.talk ? actions(this.data.world, story, this.state) : [];
     const hero = this.data.world.hero.key;
     this.answers.show(options.map((a) => ({
-      text: a.kind === 'choose' ? lineChoice(story!, this.state, a.index) : 'Goodbye.',
+      text: a.kind === 'choose' ? lineChoice(story!, this.state, a.index) : words.goodbye,
       pick: () => void this.act(a),
     })), { name: displayName(hero), portrait: this.data.cast[hero] && files(this.data.cast[hero].image) });
     const ending = story?.endings.find((e) => e.key === this.state.ending);

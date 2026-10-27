@@ -340,7 +340,7 @@ export function heardMatch(line: string, heard: string): number {
 }
 
 /** 16-bit mono PCM at 24 kHz, what the transcriber takes. */
-function pcm24k(pcm: Pcm): Buffer {
+export function pcm24k(pcm: Pcm): Buffer {
   const step = RATE / 24000;
   const n = Math.floor(pcm.left.length / step);
   const out = Buffer.alloc(n * 2);

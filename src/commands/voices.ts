@@ -11,7 +11,7 @@ import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
   name: 'voices',
-  usage: 'voices <slug>            cast a voice per character (stock, or designed by ElevenLabs Voice Design for children, teens and the old) and speak every story line, checked by Muse Voice Transcribe; conversations, intro and endings [--all: every line] [--recast] [--final: the best speech model and 3 takes, for the film; default draft costs half]',
+  usage: 'voices <slug>            cast a voice per character (stock, or designed by ElevenLabs Voice Design for children, teens and the old) and speak every story line, checked by Muse Voice Transcribe; conversations, intro and endings [--all: every line; always for a world for kids, whose players cannot read] [--recast] [--final: the best speech model and 3 takes, for the film; default draft costs half]',
   async run(args) {
     soundQuality(args);
     const recast = args.includes('--recast');
@@ -23,7 +23,7 @@ defineCommand({
     if (!elevenKey()) return void console.log('no ELEVENLABS_API_KEY: lines stay unspoken');
     const story = Story.parse(files.readJson(files.path('story.json')));
     const guard = await creditGuard(elevenKey(), 'voices');
-    const lines = storyLines(world, story, args.includes('--all'));
+    const lines = storyLines(world, story, args.includes('--all') || world.audience === 'kids');
     const outFile = files.path('voices.json');
     const old = fs.existsSync(outFile) ? Voices.parse(files.readJson(outFile)) : undefined;
     let cast: Cast;

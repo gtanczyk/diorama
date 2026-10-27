@@ -44,10 +44,23 @@ Style: ${world.style}
 Plain flat light grey background, no floor, no shadow, no other people, no text.`;
 }
 
-export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, photo?: Buffer): Promise<{ painting: Buffer; figure: Buffer }> {
-  const painting = photo
-    ? await museEdit(memo, { label: `figure:${who.key}:photo`, prompt: photoPrompt(world), images: [await sharp(photo).rotate().png().toBuffer()], take })
-    : await musePaint(memo, { label: `figure:${who.key}`, prompt: figurePrompt(world, who), take });
+/** For a child's drawing: the character they drew, as they drew it, made whole enough to walk. */
+export function drawingPrompt(world: World, who: Who): string {
+  return `This is a child's drawing on paper. Paint the character in it as a single full-body character for a 2D point-and-click adventure game, so the child who drew it knows it at once: the same colours, the same clothes and features, the same shapes and proportions (a big head stays big), only cleaner and whole. Standing in a relaxed walking-ready pose, seen from the side in three-quarter view, facing to the right, the whole figure visible from the top of the head down to both feet (or paws), centred, about two thirds of the image tall.
+
+Character: ${who.looks}
+Style: ${world.style}
+
+Plain flat light grey background, no paper, no table, no written name, no floor, no shadow, no other characters, no text.`;
+}
+
+/** `from` is a photo of a real person, or a child's drawing of the character. */
+export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, from?: { photo?: Buffer; drawing?: Buffer }): Promise<{ painting: Buffer; figure: Buffer }> {
+  const painting = from?.photo
+    ? await museEdit(memo, { label: `figure:${who.key}:photo`, prompt: photoPrompt(world), images: [await sharp(from.photo).rotate().png().toBuffer()], take })
+    : from?.drawing
+      ? await museEdit(memo, { label: `figure:${who.key}:drawing`, prompt: drawingPrompt(world, who), images: [from.drawing], take })
+      : await musePaint(memo, { label: `figure:${who.key}`, prompt: figurePrompt(world, who), take });
   const png = await sharp(painting).png().toBuffer();
   // Not every character is a person (a flock of pigeons, a cat): SAM is asked by their own description next.
   let found: Awaited<ReturnType<typeof samFind>> = [];

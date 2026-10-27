@@ -1,5 +1,6 @@
 // The play page's HTML layer over the canvas: the courier's bag of painted items, the item held as the
 // cursor, the flight of a picked-up item into the bag, and the conversation's answer cards.
+import { words } from './words.ts';
 
 /** What the page knows about an item: its name and its icon (diorama icons), if it has one. */
 export type ItemLook = { name: string; icon?: string };
@@ -83,7 +84,7 @@ export class Bag {
     if (!this.holding) return;
     this.cursor.style.transform = `translate(${x}px, ${y}px)`;
     const name = this.look(this.holding).name;
-    this.cursorLabel.textContent = over ? `Use ${name} on ${over}` : name;
+    this.cursorLabel.textContent = over ? words.useOn(name, over) : name;
   }
 
   /** A new item flies from where it was (a page rect) into its slot, then the slot pops and its name shows. */
@@ -202,14 +203,14 @@ export function showEnding(ending: { title: string; text: string } | undefined, 
     img.title = item.name;
     icons.append(img);
   }
-  const again = el('button', 'again', 'Play again');
+  const again = el('button', 'again', words.again);
   again.onclick = () => {
     // From the start: drop a place= the page may have been opened with.
     const url = new URL(location.href);
     url.searchParams.delete('place');
     location.href = url.toString();
   };
-  card.append(el('div', 'over', 'The end'), el('h1', '', ending.title), el('p', '', ending.text), ...(icons.childElementCount ? [icons] : []), again);
+  card.append(el('div', 'over', words.end), el('h1', '', ending.title), el('p', '', ending.text), ...(icons.childElementCount ? [icons] : []), again);
   root.replaceChildren(card);
   card.animate([{ opacity: 0, transform: 'translateY(16px) scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 700, easing: 'ease-out' });
 }

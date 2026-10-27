@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { askAgent, call, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
 import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
+import { KidsStart } from './kids.tsx';
 import { StoryView } from './story.tsx';
 import { PlaceEditor } from './place.tsx';
 
@@ -199,25 +200,31 @@ function BudgetBox() {
   );
 }
 
+/** A workshop world's default name: the day it was made. */
+const today = () => `workshop-${new Date().toISOString().slice(5, 10)}`;
+
 function Start() {
   const [worlds, setWorlds] = useState<Summary[] | null>(null);
   const [needs, setNeeds] = useState<Check[]>([]);
   const [idea, setIdea] = useState('');
-  const [slug, setSlug] = useState('');
-  const [places, setPlaces] = useState(4);
+  // ?kids=<slug> opens a workshop world that is not built yet: its drawings and recordings.
+  const [kids, setKids] = useState(new URLSearchParams(location.search).has('kids'));
+  const [slug, setSlug] = useState(new URLSearchParams(location.search).get('kids') ?? '');
+  const [places, setPlaces] = useState(kids ? 3 : 4);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   useEffect(() => {
     call<Summary[]>('world_list').then(setWorlds).catch((e) => setError(e.message));
     call<Check[]>('setup_status').then((c) => setNeeds(c.filter((x) => x.state === 'missing' || x.state === 'fail'))).catch(() => {});
   }, []);
-  const name = slug || slugify(idea);
-  const taken = worlds?.some((w) => w.slug === name);
-  const build = async (e: Event) => {
-    e.preventDefault();
+  const name = slug || (kids ? today() : slugify(idea));
+  const taken = worlds?.some((w) => w.slug === name && !(kids && w.issue === 'no world.json yet'));
+  const build = async (e?: Event, told?: string) => {
+    e?.preventDefault();
+    if (kids && told === undefined) return;
     setError('');
     try {
-      await call('world_build', { slug: name, idea: idea.trim(), places });
+      await call('world_build', { slug: name, idea: (told ?? idea).trim(), places });
       go(`/w/${name}`);
     } catch (err) {
       setError((err as Error).message);
@@ -234,14 +241,21 @@ function Start() {
           </a>
         )}
         <form class="idea" onSubmit={build}>
-          <h1>What should the world be?</h1>
-          <textarea rows={3} placeholder="A lighthouse keeper's last night before the foghorn is switched off for good…" value={idea} onInput={(e) => setIdea(e.currentTarget.value)} />
+          <div class="row">
+            <h1 class="grow">{kids ? 'A game from children\'s drawings' : 'What should the world be?'}</h1>
+            <div class="tabs">
+              <button type="button" class={`ghost small${kids ? '' : ' on'}`} onClick={() => (setKids(false), setPlaces(4))}>Describe it</button>
+              <button type="button" class={`ghost small${kids ? ' on' : ''}`} onClick={() => (setKids(true), setPlaces(3))}>Drawings and voices</button>
+            </div>
+          </div>
+          {!kids && <textarea rows={3} placeholder="A lighthouse keeper's last night before the foghorn is switched off for good…" value={idea} onInput={(e) => setIdea(e.currentTarget.value)} />}
           <div class="row">
             <label>Name <input value={name} onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
             <label>Places <select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
             <span class="grow" />
-            <button type="submit" class="primary" disabled={idea.trim().length < 10 || !!taken}>{taken ? 'Name taken' : 'Build it'}</button>
+            {!kids && <button type="submit" class="primary" disabled={idea.trim().length < 10 || !!taken}>{taken ? 'Name taken' : 'Build it'}</button>}
           </div>
+          {kids && /^[a-z][a-z0-9-]*$/.test(name) && <KidsStart slug={name} taken={!!taken} places={places} onBuild={(told) => void build(undefined, told)} onError={setError} />}
           {error && <p class="error">{error}</p>}
         </form>
         <section>
@@ -254,7 +268,12 @@ function Start() {
           <ul class="worlds">
             {shown.map((w) => (
               <li>
-                <a href={`/w/${w.slug}`} onClick={(e) => (e.preventDefault(), go(`/w/${w.slug}`))}>
+                <a href={`/w/${w.slug}`} onClick={(e) => {
+                  e.preventDefault();
+                  // A workshop world not built yet opens on its drawings and recordings.
+                  if (w.issue === 'no world.json yet') (setKids(true), setSlug(w.slug), setPlaces(3), scrollTo(0, 0));
+                  else go(`/w/${w.slug}`);
+                }}>
                   {w.cover ? <img src={fileUrl(w.slug, w.cover.file, w.cover.v)} alt="" loading="lazy" /> : <div class="noimg" />}
                   <strong>{w.title}</strong>
                   <span class="detail">{w.issue ?? `${w.places} places · ${w.playable} playable`}</span>

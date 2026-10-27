@@ -39,7 +39,9 @@ export async function runAction(name: string, raw: unknown, ctx: ActionContext):
   const parsed = action.input.safeParse(raw ?? {});
   if (!parsed.success) throw new ActionError(400, `${name}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'input'} ${i.message}`).join('; ')}`);
   const world = (parsed.data as { slug?: string }).slug;
-  ctx.events.publish('action.start', { action: name, by: ctx.by, world, input: parsed.data });
+  // A file sent as base64 (a drawing, a recording) is shown by its size, not spilled into the feed.
+  const shown = Object.fromEntries(Object.entries(parsed.data as object).map(([k, v]) => [k, typeof v === 'string' && v.length > 4000 ? `[${Math.round(v.length * 0.75 / 1024)} KB]` : v]));
+  ctx.events.publish('action.start', { action: name, by: ctx.by, world, input: shown });
   try {
     const result = await action.run(parsed.data, ctx);
     ctx.events.publish('action.end', { action: name, by: ctx.by, world, ok: true });
