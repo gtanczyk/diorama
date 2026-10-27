@@ -1,5 +1,5 @@
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
-import { floorYAt, hiddenRuns, personPx, stepFootY, stepRestY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
+import { floorYAt, hiddenRuns, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
@@ -142,7 +142,7 @@ class Game {
   private cache = new Map<string, Place>();
   private figures = new Map<string, Figure>();
   /** phase counts walk cycles; it only advances with distance walked, so feet keep pace with the floor. */
-  hero = { x: 0, y: 0, path: [] as Point[], facing: 1, phase: 0, yaw: Math.PI / 2, figure: undefined as Figure | undefined, foot: undefined as number | undefined };
+  hero = { x: 0, y: 0, path: [] as Point[], facing: 1, phase: 0, yaw: Math.PI / 2, figure: undefined as Figure | undefined, foot: undefined as number | undefined, along: undefined as number | undefined };
   speech: { text: string; until: number; who?: string; from: number } | null = null;
   state!: State;
   /** The inventory item the next click uses. */
@@ -346,6 +346,7 @@ class Game {
     }
     this.hero.path = [];
     this.hero.foot = undefined;
+    this.hero.along = undefined;
     this.speech = null;
     this.darkTarget = 0;
     canvas.width = place.g.frame.width;
@@ -357,10 +358,15 @@ class Game {
   /** Walks to a point; resolves on arrival, or at once when there is no way there. */
   walkTo(x: number, y: number): Promise<boolean> {
     this.pending?.();
-    // Nobody stops on a riser: on stairs the walk ends in the middle of a step.
-    const ry = stepRestY(this.place.g, x, y, y < this.hero.y ? -1 : 1);
-    if (ry !== y && this.place.grid.walkable(x, ry)) y = ry;
-    const path = this.place.grid.route([this.hero.x, this.hero.y], [x, y]);
+    // Along one step the walk follows it; elsewhere nobody stops on a riser, so on stairs the walk ends
+    // on the next tread ahead.
+    let path = this.alongStep([this.hero.x, this.hero.y], [x, y]);
+    this.hero.along = path ? stepAt(this.place.g, this.hero.x, this.hero.y)?.step : undefined;
+    if (!path) {
+      const ry = stepRestY(this.place.g, x, y, y < this.hero.y ? -1 : 1);
+      if (ry !== y && this.place.grid.walkable(x, ry)) y = ry;
+      path = this.place.grid.route([this.hero.x, this.hero.y], [x, y]);
+    }
     this.hero.path = path;
     if (!path.length) return Promise.resolve(false);
     return new Promise((resolve) => {
@@ -369,6 +375,32 @@ class Game {
         resolve(this.hero.path.length === 0);
       };
     });
+  }
+
+  /**
+   * A walk along one stair step: it follows the step's curve instead of a straight line that would cut
+   * across to the next step. Undefined when the two points are not on the same step or the way is blocked.
+   */
+  private alongStep(from: Point, to: Point): Point[] | undefined {
+    const g = this.place.g;
+    const a = stepAt(g, ...from);
+    const b = stepAt(g, ...to);
+    if (!a || !b || a.step !== b.step) return undefined;
+    const n = Math.max(1, Math.ceil(Math.abs(to[0] - from[0]) / 12));
+    const path: Point[] = [];
+    for (let k = 1; k <= n; k++) {
+      const x = from[0] + ((to[0] - from[0]) * k) / n;
+      // It ends on the tread part of the band, where the feet stand still.
+      const end = Math.min(0.7, Math.max(0.3, b.at));
+      // Round a hole in the floor (a thing's foot) by moving across the tread, not off the step.
+      const want = a.at + ((end - a.at) * k) / n;
+      // A little past the band's edges too: a thing standing at the step's end may take its whole depth.
+      const ats = Array.from({ length: 45 }, (_, j) => -0.6 + j / 20).sort((p, q) => Math.abs(p - want) - Math.abs(q - want));
+      const y = [want, ...ats].map((at) => onStep(g, a.step, x, at)).find((v) => v !== undefined && this.place.grid.walkable(x, v));
+      if (y === undefined) return undefined;
+      path.push([x, y]);
+    }
+    return path;
   }
 
   /** Walks to a thing, faces it and clicks it: through an exit, talk to someone, or the verb the story offers. */
@@ -611,9 +643,12 @@ class Game {
     }
     // On stairs the feet only go the way the hero goes: a curved tread would otherwise sink them back
     // as he crosses it, and they stay put when he stops. Off the stairs (or after a jump) they follow.
-    const tread = stepFootY(this.place.g, hero.x, hero.y);
-    const dy = hero.y - fromY;
-    if (hero.foot === undefined || tread === hero.y || Math.abs(hero.foot - tread) > 0.3 * personPx(this.place.g, hero.y)) hero.foot = tread;
+    // Walking along one step, the feet stay on its tread all the way.
+    const alongTread = hero.along === undefined ? undefined : treadY(this.place.g, hero.along, hero.x);
+    const tread = alongTread ?? stepFootY(this.place.g, hero.x, hero.y);
+    const dy = alongTread === undefined ? hero.y - fromY : 0;
+    if (alongTread !== undefined) hero.foot = alongTread;
+    else if (hero.foot === undefined || tread === hero.y || Math.abs(hero.foot - tread) > 0.3 * personPx(this.place.g, hero.y)) hero.foot = tread;
     else if (dy < 0) hero.foot = Math.min(hero.foot, tread);
     else if (dy > 0) hero.foot = Math.max(hero.foot, tread);
   }

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { floorYAt, hiddenRuns, hides, personPx, stepFootY, stepRestY, type Geometry, type Occluder } from '../src/play/geometry.ts';
+import { floorYAt, hiddenRuns, hides, onStep, personPx, stepAt, stepFootY, stepRestY, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { WalkGrid } from '../src/play/path.ts';
 import { previewGeometry } from '../src/play/preview.ts';
 import type { Layout } from '../src/scene/layout.ts';
@@ -93,4 +93,29 @@ test('on stairs the feet rest on each tread and step over the risers', () => {
   expect(stepFootY(g, 110, up)).toBeCloseTo(stepFootY(g, 110, up - 1));
   expect(stepFootY(g, 110, down)).toBeCloseTo(stepFootY(g, 110, down + 1));
   expect(stepRestY(g, 300, 690)).toBe(690);
+});
+
+test('a walker on a step knows which step and how deep in it, and can follow it across', () => {
+  const g = { steps: [
+    { x0: 0, every: 8, top: [600, 590, 580], bottom: [650, 640, 630] },
+    { x0: 0, every: 8, top: [650, 640, 630], bottom: [700, 690, 680] },
+  ] } as unknown as Geometry;
+  expect(stepAt(g, 0, 625)).toEqual({ step: 0, at: 0.5 });
+  expect(stepAt(g, 16, 670)?.step).toBe(1);
+  expect(stepAt(g, 0, 720)).toBeUndefined();
+  // Following step 0 to the right, the same depth in the band is higher up the picture.
+  expect(onStep(g, 0, 16, 0.5)).toBe(605);
+  expect(onStep(g, 0, 40, 0.5)).toBeUndefined();
+});
+
+test('a step hidden in part by a basket or a boat is mended from the rest of its edge', async () => {
+  const { mendStep } = await import('../src/scene/stairs.ts');
+  const top = Array.from({ length: 40 }, (_, i) => 500 + Math.round(0.02 * (i - 20) ** 2));
+  const bottom = top.map((t) => t + 60);
+  // A basket over columns 15..20 pushes the top down; a boat cuts columns 0..5 short.
+  for (let i = 15; i <= 20; i++) top[i] += 40;
+  for (let i = 0; i <= 5; i++) bottom[i] = top[i] + 20;
+  const m = mendStep({ x0: 0, every: 8, top, bottom });
+  for (let i = 15; i <= 20; i++) expect(Math.abs(m.top[i] - (500 + 0.02 * (i - 20) ** 2))).toBeLessThan(3);
+  for (let i = 0; i <= 5; i++) expect(m.bottom[i] - m.top[i]).toBe(60);
 });

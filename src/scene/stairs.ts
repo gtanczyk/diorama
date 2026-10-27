@@ -48,6 +48,55 @@ export function stepEdges(m: Mask): NonNullable<Geometry['steps']>[number] | und
   return { x0, every: STEP_EVERY, top, bottom };
 }
 
+/** Least squares y = a + b x + c x² through the points, or undefined when there are too few. */
+function quadratic(xs: number[], ys: number[]): ((x: number) => number) | undefined {
+  if (xs.length < 4) return undefined;
+  // Centred and scaled, so the normal equations stay well conditioned.
+  const m = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const u = xs.map((x) => (x - m) / 100);
+  const S = (f: (i: number) => number) => u.reduce((acc, _, i) => acc + f(i), 0);
+  const [s0, s1, s2, s3, s4] = [0, 1, 2, 3, 4].map((k) => S((i) => u[i] ** k));
+  const [t0, t1, t2] = [0, 1, 2].map((k) => S((i) => ys[i] * u[i] ** k));
+  const det = (a: number[][]) => a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1]) - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0]) + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+  const A = [[s0, s1, s2], [s1, s2, s3], [s2, s3, s4]];
+  const D = det(A);
+  if (Math.abs(D) < 1e-9) return undefined;
+  const col = (k: number) => det(A.map((row, r) => row.map((v, c) => (c === k ? [t0, t1, t2][r] : v))));
+  const [a, b, c] = [col(0) / D, col(1) / D, col(2) / D];
+  return (x: number) => { const v = (x - m) / 100; return a + b * v + c * v * v; };
+}
+
+/**
+ * A step partly hidden by something on or in front of it (a basket on the tread, a boat at its end) is
+ * mended: the back edge of a flight's step is a smooth line or arc, so columns far off that curve get the
+ * curve instead, and a band much shallower than the step's usual depth gets its depth back.
+ */
+export function mendStep(s: NonNullable<Geometry['steps']>[number]): NonNullable<Geometry['steps']>[number] {
+  const cols = s.top.flatMap((t, i) => (t >= 0 && s.bottom[i] > t ? [i] : []));
+  const depths = cols.map((i) => s.bottom[i] - s.top[i]).sort((a, b) => a - b);
+  if (!depths.length) return s;
+  const usual = depths[Math.floor(depths.length / 2)];
+  // Fit the back edge, dropping the worst columns until everything left lies close to it.
+  let keep = cols;
+  let curve = quadratic(keep.map((i) => i), keep.map((i) => s.top[i]));
+  for (let round = 0; curve && round < 6; round++) {
+    const fit = curve;
+    const near = keep.filter((i) => Math.abs(s.top[i] - fit(i)) <= Math.max(6, 0.15 * usual));
+    if (near.length === keep.length || near.length < 0.5 * cols.length) break;
+    keep = near;
+    curve = quadratic(keep.map((i) => i), keep.map((i) => s.top[i]));
+  }
+  const top = [...s.top];
+  const bottom = [...s.bottom];
+  for (const i of cols) {
+    if (curve && Math.abs(top[i] - curve(i)) > Math.max(6, 0.15 * usual)) {
+      top[i] = Math.round(curve(i));
+      bottom[i] = Math.min(H - 1, top[i] + usual);
+    } else if (bottom[i] - top[i] < 0.75 * usual) bottom[i] = Math.min(H - 1, top[i] + usual);
+  }
+  return { ...s, top, bottom };
+}
+
 /**
  * The steps inside `stairs` (the walk-on things and floors named as stairs), top step first. Empty when
  * SAM finds no clear run of steps there: the stairs then stay a ramp, as before.
@@ -70,7 +119,7 @@ export async function findSteps(memo: Memo, placeKey: string, painting: Buffer, 
     log(`stairs: ${bands.length} step(s) found, kept as a ramp`);
     return [];
   }
-  const steps = bands.map(stepEdges).filter((s): s is NonNullable<typeof s> => !!s);
+  const steps = bands.map(stepEdges).filter((s): s is NonNullable<typeof s> => !!s).map(mendStep);
   const mid = (s: (typeof steps)[number]) => {
     const tops = s.top.filter((t) => t >= 0);
     return tops.reduce((a, b) => a + b, 0) / tops.length;

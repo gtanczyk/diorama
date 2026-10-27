@@ -127,6 +127,32 @@ export function stepBands(g: Geometry, x: number): Array<[number, number]> {
   return out.sort((a, b) => a[0] - b[0]);
 }
 
+/** The step of g.steps a walker at (x, y) stands on, and how far down its band (0 top, 1 bottom). */
+export function stepAt(g: Geometry, x: number, y: number): { step: number; at: number } | undefined {
+  let best: { step: number; at: number } | undefined;
+  (g.steps ?? []).forEach((s, step) => {
+    const i = Math.round((x - s.x0) / s.every);
+    if (i < 0 || i >= s.top.length || s.top[i] < 0 || s.bottom[i] <= s.top[i]) return;
+    const at = (y - s.top[i]) / (s.bottom[i] - s.top[i]);
+    // Neighbouring bands overlap a little: the one the walker is deeper inside wins.
+    if (at >= 0 && at <= 1 && (!best || Math.abs(at - 0.5) < Math.abs(best.at - 0.5))) best = { step, at };
+  });
+  return best;
+}
+
+/** The y at column x that is `at` of the way down step `step`'s band; undefined where the step isn't. */
+export function onStep(g: Geometry, step: number, x: number, at: number): number | undefined {
+  const s = g.steps?.[step];
+  const i = s ? Math.round((x - s.x0) / s.every) : -1;
+  if (!s || i < 0 || i >= s.top.length || s.top[i] < 0 || s.bottom[i] <= s.top[i]) return undefined;
+  return s.top[i] + at * (s.bottom[i] - s.top[i]);
+}
+
+/** Where feet stand on step `step` at column x: the same tread height stepFootY holds them at. */
+export function treadY(g: Geometry, step: number, x: number): number | undefined {
+  return onStep(g, step, x, TREAD);
+}
+
 const smooth = (u: number) => u * u * (3 - 2 * u);
 
 /**
