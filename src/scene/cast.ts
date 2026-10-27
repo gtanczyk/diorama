@@ -78,19 +78,29 @@ const area = (m: Mask) => m.bits.reduce((s, b) => s + b, 0);
 /** A grown-up's height, the scale's unit (PERSON_M in src/scene/scale.ts). */
 export const PERSON_M = 1.62;
 
+/** How a character stands: metres tall, and whether upright on two legs like a person (a cat is not). */
+export type Body = { height: number; upright: boolean };
+
 /**
  * How tall each character stands, in metres (a cat about 0.3, a child about 1.1, a grown-up 1.62), so the
- * runtime draws an animal or a child at its own size, not as a person-sized cut-out. One Spark call for the cast.
+ * runtime draws an animal or a child at its own size, and whether it walks upright like a person: only those
+ * get a walking rig, a 3D model and sprite sheets, the rest stay their painted figure. One Spark call for the cast.
  */
-export async function castHeights(memo: Memo, world: World, cast: Who[]): Promise<Record<string, number>> {
+export async function castBodies(memo: Memo, world: World, cast: Who[]): Promise<Record<string, Body>> {
   if (!cast.length) return {};
   const prompt = `These are the characters of a 2D adventure game (${world.pitch}):
 ${cast.map((w) => `- ${w.key}: ${w.looks}`).join('\n')}
-How tall does each one stand, in metres, from the ground to the top of the head (for an animal on four legs, to the top of its head as it stands)? An ordinary grown-up is ${PERSON_M}.
-Reply with JSON only: {${cast.map((w) => `"${w.key}": <metres>`).join(', ')}}`;
-  const a = await askSparkJson<Record<string, unknown>>(memo, { label: 'cast-heights', prompt });
+For each one: how tall does it stand, in metres, from the ground to the top of the head (for an animal on four legs, to the top of its head as it stands)? An ordinary grown-up is ${PERSON_M}. And does it stand and walk upright on two legs like a person (a person, a robot, a talking bear in a coat: yes; a cat, a dog, a horse, a bird, a fish: no)?
+Reply with JSON only: {${cast.map((w) => `"${w.key}": {"m": <metres>, "upright": true or false}`).join(', ')}}`;
+  const a = await askSparkJson<Record<string, { m?: unknown; upright?: unknown }>>(memo, { label: 'cast-bodies', prompt });
   return Object.fromEntries(cast.flatMap((w) => {
-    const m = Number(a[w.key]);
-    return Number.isFinite(m) && m > 0 ? [[w.key, Math.round(Math.min(3, Math.max(0.08, m)) * 100) / 100]] : [];
+    const m = Number(a[w.key]?.m);
+    return Number.isFinite(m) && m > 0 ? [[w.key, { height: Math.round(Math.min(3, Math.max(0.08, m)) * 100) / 100, upright: a[w.key]?.upright !== false }]] : [];
   }));
+}
+
+/** cast/figures.json (diorama cast): each character's body; absent, everyone is an upright grown-up. */
+export function readBodies(files: { path(...p: string[]): string; readJson(p: string): unknown }, exists: (p: string) => boolean): Record<string, Body> {
+  const at = files.path('cast', 'figures.json');
+  return exists(at) ? (files.readJson(at) as Record<string, Body>) : {};
 }

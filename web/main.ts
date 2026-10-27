@@ -21,7 +21,7 @@ type Data = {
   world: World;
   places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; weather?: Weather; issue?: string }>;
   /** Figure per hero or NPC key: a cut-out image, and its rig when `diorama cast` could cut it into parts. */
-  cast: Record<string, { image: string; height?: number; rig?: Rig; parts?: string; model?: { dir: string; info: ModelInfo }; sprites?: { dir: string; info: SpriteInfo } }>;
+  cast: Record<string, { image: string; height?: number; upright?: boolean; rig?: Rig; parts?: string; model?: { dir: string; info: ModelInfo }; sprites?: { dir: string; info: SpriteInfo } }>;
   story: Story | null;
   /** Index into story.changes → the painting as it looks once that change holds. */
   changes?: Record<string, string>;
@@ -48,8 +48,8 @@ export type SpriteInfo = {
   lines?: Record<string, string>;
 };
 type Sheet = { yaw: number; stand: number; img: HTMLImageElement; gestures: string[] };
-/** height: metres standing (a grown-up 1.62, a cat 0.3), so each is drawn at its own size. */
-type Figure = { img: HTMLImageElement; height?: number; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
+/** height: metres standing (a grown-up 1.62, a cat 0.3), so each is drawn at its own size; upright false: an animal, drawn as painted. */
+type Figure = { img: HTMLImageElement; height?: number; upright?: boolean; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
 /** y: the floor row the cut stands on, which sets how far it slides with parallax. */
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number; y: number };
 
@@ -238,7 +238,7 @@ class Game {
     await Promise.all(Object.entries(this.data.cast).map(async ([key, cast]) => {
       const img = await loadImage(files(cast.image)).catch(() => undefined);
       if (!img) return;
-      const figure: Figure = { img, height: cast.height };
+      const figure: Figure = { img, height: cast.height, upright: cast.upright };
       if (cast.rig && cast.parts) {
         const parts = new Map<PartName, HTMLImageElement>();
         await Promise.all(cast.rig.parts.map(async (p) => parts.set(p.name, await loadImage(files(`${cast.parts}/${p.file}`)))));
@@ -1266,7 +1266,9 @@ class Game {
       }
       const img = figure?.img;
       const w = img ? (h * img.width) / img.height : h * 0.36;
-      if (img) c.drawImage(img, -w / 2, -h, w, h);
+      // An animal standing still breathes: a slow swell from the feet up.
+      const breathe = figure?.upright === false && !walking ? 0.018 * Math.sin(this.time * 2.4 + x * 0.05) : 0;
+      if (img) c.drawImage(img, -w / 2, -h * (1 + breathe), w, h * (1 + breathe));
       else drawFigure(c, h, colour);
       return w / 2;
     };

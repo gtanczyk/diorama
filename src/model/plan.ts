@@ -9,6 +9,7 @@ import { Geometry } from '../play/geometry.ts';
 import { WalkGrid, type Point } from '../play/path.ts';
 import type { Story } from '../story/schema.ts';
 import type { WorldFiles } from '../world/files.ts';
+import { readBodies } from '../scene/cast.ts';
 import { FACINGS, SHEET, type Facing } from './sprites.ts';
 
 export type CharacterPlan = {
@@ -110,5 +111,7 @@ export async function planSprites(files: WorldFiles, story: Story | undefined): 
     const sheet = (plan.talk[l.facing] ??= ['listen']);
     if (!sheet.includes(gestures[i]) && sheet.length < SHEET.cols * SHEET.rows) sheet.push(gestures[i]);
   });
-  return [...plans.values()];
+  // A cat or a horse has no person's poses to draw over: it stays its painted figure (cast/figures.json).
+  const bodies = readBodies(files, fs.existsSync);
+  return [...plans.values()].filter((p) => bodies[p.key]?.upright !== false);
 }

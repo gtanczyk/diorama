@@ -1,7 +1,7 @@
 // diorama cast <slug>: the hero and every NPC of world.json as cut-out figures the runtime walks around.
 import fs from 'node:fs';
 import { defineCommand, takeOption } from '../registry.ts';
-import { castHeights, paintFigure, type Who } from '../scene/cast.ts';
+import { castBodies, paintFigure, readBodies, type Who } from '../scene/cast.ts';
 import { rigFigure } from '../scene/rig.ts';
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
 import { drawingFor } from '../world/drawings.ts';
@@ -24,6 +24,12 @@ defineCommand({
     const fixes = readCastFixes(files);
     const cast: Who[] = [world.hero, ...new Map(npcs.map((n) => [n.key, n])).values()].filter((w) => !only.length || only.includes(w.key)).map((w) => fixedLooks(files, w));
     const missing: string[] = [];
+    // cast/figures.json: how tall each one stands and whether upright, so a cat or a child is drawn at its own
+    // size and only those walking like a person get a rig (and later a model and sprites).
+    const bodies = { ...readBodies(files, fs.existsSync), ...(await castBodies(files.memo, world, cast)) };
+    files.write(files.path('cast', 'figures.json'), bodies);
+    const odd = Object.entries(bodies).filter(([, b]) => Math.abs(b.height - 1.62) > 0.25 || !b.upright);
+    if (odd.length) console.log(`bodies: ${odd.map(([k, b]) => `${k} ${b.height} m${b.upright ? '' : ', not upright'}`).join(', ')}`);
     await Promise.all(cast.map(async (who) => {
       // The person's description and chosen take (cast/fixes.json) win over the world's.
       // An NPC that cannot be cut out is set aside (the game draws a stand-in) so the rest of the cast is made.
@@ -37,6 +43,7 @@ defineCommand({
       files.write(files.path('cast', `${who.key}-painting.png`), painting);
       files.write(files.path('cast', `${who.key}.png`), figure);
       // The same painting cut into parts, so the runtime can walk the figure.
+      if (bodies[who.key]?.upright === false) return console.log(`${who.key}: ${files.path('cast', `${who.key}.png`)} · not upright: drawn as painted`);
       try {
         const { rig, parts, issues } = await rigFigure(files.memo, who.key, painting);
         for (const [file, png] of Object.entries(parts)) files.write(files.path('cast', who.key, file), png);
@@ -46,13 +53,6 @@ defineCommand({
         console.log(`${who.key}: ${files.path('cast', `${who.key}.png`)} · no rig: ${error instanceof Error ? error.message : error}`);
       }
     }));
-    // cast/heights.json: how tall each one stands, so a cat or a child is drawn at its own size.
-    const heightsFile = files.path('cast', 'heights.json');
-    const before = fs.existsSync(heightsFile) ? (files.readJson(heightsFile) as Record<string, number>) : {};
-    const heights = { ...before, ...(await castHeights(files.memo, world, cast)) };
-    files.write(heightsFile, heights);
-    const odd = Object.entries(heights).filter(([, m]) => Math.abs(m - 1.62) > 0.25);
-    if (odd.length) console.log(`heights: ${odd.map(([k, m]) => `${k} ${m} m`).join(', ')}`);
     for (const m of missing) console.log(`set aside, shown as a stand-in: ${m}`);
     console.log(`calls sent: muse ${files.memo.sent.muse}, sam ${files.memo.sent.sam}`);
   },

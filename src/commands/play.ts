@@ -9,6 +9,7 @@ import { previewGeometry } from '../play/preview.ts';
 import type { Layers } from '../play/parallax.ts';
 import { Rig } from '../play/rig.ts';
 import { Weather } from '../play/weather.ts';
+import { readBodies } from '../scene/cast.ts';
 import type { ModelInfo } from '../../web/hero3d.ts';
 import type { SpriteInfo } from '../../web/main.ts';
 import { soundData } from '../sound/data.ts';
@@ -58,8 +59,9 @@ export function worldData(files: WorldFiles) {
     places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, ...(backdrop && { backdrop }), ...(layers && { layers }), ...(weather && { weather }), issue };
   }
   const castDir = files.path('cast');
-  // cast/heights.json (diorama cast): metres each one stands, a grown-up 1.62.
-  const heights = fs.existsSync(files.path('cast', 'heights.json')) ? (files.readJson(files.path('cast', 'heights.json')) as Record<string, number>) : {};
+  // cast/figures.json (diorama cast): metres each one stands (a grown-up 1.62) and whether upright; one that
+  // isn't (a cat) is drawn as painted, whatever rig, model or sheets an older build left.
+  const bodies = readBodies(files, fs.existsSync);
   const cast = Object.fromEntries((fs.existsSync(castDir) ? fs.readdirSync(castDir) : [])
     .filter((f) => f.endsWith('.png') && !f.endsWith('-painting.png'))
     .map((f) => {
@@ -69,7 +71,9 @@ export function worldData(files: WorldFiles) {
       const model = fs.existsSync(files.path('cast', key, 'model', 'model.json')) ? { dir: `cast/${key}/model`, info: files.readJson(files.path('cast', key, 'model', 'model.json')) as ModelInfo } : undefined;
       // cast/<key>/sprites/sprites.json (diorama sprites): painted walk sheets, preferred over the 3D figure.
       const sprites = fs.existsSync(files.path('cast', key, 'sprites', 'sprites.json')) ? { dir: `cast/${key}/sprites`, info: files.readJson(files.path('cast', key, 'sprites', 'sprites.json')) as SpriteInfo } : undefined;
-      return [key, { image: `cast/${f}`, ...(heights[key] && { height: heights[key] }), ...(rig ? { rig, parts: `cast/${key}` } : {}), ...(model && { model }), ...(sprites && { sprites }) }];
+      const body = bodies[key];
+      const walks = body?.upright !== false;
+      return [key, { image: `cast/${f}`, ...(body && { height: body.height }), ...(!walks && { upright: false }), ...(walks && rig ? { rig, parts: `cast/${key}` } : {}), ...(walks && model && { model }), ...(walks && sprites && { sprites }) }];
     }));
   const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
   // changes/<i>.png per place: how story.changes[i] looks once it holds.
