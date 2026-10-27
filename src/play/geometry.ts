@@ -48,7 +48,11 @@ export const Geometry = z.object({
    * length: a shadow's floor length as a share of the caster's height (0.3 high sun, 1.5+ low sun).
    * strength: how dark painted shadows are, 0..1 (fog ~0.15, hard sun ~0.5). Omitted: no cast shadow.
    */
-  light: z.object({ dir: XY, length: z.number().nonnegative(), strength: z.number().min(0).max(1) }).optional(),
+  /**
+   * The light the painting is lit by. dir/length: how shadows run on screen per height (the sun). With `at`
+   * the light is a fire or a lamp standing on the floor there: shadows run away from it, each its own way.
+   */
+  light: z.object({ dir: XY, length: z.number().nonnegative(), strength: z.number().min(0).max(1), at: XY.optional() }).optional(),
   /** Mask (relative to the place folder) of painted shadows on floors: a person standing in one is darkened. */
   shadows: z.string().optional(),
   /**
@@ -197,4 +201,23 @@ export function stepRestY(g: Geometry, x: number, y: number, dir = 1): number {
   const step = dir < 0 ? -1 : 1;
   for (let v = y + step; v > bands[0][0] - 2 && v < bands[bands.length - 1][1] + 2; v += step) if (flat(v)) return v;
   return y;
+}
+
+/**
+ * The light on a person standing at (x, y), px tall: the sun as it is, or for a fire or a lamp (light.at)
+ * a shadow running straight away from it, longer the farther they stand, fading out a few heights away.
+ * Undefined when the person is too far from the fire for it to throw a shadow.
+ */
+export function lightFor(g: Geometry, x: number, y: number, px: number): Geometry['light'] {
+  const light = g.light;
+  if (!light?.at) return light;
+  const [dx, dy] = [x - light.at[0], y - light.at[1]];
+  const d = Math.hypot(dx, dy);
+  const reach = 4 * px;
+  if (d >= reach) return undefined;
+  // Right at the fire the shadow still has a way: toward the viewer.
+  const dir: [number, number] = d > 1 ? [dx / d, dy / d] : [0, 1];
+  // A flame lower than the head throws a long shadow, longer the farther away the person is.
+  const length = Math.min(3, 0.9 + (1.2 * d) / px);
+  return { dir, length, strength: light.strength * (1 - d / reach), at: light.at };
 }

@@ -1,5 +1,5 @@
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
-import { floorYAt, hiddenRuns, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
+import { floorYAt, hiddenRuns, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { decodeDepth, DEPTH_SCALE, shadowAt, sunFor, type Depth } from '../src/play/shadow.ts';
@@ -1100,7 +1100,9 @@ class Game {
     // One shadow per person. Under the sun the cast shadow is it, so the soft blob around the feet gives way to
     // it (two shadows read as two lights) and only a thin dark contact under the soles stays. In shade, fog or
     // no measured light, the blob is the whole shadow.
-    const cast = g.light && g.light.length > 0 && shaded < 0.98 ? 1 - shaded : 0;
+    // The sun, or a fire's light on this person (its own way, fading with distance).
+    const light = lightFor(g, x, y, h);
+    const cast = light && light.length > 0 && light.strength > 0.02 && shaded < 0.98 ? 1 - shaded : 0;
     const blob = (0.12 + 0.4 * strength) * (1 - cast);
     // Shadows lie on the floor: every one is drawn before the things and the people (the shadow layer), so a
     // near person's long shadow never darkens someone farther away or a fire behind them.
@@ -1117,7 +1119,7 @@ class Game {
         ctx.ellipse(x, y, h * 0.07, Math.max(1.5, h * 0.014), 0, 0, Math.PI * 2);
         ctx.fill();
       }
-      const rect = cast > 0 ? this.castShadow(x, y, h, g.light!, cast * strength, paint, [sx, sy]) : undefined;
+      const rect = cast > 0 ? this.castShadow(x, y, h, light!, cast * light!.strength, paint, [sx, sy]) : undefined;
       ctx.restore();
       return rect ?? [x + sx, y + sy, x + sx, y + sy];
     }

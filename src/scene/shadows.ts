@@ -17,7 +17,7 @@ const { width: W, height: H } = FRAME;
 
 /** Light as the runtime takes it: where shadows fall on screen (+y toward the viewer), how long they are
  * per px of the caster's height, and how much darker the floor is in shadow (0 none, 1 black). */
-export type Light = { dir: [number, number]; length: number; strength: number };
+export type Light = { dir: [number, number]; length: number; strength: number; at?: [number, number] };
 export type CasterShadow = { thing: string; px: number; dir?: [number, number]; length?: number };
 export type Shadows = { mask: Mask; light?: Light; casters: CasterShadow[]; source: 'casters' | 'spark' | 'none' };
 
@@ -164,4 +164,25 @@ export async function findShadows(memo: Memo, label: string, painting: Buffer, f
   const strength = around > 0 ? Math.min(0.85, Math.max(0.1, 1 - inShadow / around)) : 0.35;
   const round = (v: number) => Math.round(v * 1000) / 1000;
   return { mask, light: { dir: [round(dir[0]), round(dir[1])], length: round(Math.min(4, length)), strength: round(strength) }, casters: measured, source: 'casters' };
+}
+
+const SparkSource = z.object({ source: z.string() });
+
+/**
+ * A fire or a lamp that lights the scene more than the sky does (a camp at dusk, a lamp-lit room): Spark
+ * names the main light among the place's own `lights`. Asked only where the layout has lights. The light
+ * stands where its thing does: the foot of a tall one (a lamp post), the middle of a low one (a fire ring).
+ */
+export async function localLight(memo: Memo, label: string, painting: Buffer, lights: Array<{ key: string; box?: [number, number, number, number] }>): Promise<{ key: string; at: [number, number] } | undefined> {
+  const placed = lights.filter((l) => l.box);
+  if (!placed.length) return undefined;
+  const prompt = `This is a painted background for a 2D adventure game (${W}x${H} px). It shows these light sources: ${placed.map((l) => `"${l.key}"`).join(', ')}.
+What mainly lights the ground where people walk, and so decides which way their shadows fall: the sun or daylight, or one of those light sources (at dusk or at night a fire or a lamp usually does)?
+Reply with JSON only: {"source": "sun"} or {"source": "<one of the names above>"}`;
+  const a = SparkSource.parse(await askSparkJson(memo, { label, prompt, images: [painting] }));
+  const hit = placed.find((l) => l.key === a.source);
+  if (!hit?.box) return undefined;
+  const [x0, y0, x1, y1] = hit.box;
+  const tall = y1 - y0 > 1.5 * (x1 - x0);
+  return { key: hit.key, at: [Math.round((x0 + x1) / 2), Math.round(tall ? y1 : (y0 + y1) / 2)] };
 }

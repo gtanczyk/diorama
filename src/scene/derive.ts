@@ -11,7 +11,7 @@ import { FRAME, type Layout } from './layout.ts';
 import type { Kind } from './locate.ts';
 import type { MaskSource } from './masks.ts';
 import { blobsOf, footDepth, lineYAt, simplifyLine, type Blob } from './occluders.ts';
-import { findShadows, type Shadows } from './shadows.ts';
+import { findShadows, localLight, type Shadows } from './shadows.ts';
 import { atFrame, findSteps, STAIRS } from './stairs.ts';
 import { PERSON_M, probePoints, scaleFrom, sparkPeople, type Sample, type Scale } from './scale.ts';
 import { CELL, connect, gridFromPixels, islands, nearestRoomy, reach, roomy, type Grid } from './walk.ts';
@@ -270,7 +270,18 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   const restsOnGround = (b: Blob) => ground.bits[Math.min(H - 1, Math.round(b.baseY) + 3) * W + Math.round((b.box[0] + b.box[2]) / 2)] === 1;
   const casters = [...sharpOnFloor, ...blobs.filter((b) => !onFloor.includes(b) && !isCoarse(b) && restsOnGround(b))];
   const shadows = await findShadows(memo, place.key, painting, subtract(ground, dilate(inTheWay, 2)), casters);
-  if (shadows.light) log(`light ${shadows.light.dir.join(', ')} x${shadows.light.length}, strength ${shadows.light.strength} (${shadows.source})`);
+  // A fire or a lamp outshining the sky throws each person's shadow away from itself.
+  if (layout.lights.length) {
+    const fire = await localLight(memo, `light-source:${place.key}`, painting, layout.lights.map((l) => {
+      const t = things.find((t) => t.key === l.key);
+      return { key: l.key, box: t ? (maskBox(t.mask) ?? undefined) : undefined };
+    }));
+    if (fire) {
+      shadows.light = { dir: [0, 1], length: 1.5, strength: shadows.light?.strength ?? 0.45, at: fire.at };
+      log(`light from ${fire.key} at ${fire.at.join(', ')}`);
+    }
+  }
+  if (shadows.light && !shadows.light.at) log(`light ${shadows.light.dir.join(', ')} x${shadows.light.length}, strength ${shadows.light.strength} (${shadows.source})`);
 
   // Stairs: the walk-on things and floors named as stairs get their steps, so feet land on the treads.
   const looks = new Map(place.things.map((t) => [t.key, t.looks ?? '']));

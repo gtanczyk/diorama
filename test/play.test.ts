@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { floorYAt, hiddenRuns, hides, onStep, personPx, stepAt, stepFootY, stepRestY, type Geometry, type Occluder } from '../src/play/geometry.ts';
+import { floorYAt, hiddenRuns, hides, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { WalkGrid } from '../src/play/path.ts';
 import { previewGeometry } from '../src/play/preview.ts';
 import type { Layout } from '../src/scene/layout.ts';
@@ -118,4 +118,18 @@ test('a step hidden in part by a basket or a boat is mended from the rest of its
   const m = mendStep({ x0: 0, every: 8, top, bottom });
   for (let i = 15; i <= 20; i++) expect(Math.abs(m.top[i] - (500 + 0.02 * (i - 20) ** 2))).toBeLessThan(3);
   for (let i = 0; i <= 5; i++) expect(m.bottom[i] - m.top[i]).toBe(60);
+});
+
+test('a fire throws each shadow straight away from itself, fading a few heights away', () => {
+  const g = { light: { dir: [0, 1], length: 1.5, strength: 0.5, at: [500, 600] } } as unknown as Geometry;
+  const left = lightFor(g, 400, 600, 200)!;
+  const right = lightFor(g, 600, 700, 200)!;
+  expect(left.dir[0]).toBeCloseTo(-1);
+  expect(right.dir[0]).toBeGreaterThan(0);
+  expect(right.dir[1]).toBeGreaterThan(0);
+  expect(left.strength).toBeGreaterThan(lightFor(g, 100, 600, 200)!.strength);
+  expect(lightFor(g, 1400, 600, 200)).toBeUndefined();
+  // The sun is the same for everyone.
+  const sun = { light: { dir: [1, 0], length: 1, strength: 0.4 } } as unknown as Geometry;
+  expect(lightFor(sun, 10, 10, 100)).toEqual(sun.light);
 });
