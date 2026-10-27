@@ -25,7 +25,7 @@ type Job = { id: string; label: string; args: string[]; unplayable?: Array<{ pla
 type Note = { id: string; at: string; by: string; place?: string; point?: [number, number]; text: string; state: 'open' | 'done'; reply?: string };
 type Spend = { usd: number; priced: boolean; calls: Record<string, number> };
 type Budget = { total: Spend; today: Spend; limitUsd: number | null; over: boolean; prices: Record<string, number> };
-type Status = Summary & { placeDetail: PlaceDetail[]; build: Record<string, { seconds: number }>; calls: Record<string, number>; jobs: Job[] };
+type Status = Summary & { placeDetail: PlaceDetail[]; build: Record<string, { seconds: number }>; typical?: Record<string, number>; calls: Record<string, number>; jobs: Job[] };
 
 const route = signal(location.pathname);
 const followAgent = signal(true);
@@ -54,7 +54,7 @@ const clock = (ms: number) => {
 };
 
 /** A running job at a glance: which of its steps are done, how long it has run, and about how long is left (from the last build's step times). */
-function JobProgress({ job, plan, build, running, done, last }: { job: Job; plan: string[] | null; build: Status['build']; running: Record<string, 'run' | 'fail'>; done: Record<string, number>; last?: string }) {
+function JobProgress({ job, plan, build, typical, running, done, last }: { job: Job; plan: string[] | null; build: Status['build']; typical: Record<string, number>; running: Record<string, 'run' | 'fail'>; done: Record<string, number>; last?: string }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -69,8 +69,8 @@ function JobProgress({ job, plan, build, running, done, last }: { job: Job; plan
   const elapsed = started ? now - started : 0;
   // What is left: the steps not done yet, each as long as it took last time; the running one minus what it has already run.
   const runningSince = started ? started + Object.values(done).reduce((a, b) => a + b * 1000, 0) : now;
-  const left = own.filter((s) => done[s] === undefined).reduce((sum, s) => sum + Math.max(0, (build[s]?.seconds ?? 0) * 1000 - (running[s] === 'run' ? now - runningSince : 0)), 0);
-  const known = own.length > 0 && own.every((s) => done[s] !== undefined || build[s]);
+  const left = own.filter((s) => done[s] === undefined).reduce((sum, s) => sum + Math.max(0, (build[s]?.seconds ?? typical[s] ?? 0) * 1000 - (running[s] === 'run' ? now - runningSince : 0)), 0);
+  const known = own.length > 0 && own.every((s) => done[s] !== undefined || build[s] || typical[s] !== undefined);
   return (
     <section class="progress" aria-live="polite">
       <div class="row">
@@ -424,7 +424,7 @@ function Workshop({ slug }: { slug: string }) {
           {error && <p class="error">{error}</p>}
           {movedFrom.value && movedFrom.value !== slug && <p class="banner">The agent moved the view here from {movedFrom.value}. <button type="button" class="ghost" onClick={() => { const back = movedFrom.value!; movedFrom.value = null; go(`/w/${back}`); }}>Back to {movedFrom.value}</button> <button type="button" class="ghost" onClick={() => (movedFrom.value = null)}>Stay</button></p>}
           {undone && !job && <p class="banner">{undone}{canRedo ? ' · Redo puts it back.' : ''}</p>}
-          {job && status && <JobProgress job={job} plan={jobPlan} build={status.build} running={running} done={jobDone} last={jobTail} />}
+          {job && status && <JobProgress job={job} plan={jobPlan} build={status.build} typical={status.typical ?? {}} running={running} done={jobDone} last={jobTail} />}
           {failed && !job && <Failed slug={slug} job={failed} onError={setError} onPlace={setFocus} />}
           {budget?.over && <p class="banner">Budget: ${budget.total.usd} spent of the ${budget.limitUsd} limit. Check Setup before the next big build.</p>}
           {playing && <Play slug={slug} place={playing.place} round={playing.round ?? 0} onRestart={() => setPlaying({ ...playing, round: (playing.round ?? 0) + 1 })} version={tick} onLine={playLine} onError={setError} />}

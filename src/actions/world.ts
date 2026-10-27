@@ -49,6 +49,16 @@ export function callCounts(dir: string): Record<string, number> {
   return counts;
 }
 
+/** How long each build step usually takes here: the median over the worlds built so far, for a world that has no times of its own. */
+export function typicalSeconds(root: string): Record<string, number> {
+  const seen: Record<string, number[]> = {};
+  for (const slug of fs.existsSync(root) ? fs.readdirSync(root) : []) {
+    const steps = readJson<{ steps?: Record<string, { seconds?: number }> }>(path.join(root, slug, 'build.json'))?.steps ?? {};
+    for (const [step, s] of Object.entries(steps)) if (typeof s?.seconds === 'number') (seen[step] ??= []).push(s.seconds);
+  }
+  return Object.fromEntries(Object.entries(seen).map(([step, all]) => [step, all.sort((a, b) => a - b)[Math.floor(all.length / 2)]]));
+}
+
 export function worldSummary(root: string, slug: string) {
   const dir = path.join(root, slug);
   const parsed = World.safeParse(readJson(path.join(dir, 'world.json')));
@@ -91,7 +101,8 @@ defineAction({
   input: z.object({ slug: Slug }),
   async run({ slug }, ctx) {
     const dir = path.join(ctx.root, slug);
-    if (!fs.existsSync(dir)) throw new ActionError(404, `no world ${slug} yet`);
+    // A world being built for the first time has no folder for its first seconds, but it has its job.
+    if (!fs.existsSync(dir) && !ctx.jobs.list(slug).length) throw new ActionError(404, `no world ${slug} yet`);
     const parsed = World.safeParse(readJson(path.join(dir, 'world.json')));
     const build = readJson<{ steps?: Record<string, unknown> }>(path.join(dir, 'build.json'));
     const places = (parsed.success ? parsed.data.places : []).map((p) => {
@@ -114,6 +125,7 @@ defineAction({
       world: parsed.success ? { start: parsed.data.start, hero: parsed.data.hero, style: parsed.data.style } : null,
       placeDetail: places,
       build: build?.steps ?? {},
+      typical: typicalSeconds(ctx.root),
       calls: callCounts(dir),
       jobs: ctx.jobs.list(slug).slice(-10),
     };

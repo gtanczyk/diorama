@@ -131,7 +131,8 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
   const cookie = randomBytes(32).toString('base64url');
   const events = new Events();
   const jobs = new Jobs(events, {
-    cwd: opts.cwd,
+    // Commands find worlds in ./worlds, so a Studio on another worlds folder runs them beside it.
+    cwd: opts.cwd ?? (path.basename(root) === 'worlds' ? path.dirname(root) : undefined),
     bin: opts.bin,
     beforeStart: (job) => {
       const dir = path.join(root, job.world);
