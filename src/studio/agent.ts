@@ -65,6 +65,8 @@ class Talk {
   shell = 0;
   /** How far each turn's transcript has been announced on the event feed. */
   private seen = new Map<number, number>();
+  /** Tools announced already: a running tool is announced when it starts and must not be again once it settles. */
+  private tools = new Set<string>();
   private ended = new Set<number>();
 
   constructor(readonly slug: string, readonly session: AgentSession, dir: string, private readonly events: Events) {
@@ -107,8 +109,11 @@ class Talk {
         this.publish('turn.start', { turn: turn.id });
       }
       const from = this.seen.get(turn.id)!;
-      for (const entry of turn.entries.slice(from)) {
-        if (entry.kind === 'tool') {
+      for (const [i, entry] of turn.entries.entries()) {
+        if (i < from) continue;
+        // A turn's entries only grow, so a turn and a place in it name an entry.
+        if (entry.kind === 'tool' && !this.tools.has(`${turn.id}:${i}`)) {
+          this.tools.add(`${turn.id}:${i}`);
           this.publish('tool', { name: entry.name.replace(/^mcp__diorama__/, '') });
           // The shell sees files, not the pictures the Studio's tools show: after a few shell calls in a turn,
           // the agent is reminded once which tools look for it. It is still let through.
