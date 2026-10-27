@@ -61,7 +61,9 @@ function conversationFacings(g: Geometry, npc: string): { hero: Facing; npc: Fac
   const [dx, dy] = [feet[0] - t.stand[0], feet[1] - t.stand[1]];
   // Standing right next to each other (or the spot is under the feet): side by side, the NPC a little towards the viewer.
   if (Math.hypot(dx, dy) < 40) return { hero: 'right', npc: 'front-right' };
-  return { hero: facingOf(Math.atan2(dx, dy)), npc: facingOf(Math.atan2(-dx, -dy)) };
+  // Someone talked to from behind still turns their face to the viewer: a talk sheet never shows a back.
+  const faces = facingOf(Math.atan2(-dx, -dy));
+  return { hero: facingOf(Math.atan2(dx, dy)), npc: faces === 'back' ? 'front' : faces === 'back-right' ? 'front-right' : faces };
 }
 
 type SpokenLine = { speaker: string; text: string };
