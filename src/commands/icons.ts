@@ -27,7 +27,9 @@ defineCommand({
     // Items the story no longer has lose their icons.
     for (const key of Object.keys(info)) if (!sources[key] && !story.items.some((i) => i.key === key)) delete info[key];
     const items = story.items.filter((i) => only.length === 0 || only.includes(i.key));
-    await Promise.all(items.map(async (item) => {
+    const failed: string[] = [];
+    // An item without an icon shows its name in the bag, so one failure does not stop the build.
+    await Promise.all(items.map(async (item) => { try {
       const from = sources[item.key];
       const fix = fixes[item.key] ?? {};
       let png: Buffer;
@@ -56,8 +58,12 @@ defineCommand({
       files.write(files.path('items', `${item.key}.png`), png);
       info[item.key] = { icon: `items/${item.key}.png`, how, from };
       console.log(`${item.key}: ${how}${from ? ` from ${from.place}/${from.thing}` : ''}`);
-    }));
+    } catch (error) {
+      failed.push(item.key);
+      console.log(`  ${item.key}: no icon (${error instanceof Error ? error.message : error}); the bag shows its name. icon_redo with a hint tries again`);
+    } }));
     files.write(infoFile, info);
+    if (failed.length) console.log(`no icon for: ${failed.join(', ')}`);
     console.log(`calls sent: muse ${files.memo.sent.muse}, sam ${files.memo.sent.sam}`);
   },
 });

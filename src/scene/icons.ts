@@ -4,8 +4,8 @@
 import fs from 'node:fs';
 import sharp from 'sharp';
 import { z } from 'zod';
-import { maskArea, maskToPng, type Mask } from '../image/mask.ts';
-import { clampRect, maskBox } from '../image/raster.ts';
+import { emptyMask, imageSize, maskArea, maskFromPng, maskToPng, type Mask } from '../image/mask.ts';
+import { clampRect, components, maskBox } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import { museEdit, musePaint } from '../meta/muse.ts';
 import { samFind } from '../meta/sam.ts';
@@ -65,12 +65,38 @@ export async function cutIcon(image: Buffer, mask: Mask, pad = 3): Promise<Buffe
     .composite([{ input: fitted, gravity: 'centre' }]).png().toBuffer();
 }
 
-/** SAM finds the item on Muse's picture; the largest find is the item. */
+/**
+ * Cuts the item out of Muse's picture: SAM by its name, else as "object" (a name like "stale buns" may mean nothing to
+ * it), else everything that stands out from the plain ground Muse was asked for, read from the picture's border.
+ */
 async function samCut(memo: Memo, label: string, picture: Buffer, phrase: string): Promise<Buffer> {
-  const found = await samFind(memo, { label, image: picture, prompt: phrase });
-  const best = found.sort((a, b) => maskArea(b.mask) - maskArea(a.mask))[0];
-  if (!best) throw new Error(`${label}: SAM did not find "${phrase}" on Muse's picture`);
-  return cutIcon(picture, best.mask);
+  for (const prompt of [phrase, 'object']) {
+    const found = await samFind(memo, { label, image: picture, prompt });
+    const best = found.sort((a, b) => maskArea(b.mask) - maskArea(a.mask))[0];
+    if (best) return cutIcon(picture, best.mask);
+  }
+  const mask = await offGround(picture);
+  if (!mask) throw new Error(`${label}: SAM did not find "${phrase}" on Muse's picture, and nothing stands out from its ground`);
+  return cutIcon(picture, mask);
+}
+
+/** The largest blob whose colour differs from the picture's border (the plain ground), or null. */
+export async function offGround(picture: Buffer): Promise<Mask | null> {
+  const { data, info } = await sharp(picture).removeAlpha().resize(400, 400, { fit: 'inside' }).raw().toBuffer({ resolveWithObject: true });
+  const { width: w, height: h } = info;
+  const border: number[][] = [[], [], []];
+  for (let x = 0; x < w; x++) for (const y of [0, 1, h - 2, h - 1]) for (let c = 0; c < 3; c++) border[c].push(data[(y * w + x) * 3 + c]);
+  for (let y = 0; y < h; y++) for (const x of [0, 1, w - 2, w - 1]) for (let c = 0; c < 3; c++) border[c].push(data[(y * w + x) * 3 + c]);
+  const ground = border.map((v) => v.sort((a, b) => a - b)[v.length >> 1]);
+  const small = emptyMask(w, h);
+  for (let i = 0; i < w * h; i++) {
+    const d = Math.hypot(data[i * 3] - ground[0], data[i * 3 + 1] - ground[1], data[i * 3 + 2] - ground[2]);
+    if (d > 40) small.bits[i] = 1;
+  }
+  const blob = components(small).sort((a, b) => maskArea(b) - maskArea(a))[0];
+  if (!blob || maskArea(blob) < w * h * 0.01) return null;
+  const full = await imageSize(picture);
+  return maskFromPng(await sharp(await maskToPng(blob)).resize(full.width, full.height, { fit: 'fill' }).png().toBuffer());
 }
 
 const look = (name: string, hint?: string) => (hint ? `${name} (${hint})` : name);
