@@ -5,9 +5,9 @@
 import type { Depth } from './shadow.ts';
 
 /** Frame px of blur at full defocus (the sky, the far sea when the hero is near). */
-export const FOCUS_BLUR = 3.2;
-/** Behind the focus by this share of its depth, a thing is fully soft (twice as far as the hero). */
-const FULL = 0.5;
+export const FOCUS_BLUR = 1.4;
+/** Behind the focus by this share of its depth, a thing is fully soft (five times as far as the hero). */
+const FULL = 0.8;
 /** The first few % behind the feet stay sharp: the floor the hero stands on. */
 const SHARP = 0.03;
 
@@ -22,8 +22,8 @@ export function softness(rows: number, focus: number): number {
   if (focus <= 0) return 0;
   const t = (focus * (1 - SHARP) - Math.max(0, rows)) / (focus * FULL);
   if (t <= 0) return 0;
-  // Eased in: just behind the hero it already shows, far behind it saturates.
-  return Math.min(1, Math.sqrt(t));
+  // Linear: just behind the hero it barely shows, only the far view goes really soft.
+  return Math.min(1, t);
 }
 
 /** The softness of every depth pixel as an alpha mask (RGBA, white), for compositing the soft frame. */

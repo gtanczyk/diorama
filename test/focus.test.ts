@@ -20,7 +20,7 @@ describe('focus', () => {
   });
 
   it('makes a mask with one alpha per depth pixel', () => {
-    const d = { w: 2, h: 1, rows: new Float32Array([600, 100]) };
+    const d = { w: 2, h: 1, rows: new Float32Array([600, 0]) };
     const m = focusMask(d, 500);
     expect([m[3], m[7]]).toEqual([0, 255]);
   });
