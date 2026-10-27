@@ -1178,7 +1178,7 @@ class Game {
     const h = who.body ?? this.hero;
     // In a party each hero stands on a ring in its player's colour, so a child finds theirs.
     if (h.colour && this.party.length && layer === 'shadow') this.drawRing(h);
-    const rect = this.drawPerson(h.x, h.y, h.facing, h.phase, h.path.length > 0, h.figure, '#2b2733', false, this.shift(h.y), h.yaw, h === this.hero ? this.talking(this.data.world.hero.key) : undefined, h.foot, layer);
+    const rect = this.drawPerson(h.x, h.y, h.facing, h.phase, h.path.length > 0, h.figure, '#2b2733', false, this.shift(h.y), h.yaw, h === this.hero ? this.talking(this.data.world.hero.key) : undefined, h.foot, layer, this.party.length ? h.colour : undefined);
     if (h.colour && this.party.length && layer === 'body') this.drawTag(h, rect);
     return rect;
   }
@@ -1220,7 +1220,7 @@ class Game {
   }
 
   /** Draws a person with feet at (x, y): their shadow (layer 'shadow', returns its box) or their body (returns the box it covers). */
-  private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0], yaw = facing * Math.PI / 3, talk?: 'speak' | 'listen', foot?: number, layer: 'shadow' | 'body' = 'body'): Rect {
+  private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0], yaw = facing * Math.PI / 3, talk?: 'speak' | 'listen', foot?: number, layer: 'shadow' | 'body' = 'body', glow?: string): Rect {
     const g = this.place.g;
     // Size comes from where the person stands on the floor and how tall they are (a cat, a child); on stairs
     // the feet sit on the tread under them.
@@ -1307,7 +1307,9 @@ class Game {
     // Near a flame a person's light breathes with it.
     const breath = light?.at && g.light?.flame && g.light.strength > 0 ? 1 + 0.5 * FLAME_GLOW * flicker(this.time).glow * Math.min(1, light.strength / g.light.strength) * (1 - shaded) : 1;
     const bright = this.lightAt(x, y - h * 0.5) * (1 - shaded * strength) * breath;
-    ctx.filter = `brightness(${bright.toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}`;
+    // A party member is edged in its player's colour (twice, so the edge reads at a glance on a busy painting).
+    const edge = glow ? ` drop-shadow(0 0 ${Math.max(2, h * 0.008).toFixed(1)}px ${glow}) drop-shadow(0 0 ${Math.max(2, h * 0.008).toFixed(1)}px ${glow})` : '';
+    ctx.filter = `brightness(${bright.toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}${edge}`;
     ctx.translate(x, y - bob);
     ctx.rotate(rock);
     const half = paint(ctx);
@@ -1972,14 +1974,14 @@ addEventListener('blur', () => keys.clear());
 // picks the lit answer, or plays again at the end), B puts the item in hand back (or looks), the other face buttons and
 // the shoulders go through the bag one item at a time and back to empty hands. Any pad steers; several at once all do.
 let pad: PadFrame = { dir: null, pressed: [], pads: 0 };
+const soundless = document.getElementById('soundless')!;
 const KEY_HINT = document.querySelector('#bar .hint')?.textContent ?? '';
-const PAD_HINT = 'gamepad: stick or d-pad walks · A uses · B puts back or looks · X Y or shoulders pick an item · in a talk up/down and A answer';
 /** Pad mode lights the answer and Play again cards and shows the pad's hints; the mouse moving ends it. */
 function usePad(on: boolean) {
   if (document.body.classList.contains('pad') === on) return;
   document.body.classList.toggle('pad', on);
   const hint = document.querySelector('#bar .hint');
-  if (hint) hint.textContent = on ? PAD_HINT : KEY_HINT;
+  if (hint) hint.textContent = on ? words.padHint : KEY_HINT;
 }
 // ?pads=turns: the pads take turns (see Turns); ?turn=60 sets the seconds of a turn.
 const turns = params.get('pads') === 'turns' ? new Turns(Number(params.get('turn')) || 60) : undefined;
@@ -2149,6 +2151,9 @@ const frame = (now: number) => {
   const dt = capture ? 1 / 60 : Math.min(0.05, (now - last) / 1000);
   last = now;
   padInput();
+  // A pad press cannot start the sound; while it is held back, the page asks for one click (pads only).
+  soundless.hidden = !(mixer && mixer.ctx.state === 'suspended' && document.body.classList.contains('pad'));
+  if (!soundless.hidden && soundless.textContent !== words.sound) soundless.textContent = words.sound;
   steer();
   game.update(dt);
   mixer?.update();

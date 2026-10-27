@@ -499,7 +499,24 @@ function Play({ slug, place, round, onRestart, version, onLine, onError }: { slu
   const frame = useRef<HTMLIFrameElement>(null);
   // The refresh that follows a reload (an undo, a finished job) is not a change since the game started.
   useEffect(() => void (version !== loadedAt && (Date.now() - loadedTime.current < 3000 ? setLoadedAt(version) : setFresh(false))), [version]);
-  const src = `/play/${slug}/${place ? `?place=${encodeURIComponent(place)}` : ''}`;
+  // Gamepads: all steer one hero, take turns, or each steers its own hero (a party); kept for the next visit.
+  const [pads, setPads] = useState<string>(() => {
+    try {
+      return localStorage.getItem('diorama.pads') ?? '';
+    } catch {
+      return '';
+    }
+  });
+  const pickPads = (v: string) => {
+    setPads(v);
+    try {
+      localStorage.setItem('diorama.pads', v);
+    } catch {
+      // A private window keeps it for this visit only.
+    }
+  };
+  const query = new URLSearchParams({ ...(place && { place }), ...(pads && { pads }) }).toString();
+  const src = `/play/${slug}/${query ? `?${query}` : ''}`;
   const hook = (e: Event) => {
     setFresh(true);
     setLoadedAt(version);
@@ -516,8 +533,16 @@ function Play({ slug, place, round, onRestart, version, onLine, onError }: { slu
     <section class="play">
       <div class="row">
         <strong>Playing{place ? ` from ${place}` : ''}</strong>
-        <span class="detail">click to walk or use, right click to look</span>
+        <span class="detail">click to walk or use, right click to look, or play with a gamepad</span>
         <span class="grow" />
+        <label class="detail" title="With several gamepads: all steer the one hero, they take turns, or each pad has its own hero">
+          Gamepads{' '}
+          <select value={pads} onChange={(e) => pickPads(e.currentTarget.value)}>
+            <option value="">one hero</option>
+            <option value="turns">take turns</option>
+            <option value="party">a hero each</option>
+          </select>
+        </label>
         <button type="button" class="ghost small" onClick={onRestart}>Restart</button>
         {/* For a big screen: the game letterboxes to it, keyboard and gamepads keep working; Esc comes back. */}
         <button type="button" class="ghost small" title="Play on the whole screen (Esc to come back)" onClick={() => frame.current?.requestFullscreen().then(() => frame.current?.focus()).catch((err) => onError(err.message))}>Full screen</button>
