@@ -9,3 +9,4 @@ import './feedback.ts';
 import './budget.ts';
 import './view.ts';
 import './cast.ts';
+import './story.ts';

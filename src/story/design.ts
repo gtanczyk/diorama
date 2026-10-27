@@ -48,8 +48,10 @@ ${EXAMPLE}`;
 }
 
 /** Up to four tries; each retry shows Spark its last answer and everything the checker found. */
-export async function designStory(memo: Memo, world: World): Promise<{ story: Story; report: StoryReport }> {
-  let prompt = brief(world);
+export async function designStory(memo: Memo, world: World, wish?: string): Promise<{ story: Story; report: StoryReport }> {
+  // The person's wish goes last, so a story without one asks Spark exactly what it asked before.
+  const ask = (w: World) => brief(w) + (wish ? `\n\nThe author asks for this; follow it, keeping every ending reachable and the exit rules: ${wish}` : '');
+  let prompt = ask(world);
   for (let attempt = 1; attempt <= 4; attempt++) {
     const answer = await askSparkJson(memo, { label: `story#${attempt}`, prompt });
     const report = checkStory(world, answer);
@@ -59,7 +61,7 @@ export async function designStory(memo: Memo, world: World): Promise<{ story: St
     }
     if (report.story && report.issues.length === 0) return { story: report.story, report };
     console.log(`  story try ${attempt}: ${report.issues.length} issue(s): ${report.issues.slice(0, 3).join('; ')}`);
-    prompt = `${brief(world)}\n\nYour last answer was:\n${JSON.stringify(answer)}\n\nA checker played every possible state and found these problems. Fix every one and reply with the whole JSON again:\n- ${report.issues.join('\n- ')}`;
+    prompt = `${ask(world)}\n\nYour last answer was:\n${JSON.stringify(answer)}\n\nA checker played every possible state and found these problems. Fix every one and reply with the whole JSON again:\n- ${report.issues.join('\n- ')}`;
   }
   throw new Error('Spark gave no playable story in 4 tries');
 }

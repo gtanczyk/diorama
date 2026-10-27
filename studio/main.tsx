@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 import { askAgent, call, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
 import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
+import { StoryView } from './story.tsx';
 import { PlaceEditor } from './place.tsx';
 
 type Check = { id: string; label: string; state: 'ok' | 'missing' | 'optional' | 'fail'; detail: string; fix?: string[] };
@@ -290,7 +291,7 @@ function Workshop({ slug }: { slug: string }) {
   const stepState = (s: string): 'ok' | 'run' | 'fail' | 'todo' => running[s] ?? (status?.build[s] ? 'ok' : 'todo');
   const placeFocus = useMemo(() => status?.placeDetail.find((p) => p.key === focus), [status, focus]);
   const [playing, setPlaying] = useState<{ place?: string } | null>(null);
-  const [view, setView] = useState<'places' | 'cast'>('places');
+  const [view, setView] = useState<'places' | 'story' | 'cast'>('places');
   const playable = !!status?.placeDetail.some((p) => p.stages.layout);
   const playLine = (text: string) => setLines((l) => [...l.slice(-400), { seq: -Date.now() - Math.random(), text, kind: 'play' }]);
 
@@ -318,8 +319,10 @@ function Workshop({ slug }: { slug: string }) {
           </ol>
           <div class="seg" role="tablist" aria-label="Show">
             <button type="button" role="tab" aria-selected={view === 'places'} class={view === 'places' ? 'on' : ''} onClick={() => setView('places')}>Places</button>
+            <button type="button" role="tab" aria-selected={view === 'story'} class={view === 'story' ? 'on' : ''} onClick={() => setView('story')}>Story</button>
             <button type="button" role="tab" aria-selected={view === 'cast'} class={view === 'cast' ? 'on' : ''} onClick={() => setView('cast')}>Cast</button>
           </div>
+          {view === 'story' && <StoryView slug={slug} version={tick} onError={setError} />}
           {view === 'cast' && <CastView slug={slug} version={tick} onError={setError} />}
           {view === 'places' && <ul class="places">
             {status?.placeDetail.map((p) => (
