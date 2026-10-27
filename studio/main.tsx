@@ -85,8 +85,17 @@ function Share({ slug, jobs, onError }: { slug: string; jobs: Job[]; onError: (m
 
 /** In a workshop run in Polish (pl), the header says nothing in English. */
 function Header({ world, live, pl }: { world?: string; live?: boolean; pl?: boolean }) {
+  // The Workshop fits under it, so its height is the page's to know.
+  const top = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = top.current;
+    if (!el) return;
+    const size = new ResizeObserver(() => document.documentElement.style.setProperty('--top-h', `${el.offsetHeight}px`));
+    size.observe(el);
+    return () => size.disconnect();
+  }, []);
   return (
-    <header class="top">
+    <header class="top" ref={top}>
       <a href="/" class="brand" onClick={(e) => (e.preventDefault(), go('/'))}>
         <svg width="22" height="22" viewBox="0 0 28 28" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 21 L14 6 L25 21 Z" /><path d="M3 21 H25" /><path d="M9 21 L14 14 L19 21" /></svg>
         Diorama Studio
@@ -341,7 +350,7 @@ function Workshop({ slug }: { slug: string }) {
   /** Right after an undo the person can take it back. */
   const [canRedo, setCanRedo] = useState(false);
   const [playing, setPlaying] = useState<{ place?: string; round?: number; full?: boolean } | null>(null);
-  const [view, setView] = useState<'places' | 'story' | 'cast'>('places');
+  const [view, setView] = useState<'places' | 'story' | 'cast' | 'notes'>('places');
   const [notes, setNotes] = useState<Note[]>([]);
   const [budget, setBudget] = useState<Budget | null>(null);
   /** The build a workshop world's children are watching, until the game starts or the grown-up hides the show. */
@@ -478,7 +487,8 @@ function Workshop({ slug }: { slug: string }) {
       {shown && status && <KidsWait slug={slug} places={status.placeDetail} progress={total ? 1 - left / total : 0} left={shown.state === 'running' ? left : null} doing={plan.find((s) => running[s] === 'run')}
         ready={shown.state === 'done' && playable} failed={shown.state === 'failed' || shown.state === 'cancelled'}
         onPlay={() => (setHidden(shown.id), setPlaying({ full: true }))} onHide={() => setHidden(shown.id)} />}
-      <main class="workshop">
+      {/* Places fits the window: the build is watched, not scrolled. Fixing a place or playing gives the page its length back. */}
+      <main class={`workshop${view === 'places' && !playing && !placeFocus ? ' fit' : ''}`}>
         <div class="left">
           <div class="row">
             <h1>{status?.title ?? slug}</h1>
@@ -493,7 +503,7 @@ function Workshop({ slug }: { slug: string }) {
               {job ? `${job.by === 'agent' ? 'Agent: ' : ''}${job.label}…` : status && status.steps.length >= steps.length - 1 ? 'Rebuild verify' : 'Continue build'}
             </button>
           </div>
-          {status?.pitch && <p class="lead">{status.pitch}</p>}
+          {status?.pitch && <p class="lead" title={status.pitch}>{status.pitch}</p>}
           {error && <p class="error">{error}</p>}
           {movedFrom.value && movedFrom.value !== slug && <p class="banner">The agent moved the view here from {movedFrom.value}. <button type="button" class="ghost" onClick={() => { const back = movedFrom.value!; movedFrom.value = null; go(`/w/${back}`); }}>Back to {movedFrom.value}</button> <button type="button" class="ghost" onClick={() => (movedFrom.value = null)}>Stay</button></p>}
           {undone && !job && <p class="banner">{undone}{canRedo ? ' · Redo puts it back.' : ''}</p>}
@@ -505,16 +515,17 @@ function Workshop({ slug }: { slug: string }) {
             <button type="button" role="tab" aria-selected={view === 'places'} class={view === 'places' ? 'on' : ''} onClick={() => setView('places')}>Places</button>
             <button type="button" role="tab" aria-selected={view === 'story'} class={view === 'story' ? 'on' : ''} onClick={() => setView('story')}>Story</button>
             <button type="button" role="tab" aria-selected={view === 'cast'} class={view === 'cast' ? 'on' : ''} onClick={() => setView('cast')}>Cast</button>
+            <button type="button" role="tab" aria-selected={view === 'notes'} class={view === 'notes' ? 'on' : ''} onClick={() => setView('notes')}>Notes{notes.some((n) => n.state === 'open') ? ` · ${notes.filter((n) => n.state === 'open').length}` : ''}</button>
           </div>
           {view === 'story' && <StoryView slug={slug} version={tick} onError={setError} />}
           {view === 'cast' && <CastView slug={slug} version={tick} onError={setError} />}
           {view === 'places' && status && (
-            <div class="build-stage">
+            <div class="build-stage"><div class="build-grid">
               {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? 'Muse Spark is dreaming up the places…'}</span></div></div></figure>}
               <Tale slug={slug} version={tick} pitch={status.pitch} places={status.placeDetail} />
-            </div>
+              <Strip slug={slug} places={status.placeDetail} focus={stageKey ?? null} live={liveBuild} building={!!building} repairing={repairing} onPick={(k) => setFocus(focus === k ? null : k)} />
+            </div></div>
           )}
-          {view === 'places' && status && <Strip slug={slug} places={status.placeDetail} focus={stageKey ?? null} live={liveBuild} building={!!building} repairing={repairing} onPick={(k) => setFocus(focus === k ? null : k)} />}
           {view === 'places' && placeFocus && (
             <section class="inspect">
               <p class="detail">{placeFocus.shows}</p>
@@ -536,7 +547,7 @@ function Workshop({ slug }: { slug: string }) {
               {placeFocus.stages.painting ? <PlaceEditor slug={slug} place={placeFocus.key} version={tick} onError={setError} /> : <p class="detail">Fixing opens once the place is painted.</p>}
             </section>
           )}
-          <Notes slug={slug} notes={notes} onPlace={setFocus} onError={setError} />
+          {view === 'notes' && <Notes slug={slug} notes={notes} onPlace={(p) => (setView('places'), setFocus(p))} onError={setError} />}
         </div>
         <aside class="right">
           <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} />

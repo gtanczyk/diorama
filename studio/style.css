@@ -327,9 +327,9 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 .model.image { color: var(--image); } .model.image::before { background: var(--image); }
 .model.sam { color: var(--sam); } .model.sam::before { background: var(--sam); }
 
-.pipeline { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
+.pipeline { display: flex; flex-direction: column; gap: 8px; padding: 10px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
 .pipeline .phases { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; }
-.pipeline .phases li { flex-basis: 0; min-width: 78px; display: flex; flex-direction: column; gap: 5px; }
+.pipeline .phases li { flex-basis: 0; min-width: 124px; display: flex; flex-direction: column; gap: 5px; }
 .pipeline .bar { position: relative; height: 8px; border-radius: 4px; background: var(--raised); overflow: hidden; }
 .pipeline .fill { position: absolute; inset: 0 auto 0 0; background: var(--ok); border-radius: 4px; transition: width 1s linear; }
 .pipeline .tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--panel); }
@@ -338,16 +338,23 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 .pipeline li.skip { opacity: 0.45; }
 .pipeline li.todo .name, .pipeline li.skip .name { color: var(--faint); }
 .pipeline li.run .name { color: var(--accent); }
-.pipeline .name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pipeline .by { display: flex; flex-wrap: wrap; gap: 3px; }
+.pipeline .label { display: flex; align-items: center; gap: 4px; overflow: hidden; white-space: nowrap; mask-image: linear-gradient(90deg, #000 85%, transparent); }
+.pipeline .name { font-size: 13px; font-weight: 600; margin-right: 2px; }
+.pipeline .head { flex-wrap: nowrap; gap: 8px; font-size: 13px; }
+.pipeline .head strong { white-space: nowrap; margin-right: 6px; }
+.pipeline .head .when { white-space: nowrap; }
+.pipeline .head .tail { flex: 1; min-width: 0; text-align: right; }
 .pipeline li.todo .model, .pipeline li.skip .model { opacity: 0.6; }
-.pipeline .ticker { gap: 8px; font-size: 13px; }
+.pipeline .phases li .model { font-size: 10px; padding: 0 6px 0 5px; }
 .pipeline .count { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; color: var(--muted); transition: transform 0.2s; }
 .pipeline .count.hot { transform: scale(1.08); color: var(--text); }
-.pipeline .tail { font-family: ui-monospace, Menlo, monospace; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+.pipeline .tail { font-family: ui-monospace, Menlo, monospace; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @keyframes flow { to { background-position: -200% 0; } }
 
-.build-stage { display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(220px, 1fr); gap: 16px; align-items: stretch; }
+.build-grid { display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(220px, 1fr); grid-template-rows: auto auto; grid-template-areas: "stage tale" "strip tale"; gap: 12px 16px; align-items: stretch; }
+.build-grid > .stage-live { grid-area: stage; }
+.build-grid > .tale { grid-area: tale; }
+.build-grid > .strip { grid-area: strip; }
 .stage-live { margin: 0; display: flex; flex-direction: column; gap: 8px; }
 .stage-live .frame { position: relative; width: min(100%, calc(64vh * 1200 / 896)); margin: 0 auto; aspect-ratio: 1200 / 896; border-radius: 14px; overflow: hidden; background: radial-gradient(ellipse at 50% 40%, #232831, #15181c); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45); }
 .stage-live .layer { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
@@ -357,8 +364,9 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 .stage-live figcaption { position: absolute; left: 14px; bottom: 14px; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; border-radius: 16px; background: rgba(12, 14, 17, 0.72); backdrop-filter: blur(6px); font-size: 14px; }
 .stage-live figcaption .model { font-size: 12px; background: rgba(255, 255, 255, 0.08); }
 .stage-live .where { position: absolute; right: 14px; top: 12px; padding: 3px 10px; border-radius: 12px; background: rgba(12, 14, 17, 0.6); font-size: 12px; color: var(--muted); }
-.stage-live .layers { display: flex; flex-wrap: wrap; gap: 6px; }
-.stage-live .layers .on { background: var(--raised); border-color: var(--accent); }
+.stage-live .layers { position: absolute; left: 12px; top: 10px; right: 140px; display: flex; flex-wrap: wrap; gap: 4px; }
+.stage-live .layers button { min-height: 26px; padding: 0 10px; font-size: 12px; border: 0; background: rgba(12, 14, 17, 0.6); color: var(--muted); backdrop-filter: blur(6px); }
+.stage-live .layers .on { background: rgba(12, 14, 17, 0.85); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
 .enter-fade { animation: enter-fade 0.9s ease-out both; }
 .enter-wipe { animation: enter-wipe 1.8s cubic-bezier(0.6, 0, 0.3, 1) both; }
 .enter-iris { animation: enter-iris 1.4s ease-out both; }
@@ -395,11 +403,35 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 .strip .card { all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 5px; width: 100%; }
 .strip .thumb { position: relative; display: block; aspect-ratio: 1200 / 896; border-radius: 10px; overflow: hidden; background: var(--raised); }
 .strip .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; animation: enter-fade 0.8s ease-out both; }
-.strip .noimg { position: absolute; inset: 0; padding: 10px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; color: var(--faint); }
+.strip .noimg { position: absolute; inset: 0; overflow: hidden; padding: 10px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; color: var(--faint); }
 .strip li.focus .thumb { outline: 2px solid var(--accent); outline-offset: 2px; }
 .strip .name { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 13px; }
 .strip .name strong { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .strip .dots { display: flex; gap: 3px; }
 .strip .dots i { width: 6px; height: 6px; border-radius: 3px; background: var(--line-strong); }
 .strip .dots i.on { background: var(--ok); }
-@media (max-width: 1100px) { .build-stage { grid-template-columns: 1fr; } .tale { contain: none; } .pipeline .phases { flex-wrap: wrap; } }
+@media (max-width: 1100px) { .build-grid { grid-template-columns: 1fr; grid-template-areas: "stage" "strip" "tale"; } .tale { contain: none; } .pipeline .phases { flex-wrap: wrap; } }
+
+/* Places fits the window (main.workshop.fit): the stage takes the height that is left, the story and Activity scroll inside. */
+@media (min-width: 961px) and (min-height: 560px) {
+  main.workshop.fit { height: calc(100dvh - var(--top-h, 55px)); padding-block: 14px; overflow: hidden; }
+  main.workshop.fit > .left { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  main.workshop.fit > .left > * { flex: none; margin: 0; }
+  main.workshop.fit > .left > .row h1 { font-size: 26px; }
+  main.workshop.fit .lead { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 15px; }
+  main.workshop.fit .seg { align-self: flex-start; }
+  /* The stage column is as wide as the picture the height allows; the story takes the rest. */
+  main.workshop.fit > .left > .build-stage { flex: 1 1 0; min-height: 0; container-type: size; }
+  main.workshop.fit .build-grid { height: 100%; grid-template-rows: minmax(0, 1fr) 132px;
+    grid-template-columns: min(calc(100cqw - 316px), calc((100cqh - 144px) * 1200 / 896)) minmax(0, 1fr); }
+  main.workshop.fit .stage-live { min-height: 0; }
+  main.workshop.fit .stage-live .frame { width: 100%; margin: 0; }
+  main.workshop.fit .strip { display: flex; gap: 10px; overflow-x: auto; }
+  main.workshop.fit .strip li { flex: 0 0 132px; }
+  main.workshop.fit .strip .name { font-size: 12px; }
+  main.workshop.fit .tale { min-height: 0; }
+  main.workshop.fit > .right { min-height: 0; overflow: hidden; }
+  main.workshop.fit > .right > section.agent { flex: 1 1 0; min-height: 200px; max-height: none; }
+  main.workshop.fit > .right > section.log { flex: 0 1 34%; min-height: 120px; display: flex; flex-direction: column; }
+  main.workshop.fit > .right > section.log ol { flex: 1; min-height: 0; max-height: none; }
+}

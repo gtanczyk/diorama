@@ -19,7 +19,7 @@ export type StagePlace = {
 /** The build's steps in seven phases, each with what does the work. Meta's models first, by name. */
 export const PHASES = [
   { key: 'story', title: 'Story', by: ['Muse Spark'], steps: ['world', 'story'] },
-  { key: 'paint', title: 'Paint', by: ['Muse Spark', 'Muse Image'], steps: ['layout', 'paint'] },
+  { key: 'paint', title: 'Paint', by: ['Muse Image', 'Muse Spark'], steps: ['layout', 'paint'] },
   { key: 'cut', title: 'Cut out', by: ['SAM 3.1', 'Muse Image'], steps: ['masks', 'plates', 'icons'] },
   { key: 'space', title: 'Depth and walk', by: ['Depth Anything', 'code'], steps: ['derive', 'backdrop', 'weather'] },
   { key: 'cast', title: 'Cast', by: ['Muse Image', '3D'], steps: ['cast', 'model', 'sprites'] },
@@ -91,10 +91,11 @@ export function Pipeline({ job, all, live, build, typical }: { job?: JobLike; al
   const fresh = live.lastCall && now - live.lastCall.at < 4000;
   return (
     <section class={`pipeline${job ? ' on' : ''}`} aria-live="polite">
-      <div class="row">
+      <div class="row head">
         <strong>{job ? `${job.by === 'agent' ? 'Agent: ' : ''}${job.label}` : 'Build'}</strong>
-        <span class="grow" />
-        {when && <span class="detail">{when}</span>}
+        {job && calls.map(([by, n]) => <span class={`count ${tone(by)}${fresh && live.lastCall?.by === by ? ' hot' : ''}`}><ModelTag by={by} /> {n}</span>)}
+        <span class="detail tail">{job ? (fresh && live.lastCall ? `${live.lastCall.by}: ${live.lastCall.label}` : live.tail) : ''}</span>
+        {when && <span class="detail when">{when}</span>}
       </div>
       <ol class="phases" aria-label="Build phases">
         {phases.map((p) => {
@@ -104,23 +105,15 @@ export function Pipeline({ job, all, live, build, typical }: { job?: JobLike; al
           const filled = p.steps.reduce((sum, s, i) => sum + (states[i] === 'ok' ? took(s) : states[i] === 'run' ? Math.min(took(s) * 0.95, runFor / 1000) : 0), 0);
           const phase = states.includes('fail') ? 'fail' : states.includes('run') ? 'run' : states.every((x) => x === 'ok') ? 'ok' : states.every((x) => x === 'skip') ? 'skip' : 'todo';
           return (
-            <li class={phase} style={{ flexGrow: Math.max(1, all) }} title={p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : '·'} ${s}${done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}`).join('\n')}>
+            <li class={phase} style={{ flexGrow: Math.max(1, all) }} title={`${p.title} · ${p.by.join(', ')}\n` + p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : '·'} ${s}${done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}`).join('\n')}>
               <span class="bar"><span class="fill" style={{ width: `${Math.round((100 * filled) / Math.max(1, all))}%` }} />
                 {p.steps.slice(1).map((s) => <span class="tick" style={{ left: `${(100 * p.steps.slice(0, p.steps.indexOf(s)).reduce((a, x) => a + took(x), 0)) / Math.max(1, all)}%` }} />)}
               </span>
-              <span class="name">{p.title}</span>
-              <span class="by">{p.by.map((b) => <ModelTag by={b} />)}</span>
+              <span class="label"><span class="name">{p.title}</span>{p.by[0] !== 'code' && <ModelTag by={p.by[0]} />}</span>
             </li>
           );
         })}
       </ol>
-      {(calls.length > 0 || live.tail) && job && (
-        <div class="row ticker">
-          {calls.map(([by, n]) => <span class={`count ${tone(by)}${fresh && live.lastCall?.by === by ? ' hot' : ''}`}><ModelTag by={by} /> {n}</span>)}
-          <span class="grow" />
-          <span class="detail tail">{fresh && live.lastCall ? `${live.lastCall.by}: ${live.lastCall.label}` : live.tail}</span>
-        </div>
-      )}
     </section>
   );
 }
@@ -230,14 +223,14 @@ export function Stage({ slug, place, live, building }: { slug: string; place: St
           </figcaption>
         )}
         <span class="where">{place.key}</span>
+        {shown.length > 1 && (
+          <div class="layers" role="tablist" aria-label="Layers">
+            {shown.map((s) => (
+              <button type="button" role="tab" aria-selected={top === s.layer} class={`ghost small${top === s.layer ? ' on' : ''}`} onClick={() => setPick(pick === s.layer ? null : s.layer)}>{s.title}</button>
+            ))}
+          </div>
+        )}
       </div>
-      {shown.length > 1 && (
-        <div class="layers" role="tablist" aria-label="Layers">
-          {shown.map((s) => (
-            <button type="button" role="tab" aria-selected={top === s.layer} class={`ghost small${top === s.layer ? ' on' : ''}`} onClick={() => setPick(pick === s.layer ? null : s.layer)}>{s.title}</button>
-          ))}
-        </div>
-      )}
     </figure>
   );
 }
