@@ -334,6 +334,22 @@ function Workshop({ slug }: { slug: string }) {
   const undoneJob = useRef<string | null>(null);
   /** Activity shows what happened; what each step prints is there too, on request (the job card shows its last line). */
   const [allLines, setAllLines] = useState(false);
+  /** Activity stays folded unless the person opened it last time. */
+  const [logOpen, setLogOpen] = useState(() => {
+    try {
+      return localStorage.getItem('diorama.activity') === 'open';
+    } catch {
+      return false;
+    }
+  });
+  const keepLogOpen = (open: boolean) => {
+    setLogOpen(open);
+    try {
+      localStorage.setItem('diorama.activity', open ? 'open' : 'closed');
+    } catch {
+      // A private window keeps it for this visit only.
+    }
+  };
   /** The agent that would have repaired the last build, when it is not installed. */
   const [noAgent, setNoAgent] = useState<string | null>(null);
   /** Places the build is mending right now, with what it tries. */
@@ -551,11 +567,16 @@ function Workshop({ slug }: { slug: string }) {
         </div>
         <aside class="right">
           <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} />
-          <section class="log">
-            <div class="row"><h2>Activity</h2><span class="grow" /><span class="detail" title={status ? `this world: ${Object.entries(status.calls).map(([m, n]) => `${m} ${n}`).join(', ') || 'no calls yet'}` : undefined}>{calls} calls this session{budget ? ` · ${spend(budget.today)} today · ${spend(budget.total)}${budget.limitUsd !== null ? ` of $${budget.limitUsd}` : ''} total` : ''}</span></div>
+          {/* Activity is the raw record, for when something needs explaining; folded it shows only the latest line. */}
+          <details class="log" open={logOpen} onToggle={(e) => keepLogOpen((e.currentTarget as HTMLDetailsElement).open)}>
+            <summary>
+              <h2>Activity</h2>
+              <span class="latest">{lines.findLast((l) => l.kind !== 'out')?.text ?? ''}</span>
+            </summary>
+            <div class="row"><span class="detail" title={status ? `this world: ${Object.entries(status.calls).map(([m, n]) => `${m} ${n}`).join(', ') || 'no calls yet'}` : undefined}>{calls} calls this session{budget ? ` · ${spend(budget.today)} today · ${spend(budget.total)}${budget.limitUsd !== null ? ` of $${budget.limitUsd}` : ''} total` : ''}</span></div>
             <label class="detail"><input type="checkbox" checked={allLines} onChange={(e) => setAllLines(e.currentTarget.checked)} /> Every line the steps print</label>
             <ol>{[...lines].reverse().filter((l) => allLines || l.kind !== 'out').map((l) => <li key={l.seq} class={l.kind}>{l.text}</li>)}</ol>
-          </section>
+          </details>
         </aside>
       </main>
     </>
