@@ -56,7 +56,7 @@ In the page, loops pan and fade with where the hero stands, footsteps follow the
 
 ## Checking a world
 
-`diorama build` ends with `verify`, which writes `verify.json` per place and prints which places are playable and what was flagged on the way. Every step also leaves a picture to look at: `masks/overlay.png` (what SAM found) and `walk.png` (where the hero can walk, footprints, floor lines and his size at a few depths).
+`diorama build` ends with `verify`, which writes `verify.json` per place and prints which places are playable and what was flagged on the way. Places are built side by side and independently: a place whose step breaks is set aside with why, and the others go on to the end, characters and sound included. The report gives each error its playbook (`src/scene/playbook.ts`): where to look, the fix tools to try in order, and the costly last resort; `place_status` hands the same to the Studio agent, which repairs one place at a time with the fix tools. Every step also leaves a picture to look at: `masks/overlay.png` (what SAM found) and `walk.png` (where the hero can walk, footprints, floor lines and his size at a few depths).
 
 `diorama explore <slug>` puts the hero on every part of each floor in the real play page and checks each frame; it needs Playwright with Chromium (`npm i -D playwright && npx playwright install chromium`). `--fix` closes the floor where he looked wrong.
 

@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import { withPlay } from '../scene/playbook.ts';
 import type { Verdict } from '../scene/verify.ts';
 import { readCorrections } from '../scene/corrections.ts';
 import { Slug, World } from '../world/schema.ts';
@@ -123,7 +124,8 @@ defineAction({
   name: 'place_status',
   reads: true,
   description: 'One place up close: each thing\'s kind, SAM phrase and how its mask was found (coarse ones need a look), each floor, '
-    + 'the review pictures (masks/overlay.png, walk.png), the stand spots, and the fixes made so far.',
+    + 'the review pictures (masks/overlay.png, walk.png), the stand spots, the fixes made so far, and each error that keeps it from being playable '
+    + 'with its playbook: where to look, the fix tools to try in order, and the costly last resort.',
   input: z.object({ slug: Slug, place: z.string().min(1) }),
   async run({ slug, place }, ctx) {
     const dir = path.join(ctx.root, slug, 'places', place);
@@ -132,7 +134,13 @@ defineAction({
     const masks = readJson<{ things: Record<string, Made>; floors: Record<string, Omit<Made, 'kind' | 'phrase'>>; flagged: string[] }>(path.join(dir, 'masks.json'));
     const geometry = readJson<{ things: Array<{ key: string; stand: [number, number] }>; start: [number, number] }>(path.join(dir, 'geometry.json'));
     const picture = (f: string) => (fs.existsSync(path.join(dir, f)) ? { file: `places/${place}/${f}`, v: stamp(path.join(dir, f)) } : null);
+    // A step that broke for this place in the last build stands before verify's errors: verify did not see it.
+    const report = readJson<{ places?: Array<{ place: string; ok: boolean; issues?: Verdict['errors'] }> }>(path.join(ctx.root, slug, 'build.json'))?.places?.find((r) => r.place === place);
+    const verdict = readJson<Verdict>(path.join(dir, 'verify.json'));
+    const broke = report?.issues?.filter((i) => i.code === 'STEP_FAILED') ?? [];
     return {
+      playable: broke.length === 0 && (verdict?.ok ?? null),
+      errors: [...broke, ...(verdict?.errors ?? [])].map(withPlay),
       place,
       pictures: { painting: picture('painting.png') ?? picture('blockin.png'), masks: picture('masks/overlay.png'), walk: picture('walk.png') },
       things: Object.entries(masks?.things ?? {}).map(([key, t]) => ({ key, ...t, stand: geometry?.things.find((g) => g.key === key)?.stand ?? null })),
