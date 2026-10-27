@@ -4,7 +4,7 @@ import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity,
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
-import { actions, activeChanges, apply, hiddenThings, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
+import { actions, activeChanges, apply, hiddenThings, pickDialogue, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 import { Mixer, type Listened } from './audio.ts';
@@ -579,10 +579,11 @@ class Game {
     if (verb === 'look') return { kind: 'do', thing: key, verb: 'look' };
     if (this.place.spec.exits.some((e) => e.via === key)) return { kind: 'go', via: key };
     const role = hot.spec?.role ?? hot.thing.role;
-    if (role === 'npc' && !this.holding) return { kind: 'talk', npc: key };
+    // A person talks: in a conversation when the story has one for them now, else in their own talk lines.
+    const story = this.data.story;
+    if (role === 'npc' && !this.holding && (!story || pickDialogue(story, this.state, key) >= 0)) return { kind: 'talk', npc: key };
     if (this.holding) return { kind: 'do', thing: key, verb: 'use', with: this.holding };
     if (verb) return { kind: 'do', thing: key, verb };
-    const story = this.data.story;
     const offered = story ? (['take', 'use', 'talk'] as const).find((v) => pickInteraction(story, this.state, { thing: key, verb: v }) >= 0) : undefined;
     return { kind: 'do', thing: key, verb: offered ?? 'look' };
   }
