@@ -1,0 +1,147 @@
+{
+  "fps": 30,
+  "shots": [
+    {
+      "name": "1 Hook: real room, painted room, hero in the door",
+      "dur": 5,
+      "src": "footage/hook.mp4"
+    },
+    {
+      "name": "2 Pitch at the desk, walks out the real door",
+      "dur": 20,
+      "src": "footage/pitch.mp4"
+    },
+    {
+      "name": "3 WOW: the hero in the painted study",
+      "dur": 3.5,
+      "src": "footage/mist.mp4",
+      "from": 6.5,
+      "fade": 0.6
+    },
+    {
+      "name": "3 WOW: the harbour, the ferrywoman",
+      "dur": 3.5,
+      "src": "footage/tour.mp4",
+      "from": 6.5,
+      "fade": 0.25
+    },
+    {
+      "name": "3 WOW: up the harbour steps",
+      "dur": 3,
+      "src": "footage/tour.mp4",
+      "from": 30.5,
+      "fade": 0.25
+    },
+    {
+      "name": "3 WOW: the beacon catches fire",
+      "dur": 5,
+      "src": "footage/mist.mp4",
+      "from": 81.5,
+      "fade": 0.25,
+      "audio": 0.8
+    },
+    {
+      "name": "3 WOW: the harbour lit",
+      "dur": 3.5,
+      "src": "footage/mist.mp4",
+      "from": 96,
+      "fade": 0.25
+    },
+    {
+      "name": "3 WOW: back at the desk by dawn",
+      "dur": 3,
+      "src": "footage/tour.mp4",
+      "from": 61.5,
+      "fade": 0.3
+    },
+    {
+      "name": "4 Terminal: one command builds the world",
+      "dur": 8,
+      "src": "footage/term.mp4",
+      "fade": 0.3
+    },
+    {
+      "name": "5 How it's made: one step per beat",
+      "dur": 29.7,
+      "src": "footage/conjure.mp4",
+      "fade": 0.4
+    },
+    {
+      "name": "6 Studio: one sentence, Muse repaints the lanterns (wait 96x), undo, redo",
+      "dur": 36,
+      "src": "footage/studio/muse-cut.mp4",
+      "fade": 0.4
+    },
+    {
+      "name": "7 Technique: SAM 3.1 cuts out every thing",
+      "dur": 5,
+      "image": "footage/stills/masks-harbour.png",
+      "fade": 0.5
+    },
+    {
+      "name": "7 Technique: floor, scale and occlusion from the masks",
+      "dur": 5,
+      "image": "footage/stills/walk-harbour.png",
+      "fade": 0.4
+    },
+    {
+      "name": "7 Technique: depth, shadows and parallax in play",
+      "dur": 4,
+      "src": "footage/mist.mp4",
+      "from": 20,
+      "fade": 0.4
+    },
+    {
+      "name": "7 Technique: Spark critiques the painting",
+      "dur": 5,
+      "image": "footage/stills/critic.png",
+      "fade": 0.4
+    },
+    {
+      "name": "7 Technique: Muse repaints only those regions",
+      "dur": 4,
+      "image": "footage/stills/repaint.png",
+      "fade": 0.3
+    },
+    {
+      "name": "7 Technique: same pipeline, another place",
+      "dur": 4,
+      "image": "footage/stills/masks-beacon.png",
+      "fade": 0.4
+    },
+    {
+      "name": "7 Technique: MusicGen score, cast voices",
+      "dur": 4,
+      "src": "footage/sound.mp4",
+      "fade": 0.4
+    },
+    {
+      "name": "8 Thanks",
+      "dur": 12.3,
+      "card": "Thanks for watching  \u00b7  github.com/gtanczyk/diorama",
+      "fade": 0.6
+    }
+  ],
+  "music": {
+    "src": "footage/music.mp3",
+    "volume": 0.35
+  },
+  "voice": [
+    {
+      "src": "footage/vo/pitch.wav",
+      "at": 5
+    },
+    {
+      "src": "footage/vo/how.wav",
+      "at": 54.5
+    },
+    {
+      "src": "footage/vo/studio.wav",
+      "at": 84.2
+    },
+    {
+      "src": "footage/vo/techniques.wav",
+      "at": 120.2
+    }
+  ]
+}

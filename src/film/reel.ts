@@ -66,7 +66,7 @@ export function worldSvg(world: World, focus: string): string {
     const { x, y } = pos.get(p.key)!;
     const hot = p.key === focus;
     return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="14" fill="${hot ? '#2f5bea' : '#1b1d26'}" stroke="${hot ? '#9fb4ff' : '#3a3f55'}" stroke-width="3"/>
-<text x="${x + 22}" y="${y + 56}" font-family="DejaVu Sans, sans-serif" font-size="34" font-weight="bold" fill="#fff">${esc(p.key)}</text>
+<text x="${x + 22}" y="${y + 56}" font-family="DejaVu Sans, sans-serif" font-size="${Math.min(34, Math.floor((w - 44) / (p.key.length * 0.62)))}" font-weight="bold" fill="#fff">${esc(p.key)}</text>
 <text x="${x + 22}" y="${y + 104}" font-family="DejaVu Sans, sans-serif" font-size="24" fill="#c9cde0">${p.things.length} things · ${p.exits.length} exit${p.exits.length === 1 ? '' : 's'}</text>`;
   });
   const pitch = world.pitch.length > 110 ? `${world.pitch.slice(0, 107)}…` : world.pitch;

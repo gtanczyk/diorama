@@ -7,52 +7,51 @@
       "src": "footage/hook.mp4"
     },
     {
-      "name": "2 Pitch at the desk, walks out the real door",
+      "name": "2 Pitch at the desk",
       "dur": 20,
       "src": "footage/pitch.mp4"
     },
     {
-      "name": "3 WOW: the hero in the painted study",
-      "dur": 3.5,
-      "src": "footage/mist.mp4",
-      "from": 6.5,
+      "name": "3 WOW: today's study, the screens flicker",
+      "dur": 4,
+      "src": "footage/d35-back.webm",
+      "from": 10.5,
       "fade": 0.6
     },
     {
-      "name": "3 WOW: the harbour, the ferrywoman",
+      "name": "3 WOW: 1991, the 12-year-old at his computer",
+      "dur": 4,
+      "src": "footage/d35-back.webm",
+      "from": 17,
+      "fade": 0.4
+    },
+    {
+      "name": "3 WOW: through the drawing's portal",
+      "dur": 4.5,
+      "src": "footage/d35-back.webm",
+      "from": 44,
+      "fade": 0.25
+    },
+    {
+      "name": "3 WOW: into the crayon valley",
       "dur": 3.5,
-      "src": "footage/tour.mp4",
-      "from": 6.5,
-      "fade": 0.25
+      "src": "footage/d35-back.webm",
+      "from": 51.5,
+      "fade": 0.4
     },
     {
-      "name": "3 WOW: up the harbour steps",
-      "dur": 3,
-      "src": "footage/tour.mp4",
-      "from": 30.5,
-      "fade": 0.25
-    },
-    {
-      "name": "3 WOW: the beacon catches fire",
+      "name": "3 WOW: the castle colours itself in",
       "dur": 5,
-      "src": "footage/mist.mp4",
-      "from": 81.5,
-      "fade": 0.25,
-      "audio": 0.8
-    },
-    {
-      "name": "3 WOW: the harbour lit",
-      "dur": 3.5,
-      "src": "footage/mist.mp4",
-      "from": 96,
+      "src": "footage/d35-back.webm",
+      "from": 136.5,
       "fade": 0.25
     },
     {
-      "name": "3 WOW: back at the desk by dawn",
+      "name": "3 WOW: back today",
       "dur": 3,
-      "src": "footage/tour.mp4",
-      "from": 61.5,
-      "fade": 0.3
+      "src": "footage/d35-back.webm",
+      "from": 193,
+      "fade": 0.4
     },
     {
       "name": "4 Terminal: one command builds the world",
@@ -61,9 +60,9 @@
       "fade": 0.3
     },
     {
-      "name": "5 How it's made: one step per beat",
+      "name": "5 How it's made: the study, one step per beat",
       "dur": 29.7,
-      "src": "footage/conjure.mp4",
+      "src": "footage/d35/conjure.mp4",
       "fade": 0.4
     },
     {
@@ -75,39 +74,33 @@
     {
       "name": "7 Technique: SAM 3.1 cuts out every thing",
       "dur": 5,
-      "image": "footage/stills/masks-harbour.png",
+      "image": "footage/d35/masks-room.png",
       "fade": 0.5
     },
     {
       "name": "7 Technique: floor, scale and occlusion from the masks",
       "dur": 5,
-      "image": "footage/stills/walk-harbour.png",
+      "image": "footage/d35/walk-valley.png",
       "fade": 0.4
     },
     {
-      "name": "7 Technique: depth, shadows and parallax in play",
+      "name": "7 Technique: depth and parallax in play",
       "dur": 4,
-      "src": "footage/mist.mp4",
-      "from": 20,
+      "src": "footage/d35-back.webm",
+      "from": 60,
       "fade": 0.4
     },
     {
       "name": "7 Technique: Spark critiques the painting",
       "dur": 5,
-      "image": "footage/stills/critic.png",
+      "image": "footage/d35/critic-valley.png",
       "fade": 0.4
     },
     {
       "name": "7 Technique: Muse repaints only those regions",
       "dur": 4,
-      "image": "footage/stills/repaint.png",
+      "image": "footage/d35/repaint-valley.png",
       "fade": 0.3
-    },
-    {
-      "name": "7 Technique: same pipeline, another place",
-      "dur": 4,
-      "image": "footage/stills/masks-beacon.png",
-      "fade": 0.4
     },
     {
       "name": "7 Technique: MusicGen score, cast voices",
@@ -133,15 +126,15 @@
     },
     {
       "src": "footage/vo/how.wav",
-      "at": 54.5
+      "at": 57.0
     },
     {
       "src": "footage/vo/studio.wav",
-      "at": 84.2
+      "at": 86.7
     },
     {
       "src": "footage/vo/techniques.wav",
-      "at": 120.2
+      "at": 122.7
     }
   ]
 }
