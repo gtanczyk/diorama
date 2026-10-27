@@ -9,6 +9,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { createRequire } from 'node:module';
 import '../actions/index.ts';
 import { ActionError, describeActions, runAction, type ActionContext } from '../actions/registry.ts';
 import { redact } from '../secrets.ts';
@@ -20,6 +21,7 @@ import { History } from './history.ts';
 import { handleMcp } from './mcp.ts';
 
 export const STUDIO_WEB = fileURLToPath(new URL('../../studio/', import.meta.url));
+const CHAT_CSS = createRequire(import.meta.url).resolve('genaicode/react/styles.css');
 const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.mp3': 'audio/mpeg', '.jsonl': 'text/plain; charset=utf-8' };
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 const COOKIE = 'diorama_studio';
@@ -43,6 +45,8 @@ async function bundleApp(): Promise<string> {
     target: 'es2022',
     jsx: 'automatic',
     jsxImportSource: 'preact',
+    // genaicode's chat is a React component; Preact's compat layer stands in for React.
+    alias: { react: 'preact/compat', 'react-dom': 'preact/compat', 'react/jsx-runtime': 'preact/jsx-runtime' },
     sourcemap: 'inline',
   });
   return out.outputFiles[0].text;
@@ -207,10 +211,32 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
         }
         if (url.pathname === '/api/actions' && req.method === 'GET') return json(200, describeActions());
         // The agent conversation: the person's side only (the agent itself never posts here).
-        const talk = /^\/api\/agent\/([a-z][a-z0-9-]*)(?:\/(say|stop|approval))?$/.exec(url.pathname);
+        const talk = /^\/api\/agent\/([a-z][a-z0-9-]*)(?:\/(say|stop|approval|live))?$/.exec(url.pathname);
         if (talk && !asAgent) {
           const [, slug, verb] = talk;
           if (!verb && req.method === 'GET') return json(200, agents.state(slug));
+          if (verb === 'live' && req.method === 'GET') {
+            // genaicode's session state, whole, on every change (at most ten a second while text streams).
+            res.writeHead(200, { ...headers, 'content-type': 'text/event-stream; charset=utf-8', connection: 'keep-alive' });
+            let timer: NodeJS.Timeout | undefined;
+            let latest: unknown = agents.state(slug);
+            const flush = () => {
+              timer = undefined;
+              res.write(`data: ${JSON.stringify(latest)}\n\n`);
+            };
+            flush();
+            const off = agents.watch(slug, (state) => {
+              latest = state;
+              timer ??= setTimeout(flush, 100);
+            });
+            const beat = setInterval(() => res.write(': beat\n\n'), 15_000);
+            req.on('close', () => {
+              off();
+              clearTimeout(timer);
+              clearInterval(beat);
+            });
+            return;
+          }
           if (verb && req.method === 'POST') {
             const { value, error } = await body();
             if (error) return json(error[0], { error: error[1] });
@@ -285,7 +311,8 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
           throw error;
         }
       }
-      if (url.pathname === '/app.css') return send(200, 'text/css; charset=utf-8', fs.readFileSync(path.join(STUDIO_WEB, 'style.css')));
+      // genaicode's chat styles first, then the Studio's, which tune them to its look.
+      if (url.pathname === '/app.css') return send(200, 'text/css; charset=utf-8', Buffer.concat([fs.readFileSync(CHAT_CSS), Buffer.from('\n'), fs.readFileSync(path.join(STUDIO_WEB, 'style.css'))]));
       // Every other path is a screen of the single-page app.
       return send(200, 'text/html; charset=utf-8', fs.readFileSync(path.join(STUDIO_WEB, 'index.html')), { 'content-security-policy': CSP, 'x-frame-options': 'DENY' });
     } catch (error) {

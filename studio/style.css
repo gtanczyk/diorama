@@ -151,3 +151,9 @@ table.things select { padding: 4px 6px; }
 .chat .step .io pre { max-height: 220px; overflow: auto; font-size: 11.5px; padding: 8px 10px; }
 button.link { all: unset; cursor: pointer; color: var(--accent); font-size: 12px; }
 button.link:focus-visible { outline: 2px solid var(--accent); }
+
+/* genaicode's chat in the Studio's colours. */
+section.agent { padding: 0; overflow: hidden; display: flex; flex-direction: column; max-height: 70vh; }
+section.agent > .gc-chat { --gc-bg: var(--panel); --gc-panel: var(--raised); --gc-border: var(--line); --gc-text: var(--text); --gc-muted: var(--muted);
+  --gc-accent: var(--accent); --gc-accent-text: #121417; --gc-ok: var(--ok); --gc-error: var(--bad); --gc-font-size: 14px; flex: 1; min-height: 360px; }
+section.agent .row { padding: 12px 14px 0; }

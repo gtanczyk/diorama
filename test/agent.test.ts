@@ -41,7 +41,10 @@ test('a message runs Muse with the Studio MCP server, without keys, and its tool
   const logs = fs.readdirSync(path.join(root, 'harbour', 'studio', 'sessions'));
   expect(fs.readFileSync(path.join(root, 'harbour', 'studio', 'sessions', logs[0]), 'utf8')).toContain('worlds:1');
   const state = await (await fetch(`${studio.url}api/agent/harbour`, { headers: { authorization: `Bearer ${studio.token}` } })).json();
-  expect(state.turns.map((t: { role: string }) => t.role)).toEqual(['user', 'agent']);
+  // genaicode's session state: the turn keeps what was typed, the tool and the answer.
+  expect(state.turns[0].prompt).toBe('what worlds are there?');
+  expect(state.turns[0].entries.some((e: { kind: string; name?: string }) => e.kind === 'tool' && e.name === 'mcp__diorama__world_list')).toBe(true);
+  expect(JSON.stringify(state)).not.toContain(process.env.META_API_KEY!);
 });
 
 test('the next message resumes the same Muse session and sends only the new text', async () => {
@@ -61,7 +64,7 @@ test('the agent cannot post to its own conversation', async () => {
 });
 
 test('only the Studio\'s own MCP tools run without asking: a path with "diorama" in it is not one', async () => {
-  const { studioTool } = await import('../src/studio/agent.ts');
+  const { readsOnly, studioTool } = await import('../src/studio/agent.ts');
   const mcp = { id: '1', kind: 'other' as const, detail: { toolName: 'mcp__diorama__world_status', subject: { kind: 'mcpTool' } } };
   const bash = { id: '2', kind: 'command' as const, summary: 'ls /Users/g/src/diorama/worlds', detail: { subject: { kind: 'shell', command: 'ls /Users/g/src/diorama/worlds' } } };
   const read = { id: '3', kind: 'other' as const, summary: '/Users/g/src/diorama/worlds/w/build.json', detail: { subject: { kind: 'fileAccess', access: 'read', path: '/Users/g/src/diorama/worlds/w/build.json' } } };
@@ -70,4 +73,8 @@ test('only the Studio\'s own MCP tools run without asking: a path with "diorama"
   expect(studioTool(bash)).toBe(false);
   expect(studioTool(read)).toBe(false);
   expect(studioTool(other)).toBe(false);
+  // Reading is let through on its own terms; the shell never is.
+  expect(readsOnly(read)).toBe(true);
+  expect(readsOnly(bash)).toBe(false);
+  expect(readsOnly({ id: '5', kind: 'file-change', detail: { subject: { kind: 'fileAccess', access: 'write', path: 'x' } } })).toBe(false);
 });
