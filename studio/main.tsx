@@ -241,6 +241,8 @@ function Workshop({ slug }: { slug: string }) {
   const [calls, setCalls] = useState(0);
   const [focus, setFocus] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  /** Right after an undo the person can take it back. */
+  const [canRedo, setCanRedo] = useState(false);
   const [playing, setPlaying] = useState<{ place?: string; round?: number } | null>(null);
   const [view, setView] = useState<'places' | 'story' | 'cast'>('places');
   const [notes, setNotes] = useState<Note[]>([]);
@@ -269,11 +271,12 @@ function Workshop({ slug }: { slug: string }) {
         case 'call': if (!e.hit) setCalls((c) => c + 1); return;
         case 'file.changed': case 'feedback.changed': return soon();
         case 'job.start': case 'job.end': case 'job.queued': {
+          if (e.type === 'job.start') setCanRedo(false);
           const job = e.job as Job;
           soon();
           return add(e, `${e.type === 'job.end' ? (job.state === 'done' ? 'done' : job.state) : e.type === 'job.start' ? 'started' : 'queued'}: ${job.label} (by ${job.by})${job.error ? ` · ${job.error}` : ''}`, e.type === 'job.end' && job.state !== 'done' ? 'err' : 'job');
         }
-        case 'history.undo': soon(); return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: undo to ${e.id} · ${(e.restored as string[]).length} restored, ${(e.removed as string[]).length} removed`, e.by === 'agent' ? 'agent' : 'act');
+        case 'history.undo': soon(); setCanRedo(!e.redo); return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.redo ? 'redo' : `undo to ${e.id}`} · ${(e.restored as string[]).length} restored, ${(e.removed as string[]).length} removed`, e.by === 'agent' ? 'agent' : 'act');
         case 'lock.changed': return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.locked ? 'locked' : 'unlocked'} ${e.place ?? 'the world'}`, 'act');
         case 'action.start': if (quiet.has(String(e.action)) && e.by !== 'agent') return; return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.action}`, e.by === 'agent' ? 'agent' : 'act');
         case 'ui.focus':
@@ -312,6 +315,7 @@ function Workshop({ slug }: { slug: string }) {
             <span class="grow" />
             {playable && <button type="button" class={playing ? 'primary' : 'ghost'} onClick={() => setPlaying(playing ? null : {})}>{playing ? 'Close game' : 'Play'}</button>}
             {!job && status && status.steps.length > 0 && <button type="button" class="ghost" title="Put the world back as it was before the last job" onClick={() => call('history_undo', { slug }).catch((e) => setError(e.message))}>Undo last job</button>}
+            {!job && canRedo && <button type="button" class="ghost" title="Take back the undo" onClick={() => call('history_redo', { slug }).catch((e) => setError(e.message))}>Redo</button>}
             {/* Stop sits beside the build button, never in its place: a double click must not start a build and stop it again. */}
             {job && <button type="button" class="ghost" title={`Stop ${job.label} (started by ${job.by === 'agent' ? 'the agent' : 'you'})`} onClick={() => call('job_cancel', { id: job.id })}>Stop</button>}
             <button type="button" class="primary" disabled={!status || !!status.issue || !!job} title={job ? `${job.label} is running${job.step ? `: ${job.step}` : ''}` : undefined} onClick={() => call('world_build', { slug }).catch((e) => setError(e.message))}>

@@ -81,10 +81,10 @@ export class History {
   }
 
   /** Puts the world back as it was in snapshot `id`; what is there now is snapshotted first, so undo can be undone. */
-  restore(id: string, by: string): { restored: string[]; removed: string[]; before: string } {
+  restore(id: string, by: string, kind: 'undo' | 'redo' = 'undo'): { restored: string[]; removed: string[]; before: string } {
     const target = this.list().find((s) => s.id === id);
     if (!target) throw new Error(`no snapshot ${id}`);
-    const before = this.snapshot(`before undo to ${id}`, by);
+    const before = this.snapshot(`before ${kind} to ${id}`, by);
     const restored: string[] = [];
     const removed: string[] = [];
     for (const [rel, hash] of Object.entries(target.files)) {

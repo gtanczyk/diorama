@@ -50,6 +50,25 @@ defineAction({
 });
 
 defineAction({
+  name: 'history_redo',
+  description: 'Take back the last undo, right after it: the world returns to how it was before the undo.',
+  input: z.object({ slug: Slug }),
+  async run({ slug }, ctx) {
+    const dir = worldDir(ctx.root, slug);
+    const busy = ctx.jobs.busy(slug);
+    if (busy) throw new ActionError(409, `${busy.label} is ${busy.state}; stop it before redoing`);
+    const blocked = agentBlocked(dir, ctx.by);
+    if (blocked) throw new ActionError(423, blocked);
+    const history = new History(dir);
+    const last = history.list()[0];
+    if (!last?.label.startsWith('before undo to ')) throw new ActionError(409, 'nothing to redo: redo works right after an undo');
+    const result = history.restore(last.id, ctx.by, 'redo');
+    ctx.events.publish('history.undo', { world: slug, id: last.id, by: ctx.by, redo: true, ...result });
+    return { id: last.id, ...result };
+  },
+});
+
+defineAction({
   name: 'lock_set',
   description: 'Lock or unlock a world or one place, so the agent leaves it alone. The agent may lock, but only the person can unlock.',
   input: z.object({ slug: Slug, place: Slug.optional(), locked: z.boolean() }),

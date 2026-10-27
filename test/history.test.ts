@@ -55,3 +55,16 @@ test('a locked world refuses the agent but not the person, and only the person u
   const list = (await runAction('history_list', { slug: 'w' }, ctx('agent'))) as Array<{ label: string }>;
   expect(list.length).toBeGreaterThan(0);
 });
+
+test('redo takes back the last undo, only right after it', async () => {
+  const { dir, ctx } = world();
+  const paint = path.join(dir, 'places', 'a', 'painting.png');
+  new History(dir).snapshot('repaint', 'agent');
+  fs.writeFileSync(paint, 'paint-2');
+  await expect(runAction('history_redo', { slug: 'w' }, ctx('user'))).rejects.toThrow(/nothing to redo/);
+  await runAction('history_undo', { slug: 'w' }, ctx('user'));
+  expect(fs.readFileSync(paint, 'utf8')).toBe('paint-1');
+  await runAction('history_redo', { slug: 'w' }, ctx('user'));
+  expect(fs.readFileSync(paint, 'utf8')).toBe('paint-2');
+  await expect(runAction('history_redo', { slug: 'w' }, ctx('user'))).rejects.toThrow(/nothing to redo/);
+});
