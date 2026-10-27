@@ -243,3 +243,4 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 .told li { display: flex; gap: 10px; align-items: center; }
 .told audio { height: 32px; flex: none; width: 220px; }
 .drawings figcaption select { min-height: 28px; padding: 2px 6px; font-size: 13px; }
+.play-hint { margin: 2px 0 8px; } .play-hint summary { cursor: pointer; color: var(--accent); font-size: 13px; } .play-hint p { margin: 4px 0; }

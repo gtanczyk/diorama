@@ -120,7 +120,7 @@ defineAction({
         exits: p.exits,
         stages,
         image: image ? { file: `places/${p.key}/${image}`, v: stamp(at(image)) } : null,
-        verdict: verdict && { ok: verdict.ok, errors: verdict.errors, flags: verdict.flags },
+        verdict: verdict && { ok: verdict.ok, errors: verdict.errors.map((e) => withPlay(e, verdict.flags)), flags: verdict.flags },
       };
     });
     return {

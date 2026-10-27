@@ -19,7 +19,7 @@ type PlaceDetail = {
   things: Array<{ key: string; role: string }>;
   stages: Record<string, number | null>;
   image: { file: string; v: number | null } | null;
-  verdict: { ok: boolean; errors: Finding[]; flags: Finding[] } | null;
+  verdict: { ok: boolean; errors: Array<Finding & { play?: { look: string; tools: string[]; last?: string } }>; flags: Finding[] } | null;
 };
 type Job = { id: string; label: string; args: string[]; unplayable?: Array<{ place: string; errors: string[] }>; state: string; by: string; step?: string; error?: string; startedAt?: string; endedAt?: string; tail: string[] };
 type Note = { id: string; at: string; by: string; place?: string; point?: [number, number]; text: string; state: 'open' | 'done'; reply?: string };
@@ -459,7 +459,18 @@ function Workshop({ slug }: { slug: string }) {
             <section class="inspect">
               <p class="detail">{placeFocus.shows}</p>
               {placeFocus.verdict && [...placeFocus.verdict.errors.map((f) => ['error', f] as const), ...placeFocus.verdict.flags.map((f) => ['flag', f] as const)].map(([kind, f]) => (
-                <p class={kind === 'error' ? 'error' : 'flag'}><code>{f.code}</code>{f.key ? ` ${f.key}` : ''}: {f.detail}</p>
+                <>
+                  <p class={kind === 'error' ? 'error' : 'flag'}><code>{f.code}</code>{f.key ? ` ${f.key}` : ''}: {f.detail.replace(/\/(?:Users|home)\/[^/\s]+/g, '~')}</p>
+                  {'play' in f && f.play && (
+                    <details class="play-hint">
+                      <summary>How to fix it</summary>
+                      <p class="detail">Look: {f.play.look}</p>
+                      <p class="detail">Then try, in order: {f.play.tools.join(' · ')}</p>
+                      {f.play.last && <p class="detail">Last resort: {f.play.last}</p>}
+                      <button type="button" class="ghost small" onClick={() => askAgent(slug, `${placeFocus.key} is not playable: ${f.code}: ${f.detail}. Fix it as your playbook says and tell me what you did.`).catch((e) => setError(e.message))}>Ask the agent to fix it</button>
+                    </details>
+                  )}
+                </>
               ))}
               {placeFocus.stages.layout && <button type="button" class="ghost small" onClick={() => setPlaying({ place: placeFocus.key })}>Play from {placeFocus.key}</button>}
               {placeFocus.stages.painting ? <PlaceEditor slug={slug} place={placeFocus.key} version={tick} onError={setError} /> : <p class="detail">Fixing opens once the place is painted.</p>}

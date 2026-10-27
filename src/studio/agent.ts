@@ -220,9 +220,13 @@ export class AgentHub {
     return name === 'muse' ? AGENTS.muse.make(this.opts.command) : AGENTS[name].make();
   }
 
+  /** DIORAMA_AGENT when set; otherwise Muse Code, or the first agent this machine has when Muse Code is not installed. */
   private defaultAgent(): AgentName {
-    const wanted = process.env.DIORAMA_AGENT ?? 'muse';
-    return isAgentName(wanted) ? wanted : 'muse';
+    const wanted = process.env.DIORAMA_AGENT;
+    if (wanted && isAgentName(wanted)) return wanted;
+    const names = Object.keys(AGENTS) as AgentName[];
+    const found = detectAgents(names.map((n) => this.make(n)));
+    return names.find((_, i) => found[i]?.path) ?? 'muse';
   }
 
   /** The agents on offer, which are installed, and which one this world's conversation uses. */
