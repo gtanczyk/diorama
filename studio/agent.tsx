@@ -13,7 +13,7 @@ const SAYS: Record<string, string> = {
   feedback_pending: 'Read open notes', feedback_list: 'Read notes', feedback_done: 'Close a note', feedback_add: 'Leave a note', feedback_reopen: 'Reopen a note',
   history_list: 'Read history', history_undo: 'Undo a job', lock_set: 'Change a lock', ui_focus: 'Show a place', budget: 'Check budget', setup_status: 'Check Setup',
   cast_status: 'Look at the cast', cast_redo: 'Repaint a character', voice_list: 'List voices', voice_set: 'Change a voice',
-  story_status: 'Read the story', story_text: 'Reword a line', story_redo: 'Rewrite the story', place_view: 'Look at the floor',
+  story_status: 'Read the story', story_text: 'Reword a line', story_redo: 'Rewrite the story', place_view: 'Look at the floor', play_reload: 'Reload the game',
 };
 
 const auth = { authorization: `Bearer ${token}` };

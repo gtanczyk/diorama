@@ -241,6 +241,8 @@ function Workshop({ slug }: { slug: string }) {
   const [calls, setCalls] = useState(0);
   const [focus, setFocus] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  const [playing, setPlaying] = useState<{ place?: string; round?: number } | null>(null);
+  const [view, setView] = useState<'places' | 'story' | 'cast'>('places');
   const [notes, setNotes] = useState<Note[]>([]);
   const [budget, setBudget] = useState<Budget | null>(null);
 
@@ -275,8 +277,14 @@ function Workshop({ slug }: { slug: string }) {
         case 'lock.changed': return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.locked ? 'locked' : 'unlocked'} ${e.place ?? 'the world'}`, 'act');
         case 'action.start': if (quiet.has(String(e.action)) && e.by !== 'agent') return; return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.action}`, e.by === 'agent' ? 'agent' : 'act');
         case 'ui.focus':
-          if (!followAgent.value || e.by !== 'agent') return;
-          if (e.place) setFocus(String(e.place));
+          if (e.by !== 'agent') return;
+          // A reload of the open game is always fine; moving the view only when the person follows the agent.
+          if (e.view === 'play' && e.reload) setPlaying((p) => (p ? { ...p, round: (p.round ?? 0) + 1 } : followAgent.value ? { place: e.place as string | undefined } : p));
+          if (!followAgent.value) return;
+          if (e.view === 'play' && !e.reload) setPlaying((p) => ({ place: e.place as string | undefined, round: (p?.round ?? 0) + 1 }));
+          if (e.view === 'story' || e.view === 'cast') setView(e.view);
+          if (e.view === 'workshop') setView('places');
+          if (e.place && e.view !== 'play') setFocus(String(e.place));
           if (e.view === 'setup') go('/setup');
           if (e.view === 'start') go('/');
           return;
@@ -290,8 +298,7 @@ function Workshop({ slug }: { slug: string }) {
   const failed = last && last.state === 'failed' ? last : null;
   const stepState = (s: string): 'ok' | 'run' | 'fail' | 'todo' => running[s] ?? (status?.build[s] ? 'ok' : 'todo');
   const placeFocus = useMemo(() => status?.placeDetail.find((p) => p.key === focus), [status, focus]);
-  const [playing, setPlaying] = useState<{ place?: string } | null>(null);
-  const [view, setView] = useState<'places' | 'story' | 'cast'>('places');
+  
   const playable = !!status?.placeDetail.some((p) => p.stages.layout);
   const playLine = (text: string) => setLines((l) => [...l.slice(-400), { seq: -Date.now() - Math.random(), text, kind: 'play' }]);
 
@@ -313,7 +320,7 @@ function Workshop({ slug }: { slug: string }) {
           {error && <p class="error">{error}</p>}
           {failed && !job && <Failed slug={slug} job={failed} onError={setError} onPlace={setFocus} />}
           {budget?.over && <p class="banner">Budget: ${budget.total.usd} spent of the ${budget.limitUsd} limit. Check Setup before the next big build.</p>}
-          {playing && <Play slug={slug} place={playing.place} version={tick} onLine={playLine} onError={setError} />}
+          {playing && <Play slug={slug} place={playing.place} round={playing.round ?? 0} onRestart={() => setPlaying({ ...playing, round: (playing.round ?? 0) + 1 })} version={tick} onLine={playLine} onError={setError} />}
           <ol class="steps" aria-label="Build steps">
             {steps.map((s) => <li class={stepState(s)} title={status?.build[s] ? `${status.build[s].seconds}s` : undefined}><Mark state={stepState(s)} />{s}</li>)}
           </ol>
@@ -362,13 +369,14 @@ function Workshop({ slug }: { slug: string }) {
 }
 
 /** The game in a frame: the same page `diorama play` serves. What happens in it goes to Activity. */
-function Play({ slug, place, version, onLine, onError }: { slug: string; place?: string; version: number; onLine: (t: string) => void; onError: (m: string) => void }) {
-  const [round, setRound] = useState(0);
+function Play({ slug, place, round, onRestart, version, onLine, onError }: { slug: string; place?: string; round: number; onRestart: () => void; version: number; onLine: (t: string) => void; onError: (m: string) => void }) {
   const [fresh, setFresh] = useState(true);
-  useEffect(() => setFresh(false), [version]);
+  const [loadedAt, setLoadedAt] = useState(version);
+  useEffect(() => void (version !== loadedAt && setFresh(false)), [version]);
   const src = `/play/${slug}/${place ? `?place=${encodeURIComponent(place)}` : ''}`;
   const hook = (e: Event) => {
     setFresh(true);
+    setLoadedAt(version);
     const game = ((e.currentTarget as HTMLIFrameElement).contentWindow as unknown as { diorama?: { on(fn: (ev: string, d: Record<string, unknown>) => void): void } } | null)?.diorama;
     game?.on((ev, d) => {
       const say: Record<string, string> = {
@@ -381,11 +389,18 @@ function Play({ slug, place, version, onLine, onError }: { slug: string; place?:
     <section class="play">
       <div class="row">
         <strong>Playing{place ? ` from ${place}` : ''}</strong>
-        <span class="detail">{fresh ? 'click to walk or use, right click to look' : 'the world changed: restart to see it'}</span>
+        <span class="detail">click to walk or use, right click to look</span>
         <span class="grow" />
-        <button type="button" class={fresh ? 'ghost small' : 'primary small'} onClick={() => setRound(round + 1)}>Restart</button>
+        <button type="button" class="ghost small" onClick={onRestart}>Restart</button>
         <button type="button" class="ghost small" title="The bot plays every route to an ending and says where it got stuck" onClick={() => call('playthrough', { slug }).catch((err) => onError(err.message))}>Bot playthrough</button>
       </div>
+      {!fresh && (
+        <div class="banner row" role="status">
+          <span>The world changed since this game started.</span>
+          <span class="grow" />
+          <button type="button" class="primary small" onClick={onRestart}>Reload the game</button>
+        </div>
+      )}
       <iframe key={`${src}#${round}`} src={src} title={`${slug}, playable`} onLoad={hook} allow="autoplay" />
     </section>
   );

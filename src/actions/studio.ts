@@ -37,3 +37,14 @@ defineAction({
     return { ok: true };
   },
 });
+
+defineAction({
+  name: 'play_reload',
+  description: 'Reload the game the person is playing in the Studio, so it shows your change (opens it if they follow you and it is closed). '
+    + 'Call it after a change they should see in play, instead of asking them to refresh.',
+  input: z.object({ slug: Slug, place: Slug.optional() }),
+  async run({ slug, place }, ctx) {
+    ctx.events.publish('ui.focus', { slug, world: slug, view: 'play', reload: true, ...(place && { place }), by: ctx.by });
+    return { ok: true };
+  },
+});
