@@ -13,6 +13,10 @@ if (!cmd) {
   help();
   process.exit(!name || name === 'help' ? 0 : 2);
 }
+if (args.includes('--help') || args.includes('-h')) {
+  console.log(`usage: diorama ${cmd.usage}`);
+  process.exit(0);
+}
 try {
   // Keys kept by `diorama setup` fill in what the environment leaves unset.
   if (name !== 'setup') await loadSecrets();

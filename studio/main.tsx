@@ -214,7 +214,7 @@ function Workshop({ slug }: { slug: string }) {
         }
         case 'history.undo': soon(); return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: undo to ${e.id} · ${(e.restored as string[]).length} restored, ${(e.removed as string[]).length} removed`, e.by === 'agent' ? 'agent' : 'act');
         case 'lock.changed': return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.locked ? 'locked' : 'unlocked'} ${e.place ?? 'the world'}`, 'act');
-        case 'action.start': if (quiet.has(String(e.action))) return; return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.action}`, e.by === 'agent' ? 'agent' : 'act');
+        case 'action.start': if (quiet.has(String(e.action)) && e.by !== 'agent') return; return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.action}`, e.by === 'agent' ? 'agent' : 'act');
         case 'ui.focus':
           if (!followAgent.value || e.by !== 'agent') return;
           if (e.place) setFocus(String(e.place));
