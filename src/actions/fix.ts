@@ -8,6 +8,7 @@ import { Layout } from '../scene/layout.ts';
 import { KINDS, parseCell } from '../scene/locate.ts';
 import { wordKeys } from '../scene/words.ts';
 import { agentBlocked } from '../studio/locks.ts';
+import { placeTrouble } from '../studio/trouble.ts';
 import { WorldFiles } from '../world/files.ts';
 import { Slug } from '../world/schema.ts';
 import { ActionError, defineAction, type ActionContext } from './registry.ts';
@@ -149,6 +150,32 @@ defineAction({
     return fixPlace(ctx, slug, place, 'paint', 'repaint', (c) => {
       c.repaint.push({ region, fix });
     });
+  },
+});
+
+defineAction({
+  name: 'place_fix',
+  description: 'The Fix it button of a place that failed or was never painted: rebuilds the place from the step it broke at (paint rewords by itself '
+    + 'when the image safety filter refused it), or, when it was built through and verify still finds errors, hands it to the agent.',
+  input: z.object({ slug: Slug, place: z.string().min(1) }),
+  async run({ slug, place }, ctx) {
+    const dir = path.join(ctx.root, slug);
+    if (!fs.existsSync(path.join(dir, 'places', place))) throw new ActionError(404, `${slug} has no place ${place} yet`);
+    const trouble = placeTrouble(dir, place);
+    if (!trouble) throw new ActionError(409, `${place} has nothing to fix: it is playable or not built yet`);
+    if (trouble.from) {
+      const blocked = agentBlocked(dir, ctx.by, place);
+      if (blocked) throw new ActionError(423, blocked);
+      const job = ctx.jobs.start(slug, ['build', slug, '--from', trouble.from, '--to', 'verify', '--place', place], `fix ${place} from ${trouble.from}`, ctx.by);
+      return { did: 'rebuild', from: trouble.from, why: trouble.why, job };
+    }
+    // Built through and still not playable: the fix tools need judgement, which is the agent's (or the person's).
+    if (ctx.by === 'agent') throw new ActionError(409, `${place} needs a fix tool: ${trouble.why}; follow place_status's playbook`);
+    const prompt = `[Studio] The person pressed Fix it on ${place}, which is not playable:\n${trouble.errors.map((e) => `- ${e}`).join('\n')}\n`
+      + 'Repair it as your brief says: place_status and place_view first, then the playbook\'s fix tools in order, at most three fixes, '
+      + 'and ask me before the last resort. Then tell me in two sentences what you fixed and what is left for me.';
+    ctx.events.publish('repair.ask', { world: slug, place, prompt });
+    return { did: 'agent', why: trouble.why };
   },
 });
 

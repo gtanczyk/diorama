@@ -14,6 +14,8 @@ export type StagePlace = {
   layers?: Partial<Record<LayerName, Layer>>;
   image: Layer | null;
   verdict: { ok: boolean; errors: unknown[] } | null;
+  /** Why the place is not playable, and the step Fix it rebuilds it from (null: Fix it asks the agent). */
+  trouble?: { why: string; from: string | null } | null;
 };
 
 /** The build's steps in seven phases, each with what does the work. Meta's models first, by name. */
@@ -235,6 +237,31 @@ export function Stage({ slug, place, live, building }: { slug: string; place: St
   );
 }
 
+/** On a failed or unpainted place: why in one line, and a button that rebuilds it from where it broke or asks the agent. */
+function FixIt({ slug, place, why }: { slug: string; place: string; why: string }) {
+  const [said, setSaid] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const fix = async () => {
+    setBusy(true);
+    try {
+      const r = await call<{ did: 'rebuild' | 'agent'; from?: string }>('place_fix', { slug, place });
+      setSaid(r.did === 'rebuild' ? `Rebuilding from ${r.from}…` : 'Asked the agent to repair it');
+    } catch (error) {
+      setSaid(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div class="fixit">
+      <div class="panel">
+        <span class="why" title={why}>{said ?? why}</span>
+        {!said && <button type="button" class="small" disabled={busy} onClick={fix}>Fix it</button>}
+      </div>
+    </div>
+  );
+}
+
 /** Every place as a small card: its newest picture, how far it got, and what the build is doing to it. */
 export function Strip({ slug, places, focus, live, building, repairing, onPick }: { slug: string; places: StagePlace[]; focus: string | null; live: Live; building: boolean; repairing: Record<string, string>; onPick: (key: string) => void }) {
   return (
@@ -253,11 +280,13 @@ export function Strip({ slug, places, focus, live, building, repairing, onPick }
               <span class="name">
                 <strong>{p.key}</strong>
                 {repairing[p.key] ? <span class="badge run" title={repairing[p.key]}>repairing</span>
+                  : p.trouble && !p.verdict ? <span class="badge fail">failed</span>
                   : p.verdict ? <span class={`badge ${p.verdict.ok ? 'ok' : 'fail'}`}>{p.verdict.ok ? 'playable' : `${p.verdict.errors.length} error${p.verdict.errors.length === 1 ? '' : 's'}`}</span>
                   : busy ? <span class="badge run">{busy.by}</span>
                   : <span class="dots" aria-label={`${n} of ${SHOWN.length} layers`}>{SHOWN.map((s) => <i class={has(p, s.layer) ? 'on' : ''} />)}</span>}
               </span>
             </button>
+            {p.trouble && !building && !repairing[p.key] && <FixIt key={p.trouble.why} slug={slug} place={p.key} why={p.trouble.why} />}
           </li>
         );
       })}

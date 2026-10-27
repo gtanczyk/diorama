@@ -50,6 +50,8 @@ export const Corrections = z.object({
     /** One sentence per thing or floor key, used as its look as it is (Spark does not expand it again). */
     looks: z.record(z.string(), z.string().min(10)).default({}),
     by: z.enum(['filter', 'person']).default('person'),
+    /** Spark's rewords so far: each asks anew, so a rebuild after refused rewords does not get the same words back. */
+    tries: z.number().int().min(0).optional(),
   }).optional(),
 });
 export type Corrections = z.infer<typeof Corrections>;

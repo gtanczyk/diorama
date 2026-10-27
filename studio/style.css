@@ -431,6 +431,12 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 .strip .name { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 13px; }
 .strip .name strong { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .strip .dots { display: flex; gap: 3px; }
+.strip li { position: relative; }
+/* Fix it sits over the bottom of the thumbnail, so a failed card is no taller than the others. */
+.strip .fixit { position: absolute; left: 0; right: 0; top: 0; aspect-ratio: 1200 / 896; display: flex; align-items: flex-end; overflow: hidden; border-radius: 10px; pointer-events: none; }
+.strip .fixit .panel { pointer-events: auto; flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin: 4px; padding: 5px 6px; border-radius: 8px; background: rgba(18, 20, 23, 0.88); border: 1px solid var(--bad); }
+.strip .fixit .why { font-size: 11px; line-height: 1.25; color: var(--bad); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.strip .fixit button { padding: 2px 8px; }
 .strip .dots i { width: 6px; height: 6px; border-radius: 3px; background: var(--line-strong); }
 .strip .dots i.on { background: var(--ok); }
 @media (max-width: 1100px) { .build-grid { grid-template-columns: 1fr; grid-template-areas: "stage" "strip" "tale"; } .tale { contain: none; } .pipeline .phases { flex-wrap: wrap; } }

@@ -60,5 +60,6 @@ Reply with JSON only: {"shows": "...", "mood": "...", "looks": {${keys.map((k) =
     ...(typeof answer.mood === 'string' && answer.mood.length >= 2 && { mood: answer.mood }),
     looks,
     by: 'filter',
+    tries: refusals + 1,
   };
 }

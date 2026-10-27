@@ -174,6 +174,15 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
     agents.say(e.world, repairPrompt(job), 'studio').catch((error) => events.publish('log', { world: e.world, stream: 'err', line: `could not wake the agent: ${error instanceof Error ? error.message : error}` }));
   });
 
+  // Fix it on a place the build could not mend hands it to the agent, as a finished build does.
+  events.subscribe((e) => {
+    if (e.type !== 'repair.ask' || !e.world || !agents) return;
+    const using = agents.agents(e.world).find((a) => a.using);
+    if (!using?.installed) return events.publish('repair.agent', { world: e.world, places: [e.place], missing: using?.label ?? 'an agent' });
+    events.publish('repair.agent', { world: e.world, places: [e.place] });
+    agents.say(e.world, String(e.prompt), 'studio').catch((error) => events.publish('log', { world: e.world, stream: 'err', line: `could not wake the agent: ${error instanceof Error ? error.message : error}` }));
+  });
+
   // The game and pictures read the world through the Studio's session cookie; a browser that never opened the Studio has none.
   const NO_SESSION = 'no session: open the Studio link from `diorama studio` in this browser first, or play the world on its own with `diorama play <slug>`';
   const server = http.createServer(async (req, res) => {

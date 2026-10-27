@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { withPlay } from '../scene/playbook.ts';
 import type { Verdict } from '../scene/verify.ts';
 import { readCorrections } from '../scene/corrections.ts';
+import { placeTrouble } from '../studio/trouble.ts';
 import { Slug, World } from '../world/schema.ts';
 import { ActionError, defineAction } from './registry.ts';
 
@@ -133,6 +134,8 @@ defineAction({
         // The pictures each step leaves, in build order: Studio stacks them as the place is built.
         layers: Object.fromEntries(LAYERS.map(([name, f]) => [name, stamp(at(f)) && { file: `places/${p.key}/${f}`, v: stamp(at(f)) }]).filter(([, l]) => l)),
         verdict: verdict && { ok: verdict.ok, errors: verdict.errors.map((e) => withPlay(e, verdict.flags)), flags: verdict.flags },
+        /** Why the place is not playable in one line, and the step place_fix rebuilds it from (null: the agent's). */
+        trouble: placeTrouble(dir, p.key),
       };
     });
     return {

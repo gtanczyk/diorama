@@ -160,6 +160,38 @@ test('paint_words keeps the painter\'s wording in corrections.json and repaints 
   expect(readCorrections(place).words).toBeUndefined();
 });
 
+test('Fix it rebuilds a place from the step it never got past, and hands a built but unplayable place to the agent', async () => {
+  const { dir, place, ctx, jobs, events } = world();
+  fs.writeFileSync(path.join(dir, 'world.json'), JSON.stringify({
+    title: 'Quay', pitch: 'A small quay on a river at dusk.', style: 'gouache, muted river colours', start: 'dock',
+    hero: { key: 'wren', looks: 'a keeper in a yellow oilskin' },
+    places: [{ key: 'dock', shows: 'a dock between leafless trees', mood: 'calm', exits: [], things: [{ key: 'swing', role: 'prop', looks: 'a swing frame' }] }],
+  }));
+  // The playground's state: an old build set it aside at verify on a missing file; it was never painted.
+  fs.rmSync(path.join(place, 'painting.png'));
+  fs.writeFileSync(path.join(dir, 'build.json'), JSON.stringify({ steps: { paint: {}, weather: {} }, places: [{ place: 'dock', ok: false, from: 'verify', errors: ['STEP_FAILED verify: missing geometry.json: run the step before this one'] }] }));
+  const status = (await runAction('world_status', { slug: 'w' }, ctx('user'))) as { placeDetail: Array<{ trouble: { why: string; from: string } }> };
+  expect(status.placeDetail[0].trouble).toMatchObject({ from: 'paint', why: 'paint never finished here (no painting.png)' });
+  const r = (await runAction('place_fix', { slug: 'w', place: 'dock' }, ctx('user'))) as { did: string; job: { id: string; args: string[] } };
+  expect(r.did).toBe('rebuild');
+  expect(r.job.args).toEqual(['build', 'w', '--from', 'paint', '--to', 'verify', '--place', 'dock']);
+  await jobs.wait(r.job.id, 5000);
+  // A refusal reads as one line, not the API's JSON.
+  fs.writeFileSync(path.join(place, 'painting.png'), 'x');
+  fs.writeFileSync(path.join(place, 'geometry.json'), 'x');
+  fs.writeFileSync(path.join(dir, 'build.json'), JSON.stringify({ steps: {}, places: [{ place: 'dock', ok: false, from: 'paint', errors: ['STEP_FAILED paint: POST /images/edits: 400 {"error":{"code":"content_policy_violation"}}'] }] }));
+  const refused = (await runAction('world_status', { slug: 'w' }, ctx('user'))) as { placeDetail: Array<{ trouble: { why: string } }> };
+  expect(refused.placeDetail[0].trouble.why).toBe('paint: the image safety filter refused the painting');
+  // Built through, verify finds an error: the agent gets it.
+  fs.writeFileSync(path.join(dir, 'build.json'), JSON.stringify({ steps: {} }));
+  fs.writeFileSync(path.join(place, 'verify.json'), JSON.stringify({ ok: false, errors: [{ code: 'FLOOR_UNREACHABLE', key: '0', detail: 'none reachable' }], flags: [] }));
+  const asked: unknown[] = [];
+  events.subscribe((e) => e.type === 'repair.ask' && asked.push(e));
+  expect(await runAction('place_fix', { slug: 'w', place: 'dock' }, ctx('user'))).toMatchObject({ did: 'agent', why: 'FLOOR_UNREACHABLE 0: none reachable' });
+  expect(asked).toHaveLength(1);
+  await expect(runAction('place_fix', { slug: 'w', place: 'dock' }, ctx('agent'))).rejects.toThrow(/playbook/);
+});
+
 test('the agent gets three fixes of a place that leave it unplayable; then it must hand over to the person', async () => {
   const { ctx, jobs } = world();
   process.env.FAKE_FAIL = '1';

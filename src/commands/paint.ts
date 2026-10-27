@@ -58,6 +58,8 @@ defineCommand({
         let brief: Awaited<ReturnType<typeof writeBrief>>;
         // When the image safety filter refuses the painting, Spark rewords the place and it is painted again;
         // the wording is kept in corrections.json, so every later paint asks with it and no rebuild repeats the refusal.
+        // A wording Spark made in an earlier run counts its rewords, so the next one is a new ask.
+        const before = words?.tries ?? 0;
         for (let refusals = 0; ; refusals++) {
           const told = worded(place, words);
           brief = withWords(await writeBrief(files.memo, world, told, layout), words);
@@ -73,7 +75,7 @@ defineCommand({
               throw new Error(`the image safety filter refused to paint ${place.key} ${refusals + 1} times, also after ${refusals} reword(s) by Spark: `
                 + `reword its scene and looks with paint_words (calm, plain words), which paints it again (${error instanceof Error ? error.message.slice(0, 160) : error})`);
             }
-            words = await reword(files.memo, told, layout, brief, refusals);
+            words = await reword(files.memo, told, layout, brief, before + refusals);
             const fixes = readCorrections(files.place(place.key));
             fixes.words = words;
             writeCorrections(files.place(place.key), fixes);
