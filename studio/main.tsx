@@ -309,6 +309,8 @@ function Workshop({ slug }: { slug: string }) {
   const undoneJob = useRef<string | null>(null);
   /** Activity shows what happened; what each step prints is there too, on request (the job card shows its last line). */
   const [allLines, setAllLines] = useState(false);
+  /** The agent that would have repaired the last build, when it is not installed. */
+  const [noAgent, setNoAgent] = useState<string | null>(null);
   /** Places the build is mending right now, with what it tries. */
   const [repairing, setRepairing] = useState<Record<string, string>>({});
   const [calls, setCalls] = useState(0);
@@ -346,13 +348,13 @@ function Workshop({ slug }: { slug: string }) {
           return add(e, line, e.stream === 'err' ? 'err' : 'out');
         }
         case 'build.start': return setJobPlan(e.steps as string[]);
-        case 'step.start': setRunning((r) => ({ ...r, [String(e.step)]: 'run' })); return add(e, `▸ ${e.step}`, 'step');
+        case 'step.start': setRunning((r) => ({ ...r, [String(e.step)]: 'run' })); return;
         case 'step.end': setJobDone((d) => ({ ...d, [String(e.step)]: Number(e.seconds) })); setRunning((r) => { const n = { ...r }; delete n[String(e.step)]; return n; }); soon(); return add(e, `✓ ${e.step} · ${e.seconds}s`, 'step');
         case 'step.fail': setRunning((r) => ({ ...r, [String(e.step)]: 'fail' })); return add(e, `✕ ${e.step}: ${e.error}`, 'err');
         case 'call': if (!e.hit) setCalls((c) => c + 1); return;
         case 'file.changed': case 'feedback.changed': return soon();
         case 'job.start': case 'job.end': case 'job.queued': {
-          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null));
+          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null));
           const job = e.job as Job;
           soon();
           // What the agent changed shows in an open game at once; after the person's own builds the banner offers it.
@@ -374,7 +376,9 @@ function Workshop({ slug }: { slug: string }) {
         case 'place.verdict': if (e.ok) { const n = (e.flagged as string[] | undefined)?.length ?? 0; return add(e, `✓ ${e.place}: playable${n ? ` · ${n} note${n === 1 ? '' : 's'}, nothing to do (open the place to read them)` : ''}`, 'step'); } return add(e, `✕ ${e.place}: not playable · ${(e.errors as string[] | undefined)?.join('; ') || 'see verify'}`, 'err');
         case 'repair.start': setRepairing((r) => ({ ...r, [String(e.place)]: `repairing: ${(e.fixes as string[]).join('; ')}` })); return add(e, `↻ ${e.place}: repairing · ${(e.fixes as string[]).join('; ')}`, 'step');
         case 'repair.end': setRepairing((r) => { const n = { ...r }; delete n[String(e.place)]; return n; }); soon(); return add(e, `${e.ok ? '✓' : '✕'} ${e.place}: ${e.ok ? 'repaired, playable' : 'still not playable, left for the agent'}`, e.ok ? 'step' : 'err');
-        case 'repair.agent': return add(e, `agent asked to repair ${(e.places as string[]).join(', ')}`, 'agent');
+        case 'repair.agent':
+          if (e.missing) return (setNoAgent(String(e.missing)), add(e, `${e.missing} is not installed, so no agent can repair ${(e.places as string[]).join(', ')}: see Setup`, 'err'));
+          return add(e, `agent asked to repair ${(e.places as string[]).join(', ')}`, 'agent');
         case 'lock.changed': return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.locked ? 'locked' : 'unlocked'} ${e.place ?? 'the world'}`, 'act');
         case 'action.start': if (quiet.has(String(e.action)) && e.by !== 'agent') return; return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.action}`, e.by === 'agent' ? 'agent' : 'act');
         case 'ui.focus':
@@ -425,7 +429,7 @@ function Workshop({ slug }: { slug: string }) {
           {movedFrom.value && movedFrom.value !== slug && <p class="banner">The agent moved the view here from {movedFrom.value}. <button type="button" class="ghost" onClick={() => { const back = movedFrom.value!; movedFrom.value = null; go(`/w/${back}`); }}>Back to {movedFrom.value}</button> <button type="button" class="ghost" onClick={() => (movedFrom.value = null)}>Stay</button></p>}
           {undone && !job && <p class="banner">{undone}{canRedo ? ' · Redo puts it back.' : ''}</p>}
           {job && status && <JobProgress job={job} plan={jobPlan} build={status.build} typical={status.typical ?? {}} running={running} done={jobDone} last={jobTail} />}
-          {failed && !job && <Failed slug={slug} job={failed} onError={setError} onPlace={setFocus} />}
+          {failed && !job && <Failed slug={slug} job={failed} noAgent={noAgent} onError={setError} onPlace={setFocus} />}
           {budget?.over && <p class="banner">Budget: ${budget.total.usd} spent of the ${budget.limitUsd} limit. Check Setup before the next big build.</p>}
           {playing && <Play slug={slug} place={playing.place} round={playing.round ?? 0} onRestart={() => setPlaying({ ...playing, round: (playing.round ?? 0) + 1 })} version={tick} onLine={playLine} onError={setError} />}
           <ol class="steps" aria-label="Build steps">
@@ -445,7 +449,7 @@ function Workshop({ slug }: { slug: string }) {
                   {p.image ? <img src={fileUrl(slug, p.image.file, p.image.v)} alt={p.shows} loading="lazy" /> : <div class="noimg">{p.stages.layout ? 'laid out' : 'waiting'}</div>}
                   <span class="name">
                     <strong>{p.key}</strong>
-                    {repairing[p.key] ? <span class="badge run" title={repairing[p.key]}>repairing</span> : p.verdict ? <span class={`badge ${p.verdict.ok ? 'ok' : 'fail'}`}>{p.verdict.ok ? 'playable' : `${p.verdict.errors.length} errors`}</span> : <span class="badge">{Object.values(p.stages).filter(Boolean).length}/7</span>}
+                    {repairing[p.key] ? <span class="badge run" title={repairing[p.key]}>repairing</span> : p.verdict ? <span class={`badge ${p.verdict.ok ? 'ok' : 'fail'}`}>{p.verdict.ok ? 'playable' : `${p.verdict.errors.length} error${p.verdict.errors.length === 1 ? '' : 's'}`}</span> : <span class="badge">{Object.values(p.stages).filter(Boolean).length}/7</span>}
                   </span>
                 </button>
               </li>
@@ -520,9 +524,11 @@ function Play({ slug, place, round, onRestart, version, onLine, onError }: { slu
 const spend = (s: Spend) => (s.priced && Object.keys(s.calls).length > 0 ? `$${s.usd.toFixed(2)}` : `${Object.values(s.calls).reduce((a, b) => a + b, 0)} calls${s.usd ? ` ($${s.usd.toFixed(2)}+)` : ''}`);
 
 /** The last job failed: where, why, its last lines, and what to do next. */
-function Failed({ slug, job, onError, onPlace }: { slug: string; job: Job; onError: (m: string) => void; onPlace: (p: string) => void }) {
+function Failed({ slug, job, noAgent, onError, onPlace }: { slug: string; job: Job; noAgent: string | null; onError: (m: string) => void; onPlace: (p: string) => void }) {
   const [more, setMore] = useState(false);
-  const lines = job.tail.filter((l) => l.trim());
+  // The output is for when the reason above is not enough: hidden at first when it names the places, and never with this machine's folders.
+  const lines = job.tail.filter((l) => l.trim()).map((l) => l.replace(/\/(?:Users|home|tmp)\/\S*?\/(worlds\/)/g, '$1').replace(/\/(?:Users|home)\/[^/\s]+/g, '~'));
+  const listed = !!job.unplayable?.length;
   const step = job.step;
   const retry = () => call('job_retry', { id: job.id }).catch((e) => onError(e.message));
   const ask = () => askAgent(slug, `The job "${job.label}" failed${step ? ` at the ${step} step` : ''}: ${job.error ?? 'see its output'}. Find out why with world_status and place_status, fix it only with the Studio fix tools (never by editing files), and tell me what you did.`).catch((e) => onError(e.message));
@@ -532,13 +538,14 @@ function Failed({ slug, job, onError, onPlace }: { slug: string; job: Job; onErr
       {job.unplayable?.length ? job.unplayable.map((u) => (
         <div class="row"><button type="button" class="ghost small" onClick={() => onPlace(u.place)}>{u.place}</button><span class="error">{u.errors.join(' · ') || 'not playable: see verify.json'}</span></div>
       )) : job.error && <p class="error">{job.error}</p>}
-      {lines.length > 0 && <pre>{(more ? lines : lines.slice(-6)).join('\n')}</pre>}
+      {noAgent && listed && <p class="detail">The agent would repair these, but {noAgent} is not installed on this computer. <a href="/setup" onClick={(e) => (e.preventDefault(), go('/setup'))}>Setup</a> says how to add it.</p>}
+      {lines.length > 0 && (more || !listed) && <pre>{(more ? lines : lines.slice(-6)).join('\n')}</pre>}
       <div class="row">
         <button type="button" class="primary small" onClick={retry}>Try again</button>
-        <button type="button" class="ghost small" onClick={ask}>Ask the agent</button>
+        <button type="button" class="ghost small" disabled={!!noAgent} title={noAgent ? `${noAgent} is not installed` : undefined} onClick={ask}>Ask the agent</button>
         <button type="button" class="ghost small" title="Put the world back as it was before this job" onClick={() => call('history_undo', { slug }).catch((e) => onError(e.message))}>Undo it</button>
         <span class="grow" />
-        {lines.length > 6 && <button type="button" class="ghost small" onClick={() => setMore(!more)}>{more ? 'Less' : `All ${lines.length} lines`}</button>}
+        {(lines.length > 6 || (listed && lines.length > 0)) && <button type="button" class="ghost small" onClick={() => setMore(!more)}>{more ? 'Less' : `Its output (${lines.length} lines)`}</button>}
       </div>
     </section>
   );
