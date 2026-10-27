@@ -39,6 +39,20 @@ export type Sun = {
   rise: number;
 };
 
+/** The camera the depth map was measured with: what pointAt needs. */
+export type View = Pick<Sun, 'camH' | 'f' | 'hor' | 'halfW'>;
+
+export function viewOf(g: Geometry): View {
+  return { camH: PERSON_M / g.scale.pxPerY, f: g.frame.width, hor: g.scale.horizonY, halfW: g.frame.width / 2 };
+}
+
+/** The frame pixel a 3D point (across, into, up) is seen at: pointAt the other way. */
+export function toScreen(v: View, p: [number, number, number]): [number, number] | undefined {
+  if (p[1] <= 0.01) return undefined;
+  const zn = p[1] / v.f;
+  return [v.halfW + p[0] / zn, v.hor + (v.camH - p[2]) / zn];
+}
+
 /** Metres (across, into, up) of the depth pixel under frame pixel (x, y); undefined past the map. */
 export function pointAt(d: Depth, sun: Pick<Sun, 'camH' | 'f' | 'hor' | 'halfW'>, x: number, y: number): [number, number, number] | undefined {
   const c = Math.floor(x / DEPTH_SCALE);
@@ -57,7 +71,7 @@ export function pointAt(d: Depth, sun: Pick<Sun, 'camH' | 'f' | 'hor' | 'halfW'>
  */
 export function sunFor(g: Geometry, d: Depth, light: NonNullable<Geometry['light']>, x: number, y: number, px: number): Sun | undefined {
   const hor = g.scale.horizonY;
-  const base = { camH: PERSON_M / g.scale.pxPerY, f: g.frame.width, hor, halfW: g.frame.width / 2 };
+  const base = viewOf(g);
   if (y - hor < 4) return undefined;
   // The feet: the depth just above them (the floor they stand on), averaged across a few px.
   const near = [-3, 0, 3].map((dx) => pointAt(d, base, x + dx, y - 2)).filter((p): p is [number, number, number] => !!p);
@@ -119,4 +133,57 @@ export function shadowAt(d: Depth, sun: Sun, sil: Silhouette, x: number, y: numb
   const sy = Math.round(sil.oy - up * sil.perM);
   if (sx < 0 || sy < 0 || sx >= sil.w || sy >= sil.h) return 0;
   return sil.alpha[sy * sil.w + sx] / 255;
+}
+
+/**
+ * The shadows painted things (a tent, a bench) cast from a fire or a lamp standing on the floor at frame
+ * pixel `at`, its light `up` metres high and `shift` metres to the side. Worked out on the depth map: each
+ * floor point looks back along its ray to the light and lies in shadow where the ray passes behind a
+ * caster's pixels (owner, at the depth map's size), within `thick` metres of the surface seen there. Every
+ * `cell` depth pixels one value 0..1, fading out `reach` metres from the light like the light itself.
+ */
+export function thingShadows(
+  d: Depth,
+  g: Geometry,
+  owner: Uint8Array,
+  at: [number, number],
+  { up, shift = 0, cell = 2, reach = 4 * PERSON_M, thick = 1.2 }: { up: number; shift?: number; cell?: number; reach?: number; thick?: number },
+): { w: number; h: number; cell: number; alpha: Float32Array } {
+  const v = viewOf(g);
+  const S = DEPTH_SCALE;
+  const [w, h] = [Math.ceil(d.w / cell), Math.ceil(d.h / cell)];
+  const alpha = new Float32Array(w * h);
+  // The light on the floor plane under it, raised.
+  const zn = v.camH / Math.max(1, at[1] - v.hor);
+  const L: [number, number, number] = [(at[0] - v.halfW) * zn + shift, zn * v.f, up];
+  const Ls = toScreen(v, L);
+  if (!Ls) return { w, h, cell, alpha };
+  for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
+    const [fx, fy] = [(c * cell + cell / 2) * S, (r * cell + cell / 2) * S];
+    const dc = Math.floor(fx / S);
+    const dr = Math.floor(fy / S);
+    // A caster's own pixels are drawn over its shadow anyway.
+    if (dr >= d.h || dc >= d.w || owner[dr * d.w + dc]) continue;
+    const p = pointAt(d, v, fx, fy);
+    if (!p || p[2] > up - 0.05) continue;
+    const dist = Math.hypot(L[0] - p[0], L[1] - p[1]);
+    if (dist >= reach || dist < 0.1) continue;
+    const n = Math.min(64, Math.max(6, Math.ceil(Math.hypot(Ls[0] - fx, Ls[1] - fy) / (1.5 * S))));
+    for (let k = 1; k < n; k++) {
+      const t = k / n;
+      // Not the floor point's own surface: a few cm along before anything counts.
+      if (t * dist < 0.08) continue;
+      const q: [number, number, number] = [p[0] + (L[0] - p[0]) * t, p[1] + (L[1] - p[1]) * t, p[2] + (L[2] - p[2]) * t];
+      const s = toScreen(v, q);
+      if (!s) continue;
+      const [qc, qr] = [Math.floor(s[0] / S), Math.floor(s[1] / S)];
+      if (qc < 0 || qr < 0 || qc >= d.w || qr >= d.h || !owner[qr * d.w + qc]) continue;
+      const surf = pointAt(d, v, s[0], s[1]);
+      if (surf && q[1] > surf[1] - 0.05 && q[1] < surf[1] + thick) {
+        alpha[r * w + c] = 1 - dist / reach;
+        break;
+      }
+    }
+  }
+  return { w, h, cell, alpha };
 }

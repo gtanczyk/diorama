@@ -1,8 +1,8 @@
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
-import { floorYAt, hiddenRuns, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
+import { FLAME_GLOW, FLAME_SWAY_M, flameAt, flicker, floorYAt, hiddenRuns, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
-import { decodeDepth, DEPTH_SCALE, shadowAt, sunFor, type Depth } from '../src/play/shadow.ts';
+import { decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
@@ -75,6 +75,26 @@ type Place = {
   depth?: Depth;
   /** The water's soft mask over the frame, 0..255: a shadow barely shows on water. */
   wet?: Uint8Array;
+  /** The fire or lamp's work here (see Game.fireOf), made on first use. */
+  fire?: Fire;
+};
+
+/**
+ * What a fire or a lamp on the floor (light.at) does to the place: the shadows the painted things cast from
+ * it, worked out once for the flame swayed left, centred and right (one for a steady lamp) and mixed each
+ * frame as it sways; and for a flame, its bright pixels to set dancing.
+ */
+type Fire = {
+  /** The things carried off when the shadows were worked out: they cast none. */
+  gone: string;
+  shadows: Array<ReturnType<typeof thingShadows>>;
+  /** This frame's mix of them, its pixels and the canvas they go up on. */
+  mix: Float32Array;
+  img: ImageData;
+  canvas: HTMLCanvasElement;
+  /** A person's height in px at the fire. */
+  px: number;
+  flame?: { canvas: HTMLCanvasElement; x0: number; y0: number };
 };
 
 const LIGHT_CELL = 40;
@@ -917,6 +937,8 @@ class Game {
     const gone = this.gone();
     const npcs = this.place.hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc' && !h.mask);
     const people: Who[] = [...npcs.map((h) => ({ npc: h, y: h.thing.box[3] })), { npc: undefined, y: this.hero.y }].sort((a, b) => a.y - b.y);
+    const fire = this.fireOf(gone);
+    this.climbs.length = 0;
     if (p && backdrop) {
       // A diorama: the backdrop's floor shears with depth, then every card slides as the floor row it stands on.
       const { above, below } = backdropTransforms(g, p);
@@ -958,11 +980,13 @@ class Game {
         const [x0, y0, x1, y1] = hot.thing.box.map((v, i) => (i < 2 ? Math.max(0, v - 16) : v + 16));
         this.at(hot.thing.box[3], () => ctx.drawImage(hot.plate!, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0));
       }
+      this.drawFireShadows(fire, backdropTransforms(g, p).below as [number, number, number, number, number, number]);
       for (const who of people) this.drawWho(who, undefined, 'shadow');
       for (const cut of this.place.cuts) {
         if (cut.occ.thing && gone.has(cut.occ.thing)) continue;
         this.drawCard(cut);
       }
+      this.drawClimbs();
       // A change belongs to its thing's card, so it slides with it (and its glow with it).
       const story = this.data.story;
       for (const { img, i } of this.changed()) this.at(this.thingY(story!.changes[i].thing), () => ctx.drawImage(img, 0, 0, W, H));
@@ -977,8 +1001,10 @@ class Game {
         ctx.drawImage(hot.plate, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
       }
       // The shadows on the floor, then the things put back over them: shadows never climb onto a thing.
+      this.drawFireShadows(fire);
       for (const who of people) this.drawWho(who, undefined, 'shadow');
       for (const cut of this.place.cuts) if (!cut.occ.thing || !gone.has(cut.occ.thing)) this.drawCard(cut);
+      this.drawClimbs();
     }
     // Everyone is drawn far to near, and each one gets the things in front of them put back.
     let rect: Rect = [0, 0, 0, 0];
@@ -986,7 +1012,14 @@ class Game {
     // Under the people, so someone standing in front of a highlighted thing stays in front of its outline.
     if (lit && !this.drawn.some((d) => d.hot === lit)) this.drawLit(lit);
     this.drawn = [];
+    // The flame burns among the people, far to near: over whoever stands behind it, under whoever stands in front.
+    let burnt = !fire?.flame;
+    const burn = () => {
+      if (!burnt) this.drawFlame(fire!);
+      burnt = true;
+    };
     for (const who of people) {
+      if (!burnt && who.y > g.light!.at![1] + 2) burn();
       if (who.npc) {
         const drawn = this.drawWho(who, lit, 'body');
         this.drawn.push({ hot: who.npc, rect: drawn });
@@ -996,6 +1029,7 @@ class Game {
         this.occlude(rect, this.hero.y, gone);
       }
     }
+    burn();
     if (this.grid) {
       ctx.save();
       if (p) ctx.transform(...(backdropTransforms(g, p).below as [number, number, number, number, number, number]));
@@ -1092,7 +1126,7 @@ class Game {
       return w / 2;
     };
     // How much of the floor under the feet lies in a painted shadow: the person stands in it too.
-    const shaded = this.shadeAt(x, y, h);
+    const shaded = Math.max(this.shadeAt(x, y, h), this.fireShadeAt(x, y, h));
     const strength = g.light?.strength ?? 0.35;
     ctx.save();
     // Parallax: the person slides with the floor under their feet; size and light still come from where they stand.
@@ -1101,7 +1135,7 @@ class Game {
     // it (two shadows read as two lights) and only a thin dark contact under the soles stays. In shade, fog or
     // no measured light, the blob is the whole shadow.
     // The sun, or a fire's light on this person (its own way, fading with distance).
-    const light = lightFor(g, x, y, h);
+    const light = lightFor(g, x, y, h, this.time);
     const cast = light && light.length > 0 && light.strength > 0.02 && shaded < 0.98 ? 1 - shaded : 0;
     const blob = (0.12 + 0.4 * strength) * (1 - cast);
     // Shadows lie on the floor: every one is drawn before the things and the people (the shadow layer), so a
@@ -1123,7 +1157,9 @@ class Game {
       ctx.restore();
       return rect ?? [x + sx, y + sy, x + sx, y + sy];
     }
-    const bright = this.lightAt(x, y - h * 0.5) * (1 - shaded * strength);
+    // Near a flame a person's light breathes with it.
+    const breath = light?.at && g.light?.flame && g.light.strength > 0 ? 1 + 0.5 * FLAME_GLOW * flicker(this.time).glow * Math.min(1, light.strength / g.light.strength) * (1 - shaded) : 1;
+    const bright = this.lightAt(x, y - h * 0.5) * (1 - shaded * strength) * breath;
     ctx.filter = `brightness(${bright.toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}`;
     ctx.translate(x, y - bob);
     ctx.rotate(rock);
@@ -1241,13 +1277,222 @@ class Game {
     const gx = gc.getContext('2d')!;
     gx.clearRect(0, 0, gc.width, gc.height);
     gx.putImageData(out, 0, 0);
+    const [dark, blur] = [Math.min(0.85, alpha * 1.35), `blur(${Math.max(0.8, h * 0.004 * (1 + light.length)).toFixed(1)}px)`];
     ctx.save();
-    ctx.globalAlpha = Math.min(0.85, alpha * 1.35);
-    ctx.filter = `blur(${Math.max(0.8, h * 0.004 * (1 + light.length)).toFixed(1)}px)`;
+    ctx.globalAlpha = dark;
+    ctx.filter = blur;
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(gc, 0, 0, bw, bh, x0 * S, y0 * S, bw * S, bh * S);
     ctx.restore();
+    this.climb(gc, [x0 * S, y0 * S, bw, bh], y, dark, blur, [sx, sy]);
     return [x0 * S + sx, y0 * S + sy, x1 * S + sx, y1 * S + sy];
+  }
+
+  /** Shadows that land on things standing behind their person (a tent wall): drawn over the cards. */
+  private climbs: Array<{ canvas: HTMLCanvasElement; box: [number, number, number, number]; dark: number; blur: string; shift: [number, number] }> = [];
+  private climbPool: HTMLCanvasElement[] = [];
+  private climbMask = document.createElement('canvas');
+
+  /**
+   * Keeps the part of a person's shadow (src: bw x bh cells of DEPTH_SCALE px from frame (x, y)) that falls on
+   * the things standing behind them: the shadow layer lies under the cards, so this part goes back on top.
+   */
+  private climb(src: HTMLCanvasElement, [x, y, bw, bh]: [number, number, number, number], feetY: number, dark: number, blur: string, shift: [number, number]) {
+    const S = DEPTH_SCALE;
+    const gone = this.gone();
+    const behind = this.place.cuts.filter((c) => !c.occ.front && c.y < feetY - 2 && !(c.occ.thing && gone.has(c.occ.thing)) && c.x0 < x + bw * S && c.x0 + c.canvas.width > x && c.y0 < y + bh * S && c.y0 + c.canvas.height > y);
+    if (!behind.length) return;
+    const canvas = (this.climbPool[this.climbs.length] ??= document.createElement('canvas'));
+    if (canvas.width < bw || canvas.height < bh) Object.assign(canvas, { width: Math.max(canvas.width, bw), height: Math.max(canvas.height, bh) });
+    const m = this.climbMask;
+    if (m.width < bw || m.height < bh) Object.assign(m, { width: Math.max(m.width, bw), height: Math.max(m.height, bh) });
+    const mc = m.getContext('2d')!;
+    mc.clearRect(0, 0, m.width, m.height);
+    for (const c of behind) mc.drawImage(c.canvas, (c.x0 - x) / S, (c.y0 - y) / S, c.canvas.width / S, c.canvas.height / S);
+    const cc = canvas.getContext('2d')!;
+    cc.clearRect(0, 0, canvas.width, canvas.height);
+    cc.drawImage(src, 0, 0, bw, bh, 0, 0, bw, bh);
+    cc.globalCompositeOperation = 'destination-in';
+    cc.drawImage(m, 0, 0, bw, bh, 0, 0, bw, bh);
+    cc.globalCompositeOperation = 'source-over';
+    this.climbs.push({ canvas, box: [x, y, bw, bh], dark, blur, shift });
+  }
+
+  private drawClimbs() {
+    const S = DEPTH_SCALE;
+    for (const { canvas, box: [x, y, bw, bh], dark, blur, shift } of this.climbs) {
+      ctx.save();
+      ctx.translate(...shift);
+      ctx.globalAlpha = dark;
+      ctx.filter = blur;
+      ctx.drawImage(canvas, 0, 0, bw, bh, x, y, bw * S, bh * S);
+      ctx.restore();
+    }
+  }
+
+  /**
+   * The fire or lamp standing on this place's floor (light.at), made on first use and again when the story
+   * carries a thing off: the painted things' shadows from it (needs the depth map) and the flame to animate.
+   */
+  private fireOf(gone: Set<string>): Fire | undefined {
+    const { g, depth, cuts, shade, wet, bg } = this.place;
+    const at = g.light?.at;
+    if (!at) return undefined;
+    const key = [...gone].sort().join(',');
+    if (this.place.fire?.gone === key) return this.place.fire;
+    const px = personPx(g, at[1]);
+    const holds = (b: number[]) => at[0] >= b[0] && at[0] <= b[2] && at[1] >= b[1] && at[1] <= b[3];
+    // The light's own thing: the smallest one holding it. A tall one (a lamp post) shines from its top.
+    const own = g.things.filter((t) => holds(t.box)).sort((a, b) => (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]) - (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]))[0];
+    const tall = own && own.box[3] - own.box[1] > 1.5 * (own.box[2] - own.box[0]);
+    const up = tall ? (0.9 * (own.box[3] - own.box[1]) * 1.62) / px : 1;
+    const shadows: Fire['shadows'] = [];
+    if (depth) {
+      const S = DEPTH_SCALE;
+      const owner = new Uint8Array(depth.w * depth.h);
+      for (const c of cuts) {
+        if (c.occ.front || holds(c.occ.box) || (c.occ.thing && (gone.has(c.occ.thing) || c.occ.thing === own?.key))) continue;
+        const a = c.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.canvas.width, c.canvas.height).data;
+        for (let r = Math.max(0, Math.floor(c.y0 / S)); r < Math.min(depth.h, (c.y0 + c.canvas.height) / S); r++) {
+          for (let k = Math.max(0, Math.floor(c.x0 / S)); k < Math.min(depth.w, (c.x0 + c.canvas.width) / S); k++) {
+            const [u, v] = [k * S + 1 - c.x0, r * S + 1 - c.y0];
+            if (u >= 0 && v >= 0 && u < c.canvas.width && v < c.canvas.height && a[(v * c.canvas.width + u) * 4 + 3] > 127) owner[r * depth.w + k] = 1;
+          }
+        }
+      }
+      for (const side of g.light!.flame ? [-1, 0, 1] : [0]) {
+        const s = thingShadows(depth, g, owner, at, { up, shift: side * FLAME_SWAY_M });
+        const W = g.frame.width;
+        // Painted shade is dark already; on water a shadow hardly shows.
+        for (let r = 0; r < s.h; r++) for (let k = 0; k < s.w; k++) {
+          if (!s.alpha[r * s.w + k]) continue;
+          const i = Math.min(g.frame.height - 1, Math.round((r + 0.5) * s.cell * S)) * W + Math.min(W - 1, Math.round((k + 0.5) * s.cell * S));
+          if (shade?.bits[i]) s.alpha[r * s.w + k] = 0;
+          else if (wet) s.alpha[r * s.w + k] *= 1 - 0.8 * (wet[i] / 255);
+        }
+        shadows.push(s);
+      }
+    }
+    const [w, h] = shadows.length ? [shadows[0].w, shadows[0].h] : [1, 1];
+    const fire: Fire = { gone: key, shadows, mix: new Float32Array(w * h), img: new ImageData(w, h), canvas: Object.assign(document.createElement('canvas'), { width: w, height: h }), px };
+    if (g.light!.flame && bg) fire.flame = this.flamePixels(bg, at, px);
+    this.place.fire = fire;
+    return fire;
+  }
+
+  /** The painting's flame over a fire at `at`: its bright warm pixels, to sway and flare on top of it. */
+  private flamePixels(bg: HTMLImageElement, at: [number, number], px: number): Fire['flame'] {
+    const { width: W, height: H } = this.place.g.frame;
+    const x0 = Math.max(0, Math.round(at[0] - 0.35 * px));
+    const y0 = Math.max(0, Math.round(at[1] - 0.8 * px));
+    const [w, h] = [Math.min(W, Math.round(at[0] + 0.35 * px)) - x0, Math.min(H, Math.round(at[1] + 0.1 * px)) - y0];
+    if (w <= 0 || h <= 0) return undefined;
+    const canvas = Object.assign(document.createElement('canvas'), { width: w, height: h });
+    const c = canvas.getContext('2d', { willReadFrequently: true })!;
+    c.drawImage(bg, x0, y0, w, h, 0, 0, w, h);
+    const img = c.getImageData(0, 0, w, h);
+    const d = img.data;
+    const ramp = (v: number, a: number, b: number) => Math.max(0, Math.min(1, (v - a) / (b - a)));
+    for (let i = 0; i < d.length; i += 4) {
+      const luma = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
+      d[i + 3] = Math.round(255 * ramp(luma, 140, 215) * ramp(d[i] - d[i + 2], 40, 100));
+    }
+    c.putImageData(img, 0, 0);
+    return { canvas, x0, y0 };
+  }
+
+  /** The things' shadows from the fire as it sways now; under the floor's own shear in a diorama. */
+  private drawFireShadows(fire: Fire | undefined, below?: [number, number, number, number, number, number]) {
+    const light = this.place.g.light;
+    if (!fire?.shadows.length || !light) return;
+    const { sway, glow } = flicker(this.time);
+    const { mix, img, shadows } = fire;
+    // Between the two swayed shadows nearest the flame's place now.
+    const [a, b, k] = shadows.length === 1 ? [shadows[0], shadows[0], 0] : sway < 0 ? [shadows[1], shadows[0], -sway] : [shadows[1], shadows[2], sway];
+    let any = false;
+    for (let i = 0; i < mix.length; i++) {
+      mix[i] = a.alpha[i] * (1 - k) + b.alpha[i] * k;
+      img.data[i * 4] = 0x12;
+      img.data[i * 4 + 1] = 0x18;
+      img.data[i * 4 + 2] = 0x30;
+      img.data[i * 4 + 3] = Math.round(mix[i] * 255);
+      any ||= mix[i] > 0;
+    }
+    if (!any) return;
+    fire.canvas.getContext('2d')!.putImageData(img, 0, 0);
+    const cell = shadows[0].cell * DEPTH_SCALE;
+    ctx.save();
+    if (below) ctx.transform(...below);
+    ctx.globalAlpha = Math.min(0.85, light.strength * 1.35 * (light.flame ? 1 + FLAME_GLOW * glow : 1));
+    ctx.filter = `blur(${(cell * 0.6).toFixed(1)}px)`;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(fire.canvas, 0, 0, fire.canvas.width * cell, fire.canvas.height * cell);
+    ctx.restore();
+  }
+
+  /** How much of the feet at (x, y) stand in a thing's shadow from the fire, 0..1. */
+  private fireShadeAt(x: number, y: number, h: number): number {
+    const fire = this.place.fire;
+    if (!fire?.shadows.length) return 0;
+    const { w, h: rows, cell } = fire.shadows[0];
+    const S = cell * DEPTH_SCALE;
+    let sum = 0;
+    for (const dx of [-0.08, 0, 0.08]) {
+      const [c, r] = [Math.floor((x + dx * h) / S), Math.floor((y - 2) / S)];
+      if (c >= 0 && r >= 0 && c < w && r < rows) sum += fire.mix[r * w + c];
+    }
+    return Math.min(1, sum);
+  }
+
+  /** The flame flickers: its bright pixels sway and flare over the painted ones, a warm glow breathes round it, sparks rise. */
+  private drawFlame(fire: Fire) {
+    const g = this.place.g;
+    const at = g.light!.at!;
+    const t = this.time;
+    const { glow } = flicker(t);
+    const [fx] = flameAt(g, t);
+    const px = fire.px;
+    this.at(at[1], () => {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const [gx, gy] = [fx, at[1] - 0.2 * px];
+      const halo = ctx.createRadialGradient(gx, gy, 0, gx, gy, 1.3 * px);
+      halo.addColorStop(0, `rgba(255,150,60,${(0.07 + 0.04 * glow).toFixed(3)})`);
+      halo.addColorStop(1, 'rgba(255,150,60,0)');
+      ctx.fillStyle = halo;
+      ctx.fillRect(gx - 1.3 * px, gy - 1.3 * px, 2.6 * px, 2.6 * px);
+      const flame = fire.flame;
+      if (flame) {
+        const { canvas, x0, y0 } = flame;
+        const base = at[1];
+        const amp = 0.012 * px;
+        ctx.globalAlpha = Math.max(0, 0.3 + 0.15 * glow);
+        for (let y = 0; y < canvas.height; y += 3) {
+          // Higher up it sways more, and the whole flame stretches and settles with its glow.
+          const rise = Math.max(0, (base - (y0 + y)) / (0.8 * px));
+          const dx = (0.6 * Math.sin((y0 + y) * 0.11 - t * 8) + 0.4 * Math.sin((y0 + y) * 0.05 - t * 5.3)) * amp * rise + (fx - at[0]) * rise;
+          const ty = base - (base - (y0 + y)) * (1 + 0.05 * glow);
+          ctx.drawImage(canvas, 0, y, canvas.width, 3, x0 + dx, ty, canvas.width, 3 * (1 + 0.05 * glow));
+        }
+      }
+      // A few sparks, each on its own loop: up from the flames, drifting, dimming.
+      ctx.globalAlpha = 1;
+      for (let i = 0; i < 7; i++) {
+        const life = 1.3 + ((i * 0.37) % 0.9);
+        const age = (t + i * 0.61) % life;
+        const loop = Math.floor((t + i * 0.61) / life);
+        const seed = Math.sin(loop * 12.9898 + i * 78.233) * 43758.5453;
+        const r = seed - Math.floor(seed);
+        const k = age / life;
+        const x = at[0] + (r - 0.5) * 0.25 * px + Math.sin(t * 3 + i) * 0.04 * px * k;
+        const y = at[1] - 0.15 * px - k * (0.5 + 0.4 * r) * px;
+        ctx.fillStyle = `rgba(255,${Math.round(170 + 60 * r)},90,${((1 - k) * 0.8).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(0.8, 0.006 * px * (1 - 0.5 * k)), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    });
   }
 
   /** The share of the floor under the feet (an ellipse a person's shadow would cover) inside a painted shadow. */

@@ -51,8 +51,9 @@ export const Geometry = z.object({
   /**
    * The light the painting is lit by. dir/length: how shadows run on screen per height (the sun). With `at`
    * the light is a fire or a lamp standing on the floor there: shadows run away from it, each its own way.
+   * flame: that light is a living flame (a fire, a torch, a candle): it flickers, and the shadows with it.
    */
-  light: z.object({ dir: XY, length: z.number().nonnegative(), strength: z.number().min(0).max(1), at: XY.optional() }).optional(),
+  light: z.object({ dir: XY, length: z.number().nonnegative(), strength: z.number().min(0).max(1), at: XY.optional(), flame: z.boolean().optional() }).optional(),
   /** Mask (relative to the place folder) of painted shadows on floors: a person standing in one is darkened. */
   shadows: z.string().optional(),
   /**
@@ -208,10 +209,11 @@ export function stepRestY(g: Geometry, x: number, y: number, dir = 1): number {
  * a shadow running straight away from it, longer the farther they stand, fading out a few heights away.
  * Undefined when the person is too far from the fire for it to throw a shadow.
  */
-export function lightFor(g: Geometry, x: number, y: number, px: number): Geometry['light'] {
+export function lightFor(g: Geometry, x: number, y: number, px: number, t?: number): Geometry['light'] {
   const light = g.light;
   if (!light?.at) return light;
-  const [dx, dy] = [x - light.at[0], y - light.at[1]];
+  const at = flameAt(g, t);
+  const [dx, dy] = [x - at[0], y - at[1]];
   const d = Math.hypot(dx, dy);
   const reach = 4 * px;
   if (d >= reach) return undefined;
@@ -219,5 +221,25 @@ export function lightFor(g: Geometry, x: number, y: number, px: number): Geometr
   const dir: [number, number] = d > 1 ? [dx / d, dy / d] : [0, 1];
   // A flame lower than the head throws a long shadow, longer the farther away the person is.
   const length = Math.min(3, 0.9 + (1.2 * d) / px);
-  return { dir, length, strength: light.strength * (1 - d / reach), at: light.at };
+  return { dir, length, strength: light.strength * (1 - d / reach) * (t === undefined || !light.flame ? 1 : 1 + FLAME_GLOW * flicker(t).glow), at, flame: light.flame };
+}
+
+/** How far a flame sways (metres to either side) and how much its light breathes (share of its strength). */
+export const FLAME_SWAY_M = 0.1;
+export const FLAME_GLOW = 0.12;
+
+/** A flame's flicker at time t (s): sway side to side and glow, each -1..1, smooth and never quite repeating. */
+export function flicker(t: number): { sway: number; glow: number } {
+  return {
+    sway: 0.55 * Math.sin(t * 2.1) + 0.3 * Math.sin(t * 5.3 + 1.7) + 0.15 * Math.sin(t * 11.9 + 0.4),
+    glow: 0.5 * Math.sin(t * 7.7 + 0.9) + 0.3 * Math.sin(t * 13.1 + 2.3) + 0.2 * Math.sin(t * 3.1),
+  };
+}
+
+/** Where the light stands at time t: a flame sways a little side to side; any other light stays put. */
+export function flameAt(g: Geometry, t?: number): [number, number] {
+  const light = g.light!;
+  const at = light.at!;
+  if (t === undefined || !light.flame) return at;
+  return [at[0] + flicker(t).sway * personPx(g, at[1]) * (FLAME_SWAY_M / 1.62), at[1]];
 }

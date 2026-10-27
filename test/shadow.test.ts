@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Geometry } from '../src/play/geometry.ts';
-import { DEPTH_SCALE, shadowAt, sunFor, type Depth } from '../src/play/shadow.ts';
+import { DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
 import { fitFloor } from '../src/scene/depthmap.ts';
 
 const g = Geometry.parse({
@@ -68,5 +68,25 @@ describe('fitFloor', () => {
     expect(fit.a).toBeCloseTo(0.01, 3);
     expect(Math.abs(fit.b - 0.3)).toBeLessThan(0.1);
     expect(fit.inliers).toBeGreaterThan(0.6);
+  });
+});
+
+describe('things in firelight', () => {
+  it('a thing standing between the fire and the floor shades the floor behind it, not before it', () => {
+    // A board 100 px (0.81 m) tall standing at frame row 600, x 560..640; the fire in front of it at row 680.
+    const d = floor();
+    const owner = new Uint8Array(d.w * d.h);
+    for (let r = 500 / DEPTH_SCALE; r < 600 / DEPTH_SCALE; r++) for (let c = 560 / DEPTH_SCALE; c < 640 / DEPTH_SCALE; c++) {
+      owner[r * d.w + c] = 1;
+      d.rows[r * d.w + c] = 400;
+    }
+    const s = thingShadows(d, g, owner, [600, 680], { up: 1 });
+    const at = (x: number, y: number) => s.alpha[Math.floor(y / DEPTH_SCALE / s.cell) * s.w + Math.floor(x / DEPTH_SCALE / s.cell)];
+    expect(at(600, 490)).toBeGreaterThan(0);
+    expect(at(600, 720)).toBe(0);
+    expect(at(200, 490)).toBe(0);
+    // A light higher than the board throws a shorter shadow: far behind it the floor is lit again.
+    const high = thingShadows(d, g, owner, [600, 680], { up: 3 });
+    expect(high.alpha[Math.floor(490 / DEPTH_SCALE / s.cell) * s.w + Math.floor(600 / DEPTH_SCALE / s.cell)]).toBe(0);
   });
 });

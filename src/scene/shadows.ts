@@ -166,23 +166,23 @@ export async function findShadows(memo: Memo, label: string, painting: Buffer, f
   return { mask, light: { dir: [round(dir[0]), round(dir[1])], length: round(Math.min(4, length)), strength: round(strength) }, casters: measured, source: 'casters' };
 }
 
-const SparkSource = z.object({ source: z.string() });
+const SparkSource = z.object({ source: z.string(), flame: z.boolean().optional() });
 
 /**
  * A fire or a lamp that lights the scene more than the sky does (a camp at dusk, a lamp-lit room): Spark
  * names the main light among the place's own `lights`. Asked only where the layout has lights. The light
  * stands where its thing does: the foot of a tall one (a lamp post), the middle of a low one (a fire ring).
  */
-export async function localLight(memo: Memo, label: string, painting: Buffer, lights: Array<{ key: string; box?: [number, number, number, number] }>): Promise<{ key: string; at: [number, number] } | undefined> {
+export async function localLight(memo: Memo, label: string, painting: Buffer, lights: Array<{ key: string; box?: [number, number, number, number] }>): Promise<{ key: string; at: [number, number]; flame: boolean } | undefined> {
   const placed = lights.filter((l) => l.box);
   if (!placed.length) return undefined;
   const prompt = `This is a painted background for a 2D adventure game (${W}x${H} px). It shows these light sources: ${placed.map((l) => `"${l.key}"`).join(', ')}.
 What mainly lights the ground where people walk, and so decides which way their shadows fall: the sun or daylight, or one of those light sources (at dusk or at night a fire or a lamp usually does)?
-Reply with JSON only: {"source": "sun"} or {"source": "<one of the names above>"}`;
+Reply with JSON only: {"source": "sun"} or {"source": "<one of the names above>", "flame": true if that light is a living flame (a fire, a torch, a candle, an oil lamp), false if not (an electric lamp, a glowing window)}`;
   const a = SparkSource.parse(await askSparkJson(memo, { label, prompt, images: [painting] }));
   const hit = placed.find((l) => l.key === a.source);
   if (!hit?.box) return undefined;
   const [x0, y0, x1, y1] = hit.box;
   const tall = y1 - y0 > 1.5 * (x1 - x0);
-  return { key: hit.key, at: [Math.round((x0 + x1) / 2), Math.round(tall ? y1 : (y0 + y1) / 2)] };
+  return { key: hit.key, at: [Math.round((x0 + x1) / 2), Math.round(tall ? y1 : (y0 + y1) / 2)], flame: a.flame === true };
 }

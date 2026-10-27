@@ -277,8 +277,8 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
       return { key: l.key, box: t ? (maskBox(t.mask) ?? undefined) : undefined };
     }));
     if (fire) {
-      shadows.light = { dir: [0, 1], length: 1.5, strength: shadows.light?.strength ?? 0.45, at: fire.at };
-      log(`light from ${fire.key} at ${fire.at.join(', ')}`);
+      shadows.light = { dir: [0, 1], length: 1.5, strength: shadows.light?.strength ?? 0.45, at: fire.at, ...(fire.flame && { flame: true }) };
+      log(`light from ${fire.key} at ${fire.at.join(', ')}${fire.flame ? ' (a flame)' : ''}`);
     }
   }
   if (shadows.light && !shadows.light.at) log(`light ${shadows.light.dir.join(', ')} x${shadows.light.length}, strength ${shadows.light.strength} (${shadows.source})`);

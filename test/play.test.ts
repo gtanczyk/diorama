@@ -133,3 +133,15 @@ test('a fire throws each shadow straight away from itself, fading a few heights 
   const sun = { light: { dir: [1, 0], length: 1, strength: 0.4 } } as unknown as Geometry;
   expect(lightFor(sun, 10, 10, 100)).toEqual(sun.light);
 });
+
+test('a flame sways and breathes; a lamp stays put', () => {
+  const lamp = { scale: { horizonY: 200, pxPerY: 0.5 }, light: { dir: [0, 1], length: 1.5, strength: 0.5, at: [500, 600] } } as unknown as Geometry;
+  const fire = { ...lamp, light: { ...lamp.light, flame: true } } as Geometry;
+  const at = (g: Geometry, t: number) => lightFor(g, 700, 600, 200, t)!;
+  expect(at(lamp, 1)).toEqual(at(lamp, 2));
+  const xs = [0.3, 0.9, 1.7, 2.4].map((t) => at(fire, t).at![0]);
+  expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(1);
+  // Never more than its sway (0.1 m: 200 px is 1.62 m) to either side.
+  for (const x of xs) expect(Math.abs(x - 500)).toBeLessThanOrEqual(200 * (0.1 / 1.62) + 1e-9);
+  expect(at(fire, 0.3).strength).not.toBe(at(fire, 0.9).strength);
+});
