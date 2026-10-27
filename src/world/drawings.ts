@@ -74,47 +74,48 @@ export function readKinds(files: WorldFiles): Record<string, Kind> {
   return parsed.success ? parsed.data : {};
 }
 
-/** Spark looks at every drawing (with what the children said) and says what each one is. */
-export async function readDrawings(memo: Memo, files: WorldFiles, told = ''): Promise<Drawn[]> {
-  const names = drawingFiles(files);
-  if (names.length === 0) return [];
-  const images = names.map((n) => fs.readFileSync(files.path('drawings', n)));
-  const kinds = readKinds(files);
-  const fixed = names.flatMap((n, i) => (kinds[n] ? [`picture ${i + 1} is ${kinds[n] === 'hero' ? 'the hero' : `${kinds[n] === 'item' ? 'an' : 'a'} ${kinds[n]}`}`] : []));
-  const prompt = `Children of 5 and 6 drew these ${names.length} pictures for a 2D point-and-click adventure game they are making together; picture ${names.map((_, i) => i + 1).join(', ')} in order.${told ? `\nWhat they told about their story:\n"""\n${told}\n"""` : ''}${fixed.length ? `\nThe grown-up running the workshop decided: ${fixed.join('; ')}.` : ''}
+/** A kids' world looks like this, so a character painted from a drawing before the world exists is the one the game uses. */
+export const KIDS_STYLE = "the children's own drawings come alive: wax crayon and felt-tip texture, solidly coloured, bold simple rounded shapes with thick dark outlines, bright clean colours, soft sunny light, friendly and readable at a glance";
 
-For each picture say what it is in the game:
-- kind: "hero" (the one the player walks as; exactly one picture is the hero, the main character of their story), "npc" (someone to talk to: a person, an animal, a creature), "item" (a small thing to pick up and carry), "prop" (a big thing that stays in a place) or "place" (a whole scene: a landscape, a room, a house with its surroundings)
+const KIND_TEXT = `- kind: "character" (someone: a person, an animal, a creature), "item" (a small thing to pick up and carry), "prop" (a big thing that stays in a place) or "place" (a whole scene: a landscape, a room, a house with its surroundings)
 - key: a kebab-case English name for it ("green-dragon", "blue-hat", "mushroom-forest")
 - looks: what the child drew, as a description a painter can follow: shape, every colour, clothes, face, what it holds. Describe the drawing kindly as the real thing it shows (a "green dragon with orange wings and a round light-green belly", not "scribbles"). For a character or a thing, only it, not the sun, sky or ground drawn around it. For a place: what it shows front to back.
-Ignore any name written on the paper, the paper itself and the table. Two pictures of the same thing get the same key.
+Ignore any name written on the paper, the paper itself and the table.`;
 
-Reply with JSON only: {"pictures": [{"picture": 1, "kind": "...", "key": "...", "looks": "..."}]}`;
+/** Spark says what one drawing is, as soon as its photo arrives (no story needed yet). */
+export async function readDrawing(memo: Memo, image: Buffer, file: string, taken: string[] = []): Promise<Drawn> {
+  const prompt = `A child of 5 or 6 drew this picture for a 2D point-and-click adventure game the class is making together. Say what it is in the game:
+${KIND_TEXT}${taken.length ? `\nKeys already used by other drawings: ${taken.join(', ')}. Use one of them only when this drawing shows that same thing again.` : ''}
+
+Reply with JSON only: {"kind": "...", "key": "...", "looks": "..."}`;
   let ask = prompt;
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const answer = await askSparkJson<{ pictures?: Array<{ picture?: number; kind?: string; key?: string; looks?: string }> }>(memo, { label: `drawings#${attempt}`, prompt: ask, images });
-    const drawn = (Array.isArray(answer?.pictures) ? answer.pictures : []).map((a, i) => Drawn.safeParse({ file: names[(a.picture ?? i + 1) - 1], kind: a.kind, key: a.key, looks: a.looks }));
-    const ok = drawn.flatMap((d) => (d.success ? [d.data] : []));
-    const issues = [
-      ...(ok.length < names.length ? [`describe all ${names.length} pictures, each with picture, kind, key and looks`] : []),
-      ...(ok.filter((d) => d.kind === 'hero').length > 1 && new Set(ok.filter((d) => d.kind === 'hero').map((d) => d.key)).size > 1 ? ['only one character is the hero; the others are npc'] : []),
-    ];
-    if (issues.length === 0) {
-      // What the grown-up decided stands; a hero they chose sends any other hero back among the npcs.
-      for (const d of ok) if (kinds[d.file]) d.kind = kinds[d.file];
-      const chosen = ok.find((d) => kinds[d.file] === 'hero');
-      if (chosen) for (const d of ok) if (d.kind === 'hero' && d.key !== chosen.key) d.kind = 'npc';
-      // Nobody drew a hero: the first character drawn leads.
-      if (!ok.some((d) => d.kind === 'hero')) {
-        const first = ok.find((d) => d.kind === 'npc');
-        if (first) ok.filter((d) => d.key === first.key).forEach((d) => (d.kind = 'hero'));
-      }
-      return ok;
-    }
-    console.log(`  drawings try ${attempt}: ${issues.join('; ')}`);
-    ask = `${prompt}\n\nYour last answer was:\n${JSON.stringify(answer)}\n\nFix: ${issues.join('; ')}`;
+    const answer = await askSparkJson<{ kind?: string; key?: string; looks?: string }>(memo, { label: `drawing:${file}#${attempt}`, prompt: ask, images: [image] });
+    const parsed = Drawn.safeParse({ file, kind: answer?.kind === 'character' ? 'npc' : answer?.kind, key: answer?.key, looks: answer?.looks });
+    if (parsed.success) return parsed.data;
+    ask = `${prompt}\n\nYour last answer was:\n${JSON.stringify(answer)}\n\nFix: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
   }
-  throw new Error('Spark could not read the drawings in 3 tries');
+  throw new Error(`Spark could not read the drawing ${file} in 3 tries`);
+}
+
+/** Every kept drawing read (each once, kept in drawings.json), with what the grown-up said over what Spark saw. */
+export async function readDrawings(memo: Memo, files: WorldFiles): Promise<Drawn[]> {
+  const names = drawingFiles(files);
+  const known = new Map(readDrawn(files).map((d) => [d.file, d]));
+  const drawn: Drawn[] = [];
+  // One after another, so a drawing of the same thing again gets the same key.
+  for (const file of names) drawn.push(known.get(file) ?? await readDrawing(memo, fs.readFileSync(files.path('drawings', file)), file, [...new Set(drawn.map((d) => d.key))]));
+  const kinds = readKinds(files);
+  for (const d of drawn) if (kinds[d.file]) d.kind = kinds[d.file];
+  return oneHero(drawn, drawn.find((d) => kinds[d.file] === 'hero')?.key);
+}
+
+/** Exactly one character leads: the one asked for, else the one already leading, else the first drawn. */
+export function oneHero(drawn: Drawn[], hero?: string): Drawn[] {
+  const characters = drawn.filter((d) => d.kind === 'hero' || d.kind === 'npc');
+  const lead = (hero && characters.find((d) => d.key === hero)) ?? characters.find((d) => d.kind === 'hero') ?? characters[0];
+  for (const d of characters) d.kind = lead && d.key === lead.key ? 'hero' : 'npc';
+  return drawn;
 }
 
 /** What the world designer is told: every drawing is in the world, under its key, as drawn. */
@@ -129,7 +130,7 @@ export function drawingsBrief(drawn: Drawn[]): string {
   })[d.kind];
   return `The children drew these, and every one of them must be in the world, under exactly this key, looking as drawn:
 ${once.map(line).join('\n')}
-Style: the world looks like their drawings come alive: wax crayon and felt-tip texture, bold simple shapes, bright clean colours, friendly, readable at a glance.`;
+The style is exactly: "${KIDS_STYLE}".`;
 }
 
 /** What the designed world left out of the drawings, said so Spark can put it back. */

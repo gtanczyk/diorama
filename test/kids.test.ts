@@ -66,3 +66,13 @@ test('what the grown-up says a drawing is, read from drawings/kinds.json', () =>
   files.write(files.path('drawings', 'kinds.json'), { '02-smok.png': 'hero' });
   expect(readKinds(files)).toEqual({ '02-smok.png': 'hero' });
 });
+
+test('one hero: the one asked for, else the one leading, else the first character drawn', async () => {
+  const { oneHero } = await import('../src/world/drawings.ts');
+  const set = () => drawn.map((d) => ({ ...d }));
+  const kinds = (ds: Drawn[]) => ds.filter((d) => d.kind === 'hero').map((d) => d.key);
+  expect(kinds(oneHero(set()))).toEqual(['girl-with-cat']);
+  expect(kinds(oneHero(set(), 'green-dragon'))).toEqual(['green-dragon']);
+  expect(oneHero(set(), 'green-dragon').find((d) => d.key === 'girl-with-cat')!.kind).toBe('npc');
+  expect(kinds(oneHero(set().map((d) => (d.kind === 'hero' ? { ...d, kind: 'npc' as const } : d))))).toEqual(['girl-with-cat']);
+});

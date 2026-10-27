@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { defineCommand, takeOption } from '../registry.ts';
 import { describePerson, describePhoto, framePhoto, normalisePhoto } from '../scene/photo.ts';
 import { designWorld, type Extra } from '../world/design.ts';
-import { drawingFiles, drawingsBrief, drawnIssues, keepDrawings, readDrawings } from '../world/drawings.ts';
+import { drawingFiles, drawingsBrief, drawnIssues, keepDrawings, KIDS_STYLE, oneHero, readDrawings, readKinds } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
 import { hearAll, Idea, ideaFromTold, keepTold } from '../world/told.ts';
 
@@ -28,20 +28,25 @@ defineCommand({
     if (toldFrom) console.log(`recordings kept: ${keepTold(files, toldFrom).join(', ')}`);
     const said = await hearAll(files);
     for (const s of said) console.log(`heard ${s.clip}: ${s.text}`);
-    const drawn = await readDrawings(files.memo, files, said.map((s) => s.text).join('\n'));
+    const drawn = await readDrawings(files.memo, files);
     for (const d of drawn) console.log(`drawing ${d.file}: ${d.kind} ${d.key}, ${d.looks}`);
     const kids = kidsFlag >= 0 || drawn.length > 0 || said.length > 0;
 
     let idea = given;
+    // The story says who leads, unless the grown-up already picked a drawing as the hero.
+    const heroOf = (told: Idea) => {
+      if (told.hero && !drawn.some((d) => readKinds(files)[d.file] === 'hero')) oneHero(drawn, told.hero);
+    };
     if (idea) {
-      // An idea written from what the children said (the Studio's kids_idea), maybe edited since: its language stands.
+      // An idea written from what the children said (the Studio's kids_idea), maybe edited since: its language and hero stand.
       const told = Idea.safeParse(fs.existsSync(files.path('told', 'idea.json')) ? JSON.parse(fs.readFileSync(files.path('told', 'idea.json'), 'utf8')) : null);
-      if (told.success) language ??= told.data.language;
+      if (told.success) (language ??= told.data.language, heroOf(told.data));
     } else if (said.length || drawn.length) {
       // What the children said and drew is the idea.
       const told = await ideaFromTold(files.memo, said.map((s) => s.text), drawn);
       idea = told.idea;
       language ??= told.language;
+      heroOf(told);
       files.write(files.path('told', 'idea.json'), told);
       console.log(`idea from what they said (${told.language}): ${told.title}. ${told.idea}`);
     }
@@ -66,7 +71,7 @@ defineCommand({
     const asks = [drawn.length ? drawingsBrief(drawn) : '', other ? `Write the title and pitch in ${other}, the language of the players; everything else (style, shows, mood, looks, keys) stays in English for the painters.` : ''].filter(Boolean);
     const extra: Extra | undefined = asks.length ? { brief: asks.join('\n\n'), issues: (w) => drawnIssues(w, drawn) } : undefined;
     const designed = await designWorld(files.memo, hero ? `${idea}\nThe hero is ${hero.looks}` : idea, places, room, extra);
-    const world = { ...designed, ...(hero && { hero }), ...(other && { language: other }), ...(kids && { audience: 'kids' as const }) };
+    const world = { ...designed, ...(drawn.length && { style: KIDS_STYLE }), ...(hero && { hero }), ...(other && { language: other }), ...(kids && { audience: 'kids' as const }) };
     files.write(files.path('world.json'), world);
     if (drawingFiles(files).length) files.write(files.path('drawings.json'), drawn);
     console.log(`${world.title}: ${world.places.map((p) => p.key).join(' · ')}`);

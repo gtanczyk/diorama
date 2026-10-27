@@ -244,3 +244,16 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 .told audio { height: 32px; flex: none; width: 220px; }
 .drawings figcaption select { min-height: 28px; padding: 2px 6px; font-size: 13px; }
 .play-hint { margin: 2px 0 8px; } .play-hint summary { cursor: pointer; color: var(--accent); font-size: 13px; } .play-hint p { margin: 4px 0; }
+.drawings .pic { position: relative; padding: 0; border: 0; min-height: 0; border-radius: 10px; background: none; display: block; width: 100%; }
+.drawings .pic img.alive { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: rgba(255, 255, 255, 0.92); border-radius: 10px; animation: alive 0.9s ease-out; }
+.drawings .pic img.alive.place { object-fit: cover; }
+.drawings .pic:hover img.alive { opacity: 0; transition: opacity 0.2s; }
+.drawings .spark { position: absolute; inset: auto 0 8px; text-align: center; font-size: 13px; color: #121417; background: var(--accent); border-radius: 999px; margin: 0 12px; padding: 2px 8px; animation: pulse 1.2s ease-in-out infinite; }
+@keyframes alive { from { opacity: 0; transform: scale(0.9) rotate(-2deg); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 50% { opacity: 0.55; } }
+.show { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: grid; grid-template-columns: 1fr auto 1.4fr; align-items: center; gap: 24px; padding: 4vh 4vw; cursor: zoom-out; }
+.show img { max-width: 100%; max-height: 82vh; margin: auto; border-radius: 14px; }
+.show img.alive { animation: alive 1.1s ease-out; background: #fff; }
+.show .arrow { font-size: 64px; color: var(--accent); }
+.show p { grid-column: 1 / -1; text-align: center; font-size: 22px; margin: 0; color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .drawings .pic img.alive, .show img.alive, .drawings .spark { animation: none; } }

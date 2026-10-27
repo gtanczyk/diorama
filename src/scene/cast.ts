@@ -46,7 +46,7 @@ Plain flat light grey background, no floor, no shadow, no other people, no text.
 
 /** For a child's drawing: the character they drew, as they drew it, made whole enough to walk. */
 export function drawingPrompt(world: World, who: Who): string {
-  return `This is a child's drawing on paper. Paint the character in it as a single full-body character for a 2D point-and-click adventure game, so the child who drew it knows it at once: the same colours, the same clothes and features, the same shapes and proportions (a big head stays big), only cleaner and whole. Standing in a relaxed walking-ready pose, seen from the side in three-quarter view, facing to the right, the whole figure visible from the top of the head down to both feet (or paws), centred, about two thirds of the image tall.
+  return `This is a child's drawing on paper. Paint the character in it as a single full-body character for a 2D point-and-click adventure game, so the child who drew it knows it at once: the same colours, the same clothes and features, the same shapes and proportions (a big head stays big), only cleaner and whole: every part coloured in solidly, with clear outlines and no white paper showing through, a finished character, not a sketch. Standing in a relaxed walking-ready pose, seen from the side in three-quarter view, facing to the right, the whole figure visible from the top of the head down to both feet (or paws), centred, about two thirds of the image tall.
 
 Character: ${who.looks}
 Style: ${world.style}
@@ -56,21 +56,25 @@ Plain flat light grey background, no paper, no table, no written name, no floor,
 
 /** `from` is a photo of a real person, or a child's drawing of the character. */
 export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, from?: { photo?: Buffer; drawing?: Buffer }): Promise<{ painting: Buffer; figure: Buffer }> {
-  const painting = from?.photo
-    ? await museEdit(memo, { label: `figure:${who.key}:photo`, prompt: photoPrompt(world), images: [await sharp(from.photo).rotate().png().toBuffer()], take })
-    : from?.drawing
-      ? await museEdit(memo, { label: `figure:${who.key}:drawing`, prompt: drawingPrompt(world, who), images: [from.drawing], take })
-      : await musePaint(memo, { label: `figure:${who.key}`, prompt: figurePrompt(world, who), take });
-  const png = await sharp(painting).png().toBuffer();
-  // Not every character is a person (a flock of pigeons, a cat): SAM is asked by their own description next.
-  let found: Awaited<ReturnType<typeof samFind>> = [];
-  for (const prompt of ['person', who.looks.split(/[,.;]/)[0].trim().split(/\s+/).slice(0, 6).join(' '), 'animal']) {
-    found = await samFind(memo, { label: `figure:${who.key}`, image: png, prompt });
-    if (found.length) break;
+  // A take SAM finds no one in (a drawing painted back as loose scribble) is painted once more before giving up.
+  for (const t of [take, take + 1]) {
+    const painting = from?.photo
+      ? await museEdit(memo, { label: `figure:${who.key}:photo`, prompt: photoPrompt(world), images: [await sharp(from.photo).rotate().png().toBuffer()], take: t })
+      : from?.drawing
+        ? await museEdit(memo, { label: `figure:${who.key}:drawing`, prompt: drawingPrompt(world, who), images: [from.drawing], take: t })
+        : await musePaint(memo, { label: `figure:${who.key}`, prompt: figurePrompt(world, who), take: t });
+    const png = await sharp(painting).png().toBuffer();
+    // Not every character is a person (a flock of pigeons, a cat): SAM is asked by their own description next.
+    let found: Awaited<ReturnType<typeof samFind>> = [];
+    for (const prompt of ['person', who.looks.split(/[,.;]/)[0].trim().split(/\s+/).slice(0, 6).join(' '), 'animal']) {
+      found = await samFind(memo, { label: `figure:${who.key}`, image: png, prompt });
+      if (found.length) break;
+    }
+    if (!found.length) continue;
+    const biggest = found.reduce((a, b) => (area(b.mask) > area(a.mask) ? b : a));
+    return { painting: png, figure: await cutHero(png, biggest.mask) };
   }
-  if (!found.length) throw new Error(`${who.key}: SAM found no one in the painting; try another take (cast_redo anotherTake)`);
-  const biggest = found.reduce((a, b) => (area(b.mask) > area(a.mask) ? b : a));
-  return { painting: png, figure: await cutHero(png, biggest.mask) };
+  throw new Error(`${who.key}: SAM found no one in the painting, two takes; try another take (cast_redo anotherTake)`);
 }
 
 const area = (m: Mask) => m.bits.reduce((s, b) => s + b, 0);

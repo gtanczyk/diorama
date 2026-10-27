@@ -40,7 +40,8 @@ export function transcribe(memo: Memo, label: string, pcm24k: Buffer, pace = 4):
           finals.push(msg.transcript);
           partial = '';
         } else partial = msg.transcript;
-      } else if (msg.type === 'error') ws.close(1000 + 8, String(msg.message).slice(0, 100));
+      // A client may only close with 1000 or 3000-4999; anything but 1000 is taken as a failure below.
+      } else if (msg.type === 'error') ws.close(4000, String(msg.message).slice(0, 100));
     };
     ws.onopen = () => ws.send(JSON.stringify({
       authorization: { accessToken: `Bearer ${apiKey()}` },

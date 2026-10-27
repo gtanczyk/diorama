@@ -5,9 +5,10 @@ import { call, fileUrl } from './api.ts';
 
 type Drawn = { kind: string; key: string; looks: string };
 type Material = {
-  drawings: Array<{ file: string; v: number; drawn: Drawn | null }>;
+  drawings: Array<{ file: string; v: number; drawn: Drawn | null; preview: { file: string; v: number } | null }>;
   told: Array<{ clip: string; file: string; text: string | null }>;
   idea: { language: string; title: string; idea: string } | null;
+  reading: { file: string; v: number } | null;
   built: boolean;
 };
 
@@ -117,6 +118,11 @@ export function KidsStart({ slug, taken, places, onBuild, onError }: { slug: str
   const [camera, setCamera] = useState(false);
   const [note, setNote] = useState('');
   const [idea, setIdea] = useState('');
+  /** Drawings being brought to life, and the one shown big (drawing beside what it became). */
+  const [painting, setPainting] = useState<string[]>([]);
+  const [shown, setShown] = useState<string | null>(null);
+  const [grow, setGrow] = useState(true);
+  const reader = useRef<HTMLAudioElement | null>(null);
   const load = () => call<Material>('kids_status', { slug }).then((s) => (setM(s), s.idea && setIdea((old) => old || s.idea!.idea))).catch((e) => onError(e.message));
   useEffect(() => {
     setM(null);
@@ -135,17 +141,47 @@ export function KidsStart({ slug, taken, places, onBuild, onError }: { slug: str
       await load();
     }
   };
-  const addPhotos = (list: FileList | null) => {
-    for (const file of Array.from(list ?? [])) void work(`Keeping ${file.name}`, async () => call('kids_add', { slug, kind: 'drawing', name: /\.(png|jpe?g|webp)$/i.test(file.name) ? file.name.replace(/\.[^.]+$/, '.jpg') : file.name, data: await shrink(file) }));
+  /** A drawing comes to life right after it is kept: the children see their character while the next one is drawn. */
+  const bringToLife = async (file: string) => {
+    setPainting((p) => [...p, file]);
+    try {
+      setM(await call<Material>('kids_preview', { slug, file }));
+      setShown(file);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setPainting((p) => p.filter((x) => x !== file));
+    }
   };
-  const snapped = (jpeg: string) => void work('Keeping the photo', () => call('kids_add', { slug, kind: 'drawing', name: `camera-${Date.now() % 100000}.jpg`, data: jpeg }));
-  const recorded = (blob: Blob, ext: string) => void work('Hearing the recording', async () => call('kids_add', { slug, kind: 'told', name: `story.${ext}`, data: await base64(blob) }));
+  const keep = (name: string, data: () => Promise<string>) => void work(`Reading ${name}`, async () => {
+    const kept = await call<{ file: string }>('kids_add', { slug, kind: 'drawing', name, data: await data() });
+    void bringToLife(kept.file);
+  });
+  const addPhotos = (list: FileList | null) => {
+    for (const file of Array.from(list ?? [])) keep(/\.(png|jpe?g|webp)$/i.test(file.name) ? file.name.replace(/\.[^.]+$/, '.jpg') : file.name, () => shrink(file));
+  };
+  const snapped = (jpeg: string) => keep(`camera-${Date.now() % 100000}.jpg`, async () => jpeg);
+  /** Each recording is heard, and (when the story grows) the story is written again with it and read aloud. */
+  const recorded = (blob: Blob, ext: string) => void work('Hearing the recording', async () => {
+    await call('kids_add', { slug, kind: 'told', name: `story.${ext}`, data: await base64(blob) });
+    if (grow) await writeNow();
+  });
   const setKind = (file: string, kind: string | null) => void work('Changing what it is', () => call('kids_kind', { slug, file, kind }));
   const remove = (file: string) => void work('Taking it out', () => call('kids_remove', { slug, file }));
-  const write = () => void work('Spark reads the drawings and writes the story', async () => {
+  const writeNow = async () => {
     const s = await call<Material>('kids_idea', { slug, note: note.trim() || undefined });
     if (s.idea) setIdea(s.idea.idea);
-  });
+    setM(s);
+    if (s.reading) {
+      try {
+        reader.current?.pause();
+        reader.current = new Audio(fileUrl(slug, s.reading.file, s.reading.v));
+        await reader.current.play();
+      } catch {}
+    }
+  };
+  const write = () => void work('Writing the story', writeNow);
+  const big = m?.drawings.find((d) => d.file === shown && d.preview);
   if (taken && m && m.built) return <p class="note">{slug} is already built: pick another name for a new workshop world.</p>;
   if (!m) return <p class="note">Loading…</p>;
   return (
@@ -156,8 +192,12 @@ export function KidsStart({ slug, taken, places, onBuild, onError }: { slug: str
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => (e.preventDefault(), addPhotos(e.dataTransfer?.files ?? null))}>
           {m.drawings.map((d) => (
-            <figure>
-              <img src={fileUrl(slug, d.file, d.v)} alt="" />
+            <figure class={painting.includes(d.file) ? 'painting' : ''}>
+              <button type="button" class="pic" title={d.preview ? 'Show it big' : ''} onClick={() => d.preview && setShown(d.file)}>
+                <img src={fileUrl(slug, d.file, d.v)} alt="" />
+                {d.preview && <img class={`alive${d.drawn?.kind === 'place' ? ' place' : ''}`} src={fileUrl(slug, d.preview.file, d.preview.v)} alt="" />}
+                {painting.includes(d.file) && <span class="spark">Coming to life…</span>}
+              </button>
               <figcaption>
                 <select value={d.drawn?.kind ?? ''} title="What it is in the game" onChange={(e) => setKind(d.file, e.currentTarget.value || null)}>
                   <option value="">{d.drawn ? 'Spark decides' : 'Spark decides…'}</option>
@@ -178,6 +218,7 @@ export function KidsStart({ slug, taken, places, onBuild, onError }: { slug: str
       <section>
         <h2>2 · The story, told</h2>
         <Recorder onClip={recorded} />
+        <label class="detail"><input type="checkbox" checked={grow} onChange={(e) => setGrow(e.currentTarget.checked)} /> The story grows with every recording and is read aloud</label>
         <ul class="told">
           {m.told.map((t) => (
             <li>
@@ -194,7 +235,7 @@ export function KidsStart({ slug, taken, places, onBuild, onError }: { slug: str
           <input class="grow" placeholder="Anything to add (optional): 'the cat finds the hat', 'make it funny'" value={note} onInput={(e) => setNote(e.currentTarget.value)} />
           <button type="button" class="ghost" onClick={write} disabled={busy.length > 0 || (m.drawings.length === 0 && m.told.length === 0)}>{m.idea ? 'Write it again' : 'Write the story'}</button>
         </div>
-        {m.idea && <p><strong>{m.idea.title}</strong> <span class="detail">· {m.idea.language}</span></p>}
+        {m.idea && <div class="row"><strong>{m.idea.title}</strong> <span class="detail">· {m.idea.language}</span>{m.reading && <audio controls preload="none" src={fileUrl(slug, m.reading.file, m.reading.v)} />}</div>}
         <textarea rows={5} placeholder="The story Spark writes from what they said and drew appears here; change anything before building." value={idea} onInput={(e) => setIdea(e.currentTarget.value)} />
         <div class="row">
           <span class="detail">{busy.length ? `${busy[busy.length - 1]}…` : `${m.drawings.length} drawing(s), ${m.told.length} recording(s), ${places} places`}</span>
@@ -202,6 +243,14 @@ export function KidsStart({ slug, taken, places, onBuild, onError }: { slug: str
           <button type="button" class="primary" disabled={idea.trim().length < 10 || busy.length > 0 || m.built} onClick={() => onBuild(idea.trim())}>Build their game</button>
         </div>
       </section>
+      {big && (
+        <div class="show" onClick={() => setShown(null)}>
+          <img src={fileUrl(slug, big.file, big.v)} alt="" />
+          <span class="arrow">→</span>
+          <img class={`alive${big.drawn?.kind === 'place' ? ' place' : ''}`} src={fileUrl(slug, big.preview!.file, big.preview!.v)} alt="" />
+          <p>{big.drawn?.kind === 'hero' ? 'Our hero' : big.drawn?.key.replace(/-/g, ' ')} · click to close</p>
+        </div>
+      )}
     </div>
   );
 }

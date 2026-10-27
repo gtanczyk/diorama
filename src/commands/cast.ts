@@ -4,7 +4,7 @@ import { defineCommand, takeOption } from '../registry.ts';
 import { castBodies, paintFigure, readBodies, type Who } from '../scene/cast.ts';
 import { rigFigure } from '../scene/rig.ts';
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
-import { drawingFor } from '../world/drawings.ts';
+import { drawingFor, readDrawn } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
@@ -20,9 +20,12 @@ defineCommand({
     // world --hero-photo keeps the photo next to the cast, so a plain `cast` uses it too.
     const kept = files.path('cast', `${world.hero.key}-photo.png`);
     const photo = photoPath ? fs.readFileSync(photoPath) : fs.existsSync(kept) ? fs.readFileSync(kept) : undefined;
+    // A character a child drew is painted from what was read off the drawing, as its preview was, so the preview is the figure.
+    const drawn = readDrawn(files);
+    const drawnLooks = (w: Who): Who => ({ ...w, looks: drawn.find((d) => d.key === w.key && (d.kind === 'hero' || d.kind === 'npc'))?.looks ?? w.looks });
     const npcs = world.places.flatMap((p) => p.things.filter((t) => t.role === 'npc'));
     const fixes = readCastFixes(files);
-    const cast: Who[] = [world.hero, ...new Map(npcs.map((n) => [n.key, n])).values()].filter((w) => !only.length || only.includes(w.key)).map((w) => fixedLooks(files, w));
+    const cast: Who[] = [world.hero, ...new Map(npcs.map((n) => [n.key, n])).values()].filter((w) => !only.length || only.includes(w.key)).map((w) => fixedLooks(files, drawnLooks(w)));
     const missing: string[] = [];
     // cast/figures.json: how tall each one stands and whether upright, so a cat or a child is drawn at its own
     // size and only those walking like a person get a rig (and later a model and sprites).

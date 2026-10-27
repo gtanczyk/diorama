@@ -7,7 +7,8 @@ import type { Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import { transcribe } from '../meta/voice.ts';
 import { decode } from '../sound/pcm.ts';
-import { pcm24k } from '../sound/voices.ts';
+import { elevenSpeech } from '../sound/sources.ts';
+import { pcm24k, stockVoices } from '../sound/voices.ts';
 import { keptName, type Drawn } from './drawings.ts';
 import type { WorldFiles } from './files.ts';
 
@@ -74,7 +75,7 @@ export async function hearAll(files: WorldFiles): Promise<Array<{ clip: string; 
   return Promise.all(clips.map(async (clip) => ({ clip, text: await hear(files, clip) })));
 }
 
-export const Idea = z.object({ language: z.string().min(2), title: z.string().min(1), idea: z.string().min(10) });
+export const Idea = z.object({ language: z.string().min(2), title: z.string().min(1), idea: z.string().min(10), hero: z.string().optional() });
 export type Idea = z.infer<typeof Idea>;
 
 /** Spark turns what the children said (messy, several voices, half sentences) and drew into one short idea. */
@@ -84,6 +85,17 @@ ${said.map((s, i) => `${i + 1}. """${s}"""`).join('\n')}` : 'They did not tell i
 ${drawn.length ? `\nThey also drew:\n${drawn.map((d) => `- ${d.kind} "${d.key}": ${d.looks}`).join('\n')}\n` : ''}${note ? `\nThe grown-up running the workshop adds: ${note}\n` : ''}
 Write the idea of their game: who the hero is, where it happens, what goes wrong and how it gets put right, in 4 to 6 short sentences. Keep every idea of theirs that fits one story, and every drawing; join them kindly, add only what the story needs to hang together. Nothing scary or sad; a happy ending. Write it in the language the children spoke (with no recordings, the language of the grown-up's note, else English).
 
-Reply with JSON only: {"language": "the language they spoke, in English, like Polish", "title": "a short title in that language", "idea": "..."}`;
+${drawn.some((d) => d.kind === 'hero' || d.kind === 'npc') ? `The hero is one of the drawn characters (${[...new Set(drawn.filter((d) => d.kind === 'hero' || d.kind === 'npc').map((d) => d.key))].join(', ')}): the one their story is most about.\n` : ''}
+Reply with JSON only: {"language": "the language they spoke, in English, like Polish", "title": "a short title in that language", "idea": "...", "hero": "<key of the drawn character who is the hero, if any>"}`;
   return Idea.parse(await askSparkJson(memo, { label: 'told-idea', prompt }));
+}
+
+/** The story read aloud to the children by a warm storyteller voice (idea.mp3; not in told/, which holds only what the children said), as soon as it is written. */
+export async function narrate(files: WorldFiles, idea: Idea): Promise<string> {
+  const voices = await stockVoices();
+  const voice = voices.find((v) => /narrat|story/i.test(`${v.labels?.use_case ?? ''} ${v.labels?.description ?? ''} ${v.description ?? ''}`) && v.labels?.gender === 'female')
+    ?? voices.find((v) => v.labels?.gender === 'female') ?? voices[0];
+  if (!voice) throw new Error('no ElevenLabs voice to read the story');
+  files.write(files.path('idea.mp3'), await elevenSpeech(files.memo, 'told-idea', `${idea.title}. ${idea.idea}`, voice.voice_id));
+  return 'idea.mp3';
 }
