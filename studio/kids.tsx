@@ -320,10 +320,14 @@ export function KidsWait({ slug, places, progress, left, ready, failed, onPlay, 
   ];
   // A place just painted is shown at once; otherwise the show moves on every few seconds.
   const seen = useRef(new Set<string>());
+  const primed = useRef(false);
+  const [fresh, setFresh] = useState<string | null>(null);
   useEffect(() => {
-    const fresh = slides.findIndex((s) => s.place && !seen.current.has(s.id));
+    const at = slides.findIndex((s) => s.place && !seen.current.has(s.id));
     slides.forEach((s) => s.place && seen.current.add(s.id));
-    if (fresh >= 0 && seen.current.size > 1) setAt(fresh);
+    // Places painted before the show opened are not news.
+    if (at >= 0 && primed.current) (setAt(at), setFresh(slides[at].id));
+    primed.current = true;
   }, [painted]);
   useEffect(() => {
     const timer = setInterval(() => setAt((i) => i + 1), 7000);
@@ -356,7 +360,7 @@ export function KidsWait({ slug, places, progress, left, ready, failed, onPlay, 
             {slide.from && <img class="from" src={slide.from} alt="" />}
             {slide.from && <span class="arrow">→</span>}
             <img class="to" src={slide.to} alt="" />
-            <figcaption>{slide.place && !ready ? `${words.place} ` : ''}{slide.label}</figcaption>
+            <figcaption>{slide.id === fresh && !ready ? `${words.place} ` : ''}{slide.label}</figcaption>
           </figure>
         )}
       </div>
