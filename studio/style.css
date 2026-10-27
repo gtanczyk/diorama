@@ -292,6 +292,12 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 .share { position: relative; }
 .share-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; width: 300px; display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line); }
 .share-menu p { margin: 0 0 6px; }
+.share-menu.history { width: 380px; max-height: 70vh; overflow: auto; }
+.history ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.history li { display: flex; flex-direction: column; gap: 4px; padding: 10px 2px; border-top: 1px solid var(--line); }
+.history li:first-child { border-top: 0; }
+.history li p { margin: 0; }
+.history li > button { align-self: flex-start; }
 
 /* A note from the Studio to the agent, not a bubble from the person. */
 .gc-prompt:has(> .studio-note) { background: none; border: 0; box-shadow: none; padding: 0; max-width: none; color: var(--muted); }
@@ -447,9 +453,42 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
   main.workshop.fit .strip li { flex: 0 0 132px; }
   main.workshop.fit .strip .name { font-size: 12px; }
   main.workshop.fit .tale { min-height: 0; }
-  main.workshop.fit > .right { min-height: 0; overflow: hidden; }
-  main.workshop.fit > .right > section.agent { flex: 1 1 0; min-height: 200px; max-height: none; }
-  main.workshop.fit > .right > .log { flex: none; }
-  main.workshop.fit > .right > .log[open] { flex: 0 1 40%; min-height: 140px; display: flex; flex-direction: column; overflow: hidden; }
-  main.workshop.fit > .right > .log[open] ol { flex: 1; min-height: 0; max-height: none; }
+  main.workshop.fit > .right { min-height: 0; }
+  main.workshop.fit > .right .dock-body { flex: 1 1 0; min-height: 0; overflow: hidden; }
 }
+
+/* The agent's dock (studio/dock.tsx): right or left at a dragged width, floating, or folded to a bar. */
+main.workshop.dock-right { grid-template-columns: minmax(0, 1fr) var(--dock-w, 380px); }
+main.workshop.dock-left { grid-template-columns: var(--dock-w, 380px) minmax(0, 1fr); }
+main.workshop.dock-left > .dock { order: -1; }
+main.workshop.dock-right-folded { grid-template-columns: minmax(0, 1fr) 44px; }
+main.workshop.dock-left-folded { grid-template-columns: 44px minmax(0, 1fr); }
+main.workshop.dock-left-folded > .dock { order: -1; }
+main.workshop.dock-float { grid-template-columns: minmax(0, 1fr); }
+.dock { position: relative; }
+.dock-body { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.dock-body[hidden] { display: none; }
+.dock-body > section.agent { flex: 1 1 0; min-height: 200px; max-height: none; }
+.dock-body > .log { flex: none; }
+.dock-body > .log[open] { flex: 0 1 40%; min-height: 140px; display: flex; flex-direction: column; overflow: hidden; }
+.dock-body > .log[open] ol { flex: 1; min-height: 0; max-height: none; }
+.dockbar { display: flex; align-items: center; gap: 2px; min-height: 28px; padding: 0 2px; color: var(--faint); font-size: 12px; user-select: none; }
+.dock-title { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+button.tiny { min-height: 26px; min-width: 28px; padding: 0 6px; border: 0; border-radius: 8px; font-size: 14px; color: var(--faint); }
+button.tiny:hover, button.tiny.on { color: var(--text); background: var(--raised); }
+.dock-edge { position: absolute; top: 0; bottom: 0; width: 10px; cursor: col-resize; z-index: 2; }
+.dock.right .dock-edge { left: -12px; }
+.dock.left .dock-edge { right: -12px; }
+.dock-edge:hover, body.dragging .dock-edge { background: linear-gradient(90deg, transparent 4px, var(--accent) 4px, var(--accent) 6px, transparent 6px); }
+body.dragging { cursor: grabbing; user-select: none; }
+body.dragging iframe { pointer-events: none; }
+.dock.folded { flex-direction: column; align-items: center; }
+.dock.folded .dockbar { flex-direction: column; gap: 8px; padding-top: 4px; }
+.dock.folded .dock-title { writing-mode: vertical-rl; transform: rotate(180deg); }
+.dock.float { position: fixed; z-index: 30; padding: 8px 10px 10px; border-radius: 14px; background: var(--bg); border: 1px solid var(--line-strong); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); resize: both; overflow: hidden; min-width: 300px; min-height: 240px; display: flex; flex-direction: column; }
+.dock.float .dockbar { cursor: grab; }
+.dock.float .dock-body { flex: 1 1 0; }
+.dock.float.folded { resize: none; min-width: 0; min-height: 0; width: auto; height: auto; flex-direction: row; }
+.dock.float.folded .dockbar { flex-direction: row; }
+.dock.float.folded .dock-title { writing-mode: horizontal-tb; transform: none; }
+@media (max-width: 960px) { main.workshop[class*="dock-"] { grid-template-columns: 1fr; } .dock-edge { display: none; } }

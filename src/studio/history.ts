@@ -32,7 +32,7 @@ export class History {
   }
 
   /** The world's files right now, by content hash (rehashing only files whose size or mtime moved). */
-  private current(): Record<string, string> {
+  current(): Record<string, string> {
     const indexFile = path.join(this.home, 'index.json');
     let index: Index = {};
     try {

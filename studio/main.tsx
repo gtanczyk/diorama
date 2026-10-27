@@ -9,6 +9,7 @@ import { CastView } from './cast.tsx';
 import { KidsStart, KidsWait, polish, setPolish, t } from './kids.tsx';
 import { StoryView } from './story.tsx';
 import { PlaceEditor } from './place.tsx';
+import { Dock, useDock } from './dock.tsx';
 import { MODEL_NAME, Pipeline, Stage, Strip, Tale, working, type Live, type StagePlace } from './build.tsx';
 
 type Check = { id: string; label: string; state: 'ok' | 'missing' | 'optional' | 'fail'; detail: string; fix?: string[] };
@@ -54,6 +55,56 @@ const clock = (ms: number) => {
   const t = Math.max(0, Math.round(ms / 1000));
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
 };
+
+/** What a job changed: the places it touched, else the first files. */
+function touched(s: { places?: string[]; sample?: string[] }): string {
+  return s.places?.length ? s.places.join(', ') : (s.sample ?? []).slice(0, 2).map((f) => f.split('/').at(-1)).join(', ');
+}
+
+const ago = (at: string) => {
+  const m = Math.round((Date.now() - Date.parse(at)) / 60_000);
+  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 24 * 60 ? `${Math.round(m / 60)} h ago` : new Date(at).toLocaleDateString();
+};
+
+type Snap = { id: string; at: string; label: string; by: string; files: number; added?: number; changed?: number; removed?: number; sample?: string[]; places?: string[] };
+
+/**
+ * History: every job the world went through, newest first, with who ran it and what it changed; any of them can
+ * be gone back on, to the world as it was before it. The back step is itself kept, so Redo or a later pick undoes it.
+ */
+function HistoryMenu({ slug, version, onError }: { slug: string; version: number; onError: (m: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [snaps, setSnaps] = useState<Snap[] | null>(null);
+  const [sure, setSure] = useState<string | null>(null);
+  useEffect(() => void (open && call<Snap[]>('history_list', { slug, limit: 20 }).then(setSnaps).catch((e) => onError(e.message))), [open, slug, version]);
+  const back = (id: string) => call('history_undo', { slug, id }).then(() => (setOpen(false), setSure(null))).catch((e) => onError(e.message));
+  return (
+    <div class="share">
+      <button type="button" class="ghost" aria-expanded={open} onClick={() => (setOpen(!open), setSure(null))}>History</button>
+      {open && (
+        <div class="share-menu history" role="menu">
+          {!snaps && <p class="detail">Reading the history…</p>}
+          {snaps?.length === 0 && <p class="detail">Nothing to go back to yet.</p>}
+          <ol>
+            {snaps?.map((s) => (
+              <li key={s.id}>
+                <div class="row">
+                  <strong>{s.label.replace(/^before /, '')}</strong>
+                  <span class="grow" />
+                  <span class="detail">{s.by === 'agent' ? 'agent' : 'you'} · {ago(s.at)}</span>
+                </div>
+                {s.changed !== undefined && <p class="detail">{(s.changed ?? 0) + (s.added ?? 0) + (s.removed ?? 0) === 0 ? 'changed nothing' : `changed ${touched(s)} · ${(s.changed ?? 0) + (s.added ?? 0)} file${(s.changed ?? 0) + (s.added ?? 0) === 1 ? '' : 's'}${s.removed ? `, removed ${s.removed}` : ''}`}</p>}
+                {sure === s.id
+                  ? <div class="row"><span class="detail">Everything after it goes too.</span><span class="grow" /><button type="button" class="primary small" onClick={() => back(s.id)}>Go back</button><button type="button" class="ghost small" onClick={() => setSure(null)}>Cancel</button></div>
+                  : <button type="button" class="ghost small" onClick={() => setSure(s.id)}>Back to before this</button>}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Sharing: a zip to download, or the public link. The last export or publish job says where it went. */
 function Share({ slug, jobs, onError }: { slug: string; jobs: Job[]; onError: (m: string) => void }) {
@@ -334,6 +385,7 @@ function Workshop({ slug }: { slug: string }) {
   const undoneJob = useRef<string | null>(null);
   /** Activity shows what happened; what each step prints is there too, on request (the job card shows its last line). */
   const [allLines, setAllLines] = useState(false);
+  const [dock, setDock] = useDock();
   /** Activity stays folded unless the person opened it last time. */
   const [logOpen, setLogOpen] = useState(() => {
     try {
@@ -504,14 +556,14 @@ function Workshop({ slug }: { slug: string }) {
         ready={shown.state === 'done' && playable} failed={shown.state === 'failed' || shown.state === 'cancelled'}
         onPlay={() => (setHidden(shown.id), setPlaying({ full: true }))} onHide={() => setHidden(shown.id)} />}
       {/* Places fits the window: the build is watched, not scrolled. Fixing a place or playing gives the page its length back. */}
-      <main class={`workshop${view === 'places' && !playing && !placeFocus ? ' fit' : ''}`}>
+      <main class={`workshop${view === 'places' && !playing && !placeFocus ? ' fit' : ''} dock-${dock.folded && dock.side !== 'float' ? `${dock.side}-folded` : dock.side}`} style={{ '--dock-w': `${dock.width}px` }}>
         <div class="left">
           <div class="row">
             <h1>{status?.title ?? slug}</h1>
             <span class="grow" />
             {playable && <button type="button" class={playing ? 'primary' : 'ghost'} onClick={() => setPlaying(playing ? null : {})}>{playing ? 'Close game' : 'Play'}</button>}
             {playable && !job && <Share slug={slug} jobs={status?.jobs ?? []} onError={setError} />}
-            {!job && status && status.steps.length > 0 && <button type="button" class="ghost" title="Put the world back as it was before the last job" onClick={() => call('history_undo', { slug }).catch((e) => setError(e.message))}>Undo last job</button>}
+            {!job && status && status.steps.length > 0 && <HistoryMenu slug={slug} version={tick} onError={setError} />}
             {!job && canRedo && <button type="button" class="ghost" title="Take back the undo" onClick={() => call('history_redo', { slug }).catch((e) => setError(e.message))}>Redo</button>}
             {/* Stop sits beside the build button, never in its place: a double click must not start a build and stop it again. */}
             {job && <button type="button" class="ghost" title={`Stop ${job.label} (started by ${job.by === 'agent' ? 'the agent' : 'you'})`} onClick={() => call('job_cancel', { id: job.id })}>Stop</button>}
@@ -565,7 +617,7 @@ function Workshop({ slug }: { slug: string }) {
           )}
           {view === 'notes' && <Notes slug={slug} notes={notes} onPlace={(p) => (setView('places'), setFocus(p))} onError={setError} />}
         </div>
-        <aside class="right">
+        <Dock dock={dock} onChange={setDock} title="Agent">
           <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} />
           {/* Activity is the raw record, for when something needs explaining; folded it shows only the latest line. */}
           <details class="log" open={logOpen} onToggle={(e) => keepLogOpen((e.currentTarget as HTMLDetailsElement).open)}>
@@ -577,7 +629,7 @@ function Workshop({ slug }: { slug: string }) {
             <label class="detail"><input type="checkbox" checked={allLines} onChange={(e) => setAllLines(e.currentTarget.checked)} /> Every line the steps print</label>
             <ol>{[...lines].reverse().filter((l) => allLines || l.kind !== 'out').map((l) => <li key={l.seq} class={l.kind}>{l.text}</li>)}</ol>
           </details>
-        </aside>
+        </Dock>
       </main>
     </>
   );

@@ -21,11 +21,13 @@ defineAction({
   async run({ slug, limit }, ctx) {
     const history = new History(worldDir(ctx.root, slug));
     const all = history.list();
+    const now = all.length && !ctx.jobs.busy(slug) ? history.current() : null;
     return all.slice(0, limit ?? 30).map((s, i) => {
-      // What the action after this snapshot changed: up to the next snapshot (newer), or to the last one we have.
-      const after = i > 0 ? all[i - 1].files : null;
+      // What the action after this snapshot changed: up to the next snapshot (newer); for the newest, up to the
+      // world as it is now (unless a job is still writing it).
+      const after = i > 0 ? all[i - 1].files : now;
       const diff = after ? History.diff(s.files, after) : null;
-      return { id: s.id, at: s.at, label: s.label, by: s.by, files: Object.keys(s.files).length, ...(diff && { added: diff.added.length, changed: diff.changed.length, removed: diff.removed.length, sample: [...diff.changed, ...diff.added].slice(0, 6) }) };
+      return { id: s.id, at: s.at, label: s.label, by: s.by, files: Object.keys(s.files).length, ...(diff && { added: diff.added.length, changed: diff.changed.length, removed: diff.removed.length, sample: [...diff.changed, ...diff.added].slice(0, 6), places: [...new Set([...diff.changed, ...diff.added, ...diff.removed].map((f) => /^places\/([^/]+)\//.exec(f)?.[1]).filter(Boolean))] }) };
     });
   },
 });
