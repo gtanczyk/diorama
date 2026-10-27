@@ -52,6 +52,11 @@ export const Geometry = z.object({
   /** Mask (relative to the place folder) of painted shadows on floors: a person standing in one is darkened. */
   shadows: z.string().optional(),
   /**
+   * How far every pixel is (depth.png, half the frame): as the floor row at the same distance, rows below
+   * horizonY * 16 in R (high byte) and G (low byte). With it a cast shadow follows steps, walls and drops.
+   */
+  depth: z.string().optional(),
+  /**
    * Stair steps, top to bottom: each one's band (its tread and the riser below it) per column, sampled every
    * `every` px from x0 (-1 where the step doesn't reach). People's feet stay on a tread and step between them.
    */

@@ -2,6 +2,7 @@
 import { floorYAt, hiddenRuns, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
+import { decodeDepth, DEPTH_SCALE, shadowAt, sunFor, type Depth } from '../src/play/shadow.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
@@ -70,6 +71,10 @@ type Place = {
   light?: { cols: number; rows: number; luma: Float32Array };
   /** Painted shadows on the floors (geometry.shadows): a person standing in one is darkened. */
   shade?: Bits;
+  /** How far every pixel is (geometry.depth): cast shadows follow the ground's shape with it. */
+  depth?: Depth;
+  /** The water's soft mask over the frame, 0..255: a shadow barely shows on water. */
+  wet?: Uint8Array;
 };
 
 const LIGHT_CELL = 40;
@@ -123,6 +128,27 @@ const loadImage = (src: string) =>
     img.onerror = () => reject(new Error(`cannot load ${src}`));
     img.src = src;
   });
+
+/** depth.png as floor rows per pixel (src/play/shadow.ts). */
+async function loadDepth(src: string): Promise<Depth> {
+  const img = await loadImage(src);
+  const c = Object.assign(document.createElement('canvas'), { width: img.width, height: img.height });
+  const cx = c.getContext('2d', { willReadFrequently: true, colorSpace: 'srgb' })!;
+  cx.drawImage(img, 0, 0);
+  return decodeDepth(cx.getImageData(0, 0, img.width, img.height).data, img.width, img.height);
+}
+
+/** The water's soft mask (drawn over its box) as one byte per frame pixel. */
+async function loadWet(src: string, box: [number, number, number, number], w: number, h: number): Promise<Uint8Array> {
+  const img = await loadImage(src);
+  const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const cx = c.getContext('2d', { willReadFrequently: true })!;
+  cx.drawImage(img, box[0], box[1], box[2] - box[0], box[3] - box[1]);
+  const px = cx.getImageData(0, 0, w, h).data;
+  const out = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) out[i] = (px[i * 4] * px[i * 4 + 3]) / 255;
+  return out;
+}
 
 /** A mask image as one byte per frame pixel (set where the red channel is bright). */
 async function loadBits(src: string, w: number, h: number): Promise<Bits> {
@@ -298,7 +324,9 @@ class Game {
     // Far cards first, so nearer ones cover them when they slide.
     kept.sort((a, b) => a.y - b.y);
     const shade = await shared(g.shadows);
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, hots, cuts: kept, byKey };
+    const depth = g.depth ? await loadDepth(dir(g.depth)).catch(() => undefined) : undefined;
+    const wet = depth && entry.layers?.water ? await loadWet(files(entry.layers.water.mask), entry.layers.water.box, g.frame.width, g.frame.height).catch(() => undefined) : undefined;
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, wet, hots, cuts: kept, byKey };
     this.cache.set(key, place);
     return place;
   }
@@ -1135,7 +1163,7 @@ class Game {
       const most = personPx(this.place.g, this.place.g.frame.height);
       Object.assign(sc, { width: Math.ceil(Math.max(w, most * 1.4)), height: Math.ceil(Math.max(hh, most * 1.25)) });
     }
-    const c = sc.getContext('2d')!;
+    const c = sc.getContext('2d', { willReadFrequently: true })!;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.clearRect(0, 0, sc.width, sc.height);
     c.translate(ox, oy);
@@ -1146,6 +1174,8 @@ class Game {
     c.fillStyle = '#121830';
     c.fillRect(0, 0, sc.width, sc.height);
     c.globalCompositeOperation = 'source-over';
+    const onGround = this.place.depth && this.groundShadow(x, y, h, light, alpha, sc, w, hh, ox, oy, half, [sx, sy]);
+    if (onGround) return onGround;
     const [dx, dy] = light.dir;
     const n = Math.hypot(dx, dy) || 1;
     const [ux, uy] = [(dx / n) * light.length, (dy / n) * light.length];
@@ -1160,6 +1190,62 @@ class Game {
     ctx.restore();
     const [hx, hy] = [x + ux * h * 1.15, y + uy * h * 1.15];
     return [Math.min(x, hx) - half - 4 + sx, Math.min(y, hy) - 4 + sy, Math.max(x, hx) + half + 4 + sx, Math.max(y, hy) + 4 + sy];
+  }
+
+  private groundCanvas = document.createElement('canvas');
+
+  /**
+   * The cast shadow laid on the ground as the depth map shapes it (src/play/shadow.ts): each ground pixel
+   * asks whether the figure stands between it and the sun. Worked out at the depth map's half resolution
+   * and drawn up soft. Painted shadow and water take it away. Undefined: no sun found here, use the flat one.
+   */
+  private groundShadow(x: number, y: number, h: number, light: NonNullable<Geometry['light']>, alpha: number, sc: HTMLCanvasElement, w: number, hh: number, ox: number, oy: number, half: number, [sx, sy]: [number, number]): Rect | undefined {
+    const { g, depth, shade, wet } = this.place;
+    const sun = depth && sunFor(g, depth, light, x, y, h);
+    if (!depth || !sun) return undefined;
+    const px = sc.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, w, hh).data;
+    const sil = { alpha: new Uint8ClampedArray(w * hh), w, h: hh, ox, oy, perM: h / 1.62 };
+    for (let i = 0; i < w * hh; i++) sil.alpha[i] = px[i * 4 + 3];
+    // Where it can fall: past the flat shadow's reach (a drop lengthens it), wide as the figure, inside the frame.
+    const n = Math.hypot(light.dir[0], light.dir[1]) || 1;
+    const reach = h * Math.max(1, light.length) * 2.2;
+    const [ex, ey] = [x + (light.dir[0] / n) * reach, y + (light.dir[1] / n) * reach];
+    const pad = half + h * 0.15;
+    const S = DEPTH_SCALE;
+    const x0 = Math.max(0, Math.floor((Math.min(x, ex) - pad) / S));
+    const y0 = Math.max(0, Math.floor((Math.min(y, ey) - pad) / S));
+    const x1 = Math.min(depth.w, Math.ceil((Math.max(x, ex) + pad) / S));
+    const y1 = Math.min(depth.h, Math.ceil((Math.max(y, ey) + pad) / S));
+    if (x1 <= x0 || y1 <= y0) return undefined;
+    const gc = this.groundCanvas;
+    const [bw, bh] = [x1 - x0, y1 - y0];
+    if (gc.width < bw || gc.height < bh) Object.assign(gc, { width: Math.max(gc.width, bw), height: Math.max(gc.height, bh) });
+    const out = new ImageData(bw, bh);
+    const W = g.frame.width;
+    let any = false;
+    for (let r = y0; r < y1; r++) for (let c = x0; c < x1; c++) {
+      const [fx, fy] = [c * S + S / 2, r * S + S / 2];
+      let a = shadowAt(depth, sun, sil, fx, fy);
+      if (a <= 0) continue;
+      const i = Math.round(fy) * W + Math.round(fx);
+      // Already in the painting's shade: no darker. On water a shadow hardly shows (it mirrors the sky).
+      if (shade?.bits[i]) continue;
+      if (wet) a *= 1 - 0.8 * (wet[i] / 255);
+      const o = ((r - y0) * bw + (c - x0)) * 4;
+      [out.data[o], out.data[o + 1], out.data[o + 2], out.data[o + 3]] = [0x12, 0x18, 0x30, Math.round(a * 255)];
+      any = true;
+    }
+    if (!any) return [x + sx, y + sy, x + sx, y + sy];
+    const gx = gc.getContext('2d')!;
+    gx.clearRect(0, 0, gc.width, gc.height);
+    gx.putImageData(out, 0, 0);
+    ctx.save();
+    ctx.globalAlpha = Math.min(0.85, alpha * 1.35);
+    ctx.filter = `blur(${Math.max(0.8, h * 0.004 * (1 + light.length)).toFixed(1)}px)`;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(gc, 0, 0, bw, bh, x0 * S, y0 * S, bw * S, bh * S);
+    ctx.restore();
+    return [x0 * S + sx, y0 * S + sy, x1 * S + sx, y1 * S + sy];
   }
 
   /** The share of the floor under the feet (an ellipse a person's shadow would cover) inside a painted shadow. */

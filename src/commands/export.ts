@@ -40,6 +40,7 @@ export async function exportWorld(slug: string, out: string): Promise<void> {
     }
     for (const occ of entry.geometry?.occluders ?? []) if (occ.mask) await copy(`places/${key}/${occ.mask}`);
     if (entry.geometry?.shadows) await copy(`places/${key}/${entry.geometry.shadows}`);
+    if (entry.geometry?.depth) await copy(`places/${key}/${entry.geometry.depth}`);
   }
   for (const [i, rel] of Object.entries(data.changes)) data.changes[i] = await copy(rel); // transparent around the thing, so PNG
   for (const figure of Object.values(data.cast)) {

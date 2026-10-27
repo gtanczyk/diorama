@@ -6,6 +6,7 @@ import { Geometry, personPx } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
 import { placeNpcs, readCorrections } from '../scene/corrections.ts';
 import { derive, type ThingIn } from '../scene/derive.ts';
+import { depthMap } from '../scene/depthmap.ts';
 import { Layout, FRAME } from '../scene/layout.ts';
 import { CELL } from '../scene/walk.ts';
 import { WorldFiles } from '../world/files.ts';
@@ -70,7 +71,17 @@ defineCommand({
       // Where the person said the hero should stand to use a thing.
       const fixes = readCorrections(at());
       const placed = out.geometry.things.map((t) => (fixes.things[t.key]?.stand ? { ...t, stand: fixes.things[t.key].stand! } : t));
-      const geometry = Geometry.parse({ ...out.geometry, things: placed, ...(out.shadows.light && { light: out.shadows.light }), ...(lit && { shadows: 'masks/shadows.png' }) });
+      const measured = { ...out.geometry, things: placed, ...(out.shadows.light && { light: out.shadows.light }), ...(lit && { shadows: 'masks/shadows.png' }) };
+      // Depth for shadows that follow the ground; without it (no fit, no model) they lie flat as before.
+      const depth = await depthMap(painting, measured).catch((e: Error) => ({ reason: e.message }));
+      if ('png' in depth) {
+        files.write(at('depth.png'), depth.png);
+        console.log(`  ${place.key}: depth fits the floor on ${Math.round(depth.inliers * 100)}% of ${depth.cells} walk cells`);
+      } else {
+        fs.rmSync(at('depth.png'), { force: true });
+        measured.flagged = [...(measured.flagged ?? []), `depth: ${depth.reason}, shadows stay flat`];
+      }
+      const geometry = Geometry.parse({ ...measured, ...('png' in depth && { depth: 'depth.png' }) });
       files.write(at('geometry.json'), geometry);
       files.write(at('walk.png'), await walkPicture(painting, geometry, out.footprint));
       const open = geometry.walk.join('').split('#').length - 1;
