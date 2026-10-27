@@ -3,7 +3,7 @@
 import type { Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import type { World } from '../world/schema.ts';
-import { BREVITY, brevityIssues, checkStory, type StoryReport } from './check.ts';
+import { BREVITY, brevityIssues, checkStory, questionIssues, type StoryReport } from './check.ts';
 import type { Story } from './schema.ts';
 
 const MIN_STEPS = 6;
@@ -40,6 +40,7 @@ Write story.json for it. Rules:
 - When solving something visibly changes a thing (a fire lit, a gate open, a lamp glowing), add a change for it; the painting is updated when its condition holds. At least one change.
 - No ending may be reachable in fewer than ${MIN_STEPS} clicks; each ending needs a solved puzzle.
 - Every ending must be reachable, and from any state the player must still be able to reach an ending.
+- Only a dialogue line with choices may ask the player something. A "say", and a line without choices, ends on a statement, never a question: the player has no way to answer it.
 - Say little. Players read or hear every line, so be terse: the intro at most ${BREVITY.intro} words, a "say" at most ${BREVITY.say}, an npc line at most ${BREVITY.npcLine}, an answer choice at most ${BREVITY.choice}, an ending at most ${BREVITY.ending}, and at most ${BREVITY.linesPerDialogue} lines per conversation. One idea per line; no small talk.
 - Text is English, short and specific to this world. No names from existing films, books, games or brands.
 
@@ -55,7 +56,7 @@ export async function designStory(memo: Memo, world: World, wish?: string): Prom
   for (let attempt = 1; attempt <= 4; attempt++) {
     const answer = await askSparkJson(memo, { label: `story#${attempt}`, prompt });
     const report = checkStory(world, answer);
-    if (report.story) report.issues.push(...brevityIssues(report.story));
+    if (report.story) report.issues.push(...brevityIssues(report.story), ...questionIssues(report.story));
     for (const r of report.routes) {
       if (r.steps.length < MIN_STEPS) report.issues.push(`ending "${r.ending}" is reached in only ${r.steps.length} clicks: ${r.steps.join(' → ')}`);
     }

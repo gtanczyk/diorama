@@ -155,3 +155,19 @@ export function brevityIssues(story: Story): string[] {
   story.endings.forEach((e) => over(`ending ${e.key} text`, e.text, BREVITY.ending));
   return issues;
 }
+
+const asks = (text: string) => /\?["'”’)]*\s*$/.test(text.trim());
+
+/** Questions the player cannot answer: a "say" is not a conversation, and a line without choices ends one. */
+export function questionIssues(story: Story): string[] {
+  const issues: string[] = [];
+  story.interactions.forEach((it, i) => {
+    if (asks(it.say)) issues.push(`interaction ${i + 1} (${it.verb} ${it.thing}) say ends with a question the player cannot answer: "${it.say}". Make it a statement, or ask it in a dialogue line with choices`);
+  });
+  for (const d of story.dialogues) {
+    for (const l of d.lines) {
+      if (asks(l.says) && l.choices.length === 0) issues.push(`${d.npc} line ${l.key} asks "${l.says}" but has no choices, so the conversation ends on the question. Give it answers, or make it a statement`);
+    }
+  }
+  return issues;
+}

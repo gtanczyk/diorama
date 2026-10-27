@@ -22,7 +22,7 @@ type Status = {
   start: string; hero: string; places: Place[]; story: Story | null;
   fixes: { wish?: string; texts: Record<string, { text: string; at: string }> };
   issues: string[]; states: number; routes: { ending: string; steps: string[] }[];
-  long: string[]; unvoiced: string[]; unpainted: number[];
+  long: string[]; unanswerable?: string[]; unvoiced: string[]; unpainted: number[];
 };
 
 /** Word limits the designer keeps to (src/story/check.ts BREVITY); shown, never enforced, on hand edits. */
@@ -79,6 +79,7 @@ function Verdict({ status, onStep, onFirst }: { status: Status; onStep: (step: s
           {status.unpainted.length > 0 && <button type="button" class="ghost small" onClick={() => onStep('plates')}>Paint {status.unpainted.length} change{status.unpainted.length === 1 ? '' : 's'}</button>}
         </div>
       )}
+      {(status.unanswerable?.length ?? 0) > 0 && <details open><summary class="detail">{status.unanswerable!.length} question{status.unanswerable!.length === 1 ? '' : 's'} the player cannot answer (ask the agent to reword)</summary><ul class="issues">{status.unanswerable!.map((l) => <li>{l}</li>)}</ul></details>}
       {status.long.length > 0 && <details><summary class="detail">{status.long.length} line{status.long.length === 1 ? ' is' : 's are'} over the word limit</summary><ul class="issues">{status.long.map((l) => <li>{l}</li>)}</ul></details>}
     </section>
   );
