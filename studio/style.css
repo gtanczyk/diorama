@@ -158,3 +158,6 @@ section.agent > .gc-chat { --gc-bg: var(--panel); --gc-panel: var(--raised); --g
   --gc-accent: var(--accent); --gc-accent-text: #121417; --gc-ok: var(--ok); --gc-error: var(--bad); --gc-font-size: 14px; flex: 1; min-height: 360px; }
 section.agent .row { padding: 12px 14px 0; }
 .agent-pick { font-family: Georgia, "Iowan Old Style", serif; font-size: 17px; padding: 4px 8px; }
+.play { display: flex; flex-direction: column; gap: 8px; }
+.play iframe { width: 100%; aspect-ratio: 1200 / 896; max-width: 100%; border: 0; border-radius: 10px; background: #0b0b0e; }
+.log li.play { color: var(--ok); }

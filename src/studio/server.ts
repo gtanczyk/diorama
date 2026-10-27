@@ -17,13 +17,18 @@ import { Slug } from '../world/schema.ts';
 import { Events, type StudioEvent } from './events.ts';
 import { Jobs } from './jobs.ts';
 import { AgentHub, isAgentName } from './agent.ts';
+import { bundle, WEB, worldData } from '../commands/play.ts';
+import { WorldFiles } from '../world/files.ts';
 import { History } from './history.ts';
 import { handleMcp } from './mcp.ts';
 
 export const STUDIO_WEB = fileURLToPath(new URL('../../studio/', import.meta.url));
 const CHAT_CSS = createRequire(import.meta.url).resolve('genaicode/react/styles.css');
 const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.mp3': 'audio/mpeg', '.jsonl': 'text/plain; charset=utf-8' };
-const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self'; connect-src 'self'; font-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+/** The game page: its own inline styles, framed only by the Studio. */
+const PLAY_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
+let playJs: Promise<string> | null = null;
 const COOKIE = 'diorama_studio';
 const MAX_BODY = 1 << 20;
 
@@ -297,6 +302,20 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
 
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(405, 'text/plain', 'method not allowed');
 
+      // The game itself, in a frame of the Workshop: the same page `diorama play` serves, at /play/<slug>/,
+      // reading the world through the session cookie like the pictures do.
+      const play = /^\/play\/([a-z][a-z0-9-]*)\/(.*)$/.exec(url.pathname);
+      if (play) {
+        if (!cookieOk) return send(401, 'text/plain', 'no session');
+        const [, slug, rest] = play;
+        if (!fs.existsSync(path.join(root, slug, 'world.json'))) return send(404, 'text/plain', 'no such world yet');
+        const framed = { 'content-security-policy': PLAY_CSP, 'x-frame-options': 'SAMEORIGIN' };
+        if (rest === '') return send(200, 'text/html; charset=utf-8', fs.readFileSync(path.join(WEB, 'index.html')), framed);
+        if (rest === 'main.js') return send(200, 'text/javascript; charset=utf-8', await (playJs ??= bundle().catch((e) => ((playJs = null), Promise.reject(e)))));
+        if (rest === 'world-data.json') return json(200, worldData(new WorldFiles(slug, root)));
+        if (rest.startsWith('files/')) url.pathname = `/files/${slug}/${rest.slice('files/'.length)}`;
+        else return send(404, 'text/plain', 'not found');
+      }
       if (url.pathname.startsWith('/files/')) {
         if (!cookieOk) return send(401, 'text/plain', 'no session');
         const [slug, ...rest] = decodeURIComponent(url.pathname.slice('/files/'.length)).split('/');

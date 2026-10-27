@@ -283,6 +283,9 @@ function Workshop({ slug }: { slug: string }) {
   const failed = last && last.state === 'failed' ? last : null;
   const stepState = (s: string): 'ok' | 'run' | 'fail' | 'todo' => running[s] ?? (status?.build[s] ? 'ok' : 'todo');
   const placeFocus = useMemo(() => status?.placeDetail.find((p) => p.key === focus), [status, focus]);
+  const [playing, setPlaying] = useState<{ place?: string } | null>(null);
+  const playable = !!status?.placeDetail.some((p) => p.stages.layout);
+  const playLine = (text: string) => setLines((l) => [...l.slice(-400), { seq: -Date.now() - Math.random(), text, kind: 'play' }]);
 
   return (
     <>
@@ -292,6 +295,7 @@ function Workshop({ slug }: { slug: string }) {
           <div class="row">
             <h1>{status?.title ?? slug}</h1>
             <span class="grow" />
+            {playable && <button type="button" class={playing ? 'primary' : 'ghost'} onClick={() => setPlaying(playing ? null : {})}>{playing ? 'Close game' : 'Play'}</button>}
             {!job && status && status.steps.length > 0 && <button type="button" class="ghost" title="Put the world back as it was before the last job" onClick={() => call('history_undo', { slug }).catch((e) => setError(e.message))}>Undo last job</button>}
             {job
               ? <button type="button" class="ghost" onClick={() => call('job_cancel', { id: job.id })}>Stop {job.label}</button>
@@ -301,6 +305,7 @@ function Workshop({ slug }: { slug: string }) {
           {error && <p class="error">{error}</p>}
           {failed && !job && <Failed slug={slug} job={failed} onError={setError} onPlace={setFocus} />}
           {budget?.over && <p class="banner">Budget: ${budget.total.usd} spent of the ${budget.limitUsd} limit. Check Setup before the next big build.</p>}
+          {playing && <Play slug={slug} place={playing.place} version={tick} onLine={playLine} onError={setError} />}
           <ol class="steps" aria-label="Build steps">
             {steps.map((s) => <li class={stepState(s)} title={status?.build[s] ? `${status.build[s].seconds}s` : undefined}><Mark state={stepState(s)} />{s}</li>)}
           </ol>
@@ -323,6 +328,7 @@ function Workshop({ slug }: { slug: string }) {
               {placeFocus.verdict && [...placeFocus.verdict.errors.map((f) => ['error', f] as const), ...placeFocus.verdict.flags.map((f) => ['flag', f] as const)].map(([kind, f]) => (
                 <p class={kind === 'error' ? 'error' : 'flag'}><code>{f.code}</code>{f.key ? ` ${f.key}` : ''}: {f.detail}</p>
               ))}
+              {placeFocus.stages.layout && <button type="button" class="ghost small" onClick={() => setPlaying({ place: placeFocus.key })}>Play from {placeFocus.key}</button>}
               {placeFocus.stages.painting ? <PlaceEditor slug={slug} place={placeFocus.key} version={tick} onError={setError} /> : <p class="detail">Fixing opens once the place is painted.</p>}
             </section>
           )}
@@ -340,7 +346,37 @@ function Workshop({ slug }: { slug: string }) {
   );
 }
 
-const spend = (s: Spend) => (s.priced ? `$${s.usd.toFixed(2)}` : `${Object.values(s.calls).reduce((a, b) => a + b, 0)} calls${s.usd ? ` ($${s.usd.toFixed(2)}+)` : ''}`);
+/** The game in a frame: the same page `diorama play` serves. What happens in it goes to Activity. */
+function Play({ slug, place, version, onLine, onError }: { slug: string; place?: string; version: number; onLine: (t: string) => void; onError: (m: string) => void }) {
+  const [round, setRound] = useState(0);
+  const [fresh, setFresh] = useState(true);
+  useEffect(() => setFresh(false), [version]);
+  const src = `/play/${slug}/${place ? `?place=${encodeURIComponent(place)}` : ''}`;
+  const hook = (e: Event) => {
+    setFresh(true);
+    const game = ((e.currentTarget as HTMLIFrameElement).contentWindow as unknown as { diorama?: { on(fn: (ev: string, d: Record<string, unknown>) => void): void } } | null)?.diorama;
+    game?.on((ev, d) => {
+      const say: Record<string, string> = {
+        enter: `entered ${d.place}`, exit: `left ${d.from} for ${d.to}`, use: `${d.verb ?? 'used'} ${d.thing}`, say: `"${String(d.text ?? '').slice(0, 80)}"`, ending: `reached the ending ${d.ending}`,
+      };
+      if (say[ev]) onLine(`play: ${say[ev]}`);
+    });
+  };
+  return (
+    <section class="play">
+      <div class="row">
+        <strong>Playing{place ? ` from ${place}` : ''}</strong>
+        <span class="detail">{fresh ? 'click to walk or use, right click to look' : 'the world changed: restart to see it'}</span>
+        <span class="grow" />
+        <button type="button" class={fresh ? 'ghost small' : 'primary small'} onClick={() => setRound(round + 1)}>Restart</button>
+        <button type="button" class="ghost small" title="The bot plays every route to an ending and says where it got stuck" onClick={() => call('playthrough', { slug }).catch((err) => onError(err.message))}>Bot playthrough</button>
+      </div>
+      <iframe key={`${src}#${round}`} src={src} title={`${slug}, playable`} onLoad={hook} allow="autoplay" />
+    </section>
+  );
+}
+
+const spend = (s: Spend) => (s.priced && Object.keys(s.calls).length > 0 ? `$${s.usd.toFixed(2)}` : `${Object.values(s.calls).reduce((a, b) => a + b, 0)} calls${s.usd ? ` ($${s.usd.toFixed(2)}+)` : ''}`);
 
 /** The last job failed: where, why, its last lines, and what to do next. */
 function Failed({ slug, job, onError, onPlace }: { slug: string; job: Job; onError: (m: string) => void; onPlace: (p: string) => void }) {

@@ -95,3 +95,14 @@ defineAction({
     return ctx.jobs.start(job.world, args, job.label, ctx.by);
   },
 });
+
+defineAction({
+  name: 'playthrough',
+  description: 'Let the bot play the world in a browser along the story\'s routes and check each ending is reached; says where it got stuck. Runs as a job.',
+  input: z.object({ slug: Slug, ending: z.string().min(1).optional().describe('One ending; leave out for all of them.') }),
+  job: true,
+  async run({ slug, ending }, ctx) {
+    if (!fs.existsSync(path.join(ctx.root, slug, 'story.json'))) throw new ActionError(404, `${slug} has no story yet: build it to the story step first`);
+    return ctx.jobs.start(slug, ['playthrough', slug, ...(ending ? [ending] : [])], `playthrough${ending ? ` ${ending}` : ''}`, ctx.by);
+  },
+});
