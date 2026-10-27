@@ -138,6 +138,7 @@ const FLOW = 20;
 const WATER_PAD = 64;
 /** The pointer over the canvas, 0..1 across and down; null when it is elsewhere. */
 let pointer: { x: number; y: number } | null = null;
+const LONG_PRESS_MS = 500;
 // Relative paths, so the same page runs from `diorama play` and from an exported folder.
 const files = (p: string) => `files/${p}`;
 
@@ -468,6 +469,20 @@ class Game {
     await this.act(this.actionFor(key, hot, verb));
   }
 
+  /** The thing the hero stands near enough to use from the keyboard: the one whose spot is nearest, within reach. */
+  within(): Hot | undefined {
+    const gone = this.gone();
+    let best: Hot | undefined;
+    let bestD = personPx(this.place.g, this.hero.y) * 1.2;
+    for (const hot of this.place.hots) {
+      if (gone.has(hot.thing.key)) continue;
+      const [sx, sy] = this.approach(hot);
+      const d = Math.hypot(sx - this.hero.x, sy - this.hero.y);
+      if (d < bestD) [best, bestD] = [hot, d];
+    }
+    return best;
+  }
+
   /** Where to stand to use a thing; beside a person rather than inside them, on the side the hero comes from. */
   private approach(hot: Hot): Point {
     if ((hot.spec?.role ?? hot.thing.role) !== 'npc') return hot.thing.stand;
@@ -516,7 +531,7 @@ class Game {
       say = exit || !key ? [] : [this.place.spec.things.find((t) => t.key === key)?.looks ?? key];
     }
     if (action.kind === 'do' && action.with) this.holding = undefined;
-    if (!say.length && action.kind === 'do') say = [this.lookLine(action.thing, action.verb)];
+    if (!say.length && action.kind === 'do') say = [action.with ? this.nopeLine(action.with) : this.lookLine(action.thing, action.verb)];
     this.ui();
     // Who says each line: in a conversation the NPC answers after the hero's choice; everything else is the hero's.
     const hero = this.data.world.hero.key;
@@ -529,6 +544,12 @@ class Game {
     }
     if (this.state.ending) this.emit('ending', { ending: this.state.ending });
     this.ui();
+  }
+
+  /** An item tried where it does not help: the story's own line for it, else a plain one. */
+  private nopeLine(item: string): string {
+    const it = this.data.story?.items.find((i) => i.key === item);
+    return it?.nope ?? `The ${it?.name ?? item.replace(/-/g, ' ')} won't help here.`;
   }
 
   private lookLine(thing: string, verb: string): string {
@@ -1745,8 +1766,10 @@ const toFrame = (e: MouseEvent): Point => {
   return game.unzoom(((e.clientX - r.left) / r.width) * canvas.width, ((e.clientY - r.top) / r.height) * canvas.height);
 };
 
-canvas.addEventListener('mousemove', (e) => {
-  if (!game.place) return;
+canvas.addEventListener('pointermove', (e) => {
+  // A finger has no hover: nothing follows it, and the view does not look around after it.
+  if (!game.place || e.pointerType === 'touch') return;
+  keyboard = false;
   const r = canvas.getBoundingClientRect();
   pointer = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   game.hover = game.thingAt(...toFrame(e));
@@ -1754,7 +1777,27 @@ canvas.addEventListener('mousemove', (e) => {
   game.bag.point(e.clientX, e.clientY, game.hover?.thing.key.replace(/-/g, ' '));
   document.getElementById('hover')!.textContent = game.hover ? game.hover.thing.key.replace(/-/g, ' ') : '';
 });
+// A finger holds where a mouse right-clicks: a long press looks at a thing, or puts the item in hand back.
+let press: { timer: number; fired: boolean; x: number; y: number } | null = null;
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'touch' || !game.place) return;
+  const at = toFrame(e);
+  const p = { fired: false, x: e.clientX, y: e.clientY, timer: 0 };
+  p.timer = window.setTimeout(() => {
+    p.fired = true;
+    if (game.holding) return game.hold(undefined);
+    const hot = game.dark === 0 && !game.state.talk ? game.thingAt(...at) : undefined;
+    if (hot) void game.use(hot.thing.key, 'look');
+  }, LONG_PRESS_MS);
+  press = p;
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (press && e.pointerType === 'touch' && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 12) clearTimeout(press.timer);
+});
+for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, () => press && clearTimeout(press.timer));
 canvas.addEventListener('click', (e) => {
+  // The tap that ended a long press has done its work.
+  if (press?.fired) return void (press = null);
   if (!game.place || game.dark > 0 || game.state.talk || game.state.ending) return;
   const [x, y] = toFrame(e);
   const hot = game.thingAt(x, y);
@@ -1769,11 +1812,66 @@ canvas.addEventListener('contextmenu', (e) => {
   if (hot) void game.use(hot.thing.key, 'look');
 });
 canvas.addEventListener('mouseleave', () => (pointer = null));
+// The keyboard: WASD or the arrows walk, E, Space or Enter use the nearest thing in reach (it lights up),
+// 1 to 9 take an item from the bag when nobody is talking (in a conversation they pick an answer).
+const DIRS: Record<string, Point> = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
+const keys = new Set<string>();
+let keyboard = false;
+const free = () => game.place && game.dark === 0 && !game.state.talk && !game.state.ending;
 addEventListener('keydown', (e) => {
-  if (e.key === 'g') game.grid = !game.grid;
-  if (e.key === 'm') mixer?.toggleMute();
-  if (e.key === 'Escape') game.hold(undefined);
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k in DIRS) {
+    e.preventDefault();
+    keys.add(k);
+    keyboard = true;
+    return;
+  }
+  if (k === 'g') game.grid = !game.grid;
+  if (k === 'm') mixer?.toggleMute();
+  if (k === 'escape') game.hold(undefined);
+  if ((k === 'e' || k === ' ' || k === 'enter') && free()) {
+    e.preventDefault();
+    const hot = game.within();
+    if (hot) void game.use(hot.thing.key);
+  }
+  const n = Number(k);
+  if (n >= 1 && n <= 9 && free() && game.state.items[n - 1]) game.hold(game.holding === game.state.items[n - 1] ? undefined : game.state.items[n - 1]);
 });
+addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+addEventListener('blur', () => keys.clear());
+
+let heading = '';
+/** Held direction keys walk the hero a short step at a time; along a wall it slides the way that is open. */
+function steer() {
+  if (keyboard && game.place) {
+    const near = game.within();
+    if (near !== game.hover) {
+      game.hover = near;
+      document.getElementById('hover')!.textContent = near ? near.thing.key.replace(/-/g, ' ') : '';
+    }
+  }
+  if (!keys.size || !free()) return void (heading = '');
+  let [dx, dy] = [0, 0];
+  for (const k of keys) [dx, dy] = [dx + DIRS[k][0], dy + DIRS[k][1]];
+  if (!dx && !dy) return;
+  const hero = game.hero;
+  const dir = `${dx},${dy}`;
+  // A new step only near the end of the last one, unless the direction changed.
+  const left = hero.path.length ? Math.hypot(hero.path.at(-1)![0] - hero.x, hero.path.at(-1)![1] - hero.y) : 0;
+  const step = game.place.g.cell * 0.8;
+  if (dir === heading && left > step * 0.4) return;
+  heading = dir;
+  const n = Math.hypot(dx, dy);
+  const [ux0, uy0] = [dx / n, dy / n];
+  // Straight on, then the two axes, then half-right and half-left of it, so a wall or a thing's foot is slid along.
+  const tries = [[ux0, uy0], [Math.sign(dx), 0], [0, Math.sign(dy)], [ux0 - uy0, uy0 + ux0], [ux0 + uy0, uy0 - ux0]].map(([x, y]) => [x / (Math.hypot(x, y) || 1), y / (Math.hypot(x, y) || 1)]);
+  for (const [ux, uy] of tries) {
+    if (!ux && !uy) continue;
+    const [tx, ty] = [hero.x + ux * step, hero.y + uy * step];
+    if (game.place.grid.walkable(tx, ty)) return void game.walkTo(tx, ty);
+  }
+}
 if (capture) document.getElementById('bar')!.style.display = 'none';
 
 // For scripts and recorders: drive the hero and listen to what happens.
@@ -1788,6 +1886,7 @@ const frame = (now: number) => {
   // Capture mode steps a fixed 1/60 s per frame so a recorded run is the same every time.
   const dt = capture ? 1 / 60 : Math.min(0.05, (now - last) / 1000);
   last = now;
+  steer();
   game.update(dt);
   mixer?.update();
   game.render();

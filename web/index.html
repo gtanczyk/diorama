@@ -8,7 +8,7 @@
   html, body { margin: 0; height: 100%; background: #0b0b0e; color: #e8e2d6; font: 15px/1.35 Georgia, serif; overflow: hidden; }
   #stage { position: absolute; inset: 0; display: grid; place-items: center; }
   /* Fills the window on the long side, so a 1080p recording gets the game 1080 px tall, not its 896 px canvas. */
-  canvas { width: min(100vw, calc(100vh * 1200 / 896)); height: auto; aspect-ratio: 1200 / 896; image-rendering: auto; }
+  canvas { width: min(100vw, calc(100vh * 1200 / 896)); height: auto; aspect-ratio: 1200 / 896; image-rendering: auto; touch-action: manipulation; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
   #bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 14px; background: linear-gradient(transparent, #000a); font-size: 14px; pointer-events: none; display: flex; justify-content: space-between; }
   #bar .hint { opacity: 0.6; }
   /* The HTML over the game sits in the canvas's own 1200 x 896 frame, scaled with it, so it lines up with the picture at any window size and in recordings. */
@@ -57,7 +57,7 @@
 <body>
 <div id="stage"><canvas id="view" width="1200" height="896"></canvas></div>
 <div id="hud"><div id="inventory" hidden></div><div id="talk" hidden></div><div id="ending" hidden></div></div>
-<div id="bar"><span id="where"></span><span id="hover"></span><span class="hint">click to walk or use · right click to look or put back · g grid · m sound</span></div>
+<div id="bar"><span id="where"></span><span id="hover"></span><span class="hint">click to walk or use · right click or long press to look or put back · WASD or arrows walk, E uses · 1-9 items · g grid · m sound</span></div>
 <script type="module" src="main.js"></script>
 </body>
 </html>

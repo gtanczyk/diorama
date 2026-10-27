@@ -132,7 +132,7 @@ export function checkStory(world: World, raw: unknown): StoryReport & { story?: 
 }
 
 /** Word limits per kind of line: everything said is read or voiced, so less is better. */
-export const BREVITY = { intro: 30, say: 14, npcLine: 20, choice: 8, ending: 25, linesPerDialogue: 6 } as const;
+export const BREVITY = { intro: 30, say: 14, nope: 8, npcLine: 20, choice: 8, ending: 25, linesPerDialogue: 6 } as const;
 
 const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 
@@ -145,6 +145,7 @@ export function brevityIssues(story: Story): string[] {
   over('intro', story.intro, BREVITY.intro);
   story.interactions.forEach((it, i) => over(`interaction ${i + 1} (${it.verb} ${it.thing}) say`, it.say, BREVITY.say));
   story.locks.forEach((l) => over(`lock on ${l.via} say`, l.say, BREVITY.say));
+  story.items.forEach((it) => it.nope && over(`item ${it.key} nope`, it.nope, BREVITY.nope));
   for (const d of story.dialogues) {
     if (d.lines.length > BREVITY.linesPerDialogue) issues.push(`dialogue with ${d.npc} has ${d.lines.length} lines, keep it to ${BREVITY.linesPerDialogue}`);
     for (const l of d.lines) {

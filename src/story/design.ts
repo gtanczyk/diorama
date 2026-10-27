@@ -10,7 +10,7 @@ const MIN_STEPS = 6;
 
 const EXAMPLE = `{
   "intro": "two or three sentences shown before the first place",
-  "items": [{ "key": "<thing key with role item, or a new key for something given>", "name": "short name" }],
+  "items": [{ "key": "<thing key with role item, or a new key for something given>", "name": "short name", "nope": "what the hero says trying it where it does not help" }],
   "locks": [{ "place": "<place>", "via": "<exit thing>", "until": ["<fact>"], "say": "why it will not open yet" }],
   "interactions": [{
     "place": "<place>", "thing": "<thing key in that place>", "verb": "look | use | take | talk",
@@ -41,7 +41,7 @@ Write story.json for it. Rules:
 - No ending may be reachable in fewer than ${MIN_STEPS} clicks; each ending needs a solved puzzle.
 - Every ending must be reachable, and from any state the player must still be able to reach an ending.
 - Only a dialogue line with choices may ask the player something. A "say", and a line without choices, ends on a statement, never a question: the player has no way to answer it.
-- Say little. Players read or hear every line, so be terse: the intro at most ${BREVITY.intro} words, a "say" at most ${BREVITY.say}, an npc line at most ${BREVITY.npcLine}, an answer choice at most ${BREVITY.choice}, an ending at most ${BREVITY.ending}, and at most ${BREVITY.linesPerDialogue} lines per conversation. One idea per line; no small talk.
+- Say little. Players read or hear every line, so be terse: the intro at most ${BREVITY.intro} words, a "say" at most ${BREVITY.say}, an npc line at most ${BREVITY.npcLine}, an answer choice at most ${BREVITY.choice}, an ending at most ${BREVITY.ending}, an item's \"nope\" at most ${BREVITY.nope} (the hero's own remark about that item, true wherever it is tried, with a little character and never the words \"won't help\": for a crust of bread, \"Crumbs. Nobody here wants crumbs.\"), and at most ${BREVITY.linesPerDialogue} lines per conversation. One idea per line; no small talk.
 - Text is English, short and specific to this world. No names from existing films, books, games or brands.
 
 Reply with JSON only, shaped like:

@@ -23,6 +23,7 @@ export function storyLines(world: World, story: Story, all = false): Line[] {
   if (all) {
     for (const i of story.interactions) lines.push({ speaker: world.hero.key, text: i.say });
     for (const l of story.locks) lines.push({ speaker: world.hero.key, text: l.say });
+    for (const it of story.items) if (it.nope) lines.push({ speaker: world.hero.key, text: it.nope });
   }
   for (const d of story.dialogues) {
     for (const l of d.lines) {

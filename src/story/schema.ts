@@ -48,7 +48,8 @@ export const Dialogue = z.object({
 
 export const Story = z.object({
   intro: z.string().min(1),
-  items: z.array(z.object({ key: Slug, name: z.string().min(1) })),
+  /** nope: what the hero says when the item is tried where it does not help. */
+  items: z.array(z.object({ key: Slug, name: z.string().min(1), nope: z.string().min(1).optional() })),
   /** An exit in world.json that stays shut until its condition holds. */
   locks: z.array(z.object({ place: Slug, via: Slug, until: When, say: z.string().min(1) })).default([]),
   interactions: z.array(Interaction),
