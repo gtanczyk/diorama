@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { askAgent, call, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
 import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
-import { KidsStart } from './kids.tsx';
+import { KidsStart, KidsWait } from './kids.tsx';
 import { StoryView } from './story.tsx';
 import { PlaceEditor } from './place.tsx';
 
@@ -279,13 +279,21 @@ function Start() {
             </div>
           </div>
           {!kids && <textarea rows={3} placeholder="A lighthouse keeper's last night before the foghorn is switched off for good…" value={idea} onInput={(e) => setIdea(e.currentTarget.value)} />}
-          <div class="row">
-            <label>Name <input value={name} onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
-            <label>Places <select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
-            <span class="grow" />
-            {!kids && <button type="submit" class="primary" disabled={idea.trim().length < 10 || !!taken || noKey}>{taken ? 'Name taken' : noKey ? 'Needs the Meta key' : 'Build it'}</button>}
-          </div>
-          {kids && /^[a-z][a-z0-9-]*$/.test(name) && <KidsStart slug={name} taken={!!taken} places={places} onBuild={(told) => void build(undefined, told)} onError={setError} />}
+          {(() => {
+            const settings = (
+              <div class="row">
+                <label>Name <input value={name} onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
+                <label>Places <select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
+                <span class="grow" />
+                {!kids && <button type="submit" class="primary" disabled={idea.trim().length < 10 || !!taken || noKey}>{taken ? 'Name taken' : noKey ? 'Needs the Meta key' : 'Build it'}</button>}
+              </div>
+            );
+            // In a workshop the name and the number of places wait under More: the children's steps come first.
+            if (!kids) return settings;
+            return /^[a-z][a-z0-9-]*$/.test(name)
+              ? <KidsStart slug={name} taken={!!taken} onBuild={(told) => void build(undefined, told)} onError={setError}>{settings}</KidsStart>
+              : settings;
+          })()}
           {error && <p class="error">{error}</p>}
         </form>
         <section>
@@ -352,6 +360,9 @@ function Workshop({ slug }: { slug: string }) {
   const [view, setView] = useState<'places' | 'story' | 'cast'>('places');
   const [notes, setNotes] = useState<Note[]>([]);
   const [budget, setBudget] = useState<Budget | null>(null);
+  /** The build a workshop world's children are watching, until the game starts or the grown-up hides the show. */
+  const [watched, setWatched] = useState<string | null>(null);
+  const [hidden, setHidden] = useState<string | null>(null);
 
   const refresh = () => {
     setTick((t) => t + 1);
@@ -435,11 +446,22 @@ function Workshop({ slug }: { slug: string }) {
   const placeFocus = useMemo(() => status?.placeDetail.find((p) => p.key === focus), [status, focus]);
   
   const playable = !!status?.placeDetail.some((p) => p.stages.layout);
+  const building = job?.args[0] === 'build' ? job : null;
+  useEffect(() => void (building && setWatched(building.id)), [building?.id]);
+  const shown = watched && hidden !== watched ? status?.jobs.find((j) => j.id === watched) : undefined;
+  // How far the watched build is, weighed by how long each step took last time.
+  const plan = jobPlan ?? steps;
+  const took = (s: string) => status?.build[s]?.seconds ?? status?.typical?.[s] ?? 30;
+  const total = plan.reduce((sum, s) => sum + took(s), 0);
+  const left = plan.filter((s) => jobDone[s] === undefined).reduce((sum, s) => sum + took(s), 0);
   const playLine = (text: string) => setLines((l) => [...l.slice(-400), { seq: -Date.now() - Math.random(), text, kind: 'play' }]);
 
   return (
     <>
       <Header world={slug} live={live} />
+      {shown && status && <KidsWait slug={slug} places={status.placeDetail} progress={total ? 1 - left / total : 0} left={shown.state === 'running' ? left : null}
+        ready={shown.state === 'done' && playable} failed={shown.state === 'failed' || shown.state === 'cancelled'}
+        onPlay={() => (setHidden(shown.id), setPlaying({}))} onHide={() => setHidden(shown.id)} />}
       <main class="workshop">
         <div class="left">
           <div class="row">

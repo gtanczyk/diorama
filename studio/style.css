@@ -225,9 +225,24 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 /* A workshop with children: drawings, recordings, their story. */
 .tabs { display: flex; gap: 6px; }
 .tabs button.on { border-color: var(--accent); color: var(--text); }
-.kids { display: flex; flex-direction: column; gap: 22px; }
-.kids section { display: flex; flex-direction: column; gap: 10px; }
-.kids h2 { margin: 0; font-size: 16px; }
+.kids { display: flex; flex-direction: column; gap: 16px; }
+.kids section { display: flex; flex-direction: column; gap: 12px; }
+.kids .card { padding: 20px 22px; border: 1px solid var(--line); border-radius: 16px; opacity: 0.72; transition: opacity .3s; }
+.kids .card.now, .kids .card:focus-within, .kids .card:hover { opacity: 1; }
+.kids .card.now { border-color: var(--accent); }
+.kids h2 { margin: 0; font-size: 22px; display: flex; align-items: center; gap: 12px; }
+.kids h2 .n { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--raised); font-size: 17px; flex: none; }
+.kids .card.now h2 .n { background: var(--accent); color: #121417; }
+.kids .row.big button, .kids .row.big .button { min-height: 52px; padding: 0 26px; font-size: 18px; border-radius: 26px; }
+.kids label.button { display: inline-flex; align-items: center; cursor: pointer; border: 1px solid var(--line-strong); }
+.kids label.button input { display: none; }
+.kids .busy { position: sticky; top: 8px; z-index: 3; align-self: center; margin: 0; padding: 8px 18px; border-radius: 999px; background: var(--raised); border: 1px solid var(--accent); }
+.kids .story { font-size: 18px; line-height: 1.5; margin: 0; cursor: text; white-space: pre-wrap; }
+.kids .empty { grid-column: 1 / -1; margin: 0; }
+.kids .more { padding: 0 4px; display: flex; flex-direction: column; gap: 10px; }
+.kids .more[open] { gap: 12px; }
+.kids .more summary { cursor: pointer; color: var(--muted); }
+.kids .told ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .drawings { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
 .drawings figure { position: relative; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .drawings img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; background: var(--raised); }
@@ -237,12 +252,12 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 .drawings .add input { display: none; }
 .camera { display: flex; flex-direction: column; gap: 8px; }
 .camera video { width: 100%; max-width: 720px; border-radius: 10px; background: #000; }
-.record { font-size: 18px; padding: 12px 22px; border-radius: 999px; }
+.record { font-size: 20px; min-height: 60px; padding: 0 30px; border-radius: 999px; }
 .record.on { background: var(--bad); border-color: var(--bad); color: #fff; }
-.told { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .told li { display: flex; gap: 10px; align-items: center; }
 .told audio { height: 32px; flex: none; width: 220px; }
-.drawings figcaption select { min-height: 28px; padding: 2px 6px; font-size: 13px; }
+.drawings figcaption select { width: 100%; min-height: 32px; padding: 2px 6px; font-size: 14px; border-radius: 8px; }
+.drawings figure > button.small { background: var(--bg); width: 32px; padding: 0; opacity: 0.85; }
 .play-hint { margin: 2px 0 8px; } .play-hint summary { cursor: pointer; color: var(--accent); font-size: 13px; } .play-hint p { margin: 4px 0; }
 .drawings .pic { position: relative; padding: 0; border: 0; min-height: 0; border-radius: 10px; background: none; display: block; width: 100%; }
 .drawings .pic img.alive { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: rgba(255, 255, 255, 0.92); border-radius: 10px; animation: alive 0.9s ease-out; }
@@ -278,3 +293,27 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 .agent .pics.sent { margin-bottom: 6px; }
 .agent .pics.sent img { height: 72px; max-width: 120px; }
 .agent .camera video { width: 100%; border-radius: 8px; }
+
+/* The wait while a workshop world builds: a show for the children, the hero walking the road to the end. */
+.wait { position: fixed; inset: 0; z-index: 40; background: var(--bg); display: flex; flex-direction: column; gap: 2vh; padding: 3vh 4vw; }
+.wait h1 { font-size: clamp(24px, 4vw, 48px); margin: 0; }
+.wait .screen { flex: 1; min-height: 0; display: grid; place-items: center; }
+.wait figure { margin: 0; display: grid; grid-template-columns: 1fr auto 1.5fr; align-items: center; gap: 3vw; width: 100%; height: 100%; animation: arrive 1.2s ease-out; }
+.wait figure.place { grid-template-columns: 1fr; }
+.wait figure img { max-width: 100%; max-height: 62vh; margin: auto; border-radius: 16px; }
+.wait figure img.to { background: #fff; }
+.wait figure.place img.to { max-height: 66vh; background: none; }
+.wait figure .arrow { font-size: 72px; color: var(--accent); }
+.wait figcaption { grid-column: 1 / -1; text-align: center; font-size: clamp(22px, 3vw, 40px); font-weight: 600; }
+.wait figcaption::first-letter { text-transform: uppercase; }
+.wait .road { position: relative; height: 18px; margin: 9vh 6vw 3vh; border-radius: 9px; background: var(--raised); border: 1px solid var(--line); }
+.wait .road .done { height: 100%; border-radius: 9px; background: var(--accent); transition: width 2s ease; }
+.wait .road .walker { position: absolute; bottom: 4px; height: 13vh; transform: translateX(-50%); transition: left 2s ease; animation: hop .7s ease-in-out infinite alternate; }
+.wait .road .flag { position: absolute; right: -10px; bottom: 6px; font-size: 6vh; line-height: 1; }
+.wait .road .detail { position: absolute; top: 26px; left: 0; right: 0; text-align: center; font-size: 20px; }
+.wait .go { align-self: center; font-size: clamp(28px, 4vw, 52px); padding: 2vh 6vw; border-radius: 999px; animation: beckon 1.2s ease-in-out infinite alternate; }
+.wait .oops { text-align: center; font-size: 22px; }
+@keyframes arrive { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
+@keyframes hop { from { transform: translateX(-50%) translateY(0); } to { transform: translateX(-50%) translateY(-8px); } }
+@keyframes beckon { from { transform: scale(1); } to { transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .wait figure, .wait .road .walker, .wait .go { animation: none; } }
