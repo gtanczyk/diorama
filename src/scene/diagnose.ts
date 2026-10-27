@@ -117,6 +117,12 @@ export async function diagnosisPicture(painting: Buffer, g: Geometry, d: Diagnos
     svg.push(`<circle cx="${s.at[0]}" cy="${s.at[1]}" r="8" fill="#f33" stroke="#000" stroke-width="2"/>`, svgLabel(s.at[0] + 10, s.at[1] + 5, s.thing, [255, 90, 90]));
     if (s.nearest) svg.push(`<line x1="${s.at[0]}" y1="${s.at[1]}" x2="${s.nearest[0]}" y2="${s.nearest[1]}" stroke="#f33" stroke-width="3" stroke-dasharray="6 4"/>`);
   }
+  // The steps derive found on stairs: each tread's back edge, so a missing or wrong flight shows.
+  for (const st of g.steps ?? []) {
+    const pts = st.top.flatMap((t, i) => (t >= 0 ? [`${st.x0 + i * st.every},${t}`] : []));
+    if (pts.length > 1) svg.push(`<polyline points="${pts.join(' ')}" fill="none" stroke="#3cf" stroke-width="3"/>`);
+  }
+  if (g.steps?.length) svg.push(svgLabel(g.steps[0].x0, Math.max(14, Math.min(...g.steps[0].top.filter((t) => t >= 0)) - 8), `${g.steps.length} steps`, [60, 200, 255]));
   svg.push(`<circle cx="${g.start[0]}" cy="${g.start[1]}" r="10" fill="#3f6" stroke="#000" stroke-width="2"/>`, svgLabel(g.start[0] + 12, g.start[1] + 5, 'start', [80, 255, 120]));
   const tinted = await tintOver(await gridImage(painting), [
     { mask: fill((i) => !!reached[i]), rgb: PALETTE[4], alpha: 0.28 },

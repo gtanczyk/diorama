@@ -12,10 +12,11 @@ import type { Kind } from './locate.ts';
 import type { MaskSource } from './masks.ts';
 import { blobsOf, footDepth, lineYAt, simplifyLine, type Blob } from './occluders.ts';
 import { findShadows, type Shadows } from './shadows.ts';
+import { findSteps, STAIRS } from './stairs.ts';
 import { PERSON_M, probePoints, scaleFrom, sparkPeople, type Sample, type Scale } from './scale.ts';
 import { CELL, connect, gridFromPixels, nearestRoomy, reach, roomy, type Grid } from './walk.ts';
 
-export type ThingIn = { key: string; kind: Kind; source: MaskSource; coarse: boolean; mask: Mask };
+export type ThingIn = { key: string; kind: Kind; phrase?: string; source: MaskSource; coarse: boolean; mask: Mask };
 /** `plates`: things that have a clean plate (plates/<key>.png), for the runtime to hide them once taken. */
 export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors: Mask[]; painting: Buffer; plates?: string[] };
 export type Derived = { geometry: Geometry; grid: Grid; blobs: Blob[]; footprint: Mask; probes: Sample[]; shadows: Shadows };
@@ -238,6 +239,14 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   const shadows = await findShadows(memo, place.key, painting, subtract(ground, dilate(inTheWay, 2)), sharpOnFloor);
   if (shadows.light) log(`light ${shadows.light.dir.join(', ')} x${shadows.light.length}, strength ${shadows.light.strength} (${shadows.source})`);
 
+  // Stairs: the walk-on things and floors named as stairs get their steps, so feet land on the treads.
+  const looks = new Map(place.things.map((t) => [t.key, t.looks ?? '']));
+  const stairs = unionAll(W, H, [
+    ...things.filter((t) => t.kind === 'walk-on' && STAIRS.test(`${t.key} ${t.phrase ?? ''} ${looks.get(t.key)}`)).map((t) => t.mask),
+    ...layout.floors.flatMap((f, i) => (STAIRS.test(`${f.key} ${f.is}`) && floors[i] ? [floors[i]] : [])),
+  ]);
+  const steps = await findSteps(memo, place.key, painting, stairs, log);
+
   const { walk, zone } = grid.rowsOut();
   const geometry: Geometry = {
     frame: { width: W, height: H },
@@ -248,6 +257,7 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     start: grid.centre(startCell),
     things: geoThings,
     occluders,
+    ...(steps.length && { steps }),
     flagged,
   };
   return { geometry, grid, blobs, footprint, probes, shadows };

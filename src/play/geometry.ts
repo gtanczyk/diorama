@@ -51,6 +51,11 @@ export const Geometry = z.object({
   light: z.object({ dir: XY, length: z.number().nonnegative(), strength: z.number().min(0).max(1) }).optional(),
   /** Mask (relative to the place folder) of painted shadows on floors: a person standing in one is darkened. */
   shadows: z.string().optional(),
+  /**
+   * Stair steps, top to bottom: each one's band (its tread and the riser below it) per column, sampled every
+   * `every` px from x0 (-1 where the step doesn't reach). People's feet stay on a tread and step between them.
+   */
+  steps: z.array(z.object({ x0: z.number(), every: z.number().positive(), top: z.array(z.number()), bottom: z.array(z.number()) })).optional(),
   flagged: z.array(z.string()).optional(),
   /** Made from layout.json, not measured from the painting. */
   preview: z.boolean().optional(),
@@ -106,4 +111,52 @@ export function hiddenRuns(o: Occluder, left: number, right: number, feetY: numb
   }
   if (start >= 0) runs.push([start, x1]);
   return runs;
+}
+
+/** Where a tread puts the feet, as a share of the step's band from its top. */
+const TREAD = 0.35;
+
+/** The step bands [top, bottom] under column x, top first. */
+export function stepBands(g: Geometry, x: number): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  for (const s of g.steps ?? []) {
+    const i = Math.round((x - s.x0) / s.every);
+    if (i < 0 || i >= s.top.length || s.top[i] < 0 || s.bottom[i] <= s.top[i]) continue;
+    out.push([s.top[i], s.bottom[i]]);
+  }
+  return out.sort((a, b) => a[0] - b[0]);
+}
+
+const smooth = (u: number) => u * u * (3 - 2 * u);
+
+/**
+ * Where the feet are drawn for a walker at (x, y) on stairs: held on each tread, then a quick step over the
+ * riser to the next, instead of gliding up a ramp. Off the stairs it is y. Size and depth still follow y.
+ */
+export function stepFootY(g: Geometry, x: number, y: number): number {
+  const bands = stepBands(g, x);
+  if (!bands.length || y <= bands[0][0] || y >= bands[bands.length - 1][1]) return y;
+  // Control points (walker y -> foot y): flat on each tread's middle half, eased between.
+  const pts: Array<[number, number]> = [[bands[0][0], bands[0][0]]];
+  for (const [t, b] of bands) {
+    const h = b - t;
+    const foot = t + TREAD * h;
+    const a = Math.max(t + 0.25 * h, pts[pts.length - 1][0]);
+    pts.push([a, foot], [Math.max(a, b - 0.25 * h), foot]);
+  }
+  const last = bands[bands.length - 1][1];
+  pts.push([last, last]);
+  for (let k = 1; k < pts.length; k++) {
+    const [y0, f0] = pts[k - 1];
+    const [y1, f1] = pts[k];
+    if (y > y1) continue;
+    return y1 > y0 ? f0 + (f1 - f0) * smooth((y - y0) / (y1 - y0)) : f1;
+  }
+  return y;
+}
+
+/** A walker's resting y on stairs: the middle of the tread band it is in, so nobody stops mid-step. */
+export function stepRestY(g: Geometry, x: number, y: number): number {
+  for (const [t, b] of stepBands(g, x)) if (y >= t && y <= b) return (t + b) / 2;
+  return y;
 }

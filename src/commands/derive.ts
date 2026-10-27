@@ -38,6 +38,8 @@ async function walkPicture(painting: Buffer, g: Geometry, footprint: ThingIn['ma
     const h = personPx(g, y);
     svg.push(`<rect x="${x - h * 0.12}" y="${y - h}" width="${h * 0.24}" height="${h}" fill="rgba(80,160,255,0.55)" stroke="#fff" stroke-width="2"/>`);
   }
+  // Each step's back edge on stairs, where the feet climb.
+  for (const st of g.steps ?? []) svg.push(`<polyline points="${st.top.flatMap((t, i) => (t >= 0 ? [`${st.x0 + i * st.every},${t}`] : [])).join(' ')}" fill="none" stroke="#3cf" stroke-width="3"/>`);
   svg.push(`<circle cx="${g.start[0]}" cy="${g.start[1]}" r="9" fill="#3f6" stroke="#000" stroke-width="2"/>`);
   svg.push(`<line x1="0" y1="${g.scale.horizonY}" x2="${FRAME.width}" y2="${g.scale.horizonY}" stroke="#5af" stroke-width="2" stroke-dasharray="12 8"/>`);
   return tintOver(painting, tints, svg.join(''));
