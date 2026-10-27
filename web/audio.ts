@@ -6,7 +6,7 @@ import { holds, type State } from '../src/story/engine.ts';
 
 /** What the mixer reads from the game each frame. */
 export type Listened = {
-  data: { sound?: SoundData };
+  data: { sound?: SoundData; world?: { hero: { key: string } } };
   place?: { key: string; g: Geometry; hots: Array<{ thing: GeoThing }> };
   hero: { x: number; y: number; phase: number; path: unknown[] };
   state: State;
@@ -122,11 +122,15 @@ export class Mixer {
   private speaking: AudioBufferSourceNode | undefined;
   private lines = new Map<string, Promise<AudioBuffer | undefined>>();
 
+  /** ?voices=npc: only the people the hero meets speak (for a film with a voice-over); ?voices=0: nobody. */
+  private voiced = new URLSearchParams(location.search).get('voices') ?? 'all';
+
   /** Says a line in its cast voice, cutting off the one before. */
   private async speak(text: string) {
     this.hush();
     const line = this.sound?.lines?.[text];
-    if (!line) return;
+    if (!line || this.voiced === '0') return;
+    if (this.voiced === 'npc' && (line.speaker === 'narrator' || line.speaker === this.game.data.world?.hero.key)) return;
     if (!this.lines.has(text)) this.lines.set(text, fetch(this.url(line.file)).then((r) => r.arrayBuffer()).then((b) => this.ctx.decodeAudioData(b)).catch(() => undefined));
     const buf = await this.lines.get(text);
     if (!buf || this.game.speech === null) return;

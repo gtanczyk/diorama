@@ -16,7 +16,7 @@ export type SoundData = {
   /** Trigger ("take", "click", "exit:cliff-path", "use:cold-lamp", "talk", "ending") → sound id. */
   shots: Record<string, string>;
   /** Spoken lines (diorama voices): the text the page says → its recording. */
-  lines?: Record<string, { file: string; seconds: number }>;
+  lines?: Record<string, { file: string; seconds: number; speaker?: string }>;
 };
 
 /** Mixer gain per kind and level, before distance: the bed sits under loops, music under both. */

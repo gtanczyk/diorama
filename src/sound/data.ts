@@ -13,7 +13,7 @@ export function soundData(files: WorldFiles): SoundData | undefined {
   if (!fs.existsSync(voicesFile)) return sound;
   const lines = Object.fromEntries(Voices.parse(files.readJson(voicesFile)).lines
     .filter((l) => fs.existsSync(files.path(l.file)))
-    .map((l) => [l.text, { file: l.file, seconds: l.seconds }]));
+    .map((l) => [l.text, { file: l.file, seconds: l.seconds, speaker: l.speaker }]));
   return { ...(sound ?? { files: {}, places: {}, shots: {} }), lines };
 }
 
