@@ -207,7 +207,7 @@ export function KidsStart({ slug, taken, onBuild, onError, children }: { slug: s
   const write = () => void work(t('Piszę historię', 'Writing the story'), writeNow);
   const big = m?.drawings.find((d) => d.file === shown && d.preview);
   const [editing, setEditing] = useState(false);
-  if (taken && m && m.built) return <p class="note">{t(`${slug} jest już zbudowany: wybierz inną nazwę pod „Więcej”.`, `${slug} is already built: pick another name for a new workshop world.`)}</p>;
+  if (taken && m && m.built) return <div class="kids"><p class="note">{t(`${slug} jest już zbudowany: wpisz inną nazwę.`, `${slug} is already built: pick another name for a new workshop world.`)}</p>{children}</div>;
   if (!m) return <p class="note">{t('Wczytuję…', 'Loading…')}</p>;
   // One step at a time: the next one lights up when the one before has something in it.
   const drew = m.drawings.length > 0;

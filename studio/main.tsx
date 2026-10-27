@@ -196,7 +196,14 @@ function BudgetBox() {
 }
 
 /** A workshop world's default name: the day it was made. */
-const today = () => `workshop-${new Date().toISOString().slice(5, 10)}`;
+/** A workshop world's default name: the day it was made, numbered when a game of that day is already built. */
+const today = (worlds: Summary[] | null) => {
+  const day = `workshop-${new Date().toISOString().slice(5, 10)}`;
+  const built = (slug: string) => worlds?.some((w) => w.slug === slug && w.issue !== 'no world.json yet');
+  let n = 1;
+  while (built(n === 1 ? day : `${day}-${n}`)) n++;
+  return n === 1 ? day : `${day}-${n}`;
+};
 
 function Start() {
   const [worlds, setWorlds] = useState<Summary[] | null>(null);
@@ -214,7 +221,7 @@ function Start() {
     call<Summary[]>('world_list').then(setWorlds).catch((e) => setError(e.message));
     call<Check[]>('setup_status').then((c) => setNeeds(c.filter((x) => x.state === 'missing' || x.state === 'fail'))).catch(() => {});
   }, []);
-  const name = slug || (kids ? today() : slugify(idea));
+  const name = slug || (kids ? today(worlds) : slugify(idea));
   const taken = worlds?.some((w) => w.slug === name && !(kids && w.issue === 'no world.json yet'));
   const build = async (e?: Event, told?: string) => {
     e?.preventDefault();
