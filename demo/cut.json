@@ -52,7 +52,8 @@
       "name": "Guides the tour as the hero",
       "dur": 53,
       "src": "footage/tour.mp4",
-      "fade": 0.4
+      "fade": 0.4,
+      "audio": 0.9
     },
     {
       "name": "Any world: three more prompts + numbers",
@@ -64,6 +65,24 @@
       "dur": 12,
       "src": "footage/outro.mp4",
       "fade": 0.4
+    }
+  ],
+  "music": {
+    "src": "footage/music.mp3",
+    "volume": 0.35
+  },
+  "voice": [
+    {
+      "src": "footage/vo/pitch-tail.wav",
+      "at": 32
+    },
+    {
+      "src": "footage/vo/studio.wav",
+      "at": 66.6
+    },
+    {
+      "src": "footage/vo/tour.wav",
+      "at": 100
     }
   ]
 }
