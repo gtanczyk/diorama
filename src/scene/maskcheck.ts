@@ -35,7 +35,7 @@ export async function checkMasks(memo: Memo, place: string, painting: Buffer, th
   const prompt = `This painting (${W}x${H} px) has numbered pink boxes. Each box should hold the thing listed under its number:
 ${list}
 
-For each number say whether that thing is really inside its box (most of it, not just its neighbour). If it is not, say in a few words what the box holds instead, and give the box [x0, y0, x1, y1] in pixels where the thing really is, or null if it is not painted anywhere.
+For each number say whether that thing is inside its box. Judge the kind of thing, not its details: mossy stairs are "stone stairs", a dim lamp is "a glowing lantern". Say ok false only when the box clearly holds a different object (a stone where a boat should be) or nothing at all. Then say in a few words what the box holds, and give the box [x0, y0, x1, y1] in pixels where the thing really is, or null if you cannot find it anywhere.
 
 Reply with JSON only: {"boxes": {"1": {"ok": true}, "2": {"ok": false, "seen": "a grey stone", "box": [0, 0, 0, 0]}}}`;
   const reply = Reply.parse(await askSparkJson(memo, { label: `maskcheck:${place}`, prompt, images: [image] }));

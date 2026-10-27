@@ -18,6 +18,8 @@ export type AutoFix = {
 
 /** A gap longer than this is no slip of a mask: it needs someone to look. */
 const MAX_GAP = 3 * GRID;
+/** Through stairs or a gangway the painting itself shows the way, so a longer gap is bridged. */
+const MAX_GAP_WALK_ON = 6 * GRID;
 /** Things the hero walks around, not over: a gap through one is not bridged blindly. */
 const SOLID = new Set(['standing', 'wall']);
 
@@ -29,13 +31,17 @@ export function autoFixes(g: Geometry, floorKeys: string[], errors: Finding[]): 
     const grid = gridOf(g);
     for (const p of d.patches) {
       const gap = p.gap;
-      if (!gap || gap.px > MAX_GAP || gap.things.some((t) => SOLID.has(t.kind ?? ''))) continue;
+      if (!gap || gap.things.some((t) => SOLID.has(t.kind ?? ''))) continue;
+      // Stairs or a gangway (a walk-on thing) standing in the gap are what joins the two levels: bridge along
+      // them even when the gap is long. Without one, a long gap is a real wall and needs someone to look.
+      const along = gap.things.some((t) => t.kind === 'walk-on');
+      if (gap.px > (along ? MAX_GAP_WALK_ON : MAX_GAP)) continue;
       // Brush the reached floor across the gap: a stroke wide enough for the hero (two walk cells and a margin).
       const floor = floorKeys[grid.zone[grid.cellOf(...gap.to)]] ?? floorKeys[p.floors[0]];
       if (!floor) continue;
       const points: [number, number][] = [gap.to, gap.from];
       fixes.push({
-        what: `bridged ${p.cells} cells of floor ${p.floors.join('+')} to ${floor} across ${gap.px} px (${gap.cells.join(' ') || 'thin gap'})`,
+        what: `bridged ${p.cells} cells of floor ${p.floors.join('+') || 'none'} to ${floor} across ${gap.px} px (${gap.cells.join(' ') || 'thin gap'})${along ? ` along ${gap.things.filter((t) => t.kind === 'walk-on').map((t) => t.key).join(', ')}` : ''}`,
         from: 'masks',
         apply: (c) => {
           const f = (c.floors[floor] ??= { add: [], remove: [], strokes: [] });

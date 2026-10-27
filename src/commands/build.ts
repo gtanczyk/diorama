@@ -121,32 +121,41 @@ defineCommand({
       // then the place is rebuilt from the step they feed. Whatever is left goes to the agent, then the person.
       if (repair !== 'off') {
         const repairs: Repair[] = [];
-        for (const r of report.filter((x) => !x.ok && !x.from)) {
-          const dir = files.place(r.place);
-          let fixes: ReturnType<typeof autoFixes>;
-          try {
-            const geometry = Geometry.parse(files.readJson(files.place(r.place, 'geometry.json')));
-            const floors = Layout.parse(files.readJson(files.place(r.place, 'layout.json'))).floors.map((f) => f.key);
-            fixes = autoFixes(geometry, floors, r.issues);
-          } catch (error) {
-            console.log(`${r.place}: no free fix, could not read it: ${error instanceof Error ? error.message : error}`);
-            continue;
+        // Two passes: a bridge to one patch can bring the next patch within reach of a second bridge.
+        const settled = new Set<string>();
+        for (let pass = 0; pass < 2; pass++) {
+          for (const r of report.filter((x) => !x.ok && !x.from && !settled.has(x.place))) {
+            const dir = files.place(r.place);
+            let fixes: ReturnType<typeof autoFixes>;
+            try {
+              const geometry = Geometry.parse(files.readJson(files.place(r.place, 'geometry.json')));
+              const floors = Layout.parse(files.readJson(files.place(r.place, 'layout.json'))).floors.map((f) => f.key);
+              fixes = autoFixes(geometry, floors, r.issues);
+            } catch (error) {
+              fixes = [];
+              console.log(`${r.place}: could not look for a free fix: ${error instanceof Error ? error.message : error}`);
+            }
+            const before = readCorrections(dir);
+            const after = Corrections.parse(JSON.parse(JSON.stringify(before)));
+            for (const f of fixes) f.apply(after);
+            if (fixes.length === 0 || JSON.stringify(after) === JSON.stringify(before)) {
+              settled.add(r.place);
+              console.log(`\n# repair ${r.place}: no free fix for ${[...new Set(r.issues.map((i) => i.code))].join(', ')}; left for the agent`);
+              continue;
+            }
+            writeCorrections(dir, after);
+            const start = fixes.some((f) => f.from === 'masks') ? 'masks' : 'derive';
+            console.log(`\n# repair ${r.place}: ${fixes.map((f) => f.what).join('; ')}`);
+            emit('repair.start', { place: r.place, by: 'auto', fixes: fixes.map((f) => f.what) });
+            for (const step of PLACE_STEPS.slice(PLACE_STEPS.indexOf(start))) {
+              if (!broken.has(r.place)) await runPlaces(step, [r.place]);
+            }
+            const now = reportOf(r.place)!;
+            report = report.map((x) => (x.place === r.place ? now : x));
+            repairs.push({ place: r.place, by: 'auto', fixes: fixes.map((f) => f.what), ok: now.ok });
+            emit('repair.end', { place: r.place, by: 'auto', ok: now.ok });
+            if (now.ok) settled.add(r.place);
           }
-          const before = readCorrections(dir);
-          const after = Corrections.parse(JSON.parse(JSON.stringify(before)));
-          for (const f of fixes) f.apply(after);
-          if (fixes.length === 0 || JSON.stringify(after) === JSON.stringify(before)) continue;
-          writeCorrections(dir, after);
-          const start = fixes.some((f) => f.from === 'masks') ? 'masks' : 'derive';
-          console.log(`\n# repair ${r.place}: ${fixes.map((f) => f.what).join('; ')}`);
-          emit('repair.start', { place: r.place, by: 'auto', fixes: fixes.map((f) => f.what) });
-          for (const step of PLACE_STEPS.slice(PLACE_STEPS.indexOf(start))) {
-            if (!broken.has(r.place)) await runPlaces(step, [r.place]);
-          }
-          const now = reportOf(r.place)!;
-          report = report.map((x) => (x.place === r.place ? now : x));
-          repairs.push({ place: r.place, by: 'auto', fixes: fixes.map((f) => f.what), ok: now.ok });
-          emit('repair.end', { place: r.place, by: 'auto', ok: now.ok });
         }
         if (repairs.length) log.repairs = [...(log.repairs ?? []), ...repairs.map((x) => ({ at: new Date().toISOString(), ...x }))].slice(-50);
       }

@@ -68,9 +68,10 @@ export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates:
     }
     const check = notes.things[thing.key]?.check;
     if (check && !check.ok) {
-      const finding: Finding = { code: 'MASK_WRONG', key: thing.key, detail: `Spark sees ${check.seen ?? 'something else'} in its mask${check.box ? `; it is at [${check.box.join(', ')}]` : check.box === null ? '; it is not painted' : ''}`, ...(check.box && { box: check.box }) };
-      // The player clicks exits and items: a mask on the wrong thing breaks the game. A prop only looks wrong.
-      (thing.role === 'prop' ? flags : errors).push(finding);
+      // Only a mask Spark can point away from is wrong for sure (it gives the box the thing is in); a doubt
+      // without one is often Spark being picky about details, so it is flagged for a look, not failed.
+      if (check.box && thing.role !== 'prop') errors.push({ code: 'MASK_WRONG', key: thing.key, detail: `Spark sees ${check.seen ?? 'something else'} in its mask; it is at [${check.box.join(', ')}]`, box: check.box });
+      else flags.push({ code: 'MASK_DOUBT', key: thing.key, detail: `Spark sees ${check.seen ?? 'something else'} in its mask${check.box ? `; maybe it is at [${check.box.join(', ')}]` : ''}` });
     }
     if (notes.things[thing.key]?.source === 'colour-cut') flags.push({ code: 'COLOUR_CUT', key: thing.key, detail: 'SAM missed it; its mask was cut out of its box by colour' });
     if (t.coarse && thing.role !== 'npc') flags.push({ code: 'COARSE_MASK', key: thing.key, detail: `mask is a ${notes.things[thing.key]?.source ?? 'box'}, so it hides no one` });

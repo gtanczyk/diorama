@@ -60,3 +60,26 @@ test('a mask Spark sees on the wrong thing: an error for an item, its box handed
   expect(c.things.bell.box).toEqual([300, 600, 340, 640]);
   expect(fixes.find((f) => f.what.includes('bell'))!.from).toBe('masks');
 });
+
+test('a long gap is bridged only along stairs (a walk-on thing in it), never across bare ground or a standing thing', async () => {
+  const { autoFixes } = await import('../src/scene/autofix.ts');
+  const err = [{ code: 'FLOOR_UNREACHABLE', key: '1', detail: 'floor 1 has walkable cells but none reachable' }];
+  const g = geometry([50, 80]);
+  expect(autoFixes(g, ['quay', 'deck'], err)).toEqual([]);
+  const stairs = { ...g, things: [{ key: 'stairs', kind: 'walk-on' as const, role: 'prop' as const, box: [0, 380, 1200, 660] as [number, number, number, number], stand: [600, 860] as [number, number] }] };
+  const fixes = autoFixes(stairs, ['quay', 'deck'], err);
+  expect(fixes).toHaveLength(1);
+  expect(fixes[0].what).toMatch(/along stairs/);
+  const wall = { ...stairs, things: [{ ...stairs.things[0], kind: 'standing' as const }] };
+  expect(autoFixes(wall, ['quay', 'deck'], err)).toEqual([]);
+});
+
+test('a mask check doubt without a box is a flag, not an error', async () => {
+  const { verifyPlace } = await import('../src/scene/verify.ts');
+  const g = geometry([0, 0]);
+  g.things[0] = { ...g.things[0], stand: [120, 500], mask: 'masks/bell.png' };
+  const place = { key: 'quay', shows: 'a quay at dusk', mood: 'calm', exits: [], things: [{ key: 'bell', role: 'item', looks: 'a small brass bell' }] } as never;
+  const v = verifyPlace(place, g, { things: { bell: { coarse: false, source: 'sam-text', check: { ok: false, seen: 'a bronze bell', box: null } } }, floors: {} });
+  expect(v.errors.map((e) => e.code)).not.toContain('MASK_WRONG');
+  expect(v.flags.map((f) => f.code)).toContain('MASK_DOUBT');
+});
