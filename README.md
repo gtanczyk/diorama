@@ -136,6 +136,7 @@ To change it, tell the Studio agent ("no rain in the hut", "it should pour", "wa
 - `diorama play <slug>` serves it on localhost.
 - `diorama publish <slug>` puts it on this repo's GitHub Pages (the `gh-pages` branch, through a worktree under `.diorama/`, so your checkout stays put) and prints a link like `https://gtanczyk.github.io/diorama/<slug>/`. Every published world is listed at `https://gtanczyk.github.io/diorama/`. The first time, turn on Settings > Pages > Deploy from a branch > `gh-pages`. Run it from a fork to publish to your own Pages.
 - `diorama export <slug> --zip` writes `exports/<slug>/` and `exports/<slug>.zip`, a static copy any web host serves; the zip uploads to itch.io as an HTML5 game as is.
+- In the Studio, **Share** does both: Make a zip (then Download it) and Publish a link (it asks first, since anyone can play it there). The agent has them as `world_export` and `world_publish`.
 
 ## Status
 

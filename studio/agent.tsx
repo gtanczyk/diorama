@@ -6,6 +6,8 @@ import { call, fileUrl, token } from './api.ts';
 
 /** What each Studio tool does, as the person would say it. */
 const SAYS: Record<string, string> = {
+  world_export: 'Make a zip',
+  world_publish: 'Publish a link',
   world_list: 'List worlds', world_status: 'World status', place_status: 'Look at a place', job_list: 'List jobs',
   job_wait: 'Wait for a job', job_cancel: 'Stop a job', job_retry: 'Run a job again', world_build: 'Build', run_step: 'Run a step',
   corrections_get: 'Read fixes', corrections_clear: 'Take fixes back', mask_fix: 'Fix a mask', mask_brush: 'Brush a mask',

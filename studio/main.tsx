@@ -89,6 +89,34 @@ function JobProgress({ job, plan, build, typical, running, done, last }: { job: 
   );
 }
 
+/** Sharing: a zip to download, or the public link. The last export or publish job says where it went. */
+function Share({ slug, jobs, onError }: { slug: string; jobs: Job[]; onError: (m: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const last = (args0: string) => jobs.findLast((j) => j.args[0] === args0 && j.state === 'done');
+  const exported = last('export');
+  const link = last('publish')?.tail.map((l) => /play: (https?:\S+)/.exec(l)?.[1]).find(Boolean);
+  const firstTime = last('publish')?.tail.find((l) => l.includes('first publish:'))?.trim();
+  const publish = () => {
+    if (confirm(`Put ${slug} on the public web? Anyone with the link can play it.`)) call('world_publish', { slug }).catch((e) => onError(e.message));
+  };
+  return (
+    <div class="share">
+      <button type="button" class="ghost" aria-expanded={open} onClick={() => setOpen(!open)}>Share</button>
+      {open && (
+        <div class="share-menu" role="menu">
+          <button type="button" class="ghost small" onClick={() => call('world_export', { slug }).catch((e) => onError(e.message))}>Make a zip</button>
+          {exported && <a class="detail" href={`/exports/${slug}.zip`} download>Download {slug}.zip</a>}
+          <p class="detail">A zip plays offline and goes on itch.io as an HTML game.</p>
+          <button type="button" class="ghost small" onClick={publish}>Publish a link</button>
+          {link && <a class="detail" href={link} target="_blank" rel="noopener">{link}</a>}
+          {firstTime && <p class="detail">{firstTime}</p>}
+          <p class="detail">Puts it on this repository's GitHub Pages, public.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Header({ world, live }: { world?: string; live?: boolean }) {
   return (
     <header class="top">
@@ -416,6 +444,7 @@ function Workshop({ slug }: { slug: string }) {
             <h1>{status?.title ?? slug}</h1>
             <span class="grow" />
             {playable && <button type="button" class={playing ? 'primary' : 'ghost'} onClick={() => setPlaying(playing ? null : {})}>{playing ? 'Close game' : 'Play'}</button>}
+            {playable && !job && <Share slug={slug} jobs={status?.jobs ?? []} onError={setError} />}
             {!job && status && status.steps.length > 0 && <button type="button" class="ghost" title="Put the world back as it was before the last job" onClick={() => call('history_undo', { slug }).catch((e) => setError(e.message))}>Undo last job</button>}
             {!job && canRedo && <button type="button" class="ghost" title="Take back the undo" onClick={() => call('history_redo', { slug }).catch((e) => setError(e.message))}>Redo</button>}
             {/* Stop sits beside the build button, never in its place: a double click must not start a build and stop it again. */}

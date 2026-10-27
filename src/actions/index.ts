@@ -13,3 +13,4 @@ import './cast.ts';
 import './items.ts';
 import './story.ts';
 import './kids.ts';
+import './share.ts';

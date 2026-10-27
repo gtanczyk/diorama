@@ -257,3 +257,6 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 .show .arrow { font-size: 64px; color: var(--accent); }
 .show p { grid-column: 1 / -1; text-align: center; font-size: 22px; margin: 0; color: var(--text); }
 @media (prefers-reduced-motion: reduce) { .drawings .pic img.alive, .show img.alive, .drawings .spark { animation: none; } }
+.share { position: relative; }
+.share-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; width: 300px; display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line); }
+.share-menu p { margin: 0 0 6px; }

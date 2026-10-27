@@ -346,6 +346,14 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
         if (!file.startsWith(dir + path.sep) || file.startsWith(path.join(dir, 'memo') + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return send(404, 'text/plain', 'not found');
         return send(200, TYPES[path.extname(file)] ?? 'application/octet-stream', fs.readFileSync(file));
       }
+      // A world's exported zip, for the person to download: exports/ sits beside the worlds folder, where the jobs run.
+      const zip = /^\/exports\/([a-z][a-z0-9-]*)\.zip$/.exec(url.pathname);
+      if (zip) {
+        if (!cookieOk) return send(401, 'text/plain', NO_SESSION);
+        const file = path.join(path.dirname(root), 'exports', `${zip[1]}.zip`);
+        if (!fs.existsSync(file)) return send(404, 'text/plain', 'not exported yet');
+        return send(200, 'application/zip', fs.readFileSync(file), { 'content-disposition': `attachment; filename="${zip[1]}.zip"` });
+      }
       if (url.pathname === '/app.js') {
         if (!app || process.env.DIORAMA_STUDIO_DEV) app = bundleApp();
         try {
