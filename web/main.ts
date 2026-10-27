@@ -27,6 +27,7 @@ type Data = {
 };
 
 type Bits = { bits: Uint8Array; area: number };
+type Who = { npc?: Hot; y: number };
 type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement; outline?: HTMLCanvasElement };
 type Rect = [number, number, number, number];
 /** sprites.json, written by `diorama sprites`: one walk cycle per facing, a cols x rows grid of frames per sheet. */
@@ -886,6 +887,8 @@ class Game {
     ctx.fillRect(0, 0, W, H);
     ctx.setTransform(z, 0, 0, z, W / 2 - z * (this.viewX || W / 2), H / 2 - z * (this.viewY || H / 2));
     const gone = this.gone();
+    const npcs = this.place.hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc' && !h.mask);
+    const people: Who[] = [...npcs.map((h) => ({ npc: h, y: h.thing.box[3] })), { npc: undefined, y: this.hero.y }].sort((a, b) => a.y - b.y);
     if (p && backdrop) {
       // A diorama: the backdrop's floor shears with depth, then every card slides as the floor row it stands on.
       const { above, below } = backdropTransforms(g, p);
@@ -927,6 +930,7 @@ class Game {
         const [x0, y0, x1, y1] = hot.thing.box.map((v, i) => (i < 2 ? Math.max(0, v - 16) : v + 16));
         this.at(hot.thing.box[3], () => ctx.drawImage(hot.plate!, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0));
       }
+      for (const who of people) this.drawWho(who, undefined, 'shadow');
       for (const cut of this.place.cuts) {
         if (cut.occ.thing && gone.has(cut.occ.thing)) continue;
         this.drawCard(cut);
@@ -944,10 +948,11 @@ class Game {
         const [x0, y0, x1, y1] = hot.thing.box.map((v, i) => (i < 2 ? Math.max(0, v - 16) : v + 16));
         ctx.drawImage(hot.plate, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
       }
+      // The shadows on the floor, then the things put back over them: shadows never climb onto a thing.
+      for (const who of people) this.drawWho(who, undefined, 'shadow');
+      for (const cut of this.place.cuts) if (!cut.occ.thing || !gone.has(cut.occ.thing)) this.drawCard(cut);
     }
     // Everyone is drawn far to near, and each one gets the things in front of them put back.
-    const npcs = this.place.hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc' && !h.mask);
-    const people = [...npcs.map((h) => ({ npc: h, y: h.thing.box[3] })), { npc: undefined, y: this.hero.y }].sort((a, b) => a.y - b.y);
     let rect: Rect = [0, 0, 0, 0];
     const lit = this.hover && !hideCursor ? this.hover : undefined;
     // Under the people, so someone standing in front of a highlighted thing stays in front of its outline.
@@ -955,14 +960,12 @@ class Game {
     this.drawn = [];
     for (const who of people) {
       if (who.npc) {
-        const [x0, , x1, y1] = who.npc.thing.box;
-        const x = (x0 + x1) / 2;
-        const drawn = this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, false, this.figures.get(who.npc.thing.key), '#4b3b2a', lit === who.npc, this.shift(y1), undefined, this.talking(who.npc.thing.key));
+        const drawn = this.drawWho(who, lit, 'body');
         this.drawn.push({ hot: who.npc, rect: drawn });
-        this.occlude(union(drawn, this.shadowRect), y1, gone);
+        this.occlude(drawn, who.y, gone);
       } else {
-        rect = this.drawPerson(this.hero.x, this.hero.y, this.hero.facing, this.hero.phase, this.hero.path.length > 0, this.hero.figure, '#2b2733', false, this.shift(this.hero.y), this.hero.yaw, this.talking(this.data.world.hero.key), this.hero.foot);
-        this.occlude(union(rect, this.shadowRect), this.hero.y, gone);
+        rect = this.drawWho(who, lit, 'body');
+        this.occlude(rect, this.hero.y, gone);
       }
     }
     if (this.grid) {
@@ -1000,8 +1003,19 @@ class Game {
     ctx.restore();
   }
 
-  /** Draws a person with feet at (x, y); returns the box the figure covers (its cast shadow's box is in shadowRect). */
-  private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0], yaw = facing * Math.PI / 3, talk?: 'speak' | 'listen', foot?: number): Rect {
+  /** Draws one person of the scene, an NPC or the hero: their shadow on the floor, or their body. */
+  private drawWho(who: Who, lit: Hot | undefined, layer: 'shadow' | 'body'): Rect {
+    if (who.npc) {
+      const [x0, , x1, y1] = who.npc.thing.box;
+      const x = (x0 + x1) / 2;
+      return this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, false, this.figures.get(who.npc.thing.key), '#4b3b2a', lit === who.npc, this.shift(y1), undefined, this.talking(who.npc.thing.key), undefined, layer);
+    }
+    const h = this.hero;
+    return this.drawPerson(h.x, h.y, h.facing, h.phase, h.path.length > 0, h.figure, '#2b2733', false, this.shift(h.y), h.yaw, this.talking(this.data.world.hero.key), h.foot, layer);
+  }
+
+  /** Draws a person with feet at (x, y): their shadow (layer 'shadow', returns its box) or their body (returns the box it covers). */
+  private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0], yaw = facing * Math.PI / 3, talk?: 'speak' | 'listen', foot?: number, layer: 'shadow' | 'body' = 'body'): Rect {
     const g = this.place.g;
     // Size comes from where the person stands on the floor; on stairs the feet sit on the tread under them.
     const h = personPx(g, y);
@@ -1060,20 +1074,25 @@ class Game {
     // no measured light, the blob is the whole shadow.
     const cast = g.light && g.light.length > 0 && shaded < 0.98 ? 1 - shaded : 0;
     const blob = (0.12 + 0.4 * strength) * (1 - cast);
-    if (blob > 0.01) {
-      ctx.fillStyle = `rgba(0,0,0,${blob.toFixed(3)})`;
-      ctx.beginPath();
-      ctx.ellipse(x, y, h * 0.16, Math.max(2, h * 0.035), 0, 0, Math.PI * 2);
-      ctx.fill();
+    // Shadows lie on the floor: every one is drawn before the things and the people (the shadow layer), so a
+    // near person's long shadow never darkens someone farther away or a fire behind them.
+    if (layer === 'shadow') {
+      if (blob > 0.01) {
+        ctx.fillStyle = `rgba(0,0,0,${blob.toFixed(3)})`;
+        ctx.beginPath();
+        ctx.ellipse(x, y, h * 0.16, Math.max(2, h * 0.035), 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (cast > 0) {
+        ctx.fillStyle = `rgba(0,0,0,${(0.3 * cast).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.ellipse(x, y, h * 0.07, Math.max(1.5, h * 0.014), 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      const rect = cast > 0 ? this.castShadow(x, y, h, g.light!, cast * strength, paint, [sx, sy]) : undefined;
+      ctx.restore();
+      return rect ?? [x + sx, y + sy, x + sx, y + sy];
     }
-    if (cast > 0) {
-      ctx.fillStyle = `rgba(0,0,0,${(0.3 * cast).toFixed(3)})`;
-      ctx.beginPath();
-      ctx.ellipse(x, y, h * 0.07, Math.max(1.5, h * 0.014), 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    this.shadowRect = undefined;
-    if (cast > 0) this.shadowRect = this.castShadow(x, y, h, g.light!, cast * strength, paint, [sx, sy]);
     const bright = this.lightAt(x, y - h * 0.5) * (1 - shaded * strength);
     ctx.filter = `brightness(${bright.toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}`;
     ctx.translate(x, y - bob);
@@ -1101,8 +1120,6 @@ class Game {
     return this.speech?.who || this.state.talk ? 'listen' : undefined;
   }
 
-  /** The box of the last person's cast shadow, so occluders in front can cover it too. */
-  shadowRect: Rect | undefined;
   private shadowCanvas = document.createElement('canvas');
 
   /**
