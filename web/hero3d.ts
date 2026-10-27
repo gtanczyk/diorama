@@ -66,6 +66,27 @@ void main() {
 
 type Leg = { thigh: number; shin: number; hipY: number; ankleY: number };
 
+/**
+ * Puts the bones where the skin was bound: the shape of the mesh itself (POSITION), which is the
+ * reconstructed figure the views are painted on and src/model/glb.ts measures and stands up. A rig may
+ * save the bones in another pose: Make-It-Animatable leaves them in its own T-pose, and for a figure in a
+ * long coat that pose sits, legs forward and back leant (lamp-quarter's courier, every walk frame seated).
+ * three.js binds glTF skins with an identity bind matrix, so a bone's bind world matrix is the mesh's world
+ * matrix times its inverse bind matrix. Parents first, before the figure is placed.
+ */
+function toBindPose(root: THREE.Object3D, skinned: THREE.SkinnedMesh) {
+  root.updateMatrixWorld(true);
+  const sk = skinned.skeleton;
+  const bind = new Map(sk.bones.map((b, i) => [b, skinned.matrixWorld.clone().multiply(sk.boneInverses[i].clone().invert())]));
+  const m = new THREE.Matrix4();
+  root.traverse((o) => {
+    const world = bind.get(o as THREE.Bone);
+    if (!world) return;
+    m.copy(o.parent!.matrixWorld).invert().multiply(world).decompose(o.position, o.quaternion, o.scale);
+    o.updateMatrixWorld(true);
+  });
+}
+
 export class Figure3D {
   readonly canvas = document.createElement('canvas');
   /** Where the feet are in the canvas, as a share of its height (they are centred across). */
@@ -131,6 +152,7 @@ export class Figure3D {
     });
     if (!skinned) throw new Error(`${info.glb}: no skinned mesh`);
     for (const b of skinned.skeleton.bones) this.bones[b.name.replace(/^mixamorig:?/, '')] = b;
+    toBindPose(root, skinned);
     // Feet at 0, height 1, centred: measured on the mesh as posed now.
     this.holder.add(root);
     this.holder.updateMatrixWorld(true);
