@@ -4,17 +4,19 @@ import fs from 'node:fs';
 import { defineCommand, takeOption } from '../registry.ts';
 import { Brief } from '../scene/brief.ts';
 import { Layout } from '../scene/layout.ts';
-import { Kind, makeSounds, SoundManifest } from '../sound/make.ts';
+import { Kind, makeSounds, seedLibrary, SoundManifest } from '../sound/make.ts';
 import { inputHash } from '../meta/memo.ts';
 import { planIssues, SoundPlan, withoutStrayLoops, writeSoundPlan, type PlaceSources } from '../sound/plan.ts';
+import { creditGuard, soundQuality } from '../sound/cost.ts';
 import { elevenKey, musicgenPython } from '../sound/sources.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
   name: 'sound',
-  usage: 'sound <slug>             plan and generate ambience, loops, footsteps, one-shots and music [--replan] [--plan-only] [--only bed,loop,step,shot,music] [--music auto|musicgen|eleven]',
+  usage: 'sound <slug>             plan and generate ambience, loops, footsteps, one-shots and music [--replan] [--plan-only] [--only bed,loop,step,shot,music] [--music auto|musicgen|eleven] [--final: full lengths and takes for the film; default draft spends less, reuses footsteps and UI sounds across worlds]',
   async run(args) {
+    soundQuality(args);
     const replan = args.includes('--replan');
     const planOnly = args.includes('--plan-only');
     const only = takeOption(args, 'only', '');
@@ -54,6 +56,7 @@ defineCommand({
       return;
     }
 
+    const guard = await creditGuard(elevenKey(), 'sound');
     const python = musicFrom === 'eleven' ? undefined : musicgenPython();
     if (musicFrom === 'musicgen' && !python) throw new Error('--music musicgen needs DIORAMA_PYTHON pointing at a Python with torch, transformers and scipy');
     console.log(`music: ${python ? 'MusicGen (Meta open weights) on this machine' : 'ElevenLabs (set DIORAMA_PYTHON to a Python with torch + transformers for MusicGen)'}`);
@@ -63,11 +66,12 @@ defineCommand({
     const made = await makeSounds(files.memo, plan, (id, mp3) => {
       files.write(files.path('sound', `${id}.mp3`), mp3);
       return `sound/${id}.mp3`;
-    }, { python, only: kinds, log: (line) => console.log(line) });
+    }, { python, only: kinds, log: (line) => console.log(line), old: made0.sounds, have: (e) => fs.existsSync(files.path(e.file)) });
     // A partial run keeps what it did not touch.
     const sounds = { ...(kinds ? made0.sounds : {}), ...made.sounds };
     files.write(manifestFile, { sounds });
+    for (const [id, e] of Object.entries(sounds)) if (fs.existsSync(files.path(e.file))) seedLibrary(id, e, fs.readFileSync(files.path(e.file)));
     const s = files.memo.sent;
-    console.log(`sound ${slug}: ${Object.keys(sounds).length} sounds · sent: spark ${s.spark}, sound ${s.sound}, music ${s.music} · ${manifestFile}`);
+    console.log(`sound ${slug}: ${Object.keys(sounds).length} sounds · sent: spark ${s.spark}, sound ${s.sound}, music ${s.music} · ${await guard.report()} · ${manifestFile}`);
   },
 });

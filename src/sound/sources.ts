@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inputHash, type Memo } from '../meta/memo.ts';
+import { checkCredits, noteRefusal } from './cost.ts';
 
 const ELEVEN = 'https://api.elevenlabs.io/v1';
 
@@ -17,10 +18,12 @@ export function elevenKey(): string | undefined {
 async function elevenPost(route: string, body: unknown): Promise<Buffer> {
   const key = elevenKey();
   if (!key) throw new Error('no ElevenLabs key: set ELEVENLABS_API_KEY');
+  checkCredits();
   for (let n = 1; ; n++) {
     const res = await fetch(ELEVEN + route, { method: 'POST', headers: { 'xi-api-key': key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (res.ok) return Buffer.from(await res.arrayBuffer());
     const text = (await res.text()).slice(0, 300);
+    noteRefusal(res.status, text);
     if (![429, 500, 502, 503].includes(res.status) || n === 4) throw new Error(`ElevenLabs ${route}: ${res.status} ${text}`);
     await new Promise((r) => setTimeout(r, 1000 * 2 ** n));
   }

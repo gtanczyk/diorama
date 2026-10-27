@@ -1,5 +1,7 @@
 // Spoken lines: Spark casts a voice for the narrator, the hero and every NPC from how they look and talk,
 // ElevenLabs reads each line, and Muse Voice Transcribe listens back: a take that does not say its line is read again.
+import fs from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import { inputHash, type Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
@@ -7,10 +9,10 @@ import { transcribe } from '../meta/voice.ts';
 import type { Story } from '../story/schema.ts';
 import type { World } from '../world/schema.ts';
 import { decode, encodeMp3, normalise, pitchHz, pitchShift, RATE, seconds, trim, type Pcm } from './pcm.ts';
+import { checkCredits, FINAL_TTS, lineTakes, noteRefusal, sharedDir, ttsModel } from './cost.ts';
 import { elevenKey } from './sources.ts';
 
 export const NARRATOR = 'narrator';
-const TTS_MODEL = 'eleven_multilingual_v2';
 
 export type Line = { speaker: string; text: string };
 
@@ -79,19 +81,25 @@ export type Voices = z.infer<typeof Voices>;
 export type Voice = { voice_id: string; name: string; category?: string; labels?: Record<string, string>; description?: string };
 
 async function eleven(route: string, init?: RequestInit): Promise<Response> {
+  if (init?.method === 'POST') checkCredits();
   for (let n = 1; ; n++) {
     const res = await fetch(`https://api.elevenlabs.io/v1${route}`, { ...init, headers: { 'xi-api-key': elevenKey() ?? '', 'Content-Type': 'application/json' } });
     if (res.ok) return res;
     const text = (await res.text()).slice(0, 300);
+    noteRefusal(res.status, text);
     if (![429, 500, 502, 503].includes(res.status) || n === 4) throw new Error(`ElevenLabs ${route}: ${res.status} ${text}`);
     await new Promise((r) => setTimeout(r, 1000 * 2 ** n));
   }
 }
 
-/** The stock voices every ElevenLabs account has, so a world casts the same for anyone who builds it. */
+/**
+ * The voices to cast from: the stock voices every account has, and the English voices already on this account
+ * (from the voice library or made before) that say their gender and age. Using them costs nothing extra.
+ */
 export async function stockVoices(): Promise<Voice[]> {
   const body = (await (await eleven('/voices')).json()) as { voices: Voice[] };
-  return body.voices.filter((v) => v.category === 'premade' && (v.labels?.language ?? 'en') === 'en');
+  const english = (v: Voice) => (v.labels?.language ?? 'en') === 'en';
+  return body.voices.filter((v) => english(v) && (v.category === 'premade' || (!v.name.startsWith('diorama ') && !!v.labels?.gender && !!v.labels?.age)));
 }
 
 /** The voice id of a character whose voice is designed for them rather than picked from stock. */
@@ -148,7 +156,9 @@ export async function designVoice(p: Profile, says: string[], description?: stri
     }
   }
   if (!best) throw new Error(`Voice Design refused "${tries[0]}": ${last instanceof Error ? last.message : last}`);
-  return { description: best.description, generated: best.generated, ...(best.hz && { hz: best.hz }) };
+  const design = { description: best.description, generated: best.generated, ...(best.hz && { hz: best.hz }) };
+  if (!min || best.hz >= min) keepDesign(p, design);
+  return design;
 }
 
 /** Whether the ElevenLabs account can hold one more voice (a designed voice needs it while its lines are read). */
@@ -159,6 +169,30 @@ export async function freeVoiceSlot(): Promise<boolean> {
   } catch {
     return true;
   }
+}
+
+type DesignKept = NonNullable<Cast[string]['design']> & { gender: Profile['gender']; age: Profile['age'] };
+const designsFile = () => sharedDir('voices', 'designs.json');
+
+/** Voices designed before, by any world on this machine: a design is kept by ElevenLabs and can be made into a voice again. */
+export function keptDesigns(): DesignKept[] {
+  try {
+    return JSON.parse(fs.readFileSync(designsFile(), 'utf8')) as DesignKept[];
+  } catch {
+    return [];
+  }
+}
+
+function keepDesign(p: Profile, d: NonNullable<Cast[string]['design']>) {
+  const all = keptDesigns().filter((k) => k.generated !== d.generated);
+  fs.mkdirSync(path.dirname(designsFile()), { recursive: true });
+  fs.writeFileSync(designsFile(), JSON.stringify([...all, { ...d, gender: p.gender, age: p.age }], null, 1));
+}
+
+/** A kept design of the same gender and age that this cast does not use yet: reused instead of designing (and paying) again. */
+export function reusableDesign(p: Profile, taken: Set<string>): NonNullable<Cast[string]['design']> | undefined {
+  const k = keptDesigns().find((d) => d.age === p.age && (d.gender === p.gender || p.gender === 'any') && !taken.has(d.generated));
+  return k && { description: k.description, generated: k.generated, ...(k.hz && { hz: k.hz }) };
 }
 
 /**
@@ -235,7 +269,14 @@ export async function castVoices(memo: Memo, world: World, lines: Line[], voices
   const keys = [...new Set(lines.map((l) => l.speaker))];
   const byKey = new Map(speakers.map((s) => [s.key, s]));
   const profiles = Object.fromEntries(await Promise.all(keys.map(async (k) => [k, await profileOf(memo, world, { ...(byKey.get(k) ?? { key: k, looks: k }), says: lines.filter((l) => l.speaker === k).slice(0, 4).map((l) => l.text) })] as const)));
+  const taken = new Set<string>();
+  const reused = Object.fromEntries(keys.filter((k) => needsDesign(profiles[k])).flatMap((k) => {
+    const d = reusableDesign(profiles[k], taken);
+    if (d) taken.add(d.generated);
+    return d ? [[k, d] as const] : [];
+  }));
   const designs = Object.fromEntries(await Promise.all(keys.filter((k) => needsDesign(profiles[k])).map(async (k) => {
+    if (reused[k]) return [k, reused[k]] as const;
     try {
       return [k, await designVoice(profiles[k], lines.filter((l) => l.speaker === k).map((l) => l.text))] as const;
     } catch (error) {
@@ -312,12 +353,15 @@ function pcm24k(pcm: Pcm): Buffer {
 }
 
 function speak(memo: Memo, label: string, text: string, voice: Cast[string], take: number, designed?: DesignedVoices): Promise<Buffer> {
-  const body = { text, model_id: TTS_MODEL, voice_settings: { stability: voice.stability, similarity_boost: 0.8, style: voice.style, use_speaker_boost: true }, ...(take > 1 && { seed: 1000 + take }) };
+  const body = (model: string) => ({ text, model_id: model, voice_settings: { stability: voice.stability, similarity_boost: 0.8, style: voice.style, use_speaker_boost: true }, ...(take > 1 && { seed: 1000 + take }) });
   // A designed voice gets a new id each time it is created, so its takes are remembered by the design.
-  return memo.remember('voice', label, inputHash('eleven-tts', voice.design?.generated ?? voice.voice, JSON.stringify(body)), 'mp3', async () => {
+  const hash = (model: string) => inputHash('eleven-tts', voice.design?.generated ?? voice.voice, JSON.stringify(body(model)));
+  // A take already read by the better model is used in a draft too, so lowering the quality never pays again.
+  const model = [FINAL_TTS, ttsModel()].find((m) => memo.has('voice', hash(m), 'mp3')) ?? ttsModel();
+  return memo.remember('voice', label, hash(model), 'mp3', async () => {
     if (voice.design && !designed) throw new Error('a designed voice needs DesignedVoices to speak');
     const id = voice.design ? await designed!.idFor(voice.design) : voice.voice;
-    return Buffer.from(await (await eleven(`/text-to-speech/${id}?output_format=mp3_44100_128`, { method: 'POST', body: JSON.stringify(body) })).arrayBuffer());
+    return Buffer.from(await (await eleven(`/text-to-speech/${id}?output_format=mp3_44100_128`, { method: 'POST', body: JSON.stringify(body(model)) })).arrayBuffer());
   });
 }
 
@@ -326,18 +370,19 @@ export const lineId = (line: Line) => `line-${inputHash(line.speaker, line.text)
 /** Close enough: 90% of the letters, or at most two letters off, so a short line is not failed for one misheard word ("a" for "of"). */
 export const heardOk = (line: string, match: number) => match >= 0.9 || (1 - match) * letters(line).length <= 2.01;
 
-/** Reads one line, listens back, and reads it again (up to 3 takes) until the transcript matches. */
+/** Reads one line, listens back, and reads it again (up to 3 takes, 2 in draft) until the transcript matches. */
 export async function voiceLine(memo: Memo, line: Line, voice: Cast[string], write: (id: string, mp3: Buffer) => string, designed?: DesignedVoices): Promise<z.infer<typeof VoiceLine>> {
   const id = lineId(line);
   let best: { pcm: Pcm; heard: string; match: number; take: number } | undefined;
-  for (let take = 1; take <= 3; take++) {
+  const takes = lineTakes();
+  for (let take = 1; take <= takes; take++) {
     const pcm = pitchShift(trim(decode(await speak(memo, `${id}-${take}`, line.text, voice, take, designed)), 0.005), voice.pitch ?? 0);
     const heard = await transcribe(memo, `${id}-${take}`, pcm24k(pcm), 10);
     const match = heardMatch(line.text, heard);
     if (!best || match > best.match) best = { pcm, heard, match, take };
     if (heardOk(line.text, match)) break;
   }
-  const flags = !heardOk(line.text, best!.match) ? [`heard ${Math.round(best!.match * 100)}% of the line after 3 takes`] : best!.take > 1 ? [`take ${best!.take} used`] : [];
+  const flags = !heardOk(line.text, best!.match) ? [`heard ${Math.round(best!.match * 100)}% of the line after ${takes} takes`] : best!.take > 1 ? [`take ${best!.take} used`] : [];
   const pcm = normalise(best!.pcm, -18);
   return { speaker: line.speaker, text: line.text, file: write(id, encodeMp3(pcm, 96)), seconds: Math.round(seconds(pcm) * 100) / 100, heard: best!.heard, match: Math.round(best!.match * 100) / 100, flags };
 }

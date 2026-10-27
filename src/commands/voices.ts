@@ -2,6 +2,7 @@
 // ElevenLabs reads, Muse Voice Transcribe checks each take says its line.
 import fs from 'node:fs';
 import { defineCommand } from '../registry.ts';
+import { creditGuard, soundQuality } from '../sound/cost.ts';
 import { elevenKey } from '../sound/sources.ts';
 import { castVoices, DESIGNED, freeVoiceSlot, voiceCandidates, DesignedVoices, designDescriptions, designVoice, needsDesign, stockVoices, storyLines, voiceLine, Voices, type Cast } from '../sound/voices.ts';
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
@@ -10,8 +11,9 @@ import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
   name: 'voices',
-  usage: 'voices <slug>            cast a voice per character (stock, or designed by ElevenLabs Voice Design for children, teens and the old) and speak every story line, checked by Muse Voice Transcribe; conversations, intro and endings [--all: every line] [--recast]',
+  usage: 'voices <slug>            cast a voice per character (stock, or designed by ElevenLabs Voice Design for children, teens and the old) and speak every story line, checked by Muse Voice Transcribe; conversations, intro and endings [--all: every line] [--recast] [--final: the best speech model and 3 takes, for the film; default draft costs half]',
   async run(args) {
+    soundQuality(args);
     const recast = args.includes('--recast');
     const [slug] = args.filter((a) => !a.startsWith('--'));
     if (!slug) throw new Error('usage: diorama voices <slug>');
@@ -20,6 +22,7 @@ defineCommand({
     if (!fs.existsSync(files.path('story.json'))) return void console.log('no story.json: nothing to say');
     if (!elevenKey()) return void console.log('no ELEVENLABS_API_KEY: lines stay unspoken');
     const story = Story.parse(files.readJson(files.path('story.json')));
+    const guard = await creditGuard(elevenKey(), 'voices');
     const lines = storyLines(world, story, args.includes('--all'));
     const outFile = files.path('voices.json');
     const old = fs.existsSync(outFile) ? Voices.parse(files.readJson(outFile)) : undefined;
@@ -51,6 +54,7 @@ defineCommand({
     }
     for (const [who, v] of Object.entries(cast)) console.log(`  ${who.padEnd(16)} ${v.profile ? `${v.profile.age} ${v.profile.gender}`.padEnd(18) : ''} ${v.design ? 'designed' : v.voice}${v.pitch ? ` +${v.pitch} st` : ''}  ${v.why}`);
 
+    // Lines no longer in the story go; the rest are rewritten (from the cache when nothing about them changed).
     fs.rmSync(files.path('sound', 'voice'), { recursive: true, force: true });
     // No free voice slot on the account: a designed voice cannot be created, so the nearest stock voice stands in.
     if (Object.values(cast).some((c) => c.design) && !(await freeVoiceSlot())) {
@@ -94,6 +98,6 @@ defineCommand({
     const spoken = done.filter(Boolean);
     files.write(outFile, { cast, lines: spoken });
     const s = files.memo.sent;
-    console.log(`voices ${slug}: ${spoken.length}/${lines.length} lines, ${spoken.filter((l) => l.flags.some((f) => f.startsWith('heard'))).length} flagged · sent: spark ${s.spark}, voice ${s.voice} · ${outFile}`);
+    console.log(`voices ${slug}: ${spoken.length}/${lines.length} lines, ${spoken.filter((l) => l.flags.some((f) => f.startsWith('heard'))).length} flagged · sent: spark ${s.spark}, voice ${s.voice} · ${await guard.report()} · ${outFile}`);
   },
 });
