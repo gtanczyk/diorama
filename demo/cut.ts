@@ -1,15 +1,16 @@
 // The demo film's edit as data: demo/cut.json lists the shots, this script renders them with ffmpeg.
 // npx tsx demo/cut.ts [demo/cut.json] [out.mp4]
 // A shot is a clip (`src`, optional `from`), a still (`image`) or a title card (`card`), held for `dur` seconds;
-// `fade` blends it in over the previous shot. Paths are relative to the cut file. Missing clips render as a
-// labelled placeholder card, so the cut always plays end to end while the real shots are still being made.
+// `fade` blends it in over the previous shot; `speed` plays a clip faster (a model's wait at 40x).
+// Paths are relative to the cut file. Missing clips render as a labelled placeholder card,
+// so the cut always plays end to end while the real shots are still being made.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
 
-type Shot = { name: string; dur: number; src?: string; from?: number; image?: string; card?: string; fade?: number };
+type Shot = { name: string; dur: number; src?: string; from?: number; speed?: number; image?: string; card?: string; fade?: number };
 type Cut = { fps?: number; shots: Shot[] };
 
 const W = 1920, H = 1080;
@@ -32,6 +33,7 @@ async function main() {
   const fit = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,fps=${fps},format=yuv420p,setsar=1`;
 
   // Every shot becomes a same-sized, same-rate segment, running past its slot by the overlap with the next one.
+  // A clip shorter than its slot holds its last frame, so the joins below never run out of picture.
   const segments: string[] = [];
   for (const [i, shot] of cut.shots.entries()) {
     const next = cut.shots[i + 1];
@@ -39,15 +41,16 @@ async function main() {
     const seg = path.join(tmp, `${String(i).padStart(3, '0')}.mp4`);
     const src = shot.src && path.resolve(base, shot.src);
     const image = shot.image && path.resolve(base, shot.image);
+    const speed = shot.speed ?? 1;
     let input: string[];
-    if (src && fs.existsSync(src)) input = ['-ss', String(shot.from ?? 0), '-t', String(len), '-i', src];
+    if (src && fs.existsSync(src)) input = ['-ss', String(shot.from ?? 0), '-t', String(len * speed), '-i', src];
     else {
       const png = path.join(tmp, `${i}.png`);
       if (image && fs.existsSync(image)) fs.copyFileSync(image, png);
       else fs.writeFileSync(png, await cardPng(shot.card ?? shot.name, shot.card ? '' : `placeholder: ${shot.src ?? shot.image ?? 'to shoot'}`));
       input = ['-loop', '1', '-t', String(len), '-i', png];
     }
-    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...input, '-vf', fit, '-an', '-t', String(len), '-c:v', 'libx264', '-crf', '18', seg]);
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...input, '-vf', `${speed === 1 ? '' : `setpts=PTS/${speed},`}${fit},tpad=stop_mode=clone:stop_duration=${len}`, '-an', '-t', String(len), '-c:v', 'libx264', '-crf', '18', '-video_track_timescale', '15360', seg]);
     segments.push(seg);
   }
 

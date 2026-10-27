@@ -41,6 +41,6 @@ defineCommand({
       place: placeKey, beat, fade,
       beats: beats.map((b, i) => ({ key: b.key, title: b.title, by: b.by, start: i * beat, still: stills[i] })),
     });
-    console.log(`${mp4}: ${beats.length} beats (${beats.map((b) => b.key).join(' > ')}), ${beats.length * beat}s`);
+    console.log(`${mp4}: ${beats.length} beats (${beats.map((b) => b.key).join(' > ')}), ${Math.round(beats.length * beat * 10) / 10}s`);
   },
 });
