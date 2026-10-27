@@ -5,8 +5,8 @@
 import type { Job } from './jobs.ts';
 
 /** Whether a job that just ended should wake the agent. */
-export function wantsRepair(job: Job, opts: { enabled: boolean; agentBusy: boolean }): boolean {
-  if (!opts.enabled || opts.agentBusy) return false;
+export function wantsRepair(job: Job, opts: { enabled: boolean }): boolean {
+  if (!opts.enabled) return false;
   // The agent's own fix jobs come back to it through job_wait; only builds someone else started wake it.
   if (job.by === 'agent' || job.args[0] !== 'build') return false;
   return job.state === 'failed' && (job.unplayable?.length ?? 0) > 0;

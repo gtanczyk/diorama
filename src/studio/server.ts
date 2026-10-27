@@ -160,7 +160,8 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
   events.subscribe((e) => {
     if (e.type !== 'job.end' || !e.world) return;
     const job = e.job as Job;
-    if (!wantsRepair(job, { enabled: readBudget().autoRepair, agentBusy: agents?.busy(e.world) ?? true })) return;
+    // A busy agent gets it after its turn: the Studio's messages wait as notes.
+    if (!agents || !wantsRepair(job, { enabled: readBudget().autoRepair })) return;
     events.publish('repair.agent', { world: e.world, job: job.id, places: (job.unplayable ?? []).map((u) => u.place) });
     agents.say(e.world, repairPrompt(job), 'studio').catch((error) => events.publish('log', { world: e.world, stream: 'err', line: `could not wake the agent: ${error instanceof Error ? error.message : error}` }));
   });

@@ -16,9 +16,14 @@ Start long work with world_build or run_step and follow it with job_wait. Call u
 Every place moves as a diorama (the backdrop step: cut-out things over a painted backdrop, far flats, flowing water). When the person says the water runs the wrong way or should stand still, call water_flow (reverse, still, or auto with a hint in their words), then show the place; never edit files by hand.
 To fix a place use the fix tools, which are kept across rebuilds: mask_fix (a better SAM phrase, the real box, or the kind of a thing), floor_cells, mask_brush, stand_set, repaint_region (costs a Muse edit); corrections_get shows what is fixed already, corrections_clear takes fixes back. When asked to go through the person's notes, read feedback_pending, fix each one and close it with feedback_done in one sentence. Check budget before a rebuild of many places.
 Before a risky change, say what you will do; history_undo can take back a job. Respect locks. Keys are never yours: if a key is missing, ask the person to run \`diorama setup\` in a terminal.
-Read files freely to find out why something failed, but do not edit world files or run commands that change them: make every change through the diorama MCP tools, so the person sees it live, can undo it, and it survives the next build (a hand edit is overwritten by the next build). If no tool can make a change you need, say so and describe the tool that is missing instead of working around it. Start from world_status, place_status, job_wait, corrections_get and feedback_pending.
+Read files freely to find out why something failed, but do not edit world files or run commands that change them: make every change through the diorama MCP tools, so the person sees it live, can undo it, and it survives the next build (a hand edit is overwritten by the next build). If no tool can make a change you need, say so and describe the tool that is missing instead of working around it. Start from world_status, place_status, place_view, job_wait, corrections_get and feedback_pending: place_view shows you a place as a picture (layer walk, masks or painting), which files and the shell cannot. Reach for the shell only when no Studio tool answers the question.
 When a build leaves places not playable, repair them one by one: place_status lists each error with its playbook (where to look, the fix tools in order, the last resort), and place_view shows you the walkable floor with the 60 px cells floor_cells takes, the gaps to bridge and the spots off the floor. Try the tools in that order; each fix rebuilds only that place, so read place_status again after its job ends. Stop after three fixes that did not change the error, and tell the person what you tried and what you would do next. Ask before the last resort, except one repaint_region per place.
 Answer briefly, in the person's language.`;
+
+const NUDGE_AFTER = 3;
+const NUDGE = '[Studio] You are using the shell a lot. Look with the Studio tools instead: place_view shows a place as a picture '
+  + '(layer walk: reachable floor, gaps, spots; masks: each thing\'s mask against where it should be; painting: the grid), place_status '
+  + 'gives each error with its playbook, corrections_get the fixes so far. Change things only with the fix tools.';
 
 /**
  * A call of one of the Studio's MCP tools: not a shell, process or file access, and named for the diorama
@@ -48,6 +53,8 @@ class Talk {
   rebrief() {
     this.briefed = false;
   }
+  /** Tool calls outside the Studio's in the current turn. */
+  outside = 0;
   /** How far each turn's transcript has been announced on the event feed. */
   private seen = new Map<number, number>();
   private ended = new Set<number>();
@@ -88,6 +95,7 @@ class Talk {
     for (const turn of state.turns) {
       if (!this.seen.has(turn.id)) {
         this.seen.set(turn.id, 0);
+        this.outside = 0;
         this.publish('turn.start', { turn: turn.id });
       }
       const from = this.seen.get(turn.id)!;
@@ -171,6 +179,12 @@ export class AgentHub {
       autoApprove: (request) => {
         if (studioTool(request) || readsOnly(request)) return 'approve';
         t?.record({ type: 'outside', kind: request.kind, detail: request.detail });
+        // The shell sees files, not the pictures the Studio's tools show: after a few shell calls in a turn,
+        // the agent is reminded once which tools look for it. It is still let through.
+        if (t && ++t.outside === NUDGE_AFTER) {
+          t.publish('nudge', { text: NUDGE });
+          setTimeout(() => session.send(NUDGE), 0);
+        }
         return ask ? undefined : 'approve';
       },
       // The first prompt carries the brief; later ones resume Muse's own session and go as typed.
@@ -233,12 +247,8 @@ export class AgentHub {
         new History(dir).snapshot(`agent: ${text.slice(0, 60)}`, 'agent');
       } catch {}
     }
-    t.session.send(text);
-  }
-
-  /** Whether this world's agent is in the middle of a turn. */
-  busy(slug: string): boolean {
-    return this.talks.get(slug)?.session.get().status === 'running';
+    // The Studio's own messages go as host notes: never steered into a running turn, they run after it.
+    t.session.send(text, from === 'studio' ? { note: true } : undefined);
   }
 
   stop(slug: string) {
