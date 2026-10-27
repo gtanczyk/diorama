@@ -153,6 +153,8 @@ export function KidsStart({ slug, taken, onBuild, onError, children }: { slug: s
     setIdea('');
     void load();
   }, [slug]);
+  // The reading stops when the screen goes (Build moves on to the waiting show, which reads the story itself).
+  useEffect(() => () => reader.current?.pause(), []);
   /** Runs one piece of work with a line saying what is happening, then reloads what the world has. */
   const work = async (what: string, run: () => Promise<unknown>) => {
     setBusy((b) => [...b, what]);
