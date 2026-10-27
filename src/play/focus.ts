@@ -1,6 +1,7 @@
-// focus: the camera focuses on the hero, so what stands behind them goes soft and a little paler with its
-// distance, like a real diorama shot close up. It is what tells a figure from the painted thing at their back:
-// both are painted equally sharp, and only the depth map knows which is farther.
+// focus: what sets a person apart from the painted thing at their back. Both are painted equally sharp and
+// equally lit, so the runtime adds the cues: a rim of light on the person's lit edge, a soft shade they throw
+// on what stands just behind them (only there, by the depth map), and, opt-in, the camera's focus on the hero
+// softening what is far behind.
 // No Node imports: the browser bundles this file.
 import type { Depth } from './shadow.ts';
 
