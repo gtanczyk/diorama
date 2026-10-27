@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import type { Geometry } from '../src/play/geometry.ts';
 import { diagnose } from '../src/scene/diagnose.ts';
+import { emptyMask } from '../src/image/mask.ts';
 
 /** 1200x896 at 8 px: a front floor and a back floor with a band of closed rows between. */
 function geometry(band: [number, number]): Geometry {
@@ -61,17 +62,26 @@ test('a mask Spark sees on the wrong thing: an error for an item, its box handed
   expect(fixes.find((f) => f.what.includes('bell'))!.from).toBe('masks');
 });
 
-test('a long gap is bridged only along stairs (a walk-on thing in it), never across bare ground or a standing thing', async () => {
+test('a long gap is bridged only along stairs whose mask reaches both floors, never across bare ground or a standing thing', async () => {
   const { autoFixes } = await import('../src/scene/autofix.ts');
   const err = [{ code: 'FLOOR_UNREACHABLE', key: '1', detail: 'floor 1 has walkable cells but none reachable' }];
   const g = geometry([50, 80]);
   expect(autoFixes(g, ['quay', 'deck'], err)).toEqual([]);
   const stairs = { ...g, things: [{ key: 'stairs', kind: 'walk-on' as const, role: 'prop' as const, box: [0, 380, 1200, 660] as [number, number, number, number], stand: [600, 860] as [number, number] }] };
-  const fixes = autoFixes(stairs, ['quay', 'deck'], err);
+  const band = (y0: number, y1: number) => {
+    const m = emptyMask(1200, 896);
+    m.bits.fill(1, y0 * 1200, y1 * 1200);
+    return m;
+  };
+  const fixes = autoFixes(stairs, ['quay', 'deck'], err, { stairs: band(380, 660) });
   expect(fixes).toHaveLength(1);
   expect(fixes[0].what).toMatch(/along stairs/);
+  // Stairs that climb from the far floor to somewhere else, with water before the near floor, join nothing.
+  expect(autoFixes(stairs, ['quay', 'deck'], err, { stairs: band(200, 420) })).toEqual([]);
+  // No mask to check: no bridge on the strength of a box alone.
+  expect(autoFixes(stairs, ['quay', 'deck'], err)).toEqual([]);
   const wall = { ...stairs, things: [{ ...stairs.things[0], kind: 'standing' as const }] };
-  expect(autoFixes(wall, ['quay', 'deck'], err)).toEqual([]);
+  expect(autoFixes(wall, ['quay', 'deck'], err, { stairs: band(380, 660) })).toEqual([]);
 });
 
 test('a mask check doubt without a box is a flag, not an error', async () => {

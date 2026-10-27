@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import { defineCommand, emit, registry, takeOption } from '../registry.ts';
 import { Geometry } from '../play/geometry.ts';
+import { maskFromPng, type Mask } from '../image/mask.ts';
 import { autoFixes } from '../scene/autofix.ts';
 import { Corrections, readCorrections, writeCorrections } from '../scene/corrections.ts';
 import { Layout } from '../scene/layout.ts';
@@ -130,7 +131,12 @@ defineCommand({
             try {
               const geometry = Geometry.parse(files.readJson(files.place(r.place, 'geometry.json')));
               const floors = Layout.parse(files.readJson(files.place(r.place, 'layout.json'))).floors.map((f) => f.key);
-              fixes = autoFixes(geometry, floors, r.issues);
+              // Walk-on masks: a bridge is drawn along stairs only when they reach both floors.
+              const masks: Record<string, Mask> = {};
+              for (const t of geometry.things) {
+                if (t.kind === 'walk-on' && t.mask && fs.existsSync(files.place(r.place, t.mask))) masks[t.key] = await maskFromPng(fs.readFileSync(files.place(r.place, t.mask)));
+              }
+              fixes = autoFixes(geometry, floors, r.issues, masks);
             } catch (error) {
               fixes = [];
               console.log(`${r.place}: could not look for a free fix: ${error instanceof Error ? error.message : error}`);
