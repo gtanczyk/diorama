@@ -123,11 +123,20 @@ class Talk {
   }
 }
 
+/**
+ * Codex asks before each MCP tool call through a request the app server's approval routing does not carry,
+ * so the call was refused before the panel could show it. The Studio's own tools are approved anyway (as for
+ * Muse and Claude): tell Codex so for the diorama server. Shell and file approvals still come to the panel.
+ */
+export function preapproved(agent: CodingAgent): CodingAgent {
+  return { ...agent, run: (task) => agent.run({ ...task, extraArgs: [...(task.extraArgs ?? []), '-c', 'mcp_servers.diorama.default_tools_approval_mode="approve"'] }) };
+}
+
 /** The agents the Studio offers: those genaicode can hand the Studio's MCP server to. Muse Code first, the default. */
 export const AGENTS = {
   muse: { label: 'Muse Code', make: (command?: string) => museLive({ command: command ?? process.env.DIORAMA_MUSE_COMMAND ?? 'muse' }) },
   claude: { label: 'Claude Code', make: () => claude() },
-  codex: { label: 'Codex', make: () => codexLive() },
+  codex: { label: 'Codex', make: () => preapproved(codexLive()) },
 } satisfies Record<string, { label: string; make(command?: string): CodingAgent }>;
 export type AgentName = keyof typeof AGENTS;
 export const isAgentName = (name: string): name is AgentName => Object.hasOwn(AGENTS, name);

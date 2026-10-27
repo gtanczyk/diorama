@@ -99,3 +99,11 @@ test('each conversation is recorded turn by turn, so the film can replay it', as
   expect(list[0].turns).toBeGreaterThanOrEqual(2);
   expect(list[0].prompts).toContain('what worlds are there?');
 });
+
+test('Codex gets the Studio\'s tools pre-approved, on top of whatever else the task passes', async () => {
+  const { preapproved } = await import('../src/studio/agent.ts');
+  const seen: unknown[] = [];
+  const agent = preapproved({ name: 'codex', command: 'codex', capabilities: {}, run: (task) => (seen.push(task.extraArgs), {} as never) } as never);
+  agent.run({ prompt: 'hi', cwd: '.', extraArgs: ['--x'] } as never);
+  expect(seen[0]).toEqual(['--x', '-c', 'mcp_servers.diorama.default_tools_approval_mode="approve"']);
+});
