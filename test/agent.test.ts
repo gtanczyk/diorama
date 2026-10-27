@@ -44,6 +44,17 @@ test('a message runs Muse with the Studio MCP server, without keys, and its tool
   expect(state.turns.map((t: { role: string }) => t.role)).toEqual(['user', 'agent']);
 });
 
+test('the next message resumes the same Muse session and sends only the new text', async () => {
+  const seen: StudioEvent[] = [];
+  const off = studio.events.subscribe((e) => seen.push(e));
+  await post('api/agent/harbour/say', { text: 'and the first one?' });
+  const deadline = Date.now() + 10_000;
+  while (!seen.some((e) => e.type === 'agent.turn.end') && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+  off();
+  const message = seen.find((e) => e.type === 'agent.message') as Record<string, unknown> | undefined;
+  expect(message?.text).toBe('worlds:1 no-key heard:and the first one? resumed:s1');
+});
+
 test('the agent cannot post to its own conversation', async () => {
   const res = await fetch(`${studio.url}api/agent/harbour/say`, { method: 'POST', headers: { authorization: `Bearer ${studio.agentToken}`, 'content-type': 'application/json' }, body: '{"text":"hi"}' });
   expect(res.status).toBe(404);
