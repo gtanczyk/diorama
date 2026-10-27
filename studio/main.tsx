@@ -238,6 +238,8 @@ function Workshop({ slug }: { slug: string }) {
   const [live, setLive] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
   const [running, setRunning] = useState<Record<string, 'run' | 'fail'>>({});
+  /** Places the build is mending right now, with what it tries. */
+  const [repairing, setRepairing] = useState<Record<string, string>>({});
   const [calls, setCalls] = useState(0);
   const [focus, setFocus] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -277,6 +279,12 @@ function Workshop({ slug }: { slug: string }) {
           return add(e, `${e.type === 'job.end' ? (job.state === 'done' ? 'done' : job.state) : e.type === 'job.start' ? 'started' : 'queued'}: ${job.label} (by ${job.by})${job.error ? ` · ${job.error}` : ''}`, e.type === 'job.end' && job.state !== 'done' ? 'err' : 'job');
         }
         case 'history.undo': soon(); setCanRedo(!e.redo); setPlaying((p) => (p ? { ...p, round: (p.round ?? 0) + 1 } : p)); return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.redo ? 'redo' : `undo to ${e.id}`} · ${(e.restored as string[]).length} restored, ${(e.removed as string[]).length} removed`, e.by === 'agent' ? 'agent' : 'act');
+        // The build mending itself: free fixes first, then the agent is asked.
+        case 'place.fail': return add(e, `✕ ${e.place}: ${e.step} failed, set aside · ${e.error}`, 'err');
+        case 'place.verdict': if (e.ok) return; return add(e, `✕ ${e.place}: not playable · ${(e.errors as string[] | undefined)?.join('; ') || 'see verify'}`, 'err');
+        case 'repair.start': setRepairing((r) => ({ ...r, [String(e.place)]: `repairing: ${(e.fixes as string[]).join('; ')}` })); return add(e, `↻ ${e.place}: repairing · ${(e.fixes as string[]).join('; ')}`, 'step');
+        case 'repair.end': setRepairing((r) => { const n = { ...r }; delete n[String(e.place)]; return n; }); soon(); return add(e, `${e.ok ? '✓' : '✕'} ${e.place}: ${e.ok ? 'repaired, playable' : 'still not playable, left for the agent'}`, e.ok ? 'step' : 'err');
+        case 'repair.agent': return add(e, `agent asked to repair ${(e.places as string[]).join(', ')}`, 'agent');
         case 'lock.changed': return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.locked ? 'locked' : 'unlocked'} ${e.place ?? 'the world'}`, 'act');
         case 'action.start': if (quiet.has(String(e.action)) && e.by !== 'agent') return; return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.action}`, e.by === 'agent' ? 'agent' : 'act');
         case 'ui.focus':
@@ -344,7 +352,7 @@ function Workshop({ slug }: { slug: string }) {
                   {p.image ? <img src={fileUrl(slug, p.image.file, p.image.v)} alt={p.shows} loading="lazy" /> : <div class="noimg">{p.stages.layout ? 'laid out' : 'waiting'}</div>}
                   <span class="name">
                     <strong>{p.key}</strong>
-                    {p.verdict ? <span class={`badge ${p.verdict.ok ? 'ok' : 'fail'}`}>{p.verdict.ok ? 'playable' : `${p.verdict.errors.length} errors`}</span> : <span class="badge">{Object.values(p.stages).filter(Boolean).length}/7</span>}
+                    {repairing[p.key] ? <span class="badge run" title={repairing[p.key]}>repairing</span> : p.verdict ? <span class={`badge ${p.verdict.ok ? 'ok' : 'fail'}`}>{p.verdict.ok ? 'playable' : `${p.verdict.errors.length} errors`}</span> : <span class="badge">{Object.values(p.stages).filter(Boolean).length}/7</span>}
                   </span>
                 </button>
               </li>

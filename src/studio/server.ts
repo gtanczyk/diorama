@@ -166,6 +166,8 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
     agents.say(e.world, repairPrompt(job), 'studio').catch((error) => events.publish('log', { world: e.world, stream: 'err', line: `could not wake the agent: ${error instanceof Error ? error.message : error}` }));
   });
 
+  // The game and pictures read the world through the Studio's session cookie; a browser that never opened the Studio has none.
+  const NO_SESSION = 'no session: open the Studio link from `diorama studio` in this browser first, or play the world on its own with `diorama play <slug>`';
   const server = http.createServer(async (req, res) => {
     const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'cross-origin-resource-policy': 'same-origin' };
     const send = (status: number, type: string, body: string | Buffer, extra: Record<string, string> = {}) => {
@@ -317,7 +319,7 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
       // reading the world through the session cookie like the pictures do.
       const play = /^\/play\/([a-z][a-z0-9-]*)\/(.*)$/.exec(url.pathname);
       if (play) {
-        if (!cookieOk) return send(401, 'text/plain', 'no session');
+        if (!cookieOk) return send(401, 'text/plain', NO_SESSION);
         const [, slug, rest] = play;
         if (!fs.existsSync(path.join(root, slug, 'world.json'))) return send(404, 'text/plain', 'no such world yet');
         const framed = { 'content-security-policy': PLAY_CSP, 'x-frame-options': 'SAMEORIGIN' };
@@ -328,7 +330,7 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
         else return send(404, 'text/plain', 'not found');
       }
       if (url.pathname.startsWith('/files/')) {
-        if (!cookieOk) return send(401, 'text/plain', 'no session');
+        if (!cookieOk) return send(401, 'text/plain', NO_SESSION);
         const [slug, ...rest] = decodeURIComponent(url.pathname.slice('/files/'.length)).split('/');
         if (!Slug.safeParse(slug).success) return send(404, 'text/plain', 'not found');
         const dir = path.join(root, slug);

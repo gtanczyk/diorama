@@ -76,6 +76,7 @@ main.workshop { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap:
 .badge { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: var(--raised); color: var(--muted); }
 .badge.ok { color: var(--ok); }
 .badge.fail { color: var(--bad); }
+.badge.run { color: var(--accent); }
 .inspect { padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; }
 .inspect p { margin: 6px 0; }
 
