@@ -58,7 +58,8 @@ defineCommand({
       files.write(at('backdrop.png'), png);
       files.write(at('backdrop.json'), report);
       const stuck = Object.entries(report).filter(([, r]) => r.stillThere).map(([k]) => k);
-      console.log(`${place.key}: backdrop behind ${keys.join(', ')}${stuck.length ? ` (Muse left ${stuck.join(', ')}: smeared there)` : ''}`);
+      const ghosts = Object.entries(report).filter(([, r]) => r.ghost).map(([k]) => k);
+      console.log(`${place.key}: backdrop behind ${keys.join(', ')}${stuck.length ? ` (Muse left ${stuck.join(', ')}: smeared there)` : ''}${ghosts.length ? ` (a silhouette of ${ghosts.join(', ')} was left: painted over again)` : ''}`);
       // The far view as flats one behind another (layers/), so it has depth of its own.
       fs.rmSync(at('layers'), { recursive: true, force: true });
       fs.rmSync(at('layers.json'), { force: true });
