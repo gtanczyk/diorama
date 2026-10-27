@@ -23,7 +23,7 @@ export const Geometry = z.object({
     mask: z.string().optional().describe('path relative to the place folder; npcs have none'),
     stand: XY.describe('walkable spot to stand at when using it'),
     coarse: z.boolean().optional(),
-    /** The painting with this thing removed (plates/<thing>.png), drawn inside its mask once the story carries it off. */
+    /** Where this thing was, painted empty (plates/<thing>.png: the patch only, transparent elsewhere), drawn once the story carries it off. */
     plate: z.string().optional(),
   })),
   /** One per connected blob of a thing's mask; it hides the mask's pixels inside its box. */

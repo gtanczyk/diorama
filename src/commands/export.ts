@@ -17,7 +17,7 @@ export async function exportWorld(slug: string, out: string): Promise<void> {
     const target = asJpeg ? rel.replace(/\.png$/, '.jpg') : rel;
     const dest = path.join(out, 'files', target);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
-    // Paintings and plates are opaque, so JPEG keeps them a fraction of the size; masks and figures stay PNG.
+    // Paintings are opaque, so JPEG keeps them a fraction of the size; masks and figures stay PNG.
     if (asJpeg) await sharp(files.path(rel)).jpeg({ quality: 88, mozjpeg: true }).toFile(dest);
     else fs.copyFileSync(files.path(rel), dest);
     return target;
@@ -35,7 +35,8 @@ export async function exportWorld(slug: string, out: string): Promise<void> {
     }
     for (const thing of entry.geometry?.things ?? []) {
       if (thing.mask) await copy(`places/${key}/${thing.mask}`);
-      if (thing.plate) thing.plate = path.posix.relative(`places/${key}`, await copy(`places/${key}/${thing.plate}`, true));
+      // A plate is the patch where the thing was, transparent elsewhere, so PNG.
+      if (thing.plate) thing.plate = path.posix.relative(`places/${key}`, await copy(`places/${key}/${thing.plate}`));
     }
     for (const occ of entry.geometry?.occluders ?? []) if (occ.mask) await copy(`places/${key}/${occ.mask}`);
     if (entry.geometry?.shadows) await copy(`places/${key}/${entry.geometry.shadows}`);
