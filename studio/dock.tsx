@@ -1,12 +1,13 @@
 // The agent's side of the Workshop: docked right or left at a width you drag, floating as a window you move and
 // resize, or folded to a thin bar. Kept per machine (localStorage), so the next visit opens it the same way.
 import type { ComponentChildren } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useRef, useState } from 'preact/hooks';
 
 export type DockState = { side: 'right' | 'left' | 'float'; width: number; folded: boolean; box: { x: number; y: number; w: number; h: number } };
 
 const KEY = 'diorama.dock';
 const START: DockState = { side: 'right', width: 380, folded: false, box: { x: 0, y: 80, w: 420, h: 620 } };
+const [MIN_W, MIN_H] = [320, 280];
 const clampWidth = (w: number) => Math.round(Math.min(Math.max(w, 300), Math.max(320, innerWidth * 0.6)));
 
 export function useDock(): [DockState, (d: Partial<DockState>) => void] {
@@ -42,24 +43,30 @@ function drag(e: PointerEvent, move: (dx: number, dy: number) => void) {
 
 export function Dock({ dock, onChange, title, children }: { dock: DockState; onChange: (d: Partial<DockState>) => void; title: string; children: ComponentChildren }) {
   const panel = useRef<HTMLElement>(null);
-  // A floating window keeps its size when the person resizes it by its corner.
-  useEffect(() => {
-    const el = panel.current;
-    if (!el || dock.side !== 'float' || dock.folded) return;
-    const size = new ResizeObserver(() => {
-      const [w, h] = [el.offsetWidth, el.offsetHeight];
-      if (Math.abs(w - dock.box.w) > 2 || Math.abs(h - dock.box.h) > 2) onChange({ box: { ...dock.box, w, h } });
-    });
-    size.observe(el);
-    return () => size.disconnect();
-  }, [dock.side, dock.folded, dock.box.x, dock.box.y]);
   const float = dock.side === 'float';
   // Off screen after the window got smaller: back inside.
-  const box = { ...dock.box, x: Math.min(Math.max(0, dock.box.x || innerWidth - dock.box.w - 24), innerWidth - 120), y: Math.min(Math.max(0, dock.box.y), innerHeight - 60) };
+  const fitW = Math.min(dock.box.w, innerWidth - 16);
+  const fitH = Math.min(dock.box.h, innerHeight - 16);
+  const box = { w: fitW, h: fitH, x: Math.min(Math.max(0, dock.box.x || innerWidth - fitW - 24), innerWidth - fitW - 8), y: Math.min(Math.max(0, dock.box.y), innerHeight - fitH - 8) };
   const style = float && !dock.folded ? { left: `${box.x}px`, top: `${box.y}px`, width: `${box.w}px`, height: `${box.h}px` } : float ? { left: `${box.x}px`, top: `${box.y}px` } : undefined;
   const resize = (e: PointerEvent) => {
     const w0 = dock.width;
     drag(e, (dx) => onChange({ width: clampWidth(w0 + (dock.side === 'right' ? -dx : dx)) }));
+  };
+  // A floating window resizes from any edge or corner; the opposite side stays where it is.
+  const stretch = (edge: string) => (e: PointerEvent) => {
+    const b0 = box;
+    drag(e, (dx, dy) => {
+      let { x, y, w, h } = b0;
+      if (edge.includes('e')) w = b0.w + dx;
+      if (edge.includes('s')) h = b0.h + dy;
+      if (edge.includes('w')) (w = b0.w - dx, x = b0.x + dx);
+      if (edge.includes('n')) (h = b0.h - dy, y = b0.y + dy);
+      // Never smaller than a usable chat: the far edge holds still.
+      if (w < MIN_W) (edge.includes('w') && (x -= MIN_W - w), w = MIN_W);
+      if (h < MIN_H) (edge.includes('n') && (y -= MIN_H - h), h = MIN_H);
+      onChange({ box: { x, y: Math.max(0, y), w, h } });
+    });
   };
   const move = (e: PointerEvent) => {
     if (!float || (e.target as HTMLElement).closest('button')) return;
@@ -80,6 +87,7 @@ export function Dock({ dock, onChange, title, children }: { dock: DockState; onC
       </div>
       {/* Folded, the agent keeps running and keeps its conversation: only hidden. */}
       <div class="dock-body" hidden={dock.folded}>{children}</div>
+      {float && !dock.folded && ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map((edge) => <div key={edge} class={`grip ${edge}`} onPointerDown={stretch(edge)} onMouseDown={(e) => e.preventDefault()} />)}
       {!float && !dock.folded && <div class="dock-edge" title="Drag to resize" onPointerDown={resize} onMouseDown={(e) => e.preventDefault()} />}
     </aside>
   );

@@ -488,10 +488,19 @@ body.dragging iframe { pointer-events: none; }
 .dock.folded { flex-direction: column; align-items: center; }
 .dock.folded .dockbar { flex-direction: column; gap: 8px; padding-top: 4px; }
 .dock.folded .dock-title { writing-mode: vertical-rl; transform: rotate(180deg); }
-.dock.float { position: fixed; z-index: 30; padding: 8px 10px 10px; border-radius: 14px; background: var(--bg); border: 1px solid var(--line-strong); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); resize: both; overflow: hidden; min-width: 300px; min-height: 240px; display: flex; flex-direction: column; }
+.dock.float { position: fixed; z-index: 30; padding: 8px 10px 10px; border-radius: 14px; background: var(--bg); border: 1px solid var(--line-strong); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); overflow: visible; display: flex; flex-direction: column; }
 .dock.float .dockbar { cursor: grab; }
-.dock.float .dock-body { flex: 1 1 0; }
-.dock.float.folded { resize: none; min-width: 0; min-height: 0; width: auto; height: auto; flex-direction: row; }
+.dock.float .dock-body { flex: 1 1 0; min-height: 0; overflow: hidden; }
+/* Inside the dock the chat takes whatever height there is, its input pinned at the bottom. */
+.dock-body section.agent > .gc-chat { min-height: 0; }
+.grip { position: absolute; z-index: 3; }
+.grip.n, .grip.s { left: 10px; right: 10px; height: 8px; cursor: ns-resize; }
+.grip.e, .grip.w { top: 10px; bottom: 10px; width: 8px; cursor: ew-resize; }
+.grip.n { top: -4px; } .grip.s { bottom: -4px; } .grip.e { right: -4px; } .grip.w { left: -4px; }
+.grip.ne, .grip.nw, .grip.se, .grip.sw { width: 16px; height: 16px; }
+.grip.ne { top: -5px; right: -5px; cursor: nesw-resize; } .grip.sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.grip.nw { top: -5px; left: -5px; cursor: nwse-resize; } .grip.se { bottom: -5px; right: -5px; cursor: nwse-resize; }
+.dock.float.folded { width: auto; height: auto; flex-direction: row; }
 .dock.float.folded .dockbar { flex-direction: row; }
 .dock.float.folded .dock-title { writing-mode: horizontal-tb; transform: none; }
 @media (max-width: 960px) { main.workshop[class*="dock-"] { grid-template-columns: 1fr; } .dock-edge { display: none; } }
