@@ -7,6 +7,7 @@ import { hashSeed, seeded, type Weather } from '../src/play/weather.ts';
 
 type Shift = (y: number) => [number, number];
 type Mark = { x: number; y: number; t: number; size: number; ring: boolean };
+type Bank = { x: number; y: number; w: number; h: number; v: number; a: number };
 type Drip = { x: number; y: number; to: number; t: number; wait: number; falling: boolean };
 
 /** One landing in this many leaves a mark (a ring or a splash); all of them would boil the floor. */
@@ -31,6 +32,9 @@ export class WeatherFx {
   /** Some pixels of the ripple mask, to ring at between landings. */
   private readonly ringAt: Uint32Array;
   private ringDebt = 0;
+  /** Mist: wide soft banks drifting across the frame with the wind, one blurred blob drawn stretched. */
+  private readonly banks: Bank[] = [];
+  private blob?: HTMLCanvasElement;
   private time = 0;
 
   constructor(readonly w: Weather, private readonly g: Geometry, private readonly ripples?: Uint8Array, key = '') {
@@ -46,6 +50,17 @@ export class WeatherFx {
     const at: number[] = [];
     if (ripples) for (let i = 0; i < ripples.length; i += 7) if (ripples[i]) at.push(i);
     this.ringAt = Uint32Array.from(at);
+    const fog = w.fog ?? 0;
+    if (fog > 0) {
+      const hor = Math.max(0, Math.min(this.H * 0.7, g.scale.horizonY));
+      const dir = w.wind < 0 ? -1 : 1;
+      for (let k = 0, n = 5 + Math.round(7 * fog); k < n; k++) {
+        const bw = this.W * (0.35 + 0.4 * this.rand());
+        const near = this.rand();
+        // From a little above the horizon down to the near floor; near banks are bigger, faster and thinner.
+        this.banks.push({ x: this.rand() * (this.W + bw) - bw, y: hor - this.H * 0.12 + near * (this.H - hor) * 0.95, w: bw * (0.8 + 0.5 * near), h: bw * (0.16 + 0.08 * this.rand()), v: dir * (10 + 16 * near + 30 * Math.abs(w.wind)), a: fog * (0.35 + 0.25 * this.rand()) * (1 - 0.35 * near) });
+      }
+    }
     for (const d of w.drips) d.from.forEach(([x, y], k) => this.drips.push({ x, y, to: d.to[k], t: 0, wait: this.rand() * 2.5, falling: false }));
   }
 
@@ -80,6 +95,11 @@ export class WeatherFx {
 
   update(dt: number) {
     this.time += dt;
+    for (const b of this.banks) {
+      b.x += b.v * dt;
+      if (b.v > 0 && b.x > this.W) b.x = -b.w;
+      if (b.v < 0 && b.x + b.w < 0) b.x = this.W;
+    }
     const { w } = this;
     const rain = w.fall === 'rain';
     for (let i = 0; i < this.px.length; i++) {
@@ -199,6 +219,7 @@ export class WeatherFx {
 
   /** The rain or snow itself, over everything: three depths, far ones thin, faint and short. */
   drawAir(ctx: CanvasRenderingContext2D) {
+    this.drawFog(ctx);
     const n = this.px.length;
     if (!n) return;
     ctx.save();
@@ -231,6 +252,27 @@ export class WeatherFx {
         ctx.arc(this.px[i], this.py[i], r, 0, Math.PI * 2);
         ctx.fill();
       }
+    }
+    ctx.restore();
+  }
+
+  /** Mist over the place: each bank a soft white blob, breathing a little as it drifts. */
+  private drawFog(ctx: CanvasRenderingContext2D) {
+    if (!this.banks.length) return;
+    if (!this.blob) {
+      this.blob = Object.assign(document.createElement('canvas'), { width: 128, height: 128 });
+      const c = this.blob.getContext('2d')!;
+      const grad = c.createRadialGradient(64, 64, 0, 64, 64, 64);
+      grad.addColorStop(0, 'rgba(228,232,238,1)');
+      grad.addColorStop(0.55, 'rgba(228,232,238,0.45)');
+      grad.addColorStop(1, 'rgba(228,232,238,0)');
+      c.fillStyle = grad;
+      c.fillRect(0, 0, 128, 128);
+    }
+    ctx.save();
+    for (const [k, b] of this.banks.entries()) {
+      ctx.globalAlpha = b.a * (0.8 + 0.2 * Math.sin(this.time * 0.3 + k * 1.7));
+      ctx.drawImage(this.blob, b.x, b.y - b.h / 2, b.w, b.h);
     }
     ctx.restore();
   }

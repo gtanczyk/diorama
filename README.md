@@ -103,7 +103,7 @@ The page draws the best a character has: sprite sheets, else the 3D model (`?mod
 
 - **Backdrop and cards.** One Muse edit paints the place without its standing things; only their masks are taken from it, and SAM checks each thing is really gone (a leftover gets a smeared fill). The things become cut-out cards. In the page the floor shears with the camera, each card slides with the floor row it stands on, and the upright band behind the walkable floor (a quay wall, a railing) slides as one piece so it does not lean. The hero slides with the floor under his feet and still hides behind cards.
 - **Far flats.** Spark names the bands of scenery above the horizon, farthest first (hills, a town, a castle); SAM cuts each one from the backdrop into `layers/<n>.png`, over a sky with the flats filled in (`layers/sky.png`). Each flat slides a little more than the one behind it.
-- **Water.** SAM finds water on the backdrop (minus the floors and cards, which come out wet otherwise) into `layers/water.jpg` and `layers/water-mask.png`. Spark reads which way it runs on screen, along the channel and into the depth too; that is `water.flow` in `layers.json`, a unit vector downstream, `[0, 0]` for still water like a harbour basin. If Spark got the river backwards, tell the Studio agent ("the canal flows toward the bridge"): its `water_flow` action keeps `reverse`, `still` or a hint in words in `places/<key>/depth.json`, which every later build follows.
+- **Water.** SAM finds water on the backdrop (minus the floors and cards, which come out wet otherwise) into `layers/water.jpg` and `layers/water-mask.png`. Spark reads which way it runs on screen, along the channel and into the depth too; that is `water.flow` in `layers.json`, a unit vector downstream, `[0, 0]` for still water like a harbour basin or the sea, which the page sways in slow swells instead of running. If Spark got the river backwards, tell the Studio agent ("the canal flows toward the bridge"): its `water_flow` action keeps `reverse`, `still` or a hint in words in `places/<key>/depth.json`, which every later build follows.
 
 `--smear` skips Muse and smears the gaps instead. Places with a `photo.png` stay flat.
 
@@ -116,7 +116,7 @@ The page draws the best a character has: sprite sheets, else the 3D model (`?mod
 - **Drips.** Spark names up to four edges that drip (eaves, a gutter, an awning, a pipe, a cave ceiling), SAM finds each, and its lowest edge is where drops swell and let go. Each falls under gravity, at the scale of the place, to the floor row under it (the depth map, else the first walkable cell below) and splashes or rings there. A dry place can still drip.
 - **Painting.** When a place's words say rain or snow, the paint step asks Muse for the weather's marks only (wet sheen, puddles, snow lying), no streaks in the air.
 
-To change it, tell the Studio agent ("no rain in the hut", "it should pour", "water drips from the tavern sign"): its `weather_set` action keeps `fall`, `strength` and a hint in words in `places/<key>/weather-wish.json`, which every later build follows. `?weather=0` in the play page keeps every place dry.
+To change it, tell the Studio agent ("no rain in the hut", "it should pour", "water drips from the tavern sign"): its `weather_set` action keeps `fall`, `strength`, `fog` (mist drifting across the place, 0..1, which Spark also reads from the picture and the mood) and a hint in words in `places/<key>/weather-wish.json`, which every later build follows. `?weather=0` in the play page keeps every place dry.
 
 ## In the play page
 

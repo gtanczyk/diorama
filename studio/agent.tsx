@@ -162,6 +162,7 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [] }: { slug: strin
         onApprove={(id, decision) => void post('approval', { id, decision })}
         formatToolName={(name) => (name.startsWith('mcp__diorama__') ? SAYS[name.slice(14)] ?? name.slice(14).replace(/_/g, ' ') : name)}
         foldSteps
+        renderPrompt={studioNote}
         placeholder={running ? undefined : `Ask ${current?.label ?? 'the agent'}…`}
         theme="dark"
         disabled={!!replay || !live}
@@ -192,4 +193,16 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [] }: { slug: strin
       )}
     </section>
   );
+}
+
+// The Studio's own words to the agent (a nudge, a repair wake) are not the person's: show them as a quiet note.
+function studioNote(text: string) {
+  if (!text.startsWith('[Studio]')) return text;
+  const body = text.slice(8).trim();
+  const gist = body.startsWith('You are using the shell')
+    ? 'Studio reminded the agent to look and fix with the Studio tools, not the shell.'
+    : body.startsWith('The build')
+      ? 'Studio asked the agent to repair the places a build left unplayable.'
+      : 'Studio told the agent:';
+  return <details class="studio-note"><summary>{gist}</summary>{body}</details>;
 }

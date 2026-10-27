@@ -45,7 +45,7 @@ defineCommand({
       const out: Weather = { ...weather, ...(ripples && { ripples: 'weather/ripples.png' }) };
       files.write(at('weather.json'), out);
       const drips = weather.drips.map((d) => `${d.phrase} (${d.from.length})`).join(', ');
-      console.log(`${place.key}: ${weather.fall === 'none' ? 'nothing falls' : `${weather.fall} ${weather.strength}, wind ${weather.wind}`}${ripples ? ', rings on water and puddles' : ''}${drips ? `, drips from ${drips}` : ''}`);
+      console.log(`${place.key}: ${weather.fall === 'none' ? 'nothing falls' : `${weather.fall} ${weather.strength}, wind ${weather.wind}`}${weather.fog ? `, fog ${weather.fog}` : ''}${ripples ? ', rings on water and puddles' : ''}${drips ? `, drips from ${drips}` : ''}`);
     }));
     console.log(`calls sent: spark ${files.memo.sent.spark}, sam ${files.memo.sent.sam}`);
   },

@@ -260,3 +260,12 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 .share { position: relative; }
 .share-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; width: 300px; display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line); }
 .share-menu p { margin: 0 0 6px; }
+
+/* A note from the Studio to the agent, not a bubble from the person. */
+.gc-prompt:has(> .studio-note) { background: none; border: 0; box-shadow: none; padding: 0; max-width: none; color: var(--muted); }
+.gc-steer:has(> .studio-note) > small { display: none; }
+.studio-note { font-size: 12px; color: var(--muted); }
+.studio-note summary { cursor: pointer; list-style: none; }
+.studio-note summary::before { content: 'ⓘ '; }
+.studio-note[open] { white-space: pre-wrap; }
+.studio-note[open] summary { margin-bottom: 4px; }

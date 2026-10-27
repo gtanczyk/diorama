@@ -16,6 +16,7 @@ const Read = z.object({
   fall: z.enum(['none', 'rain', 'snow']),
   strength: z.number().min(0).max(1).default(0.6),
   wind: z.number().min(-1).max(1).default(0),
+  fog: z.number().min(0).max(1).default(0),
   drips: z.array(z.object({ phrase: z.string().min(2) })).max(4).default([]),
 });
 
@@ -36,7 +37,8 @@ Mood: ${place.mood}${wish.hint ? `\nThe author says: ${wish.hint}` : ''}
 2. "strength" 0..1: 0.3 drizzle, 0.6 steady rain, 1 a downpour (the same for snow).
 3. "wind" -1..1: how much the fall slants, positive toward the right, 0 straight down.
 4. "drips": up to 4 edges in the picture that water drips from in this weather: roof eaves, a gutter, an awning, a dripping pipe, a wet cave ceiling, the underside of a bridge. Only edges you can see. Each as a short noun phrase an image segmentation model can find ("slate roof", "wooden awning", "rusty pipe"). None when nothing drips.
-Answer with JSON only: {"fall": "rain", "strength": 0.6, "wind": 0.1, "drips": [{"phrase": "..."}]}`;
+5. "fog" 0..1: how much mist or fog drifts through the scene, as the picture and the mood show it: 0 clear air, 0.3 a haze over water or a valley, 0.7 thick fog. Indoors 0 unless steam or smoke fills the room.
+Answer with JSON only: {"fall": "rain", "strength": 0.6, "wind": 0.1, "fog": 0, "drips": [{"phrase": "..."}]}`;
   const read = Read.parse(await askSparkJson(memo, { label: `weather:${place.key}`, prompt, images: [painting] }));
   const fall = wish.fall === 'auto' ? read.fall : wish.fall;
   const strength = wish.strength ?? (fall === 'none' ? 0 : read.strength);
@@ -59,7 +61,9 @@ Answer with JSON only: {"fall": "rain", "strength": 0.6, "wind": 0.1, "drips": [
     const m = unionAll(W, H, [subtract(water, dry), ...puddles]);
     if (maskArea(m) > 400) ripples = m;
   }
-  return { weather: { fall, strength, wind: fall === 'none' ? 0 : read.wind, drips }, ripples };
+  const fog = wish.fog ?? read.fog;
+  // Mist drifts with the wind; with nothing falling the wind Spark read still moves it.
+  return { weather: { fall, strength, wind: fall === 'none' && !fog ? 0 : read.wind, fog, drips }, ripples };
 }
 
 /**

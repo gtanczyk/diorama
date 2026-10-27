@@ -975,7 +975,7 @@ class Game {
   }
 
   /**
-   * The water flows: two copies of its texture drift downstream, each fading in and out half a cycle apart, so
+   * The water moves. Running water flows: two copies of its texture drift downstream, each fading in and out half a cycle apart, so
    * their sum always weighs one and no copy is seen jumping back. They drift along the flow Spark read (into the
    * depth too), near rows faster than far ones. The result is cut to the water's soft mask and slides with the
    * bank behind.
@@ -986,7 +986,6 @@ class Game {
     const { g, edge } = this.place;
     const [x0, y0, x1, y1] = water.box;
     const [ux, uy] = water.flow;
-    if (!ux && !uy) return;
     const w = x1 - x0;
     const c = water.canvas.getContext('2d')!;
     c.globalCompositeOperation = 'source-over';
@@ -995,7 +994,16 @@ class Game {
     const PERIOD = 6;
     const STRIP = 3;
     const phase = (this.time / PERIOD) % 1;
-    for (const [k, alpha] of [[0, 1], [0.5, 1 - Math.abs(2 * ((phase + 0.5) % 1) - 1)]] as const) {
+    // Still water (the sea, a lake, a harbour basin) does not run, but it is never dead: rows sway in slow
+    // swells, small far off and wider near, so waves roll across it in place.
+    if (!ux && !uy) {
+      for (let y = y0; y < y1; y += STRIP) {
+        const near = (y - y0) / Math.max(1, y1 - y0);
+        const dx = Math.sin(this.time * 0.9 + y * 0.09) * (0.6 + 3.4 * near) + Math.sin(this.time * 0.37 + y * 0.023) * (0.5 + 2 * near);
+        const dy = Math.sin(this.time * 0.6 + y * 0.05) * (0.3 + 1.2 * near);
+        c.drawImage(water.tex, 0, Math.min(y1 - y0 - STRIP, Math.max(0, y - y0 + dy)), w, STRIP, dx, y - y0, w, STRIP);
+      }
+    } else for (const [k, alpha] of [[0, 1], [0.5, 1 - Math.abs(2 * ((phase + 0.5) % 1) - 1)]] as const) {
       const ph = (phase + k) % 1;
       c.globalAlpha = k === 0 ? 1 : alpha;
       for (let y = y0; y < y1; y += STRIP) {

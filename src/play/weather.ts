@@ -13,6 +13,8 @@ export const Weather = z.object({
   strength: z.number().min(0).max(1),
   /** How far the fall slants: px across per px down, + to the right. */
   wind: z.number().min(-1).max(1),
+  /** How much mist drifts over the place, 0 clear .. 1 thick fog. */
+  fog: z.number().min(0).max(1).default(0),
   /** Edges water drips from: points along the edge, and where each drop lands (the floor row under it). */
   drips: z.array(z.object({ phrase: z.string(), from: z.array(XY), to: z.array(z.number()) })).default([]),
   /** Mask (relative to the place folder) of water and puddles, where drops ring. */
@@ -25,6 +27,8 @@ export const WeatherWish = z.object({
   /** auto: as Spark reads the picture and the mood; otherwise this, whatever the picture says. */
   fall: z.enum(['auto', 'none', 'rain', 'snow']).default('auto'),
   strength: z.number().min(0).max(1).optional(),
+  /** Mist the author wants, 0..1; unset: as Spark reads it. */
+  fog: z.number().min(0).max(1).optional(),
   /** What the author said ("water drips from the tavern sign"), handed to Spark. */
   hint: z.string().optional(),
 });
