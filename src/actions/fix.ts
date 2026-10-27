@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { Corrections, readCorrections, RectIn, Stroke, writeCorrections } from '../scene/corrections.ts';
 import { KINDS, parseCell } from '../scene/locate.ts';
 import { agentBlocked } from '../studio/locks.ts';
+import { WorldFiles } from '../world/files.ts';
 import { Slug } from '../world/schema.ts';
 import { ActionError, defineAction, type ActionContext } from './registry.ts';
 
@@ -115,6 +116,22 @@ defineAction({
   async run({ slug, place, thing, at }, ctx) {
     return fixPlace(ctx, slug, place, 'derive', `stand ${thing}`, (c) => {
       thingOf(c, thing).stand = at;
+    });
+  },
+});
+
+defineAction({
+  name: 'npc_move',
+  description: 'Move an NPC to stand elsewhere in a place: at is where its feet go (painting pixels, on walkable floor); it is sized for the depth there. '
+    + 'Use it when an NPC covers a thing the player must click, or stands somewhere odd. No repaint: reruns derive to verify for that place.',
+  input: z.object({ slug: Slug, place: z.string().min(1), npc: z.string().min(1), at: XY }),
+  job: true,
+  async run({ slug, place, npc, at }, ctx) {
+    const world = new WorldFiles(slug, ctx.root).world();
+    const thing = world.places.find((p) => p.key === place)?.things.find((t) => t.key === npc);
+    if (thing?.role !== 'npc') throw new ActionError(404, `${place} has no NPC called ${npc}`);
+    return fixPlace(ctx, slug, place, 'derive', `move ${npc}`, (c) => {
+      thingOf(c, npc).at = at;
     });
   },
 });

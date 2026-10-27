@@ -31,6 +31,8 @@ export const Corrections = z.object({
     strokes: z.array(Stroke).default([]),
     /** Where the hero stands to use it. */
     stand: XY.optional(),
+    /** Where an NPC stands (its feet), instead of the layout's spot. */
+    at: XY.optional(),
   })).default({}),
   floors: z.record(z.string(), z.object({
     add: z.array(z.string()).default([]),
@@ -113,3 +115,21 @@ export function brushed<T extends { mask: Mask; px: number }>(m: T, strokes: Str
 
 export const isEmpty = (c: Corrections) => Object.keys(c.things).length === 0 && Object.keys(c.floors).length === 0 && c.repaint.length === 0;
 
+
+/**
+ * The layout with each moved NPC standing where the person put it: feet at the new spot, and as much bigger or
+ * smaller as the depth there asks (height grows with the distance below the horizon).
+ */
+export function placeNpcs<L extends { horizon: number; things: Array<{ key: string; x: number; footY: number; width: number; height: number }> }>(layout: L, npcs: ReadonlySet<string>, c: Corrections): L {
+  return {
+    ...layout,
+    things: layout.things.map((t) => {
+      const at = npcs.has(t.key) ? c.things[t.key]?.at : undefined;
+      if (!at) return t;
+      const before = t.footY - layout.horizon;
+      const after = at[1] - layout.horizon;
+      const k = before > 0 && after > 0 ? after / before : 1;
+      return { ...t, x: at[0], footY: at[1], width: t.width * k, height: t.height * k };
+    }),
+  };
+}

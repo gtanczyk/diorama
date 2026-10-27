@@ -146,3 +146,21 @@ test('the agent gets three fixes of a place that leave it unplayable; then it mu
     delete process.env.FAKE_FAIL;
   }
 });
+
+test('a moved NPC stands where the person put it, sized for the depth there; npc_move takes only NPCs', async () => {
+  const { placeNpcs } = await import('../src/scene/corrections.ts');
+  const layout = { horizon: 100, things: [{ key: 'franek', x: 300, footY: 500, width: 80, height: 200 }, { key: 'boat', x: 600, footY: 600, width: 200, height: 100 }] };
+  const moved = placeNpcs(layout, new Set(['franek']), { things: { franek: { at: [200, 300], strokes: [] }, boat: { at: [0, 0], strokes: [] } }, floors: {}, repaint: [] });
+  expect(moved.things[0]).toEqual({ key: 'franek', x: 200, footY: 300, width: 40, height: 100 });
+  expect(moved.things[1]).toEqual(layout.things[1]);
+  const { dir, ctx } = world();
+  fs.writeFileSync(path.join(dir, 'world.json'), JSON.stringify({
+    title: 'Quay', pitch: 'A small quay on a river at dusk.', style: 'gouache, muted river colours', start: 'dock',
+    hero: { key: 'wren', looks: 'a keeper in a yellow oilskin' },
+    places: [{ key: 'dock', shows: 'a dock at dusk', mood: 'calm', exits: [], things: [{ key: 'franek', role: 'npc', looks: 'an old ferryman' }, { key: 'boat', role: 'prop', looks: 'a boat' }] }],
+  }));
+  const job = (await runAction('npc_move', { slug: 'w', place: 'dock', npc: 'franek', at: [200, 300] }, ctx('user'))) as { args: string[] };
+  expect(job.args).toEqual(['build', 'w', '--from', 'derive', '--to', 'verify', '--place', 'dock']);
+  expect(readCorrections(path.join(dir, 'places', 'dock')).things.franek.at).toEqual([200, 300]);
+  await expect(runAction('npc_move', { slug: 'w', place: 'dock', npc: 'boat', at: [1, 1] }, ctx('user'))).rejects.toThrow(/no NPC/);
+});

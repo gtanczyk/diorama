@@ -4,7 +4,7 @@ import { maskArea, maskFromPng, maskToPng, emptyMask } from '../image/mask.ts';
 import { PALETTE, svgLabel, tintOver } from '../image/overlay.ts';
 import { Geometry, personPx } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
-import { readCorrections } from '../scene/corrections.ts';
+import { placeNpcs, readCorrections } from '../scene/corrections.ts';
 import { derive, type ThingIn } from '../scene/derive.ts';
 import { Layout, FRAME } from '../scene/layout.ts';
 import { CELL } from '../scene/walk.ts';
@@ -53,7 +53,8 @@ defineCommand({
     const places = world.places.filter((p) => only.length === 0 || only.includes(p.key));
     await Promise.all(places.map(async (place) => {
       const at = (...parts: string[]) => files.place(place.key, ...parts);
-      const layout = Layout.parse(files.readJson(at('layout.json')));
+      // NPCs are drawn by the runtime, not painted: moving one only moves its box (and where the hero talks to it).
+      const layout = placeNpcs(Layout.parse(files.readJson(at('layout.json'))), new Set(place.things.filter((t) => t.role === 'npc').map((t) => t.key)), readCorrections(at()));
       const made = files.readJson(at('masks.json')) as MasksJson;
       const painting = fs.readFileSync(at('painting.png'));
       const things = await Promise.all(Object.entries(made.things).map(async ([key, t]) => ({ ...t, key, mask: await maskFromPng(fs.readFileSync(at('masks', `${key}.png`))) })));

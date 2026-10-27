@@ -113,6 +113,8 @@ main.workshop { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap:
 .stage:not(.tool-look) svg { cursor: crosshair; }
 .stage .sel { fill: rgba(232, 168, 92, 0.15); stroke: var(--accent); stroke-width: 3; stroke-dasharray: 10 6; }
 .stage .sel.repaint { fill: rgba(108, 195, 181, 0.15); stroke: var(--ok); }
+.stage .sel.npc { fill: none; stroke: var(--muted); stroke-width: 2; }
+.stage .sel.npc.on { stroke: var(--accent); stroke-width: 3; }
 .stage .stroke { fill: none; stroke-linecap: round; stroke-linejoin: round; opacity: 0.55; }
 .stage .stroke.add { stroke: #3ddc84; }
 .stage .stroke.erase { stroke: #ff5a5a; }

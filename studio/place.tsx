@@ -25,8 +25,9 @@ export type PlaceStatus = {
   flagged: string[];
   start: [number, number] | null;
   corrections: Fixes;
+  npcs: { key: string; box: Rect; at: [number, number] }[];
 };
-type Tool = 'look' | 'note' | 'box' | 'repaint' | 'brush' | 'stand';
+type Tool = 'look' | 'note' | 'box' | 'repaint' | 'brush' | 'stand' | 'move';
 type Rect = [number, number, number, number];
 
 const TOOLS: Array<[Tool, string, string]> = [
@@ -35,6 +36,7 @@ const TOOLS: Array<[Tool, string, string]> = [
   ['box', 'Box', 'Drag a box around where a thing really is, so SAM finds it there'],
   ['brush', 'Brush', 'Paint onto or rub out of a thing\'s or a floor\'s mask'],
   ['stand', 'Stand', 'Click where the hero should stand to use a thing'],
+  ['move', 'Move NPC', 'Click where an NPC should stand (its feet); it is sized for the depth there'],
   ['repaint', 'Repaint', 'Drag over a region and say how Muse should paint it (one Muse edit)'],
 ];
 
@@ -67,7 +69,8 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
   const things = st?.things ?? [];
   const floors = st?.floors ?? [];
   const isFloor = floors.some((f) => f.key === target);
-  const targets = tool === 'brush' ? [...things.map((t) => t.key), ...floors.map((f) => f.key)] : things.map((t) => t.key);
+  const npcs = st?.npcs ?? [];
+  const targets = tool === 'brush' ? [...things.map((t) => t.key), ...floors.map((f) => f.key)] : tool === 'move' ? npcs.map((n) => n.key) : things.map((t) => t.key);
   useEffect(() => {
     if (targets.length && !targets.includes(target)) setTarget(targets[0]);
   }, [tool, st]);
@@ -83,7 +86,7 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
     down.current = true;
     if (tool === 'box' || tool === 'repaint') setDrag([p[0], p[1], p[0], p[1]]);
     if (tool === 'brush') setStrokes((s) => [...s, { mode, radius, points: [p] }]);
-    if (tool === 'note' || tool === 'stand') setPoint(p);
+    if (tool === 'note' || tool === 'stand' || tool === 'move') setPoint(p);
   };
   const onMove = (e: PointerEvent) => {
     if (!down.current) return;
@@ -131,11 +134,11 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
         {TOOLS.map(([t, label, hint]) => <button type="button" title={hint} class={tool === t ? 'on' : ''} onClick={() => setTool(t)}>{label}</button>)}
       </div>
       {tool !== 'look' && <p class="detail">{TOOLS.find(([t]) => t === tool)![2]}.</p>}
-      {(tool === 'box' || tool === 'brush' || tool === 'stand') && (
+      {(tool === 'box' || tool === 'brush' || tool === 'stand' || tool === 'move') && (
         <div class="row">
-          <label>{tool === 'brush' ? 'Mask of' : 'Thing'} <select value={target} onChange={(e) => setTarget(e.currentTarget.value)}>
+          <label>{tool === 'brush' ? 'Mask of' : tool === 'move' ? 'NPC' : 'Thing'} <select value={target} onChange={(e) => setTarget(e.currentTarget.value)}>
             {tool === 'brush' && floors.length > 0 && <optgroup label="Things">{things.map((t) => <option value={t.key}>{t.key}</option>)}</optgroup>}
-            {tool === 'brush' && floors.length > 0 ? <optgroup label="Floors">{floors.map((f) => <option value={f.key}>{f.key}</option>)}</optgroup> : things.map((t) => <option value={t.key}>{t.key}</option>)}
+            {tool === 'brush' && floors.length > 0 ? <optgroup label="Floors">{floors.map((f) => <option value={f.key}>{f.key}</option>)}</optgroup> : targets.map((k) => <option value={k}>{k}</option>)}
           </select></label>
           {tool === 'brush' && <>
             <div class="seg" role="group" aria-label="Brush"><button type="button" class={mode === 'add' ? 'on' : ''} onClick={() => setMode('add')}>Add</button><button type="button" class={mode === 'erase' ? 'on' : ''} onClick={() => setMode('erase')}>Erase</button></div>
@@ -147,6 +150,7 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
         {pic ? <img src={fileUrl(slug, pic.file, pic.v)} alt={`${place}, ${layer}`} draggable={false} /> : <div class="noimg">no picture yet</div>}
         <svg ref={svg} viewBox={`0 0 ${W} ${H}`} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
           {things.map((t) => t.stand && <g><circle cx={t.stand[0]} cy={t.stand[1]} r={7} class="stand" /></g>)}
+          {tool === 'move' && npcs.map((n) => <rect x={n.box[0]} y={n.box[1]} width={n.box[2] - n.box[0]} height={n.box[3] - n.box[1]} class={n.key === target ? 'sel npc on' : 'sel npc'} />)}
           {box && <rect x={box[0]} y={box[1]} width={box[2] - box[0]} height={box[3] - box[1]} class={tool === 'repaint' ? 'sel repaint' : 'sel'} />}
           {strokes.map((s) => <polyline points={s.points.map((p) => p.join(',')).join(' ')} class={`stroke ${s.mode}`} stroke-width={s.radius * 2} />)}
           {point && <circle cx={point[0]} cy={point[1]} r={10} class="pin" />}
@@ -154,6 +158,8 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
       </div>
       {tool === 'box' && big && <div class="row"><span class="detail">{target} is in [{box!.join(', ')}]</span><span class="grow" /><button type="button" class="primary small" disabled={busy || !target} onClick={() => act('mask_fix', { thing: target, box })}>Find it here</button></div>}
       {tool === 'stand' && point && <div class="row"><span class="detail">Stand at {point.join(', ')} to use {target}</span><span class="grow" /><button type="button" class="primary small" disabled={busy || !target} onClick={() => act('stand_set', { thing: target, at: point })}>Set stand spot</button></div>}
+      {tool === 'move' && npcs.length === 0 && <p class="detail">No one stands in this place.</p>}
+      {tool === 'move' && point && <div class="row"><span class="detail">{target} stands with feet at {point.join(', ')}</span><span class="grow" /><button type="button" class="primary small" disabled={busy || !target} onClick={() => act('npc_move', { npc: target, at: point })}>Move here</button></div>}
       {tool === 'brush' && strokes.length > 0 && <div class="row"><span class="detail">{strokes.length} stroke{strokes.length > 1 ? 's' : ''} on {target}</span><span class="grow" /><button type="button" class="ghost small" onClick={() => setStrokes((s) => s.slice(0, -1))}>Undo stroke</button><button type="button" class="primary small" disabled={busy || !target} onClick={() => act('mask_brush', { layer: isFloor ? 'floor' : 'thing', key: target, strokes })}>Apply and rebuild</button></div>}
       {((tool === 'note' && point) || (tool === 'repaint' && big)) && (
         <form class="say" onSubmit={(e) => { e.preventDefault(); if (tool === 'note') void act('feedback_add', { point, text: text.trim() }); else void act('repaint_region', { region: box, fix: text.trim() }); }}>

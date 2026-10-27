@@ -132,7 +132,7 @@ defineAction({
     if (!fs.existsSync(dir)) throw new ActionError(404, `${slug} has no place ${place} yet`);
     type Made = { kind: string; phrase: string; source: string; coarse: boolean; brushed?: boolean };
     const masks = readJson<{ things: Record<string, Made>; floors: Record<string, Omit<Made, 'kind' | 'phrase'>>; flagged: string[] }>(path.join(dir, 'masks.json'));
-    const geometry = readJson<{ things: Array<{ key: string; stand: [number, number] }>; start: [number, number] }>(path.join(dir, 'geometry.json'));
+    const geometry = readJson<{ things: Array<{ key: string; role?: string; box: [number, number, number, number]; stand: [number, number] }>; start: [number, number] }>(path.join(dir, 'geometry.json'));
     const picture = (f: string) => (fs.existsSync(path.join(dir, f)) ? { file: `places/${place}/${f}`, v: stamp(path.join(dir, f)) } : null);
     // A step that broke for this place in the last build stands before verify's errors: verify did not see it.
     const report = readJson<{ places?: Array<{ place: string; ok: boolean; issues?: Verdict['errors'] }> }>(path.join(ctx.root, slug, 'build.json'))?.places?.find((r) => r.place === place);
@@ -147,6 +147,7 @@ defineAction({
       floors: Object.entries(masks?.floors ?? {}).map(([key, f]) => ({ key, ...f })),
       flagged: masks?.flagged ?? [],
       start: geometry?.start ?? null,
+      npcs: (geometry?.things ?? []).filter((g) => g.role === 'npc').map((g) => ({ key: g.key, box: g.box, at: [Math.round((g.box[0] + g.box[2]) / 2), Math.round(g.box[3])] as [number, number] })),
       corrections: readCorrections(dir),
     };
   },
