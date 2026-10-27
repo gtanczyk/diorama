@@ -53,12 +53,22 @@ In the page, loops pan and fade with where the hero stands, footsteps follow the
 
 The page draws the best a character has: sprite sheets, else the 3D model (`?model=1` prefers it), else the 2D rig, else the plain cut-out.
 
+## Depth: parallax and moving water
+
+`diorama backdrop <slug>` (a build step, after `derive`) turns each place into a little stage, so it moves like a real diorama:
+
+- **Backdrop and cards.** One Muse edit paints the place without its standing things; only their masks are taken from it, and SAM checks each thing is really gone (a leftover gets a smeared fill). The things become cut-out cards. In the page the floor shears with the camera, each card slides with the floor row it stands on, and the upright band behind the walkable floor (a quay wall, a railing) slides as one piece so it does not lean. The hero slides with the floor under his feet and still hides behind cards.
+- **Far flats.** Spark names the bands of scenery above the horizon, farthest first (hills, a town, a castle); SAM cuts each one from the backdrop into `layers/<n>.png`, over a sky with the flats filled in (`layers/sky.png`). Each flat slides a little more than the one behind it.
+- **Water.** SAM finds water on the backdrop (minus the floors and cards, which come out wet otherwise) into `layers/water.jpg` and `layers/water-mask.png`. Spark reads which way it runs on screen, along the channel and into the depth too; that is `water.flow` in `layers.json`, a unit vector downstream, `[0, 0]` for still water like a harbour basin. Edit it by hand if Spark got the river backwards.
+
+`--smear` skips Muse and smears the gaps instead. Places with a `photo.png` stay flat.
+
 ## In the play page
 
 - **Walking:** the hero routes over the walk grid; the walk phase follows the distance walked, so feet don't slide. Things in front of a person (per-column floor lines from `derive`) are drawn back over them.
 - **Light and shadow:** `derive` measures the painting's light from the shadows things cast (`light` in geometry.json) and masks those shadows (`masks/shadows.png`). A person then casts a matching soft shadow and darkens inside a painted one. A place where nothing casts a shadow (fog, overcast) gets neither.
 - **Talking:** each line knows who says it; the bubble sits over the speaker, who plays the line's gesture while the other listens.
-- **URL switches:** `place=<key>` start there, `spawn=x,y,left|right` put the hero, `capture=1` fixed 1/60 s steps for recording (flat, no parallax), `parallax=N` force parallax, `grid=1` show the walk grid and occluders, `model=1|0` prefer or skip the 3D figure, `sound=0` silent, `cursor=0` hide the cursor. `window.diorama` drives the page from scripts: `walkTo`, `use`, `act`, `play(steps)`, `wait`, `on(event)`.
+- **URL switches:** `place=<key>` start there, `spawn=x,y,left|right` put the hero, `capture=1` fixed 1/60 s steps for recording (flat, no parallax), `parallax=N` parallax strength (`0` flat, default 1 with the mouse), `track=N` a closer camera that pans after the hero, for walks along a place, `sway=1` a slow idle drift for films, `still` water that does not flow, `grid=1` show the walk grid and occluders, `model=1|0` prefer or skip the 3D figure, `sound=0` silent, `cursor=0` hide the cursor. `window.diorama` drives the page from scripts: `walkTo`, `use`, `act`, `play(steps)`, `wait`, `on(event)`.
 
 ## Playing and sharing a world
 
