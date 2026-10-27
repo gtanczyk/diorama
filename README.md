@@ -77,7 +77,7 @@ In the page, loops pan and fade with where the hero stands, footsteps follow the
 
 `build` also makes the characters, after the places (steps `cast`, `model`, `sprites`; each also runs alone):
 
-- `diorama cast <slug>` paints the hero and every NPC (cast/<key>.png) and cuts each into parts with SAM for a 2D walk rig (cast/<key>/rig.json).
+- `diorama cast <slug>` paints the hero and every NPC (cast/<key>.png) and cuts each into parts with SAM for a 2D walk rig (cast/<key>/rig.json). Spark also says how tall each one stands (cast/heights.json, a grown-up 1.62 m), so a cat or a child is drawn at its own size.
 - `diorama model <slug>` gives each character who needs sprites a rigged 3D model: Muse paints them from four sides, TRELLIS turns the views into a mesh and Make-It-Animatable adds a skeleton (both open Hugging Face Spaces; set `HUGGING_FACE_API_KEY` or `HF_TOKEN`, as they run on your account's GPU quota). The model only supplies poses.
 - `diorama sprites <slug>` draws their walk and talk sheets (cast/<key>/sprites/): the model walks or gestures in a sheet of 8 frames, Muse draws the sheet again in the world's style, and each frame is cut out and lined up with its pose. A sheet that Muse handed back barely changed is drawn again over a different guide. Only what the story uses is drawn: the walk facings the hero's routes need, one talk sheet per speaker in the facing of their conversation, and the gesture Spark picks for each line (`--plan` prints the plan without drawing). Rendering the guides needs Playwright's Chromium (`npx playwright install chromium`).
 

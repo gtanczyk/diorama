@@ -1,7 +1,7 @@
 // diorama cast <slug>: the hero and every NPC of world.json as cut-out figures the runtime walks around.
 import fs from 'node:fs';
 import { defineCommand, takeOption } from '../registry.ts';
-import { paintFigure, type Who } from '../scene/cast.ts';
+import { castHeights, paintFigure, type Who } from '../scene/cast.ts';
 import { rigFigure } from '../scene/rig.ts';
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
 import { WorldFiles } from '../world/files.ts';
@@ -45,6 +45,13 @@ defineCommand({
         console.log(`${who.key}: ${files.path('cast', `${who.key}.png`)} · no rig: ${error instanceof Error ? error.message : error}`);
       }
     }));
+    // cast/heights.json: how tall each one stands, so a cat or a child is drawn at its own size.
+    const heightsFile = files.path('cast', 'heights.json');
+    const before = fs.existsSync(heightsFile) ? (files.readJson(heightsFile) as Record<string, number>) : {};
+    const heights = { ...before, ...(await castHeights(files.memo, world, cast)) };
+    files.write(heightsFile, heights);
+    const odd = Object.entries(heights).filter(([, m]) => Math.abs(m - 1.62) > 0.25);
+    if (odd.length) console.log(`heights: ${odd.map(([k, m]) => `${k} ${m} m`).join(', ')}`);
     for (const m of missing) console.log(`set aside, shown as a stand-in: ${m}`);
     console.log(`calls sent: muse ${files.memo.sent.muse}, sam ${files.memo.sent.sam}`);
   },

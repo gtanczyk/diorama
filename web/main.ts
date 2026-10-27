@@ -17,7 +17,7 @@ type Data = {
   world: World;
   places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; issue?: string }>;
   /** Figure per hero or NPC key: a cut-out image, and its rig when `diorama cast` could cut it into parts. */
-  cast: Record<string, { image: string; rig?: Rig; parts?: string; model?: { dir: string; info: ModelInfo }; sprites?: { dir: string; info: SpriteInfo } }>;
+  cast: Record<string, { image: string; height?: number; rig?: Rig; parts?: string; model?: { dir: string; info: ModelInfo }; sprites?: { dir: string; info: SpriteInfo } }>;
   story: Story | null;
   /** Index into story.changes → the painting as it looks once that change holds. */
   changes?: Record<string, string>;
@@ -44,7 +44,8 @@ export type SpriteInfo = {
   lines?: Record<string, string>;
 };
 type Sheet = { yaw: number; stand: number; img: HTMLImageElement; gestures: string[] };
-type Figure = { img: HTMLImageElement; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
+/** height: metres standing (a grown-up 1.62, a cat 0.3), so each is drawn at its own size. */
+type Figure = { img: HTMLImageElement; height?: number; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
 /** y: the floor row the cut stands on, which sets how far it slides with parallax. */
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number; y: number };
 
@@ -219,7 +220,7 @@ class Game {
     await Promise.all(Object.entries(this.data.cast).map(async ([key, cast]) => {
       const img = await loadImage(files(cast.image)).catch(() => undefined);
       if (!img) return;
-      const figure: Figure = { img };
+      const figure: Figure = { img, height: cast.height };
       if (cast.rig && cast.parts) {
         const parts = new Map<PartName, HTMLImageElement>();
         await Promise.all(cast.rig.parts.map(async (p) => parts.set(p.name, await loadImage(files(`${cast.parts}/${p.file}`)))));
@@ -1100,8 +1101,10 @@ class Game {
   /** Draws a person with feet at (x, y): their shadow (layer 'shadow', returns its box) or their body (returns the box it covers). */
   private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0], yaw = facing * Math.PI / 3, talk?: 'speak' | 'listen', foot?: number, layer: 'shadow' | 'body' = 'body'): Rect {
     const g = this.place.g;
-    // Size comes from where the person stands on the floor; on stairs the feet sit on the tread under them.
-    const h = personPx(g, y);
+    // Size comes from where the person stands on the floor and how tall they are (a cat, a child); on stairs
+    // the feet sit on the tread under them.
+    const unit = personPx(g, y);
+    const h = unit * ((figure?.height ?? 1.62) / 1.62);
     y = foot ?? stepFootY(g, x, y);
     const sprites = figure?.sprites;
     const model = sprites ? undefined : figure?.model;
@@ -1156,7 +1159,7 @@ class Game {
     // it (two shadows read as two lights) and only a thin dark contact under the soles stays. In shade, fog or
     // no measured light, the blob is the whole shadow.
     // The sun, or a fire's light on this person (its own way, fading with distance).
-    const light = lightFor(g, x, y, h, this.time);
+    const light = lightFor(g, x, y, unit, this.time);
     const cast = light && light.length > 0 && light.strength > 0.02 && shaded < 0.98 ? 1 - shaded : 0;
     const blob = (0.12 + 0.4 * strength) * (1 - cast);
     // Shadows lie on the floor: every one is drawn before the things and the people (the shadow layer), so a
@@ -1174,7 +1177,7 @@ class Game {
         ctx.ellipse(x, y, h * 0.07, Math.max(1.5, h * 0.014), 0, 0, Math.PI * 2);
         ctx.fill();
       }
-      const rect = cast > 0 ? this.castShadow(x, y, h, light!, cast * light!.strength, paint, [sx, sy]) : undefined;
+      const rect = cast > 0 ? this.castShadow(x, y, h, unit / 1.62, light!, cast * light!.strength, paint, [sx, sy]) : undefined;
       ctx.restore();
       return rect ?? [x + sx, y + sy, x + sx, y + sy];
     }
@@ -1213,7 +1216,7 @@ class Game {
    * The figure's silhouette laid on the floor away from the light: its feet stay put and its head lands
    * length * h along dir. Drawn soft, at the painting's own shadow strength. ctx is already shifted for parallax.
    */
-  private castShadow(x: number, y: number, h: number, light: NonNullable<Geometry['light']>, alpha: number, paint: (c: CanvasRenderingContext2D) => number, [sx, sy]: [number, number]): Rect {
+  private castShadow(x: number, y: number, h: number, perM: number, light: NonNullable<Geometry['light']>, alpha: number, paint: (c: CanvasRenderingContext2D) => number, [sx, sy]: [number, number]): Rect {
     const sc = this.shadowCanvas;
     const [w, hh] = [Math.ceil(h * 1.4), Math.ceil(h * 1.25)];
     const [ox, oy] = [w / 2, Math.ceil(h * 1.15)];
@@ -1233,7 +1236,7 @@ class Game {
     c.fillStyle = '#121830';
     c.fillRect(0, 0, sc.width, sc.height);
     c.globalCompositeOperation = 'source-over';
-    const onGround = this.place.depth && this.groundShadow(x, y, h, light, alpha, sc, w, hh, ox, oy, half, [sx, sy]);
+    const onGround = this.place.depth && this.groundShadow(x, y, h, perM, light, alpha, sc, w, hh, ox, oy, half, [sx, sy]);
     if (onGround) return onGround;
     const [dx, dy] = light.dir;
     const n = Math.hypot(dx, dy) || 1;
@@ -1258,12 +1261,12 @@ class Game {
    * asks whether the figure stands between it and the sun. Worked out at the depth map's half resolution
    * and drawn up soft. Painted shadow and water take it away. Undefined: no sun found here, use the flat one.
    */
-  private groundShadow(x: number, y: number, h: number, light: NonNullable<Geometry['light']>, alpha: number, sc: HTMLCanvasElement, w: number, hh: number, ox: number, oy: number, half: number, [sx, sy]: [number, number]): Rect | undefined {
+  private groundShadow(x: number, y: number, h: number, perM: number, light: NonNullable<Geometry['light']>, alpha: number, sc: HTMLCanvasElement, w: number, hh: number, ox: number, oy: number, half: number, [sx, sy]: [number, number]): Rect | undefined {
     const { g, depth, shade, wet } = this.place;
     const sun = depth && sunFor(g, depth, light, x, y, h);
     if (!depth || !sun) return undefined;
     const px = sc.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, w, hh).data;
-    const sil = { alpha: new Uint8ClampedArray(w * hh), w, h: hh, ox, oy, perM: h / 1.62 };
+    const sil = { alpha: new Uint8ClampedArray(w * hh), w, h: hh, ox, oy, perM };
     for (let i = 0; i < w * hh; i++) sil.alpha[i] = px[i * 4 + 3];
     // Where it can fall: past the flat shadow's reach (a drop lengthens it), wide as the figure, inside the frame.
     const n = Math.hypot(light.dir[0], light.dir[1]) || 1;

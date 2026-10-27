@@ -53,6 +53,8 @@ export function worldData(files: WorldFiles) {
     places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, ...(backdrop && { backdrop }), ...(layers && { layers }), issue };
   }
   const castDir = files.path('cast');
+  // cast/heights.json (diorama cast): metres each one stands, a grown-up 1.62.
+  const heights = fs.existsSync(files.path('cast', 'heights.json')) ? (files.readJson(files.path('cast', 'heights.json')) as Record<string, number>) : {};
   const cast = Object.fromEntries((fs.existsSync(castDir) ? fs.readdirSync(castDir) : [])
     .filter((f) => f.endsWith('.png') && !f.endsWith('-painting.png'))
     .map((f) => {
@@ -62,7 +64,7 @@ export function worldData(files: WorldFiles) {
       const model = fs.existsSync(files.path('cast', key, 'model', 'model.json')) ? { dir: `cast/${key}/model`, info: files.readJson(files.path('cast', key, 'model', 'model.json')) as ModelInfo } : undefined;
       // cast/<key>/sprites/sprites.json (diorama sprites): painted walk sheets, preferred over the 3D figure.
       const sprites = fs.existsSync(files.path('cast', key, 'sprites', 'sprites.json')) ? { dir: `cast/${key}/sprites`, info: files.readJson(files.path('cast', key, 'sprites', 'sprites.json')) as SpriteInfo } : undefined;
-      return [key, { image: `cast/${f}`, ...(rig ? { rig, parts: `cast/${key}` } : {}), ...(model && { model }), ...(sprites && { sprites }) }];
+      return [key, { image: `cast/${f}`, ...(heights[key] && { height: heights[key] }), ...(rig ? { rig, parts: `cast/${key}` } : {}), ...(model && { model }), ...(sprites && { sprites }) }];
     }));
   const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
   // changes/<i>.png per place: how story.changes[i] looks once it holds.

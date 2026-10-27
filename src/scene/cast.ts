@@ -4,6 +4,7 @@ import type { Mask } from '../image/mask.ts';
 import { maskBox } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import { museEdit, musePaint } from '../meta/muse.ts';
+import { askSparkJson } from '../meta/spark.ts';
 import { samFind } from '../meta/sam.ts';
 import type { World } from '../world/schema.ts';
 
@@ -60,3 +61,23 @@ export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, 
 }
 
 const area = (m: Mask) => m.bits.reduce((s, b) => s + b, 0);
+
+/** A grown-up's height, the scale's unit (PERSON_M in src/scene/scale.ts). */
+export const PERSON_M = 1.62;
+
+/**
+ * How tall each character stands, in metres (a cat about 0.3, a child about 1.1, a grown-up 1.62), so the
+ * runtime draws an animal or a child at its own size, not as a person-sized cut-out. One Spark call for the cast.
+ */
+export async function castHeights(memo: Memo, world: World, cast: Who[]): Promise<Record<string, number>> {
+  if (!cast.length) return {};
+  const prompt = `These are the characters of a 2D adventure game (${world.pitch}):
+${cast.map((w) => `- ${w.key}: ${w.looks}`).join('\n')}
+How tall does each one stand, in metres, from the ground to the top of the head (for an animal on four legs, to the top of its head as it stands)? An ordinary grown-up is ${PERSON_M}.
+Reply with JSON only: {${cast.map((w) => `"${w.key}": <metres>`).join(', ')}}`;
+  const a = await askSparkJson<Record<string, unknown>>(memo, { label: 'cast-heights', prompt });
+  return Object.fromEntries(cast.flatMap((w) => {
+    const m = Number(a[w.key]);
+    return Number.isFinite(m) && m > 0 ? [[w.key, Math.round(Math.min(3, Math.max(0.08, m)) * 100) / 100]] : [];
+  }));
+}
