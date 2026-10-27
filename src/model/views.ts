@@ -6,6 +6,10 @@ import type { ViewName } from './fit.ts';
 
 const SIZE = '1024x1024';
 const STAND = 'standing still in a relaxed A-pose: arms hanging slightly away from the body with a clear gap between arms and body, legs straight and slightly apart, feet flat';
+// The arms in every view where the front has them: TRELLIS builds one body from all four, and each view is
+// projected back onto it, so a hand in a pocket in one view is painted on the hip as a second pair of hands.
+// Looks often say "hand in pocket"; this pose wins over it.
+const HANDS = 'Both hands empty and fully visible, hanging beside the thighs: not in pockets, not on the hips, not holding anything, not in front of the body.';
 const SAME_HEAD = 'Whatever is on the head (hood up or down, hat, hair) is exactly as in the front picture, from this side too.';
 const PLAIN = 'Full body from head to feet, centred, nothing cropped. Plain flat light grey background, soft even light, no shadow on the ground, no other objects.';
 
@@ -13,15 +17,15 @@ const PLAIN = 'Full body from head to feet, centred, nothing cropped. Plain flat
 export async function paintViews(memo: Memo, key: string, looks: string, painting: Buffer, take = 0): Promise<Record<ViewName, Buffer>> {
   const front = await museEdit(memo, {
     label: `${key}-view-front`, size: SIZE, take, images: [painting],
-    prompt: `The same character as in the picture (${looks}), same clothes, colours and painted style, now seen straight from the front, ${STAND}, face looking at the viewer. ${PLAIN}`,
+    prompt: `The same character as in the picture (${looks}), same clothes, colours and painted style, now seen straight from the front, ${STAND}, face looking at the viewer. ${HANDS} ${PLAIN}`,
   });
   const back = await museEdit(memo, {
     label: `${key}-view-back`, size: SIZE, take, images: [front],
-    prompt: `The same character as in the picture (${looks}), same clothes, colours, patches and painted style, in exactly the same pose, seen straight from behind: we see the back of the head, the back of the clothes and the heels; the face is not visible. ${SAME_HEAD} Same size and position in the frame as the picture. ${PLAIN}`,
+    prompt: `The same character as in the picture (${looks}), same clothes, colours, patches and painted style, in exactly the same pose, seen straight from behind: we see the back of the head, the back of the clothes and the heels; the face is not visible. ${HANDS} ${SAME_HEAD} Same size and position in the frame as the picture. ${PLAIN}`,
   });
   const side = (facing: 'left' | 'right') => museEdit(memo, {
     label: `${key}-view-${facing}`, size: SIZE, take, images: [front, back],
-    prompt: `The same character as in both pictures (front and back views), same clothes, colours, patches and painted style, now seen exactly from the side in profile, facing to the ${facing} of the picture (${looks}). ${SAME_HEAD} Standing in the same relaxed pose: arms hanging straight down beside the body, legs straight and slightly apart. Same size and position in the frame as the pictures. ${PLAIN}`,
+    prompt: `The same character as in both pictures (front and back views), same clothes, colours, patches and painted style, now seen exactly from the side in profile, facing to the ${facing} of the picture (${looks}). ${SAME_HEAD} Standing in the same relaxed pose: arms hanging straight down beside the body, legs straight and slightly apart. ${HANDS} Same size and position in the frame as the pictures. ${PLAIN}`,
   });
   const [left, right] = await Promise.all([side('left'), side('right')]);
   return { front, back, left, right };

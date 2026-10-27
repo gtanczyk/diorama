@@ -40,6 +40,9 @@ const turn = (axis: THREE.Vector3, a: number) => new THREE.Quaternion().setFromA
 // sign, and the normal axis and sign of the surfaces that view sees. Matches src/model/fit.ts.
 const VIEWS = [['front', 'x', 1, 'z', 1], ['back', 'x', -1, 'z', -1], ['left', 'z', -1, 'x', 1], ['right', 'z', 1, 'x', -1]] as const;
 
+/** How much each view is preferred where two see a surface (added to how squarely it faces it). */
+const TRUST = { front: 0.3, back: 0.1, left: 0, right: 0 };
+
 // Kuwahara: flattens 3D shading into paint-like patches.
 const KUWAHARA = `
 uniform sampler2D tex; uniform vec2 texel; uniform int radius; varying vec2 vUv;
@@ -63,6 +66,51 @@ void main() {
   gl_FragColor = vec4(col, c0.a);
   #include <colorspace_fragment>
 }`;
+
+/**
+ * Per vertex and view (VIEWS order), 1 where that view sees the vertex and 0 where a nearer surface covers it,
+ * found with a depth buffer of the rest pose drawn the way each view looks at it.
+ */
+function visibility(rest: Float32Array, tris: number[]): Float32Array {
+  const R = 256;
+  const EPS = 0.015;
+  const count = rest.length / 3;
+  const out = new Float32Array(count * 4);
+  VIEWS.forEach(([, ax, sx, nax, ns], k) => {
+    const [a, n] = [{ x: 0, y: 1, z: 2 }[ax], { x: 0, y: 1, z: 2 }[nax]];
+    const px = (i: number) => (sx * rest[i * 3 + a] + 0.6) * R / 1.2;
+    const py = (i: number) => (1.05 - rest[i * 3 + 1]) * R / 1.1;
+    const pz = (i: number) => ns * rest[i * 3 + n];
+    const depth = new Float32Array(R * R).fill(-Infinity);
+    for (let t = 0; t < tris.length; t += 3) {
+      const [i0, i1, i2] = [tris[t], tris[t + 1], tris[t + 2]];
+      const [x0, y0, x1, y1, x2, y2] = [px(i0), py(i0), px(i1), py(i1), px(i2), py(i2)];
+      const area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+      if (Math.abs(area) < 1e-9) continue;
+      for (let y = Math.max(0, Math.floor(Math.min(y0, y1, y2))); y <= Math.min(R - 1, Math.ceil(Math.max(y0, y1, y2))); y++) {
+        for (let x = Math.max(0, Math.floor(Math.min(x0, x1, x2))); x <= Math.min(R - 1, Math.ceil(Math.max(x0, x1, x2))); x++) {
+          const [cx, cy] = [x + 0.5, y + 0.5];
+          const w0 = ((x1 - cx) * (y2 - cy) - (x2 - cx) * (y1 - cy)) / area;
+          const w1 = ((x2 - cx) * (y0 - cy) - (x0 - cx) * (y2 - cy)) / area;
+          const w2 = 1 - w0 - w1;
+          if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+          depth[y * R + x] = Math.max(depth[y * R + x], w0 * pz(i0) + w1 * pz(i1) + w2 * pz(i2));
+        }
+      }
+    }
+    for (let i = 0; i < count; i++) {
+      const [x, y] = [Math.floor(px(i)), Math.floor(py(i))];
+      // The nearest surface around the vertex, so one on a silhouette edge is not hidden by a missed cell.
+      let near = -Infinity;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const [xx, yy] = [x + dx, y + dy];
+        if (xx >= 0 && yy >= 0 && xx < R && yy < R) near = Math.max(near, depth[yy * R + xx]);
+      }
+      out[i * 4 + k] = pz(i) >= near - EPS ? 1 : 0;
+    }
+  });
+  return out;
+}
 
 type Leg = { thigh: number; shin: number; hipY: number; ankleY: number };
 
@@ -107,6 +155,8 @@ export class Figure3D {
   private legs!: Record<'Left' | 'Right', Leg>;
   private arms!: Record<'Left' | 'Right', THREE.Vector3>;
   private hipsRest!: THREE.Vector3;
+  /** Where the camera is, seen from the figure in its rest pose (it faces +z): picks the painted view to wear. */
+  private camDir = { value: new THREE.Vector3(0, 0, 1) };
 
   static async load(info: ModelInfo, url: (file: string) => string, paint = 1): Promise<Figure3D> {
     const f = new Figure3D(paint);
@@ -210,17 +260,21 @@ export class Figure3D {
     for (let i = 0; i < rest.length; i++) rest[i] = (rest[i] - centre[i % 3]) / h;
     g.setAttribute('restPos', new THREE.BufferAttribute(rest, 3));
     g.setAttribute('restNrm', new THREE.BufferAttribute(restN, 3));
+    g.setAttribute('restVis', new THREE.BufferAttribute(visibility(rest, g.index ? Array.from(g.index.array) : [...Array(pos.count).keys()]), 4));
     const uniforms: Record<string, THREE.IUniform> = {};
-    let bg = [0.87, 0.87, 0.87];
     await Promise.all(VIEWS.map(async ([name]) => {
       const img = new Image();
       img.src = url(info.views[name].image);
       await img.decode();
-      if (name === 'front') {
-        const c = Object.assign(document.createElement('canvas'), { width: 4, height: 4 }).getContext('2d')!;
-        c.drawImage(img, 0, 0, 4, 4, 0, 0, 4, 4);
-        bg = [...c.getImageData(0, 0, 1, 1).data.slice(0, 3)].map((x) => (x / 255) ** 2.2);
-      }
+      // Each painting's own background, which marks where the figure is not: the median of its border, as
+      // src/model/fit.ts finds it (a corner alone can be a lighter vignette).
+      const R = 32;
+      const c = Object.assign(document.createElement('canvas'), { width: R, height: R }).getContext('2d', { willReadFrequently: true })!;
+      c.drawImage(img, 0, 0, R, R);
+      const px = c.getImageData(0, 0, R, R).data;
+      const border = [...Array(R).keys()].flatMap((i) => [[i, 0], [i, R - 1], [0, i], [R - 1, i]]).map(([x, y]) => (y * R + x) * 4);
+      const median = (ch: number) => border.map((at) => px[at + ch]).sort((a, b) => a - b)[border.length >> 1];
+      uniforms[`bg_${name}`] = { value: new THREE.Vector3(...[0, 1, 2].map((ch) => (median(ch) / 255) ** 2.2)) };
       const tex = new THREE.Texture(img);
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.needsUpdate = true;
@@ -228,24 +282,39 @@ export class Figure3D {
       uniforms[`p_${name}`] = { value: tex };
       uniforms[`f_${name}`] = { value: new THREE.Vector4(f.u[0], f.u[1], f.v[0], f.v[1]) };
     }));
-    uniforms.pBg = { value: new THREE.Vector3(...bg) };
-    const decl = VIEWS.map(([k]) => `uniform sampler2D p_${k}; uniform vec4 f_${k};`).join('\n');
-    const body = VIEWS.map(([k, ax, sx, nax, ns]) => `
-  { vec2 uv = vec2(f_${k}.x * ${sx.toFixed(1)} * vRest.${ax} + f_${k}.y, 1. - (f_${k}.z * vRest.y + f_${k}.w));
-    vec4 c = texture2D(p_${k}, uv);
-    float w = pow(max(0., ${ns.toFixed(1)} * rn.${nax}), 4.) * notBg(c.rgb);
-    acc += c.rgb * w; wsum += w; }`).join('');
+    uniforms.camDir = this.camDir;
+    const decl = VIEWS.map(([k]) => `uniform sampler2D p_${k}; uniform vec4 f_${k}; uniform vec3 bg_${k};`).join('\n');
+    // Which painted view a surface wears: the one nearest the camera, wherever that view sees the surface at
+    // all (it faces the view, nothing nearer covers it, the painting shows figure there, not background); the
+    // others only fill what it cannot see. Views are fitted by silhouette and never line up exactly, so two
+    // views on one head show its face twice (the profile's eye beside the front's); one view at a time does not.
+    // Under the arm in a profile the sweater is covered, so the arm's paint stays on the arm. The front is the
+    // painting the hero was cast from, so it keeps the figure until the camera is well round the side.
+    const sample = VIEWS.map(([k, ax, sx, nax, ns], i) => `
+  c[${i}] = texture2D(p_${k}, vec2(f_${k}.x * ${sx.toFixed(1)} * vRest.${ax} + f_${k}.y, 1. - (f_${k}.z * vRest.y + f_${k}.w))).rgb;
+  facing[${i}] = ${ns.toFixed(1)} * rn.${nax};
+  paint[${i}] = notBg(c[${i}], bg_${k});
+  score[${i}] = ${TRUST[k].toFixed(2)} + camDir.${nax} * ${ns.toFixed(1)} - 2. * (1. - smoothstep(0.05, 0.25, facing[${i}])) - 2. * (1. - vVis[${i}]) - 2. * (1. - paint[${i}]);`).join('');
     const m = skinned.material as THREE.MeshStandardMaterial;
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, uniforms);
-      sh.vertexShader = 'attribute vec3 restPos; attribute vec3 restNrm; varying vec3 vRest; varying vec3 vRestN;\n'
-        + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vRest = restPos; vRestN = restNrm;');
+      sh.vertexShader = 'attribute vec3 restPos; attribute vec3 restNrm; attribute vec4 restVis; varying vec3 vRest; varying vec3 vRestN; varying vec4 vVis;\n'
+        + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vRest = restPos; vRestN = restNrm; vVis = restVis;');
       sh.fragmentShader = `${decl}
-uniform vec3 pBg; varying vec3 vRest; varying vec3 vRestN;
-float notBg(vec3 c) { return smoothstep(0.14, 0.32, abs(c.r - pBg.r) + abs(c.g - pBg.g) + abs(c.b - pBg.b)); }
+uniform vec3 camDir; varying vec3 vRest; varying vec3 vRestN; varying vec4 vVis;
+// Two views blend only in a narrow band where they claim a surface about equally.
+#define SHARP 28.
+float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + abs(c.g - bg.g) + abs(c.b - bg.b)); }
 ` + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-  vec3 rn = normalize(vRestN); vec3 acc = vec3(0.); float wsum = 0.;${body}
-  if (wsum > 0.001) diffuseColor.rgb = mix(diffuseColor.rgb, acc / wsum, smoothstep(0.05, 0.4, wsum));`);
+  vec3 rn = normalize(vRestN); vec3 c[4]; float facing[4]; float score[4]; float paint[4];${sample}
+  float best = max(max(score[0], score[1]), max(score[2], score[3]));
+  vec3 acc = vec3(0.); float wsum = 0.;
+  for (int i = 0; i < 4; i++) { float w = exp(SHARP * (score[i] - best)) * step(0.001, facing[i]); acc += c[i] * w; wsum += w; }
+  // No view claims it (the crown of the head faces up, at no view): every view that shows figure there, by how
+  // much it faces it.
+  if (best <= -1.) { acc = vec3(0.); wsum = 0.;
+    for (int i = 0; i < 4; i++) { float w = pow(max(0., facing[i]), 4.) * paint[i] + 1e-6 * paint[i]; acc += c[i] * w; wsum += w; } }
+  if (wsum > 0.) diffuseColor.rgb = acc / wsum;`);
     };
     m.needsUpdate = true;
   }
@@ -364,6 +433,7 @@ float notBg(vec3 c) { return smoothstep(0.14, 0.32, abs(c.r - pBg.r) + abs(c.g -
   }): HTMLCanvasElement {
     this.pose(phase, walking && gesture === undefined, armSwing, gesture);
     this.holder.rotation.y = yaw;
+    this.camDir.value.set(-Math.sin(yaw), 0, Math.cos(yaw));
     this.holder.updateMatrixWorld(true);
     const [w, h] = [Math.ceil(px * 0.9), Math.ceil(px * 1.12)];
     if (this.canvas.width !== w || this.canvas.height !== h) {

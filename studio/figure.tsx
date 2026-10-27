@@ -47,6 +47,7 @@ export function FigurePreview({ slug, who, stamps }: { slug: string; who: string
         {tabs.map(([k, label]) => <button type="button" class={`ghost small${tab === k ? ' on' : ''}`} onClick={() => setTab(k)}>{label}</button>)}
       </div>
       {tab === 'model' && <ModelView slug={slug} dir={`cast/${who}/model`} v={stamps.model} />}
+      {tab === 'rig' && (stamps.model || stamps.sprites) && <p class="detail">The game walks this character with its {stamps.sprites ? 'sprites' : '3D model'}; the cut-out rig is only the fallback (no WebGL, or ?model=0).</p>}
       {tab === 'rig' && <RigView slug={slug} who={who} v={stamps.rig} />}
       {tab === 'sprites' && <SpritesView slug={slug} dir={`cast/${who}/sprites`} v={stamps.sprites} />}
     </div>
@@ -117,7 +118,7 @@ function ModelView({ slug, dir, v }: { slug: string; dir: string; v: number | nu
         <span class="grow" />
         <span class="detail" ref={label} />
       </div>
-      <div class="model" ref={host} {...drag} title="Drag to turn">
+      <div class="turntable" ref={host} {...drag} title="Drag to turn">
         {!fig && <span class="detail">{error ?? 'Loading the model…'}</span>}
       </div>
     </div>

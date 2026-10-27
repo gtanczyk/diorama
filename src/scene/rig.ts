@@ -1,5 +1,6 @@
 // A figure cut into parts the runtime can walk: SAM finds arms, legs and boots, code places the joints.
-// Joints sit at a person's usual proportions (hip at half the height, knee at 0.28) on the parts' own pixels.
+// Joints sit at a person's proportions, measured below the head (a chibi's big head leaves short legs), on the
+// parts' own pixels.
 import sharp from 'sharp';
 import { emptyMask, maskArea, type Mask } from '../image/mask.ts';
 import { components, dilate, intersect, maskBox, subtract, union, unionAll } from '../image/raster.ts';
@@ -159,7 +160,7 @@ export type RigBuild = { rig: Rig; parts: Record<string, Buffer>; issues: string
 export async function rigFigure(memo: Memo, key: string, painting: Buffer): Promise<RigBuild> {
   const png = await sharp(painting).png().toBuffer();
   const find = async (prompt: string) => (await samFind(memo, { label: `rig:${key}:${prompt}`, image: png, prompt })).map((f) => f.mask);
-  const [people, arms, boots, legsFound, trousers] = await Promise.all(['person', 'arm', 'boot', 'leg', 'trousers'].map(find));
+  const [people, arms, boots, legsFound, trousers, heads] = await Promise.all(['person', 'arm', 'boot', 'leg', 'trousers', 'head'].map(find));
   const issues: string[] = [];
   const person = people.sort((a, b) => maskArea(b) - maskArea(a))[0];
   if (!person) throw new Error(`${key}: SAM found no person to rig`);
@@ -180,6 +181,15 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer): Prom
   const lower = footless(worn ? legs.filter((l) => overlap(dilate(worn, 4), l) > 0).reduce((a, l) => union(a, l), worn) : unionAll(W, Hh, legs));
   if (maskArea(lower) < H * 4) throw new Error(`${key}: no legs found to rig`);
 
+  // The hip: a grown-up's sits at 0.575 of the height below the chin (half the whole height); a child or a chibi
+  // with a big head has it lower. Where trousers start near there, at their waistband.
+  const head = heads.map(inPerson).filter((h) => maskBox(h) && maskBox(h)![1] < top + 0.15 * H).sort((a, b) => maskArea(b) - maskArea(a))[0];
+  const chin = head ? Math.min(maskBox(head)![3], top + 0.4 * H) : top + 0.13 * H;
+  const byHead = ground - 0.575 * (ground - chin);
+  const wornBox = worn && maskBox(worn);
+  const waist = wornBox ? wornBox[1] + 0.03 * H : undefined;
+  const hipY = waist !== undefined && waist > byHead - 0.08 * H && waist < byHead + 0.1 * H ? waist : byHead;
+  if (Math.abs(hipY - (ground - 0.5 * H)) > 0.04 * H) issues.push(`hip at ${((ground - hipY) / H).toFixed(2)} of the height (${head ? 'head' : 'no head found'}${hipY === waist ? ', waistband' : ''})`);
   // Near leg: the bigger whole leg SAM sees, from above the knee; far leg: the rest of the lower body.
   // SAM's "leg" on bare legs under trousers is only the shin: then it marks where each leg ends instead.
   const leg = legs.find((l) => maskBox(l)![1] < ground - 0.4 * H);
@@ -194,7 +204,7 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer): Prom
     // hip to knee to the top of its boot, runs nearest. The bigger boot is the near one.
     issues.push(`legs split along hip-to-${feet.length < 2 && shins.length === 2 ? 'shin' : 'boot'} lines, not by SAM`);
     const lowerBox = maskBox(lower)!;
-    const hipGuess: P = [centreX(lower, Math.max(ground - 0.5 * H, lowerBox[1] + 8), 10) ?? (px0 + px1) / 2, ground - 0.5 * H];
+    const hipGuess: P = [centreX(lower, Math.max(hipY, lowerBox[1] + 8), 10) ?? (px0 + px1) / 2, hipY];
     const line = (f: Mask): P[] => {
       const t = maskBox(f)![1];
       const foot: P = [centreX(f, t + 4, 4) ?? hipGuess[0], t];
@@ -221,13 +231,11 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer): Prom
   if (armMasks.length < 2) issues.push(`found ${armMasks.length} arm(s); a missing arm stays on the torso`);
   const [nearArm = emptyMask(W, Hh), farArm = emptyMask(W, Hh)] = armMasks.map((a, i) => (i === 0 ? intersect(dilate(a, 3), person) : a));
 
-  // Joints at usual proportions, on the parts' own pixels.
-  const hipY = ground - 0.5 * H;
   const legsBox = maskBox(union(near, far))!;
   const hipX = centreX(union(near, far), Math.max(hipY, legsBox[1] + 8), 10) ?? (px0 + px1) / 2;
   const hip: P = [hipX, hipY];
   const joints = (legMask: Mask, boot: Mask) => {
-    const kneeY = ground - 0.28 * H;
+    const kneeY = ground - 0.56 * (ground - hipY);
     const knee: P = [centreX(legMask, kneeY) ?? hipX, kneeY];
     // The ankle pivot is where the leg enters the boot (its top middle), so the boot hangs off the shin's end.
     const bootBox = maskArea(boot) ? maskBox(boot) : undefined;
@@ -237,7 +245,7 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer): Prom
   };
   const nearJ = joints(near, nearBoot);
   const farJ = joints(far, farBoot);
-  const shoulderY = ground - 0.8 * H;
+  const shoulderY = chin + 0.06 * H;
   const shoulder = (arm: Mask): P => {
     const box = maskBox(arm);
     return [box ? (centreX(arm, box[1] + 0.06 * H, 0.04 * H) ?? hipX) : hipX, box ? Math.max(shoulderY, box[1] + 0.05 * H) : shoulderY];

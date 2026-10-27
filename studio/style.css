@@ -196,8 +196,8 @@ section.agent .row { padding: 12px 14px 0; }
 /* A character moving as the game moves them: 3D model, 2D rig, painted sheets. */
 .cast .figure-preview { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
 .cast .figure-preview .moves { display: flex; flex-direction: column; gap: 10px; }
-.cast .figure-preview .model { min-height: 340px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: var(--raised); cursor: grab; touch-action: none; user-select: none; }
-.cast .figure-preview .model:active { cursor: grabbing; }
+.cast .figure-preview .turntable { min-height: 340px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: var(--raised); cursor: grab; touch-action: none; user-select: none; }
+.cast .figure-preview .turntable:active { cursor: grabbing; }
 .cast .figure-preview canvas.rig { height: 300px; width: auto; align-self: flex-start; border-radius: 10px; background: var(--raised); }
 .cast .figure-preview .sheets { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
 .cast .figure-preview .sheets li { display: flex; flex-direction: column; align-items: center; gap: 4px; }
