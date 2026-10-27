@@ -5,4 +5,4 @@ if (cmd === 'sleep') await new Promise((r) => setTimeout(r, 10_000));
 emit('step.start', { step: 'layout' });
 console.log(`laying out ${slug} with key ${process.env.META_API_KEY}`);
 emit('step.end', { step: 'layout', seconds: 0.1 });
-if (cmd === 'fail') { console.error('diorama build: it broke'); process.exit(1); }
+if (cmd === 'fail' || process.env.FAKE_FAIL === '1') { console.error('diorama build: it broke'); process.exit(1); }

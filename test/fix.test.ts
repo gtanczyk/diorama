@@ -130,3 +130,19 @@ test('a failed build is retried from the step it failed on', async () => {
   expect(third.args).toEqual(['build', 'w', '--from', 'masks', '--to', 'verify']);
   await jobs.wait(third.id, 5000);
 });
+
+test('the agent gets three fixes of a place that leave it unplayable; then it must hand over to the person', async () => {
+  const { ctx, jobs } = world();
+  process.env.FAKE_FAIL = '1';
+  try {
+    for (let i = 0; i < 3; i++) {
+      const job = (await runAction('floor_cells', { slug: 'w', place: 'dock', floor: 'deck', add: [`C${i + 1}`] }, ctx('agent'))) as { id: string };
+      expect((await jobs.wait(job.id)).state).toBe('failed');
+    }
+    await expect(runAction('floor_cells', { slug: 'w', place: 'dock', floor: 'deck', add: ['C9'] }, ctx('agent'))).rejects.toThrow(/tell the person/);
+    // The person is never held back.
+    await runAction('floor_cells', { slug: 'w', place: 'dock', floor: 'deck', add: ['C9'] }, ctx('user'));
+  } finally {
+    delete process.env.FAKE_FAIL;
+  }
+});

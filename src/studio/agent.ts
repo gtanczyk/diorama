@@ -213,9 +213,10 @@ export class AgentHub {
   }
 
   /** A message from the person: steers the running turn, or starts a new one that resumes the conversation. */
-  async say(slug: string, text: string): Promise<void> {
+  async say(slug: string, text: string, from: 'person' | 'studio' = 'person'): Promise<void> {
     const t = this.talk(slug);
-    t.publish('user', { text });
+    // The Studio's own wake-ups (a repair after a build) show as such, not as the person speaking.
+    t.publish(from === 'studio' ? 'wake' : 'user', { text });
     // A new turn starts from a snapshot of the world, whatever tools the agent then uses.
     const dir = path.join(this.opts.root, slug);
     if (t.session.get().status === 'idle' && fs.existsSync(dir)) {
@@ -224,6 +225,11 @@ export class AgentHub {
       } catch {}
     }
     t.session.send(text);
+  }
+
+  /** Whether this world's agent is in the middle of a turn. */
+  busy(slug: string): boolean {
+    return this.talks.get(slug)?.session.get().status === 'running';
   }
 
   stop(slug: string) {

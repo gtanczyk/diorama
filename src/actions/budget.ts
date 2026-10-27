@@ -16,6 +16,8 @@ export const BudgetConfig = z.object({
   prices: z.record(z.enum(MODELS), z.number().min(0)).default({}),
   /** Dollars the Studio warns at; the hackathon gives $150 of Meta credits. */
   limitUsd: z.number().min(0).optional(),
+  /** A build that leaves places unplayable wakes the Studio agent to repair them. */
+  autoRepair: z.boolean().default(true),
 });
 type BudgetConfig = z.infer<typeof BudgetConfig>;
 
@@ -89,6 +91,7 @@ defineAction({
       worlds,
       prices: config.prices,
       limitUsd: config.limitUsd ?? null,
+      autoRepair: config.autoRepair,
       over: config.limitUsd !== undefined && spent.usd >= config.limitUsd,
       file: file(),
     };
@@ -97,14 +100,16 @@ defineAction({
 
 defineAction({
   name: 'budget_set',
-  description: 'Set the dollars per call of a model (from its billing page) and the dollar limit the Studio warns at.',
+  description: 'Set the dollars per call of a model (from its billing page), the dollar limit the Studio warns at, and whether a build that '
+    + 'leaves places unplayable wakes the agent to repair them (autoRepair, on by default).',
   input: z.object({
     prices: z.record(z.enum(MODELS), z.number().min(0)).optional(),
     limitUsd: z.number().min(0).optional(),
+    autoRepair: z.boolean().optional(),
   }),
-  async run({ prices, limitUsd }) {
+  async run({ prices, limitUsd, autoRepair }) {
     const was = readBudget();
-    const next = BudgetConfig.parse({ prices: { ...was.prices, ...prices }, limitUsd: limitUsd ?? was.limitUsd });
+    const next = BudgetConfig.parse({ prices: { ...was.prices, ...prices }, limitUsd: limitUsd ?? was.limitUsd, autoRepair: autoRepair ?? was.autoRepair });
     fs.mkdirSync(path.dirname(file()), { recursive: true, mode: 0o700 });
     fs.writeFileSync(file(), `${JSON.stringify(next, null, 2)}\n`);
     return next;

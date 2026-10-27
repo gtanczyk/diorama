@@ -17,6 +17,15 @@ async function fixPlace(ctx: ActionContext, slug: string, place: string, from: '
   const dir = path.join(ctx.root, slug);
   const blocked = agentBlocked(dir, ctx.by, place);
   if (blocked) throw new ActionError(423, blocked);
+  // The agent's repair limit: after three fixes in a row that left the place unplayable, it is the person's turn.
+  if (ctx.by === 'agent') {
+    const since = new Date(Date.now() - 30 * 60_000).toISOString();
+    const tries = ctx.jobs.list(slug).filter((j) => j.by === 'agent' && j.args.includes('--place') && j.args[j.args.indexOf('--place') + 1] === place && (j.queuedAt ?? '') >= since);
+    const lastOk = tries.findLastIndex((j) => j.state === 'done');
+    if (tries.slice(lastOk + 1).filter((j) => j.state === 'failed').length >= 3) {
+      throw new ActionError(429, `three fixes of ${place} in a row left it unplayable: stop here and tell the person what you tried and what you would do next`);
+    }
+  }
   const placeDir = path.join(dir, 'places', place);
   const needs = { paint: 'blockin.png', masks: 'painting.png', derive: 'masks.json' }[from];
   if (!fs.existsSync(path.join(placeDir, needs))) throw new ActionError(404, `${slug}/${place} has no ${needs} yet: build it first`);

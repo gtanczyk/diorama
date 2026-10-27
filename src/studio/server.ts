@@ -15,7 +15,9 @@ import { ActionError, describeActions, runAction, type ActionContext } from '../
 import { redact } from '../secrets.ts';
 import { Slug } from '../world/schema.ts';
 import { Events, type StudioEvent } from './events.ts';
-import { Jobs } from './jobs.ts';
+import { Jobs, type Job } from './jobs.ts';
+import { repairPrompt, wantsRepair } from './repair.ts';
+import { readBudget } from '../actions/budget.ts';
 import { AgentHub, isAgentName } from './agent.ts';
 import { bundle, WEB, worldData } from '../commands/play.ts';
 import { WorldFiles } from '../world/files.ts';
@@ -153,6 +155,14 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
   // A job's world folder may appear only once the job runs; watch it from then on while anyone looks.
   events.subscribe((e) => {
     if (e.world && e.type !== 'file.changed' && e.type !== 'call') watches.get(e.world)?.start();
+  });
+  // A build that leaves places unplayable wakes the agent to repair them (budget_set autoRepair turns it off).
+  events.subscribe((e) => {
+    if (e.type !== 'job.end' || !e.world) return;
+    const job = e.job as Job;
+    if (!wantsRepair(job, { enabled: readBudget().autoRepair, agentBusy: agents?.busy(e.world) ?? true })) return;
+    events.publish('repair.agent', { world: e.world, job: job.id, places: (job.unplayable ?? []).map((u) => u.place) });
+    agents.say(e.world, repairPrompt(job), 'studio').catch((error) => events.publish('log', { world: e.world, stream: 'err', line: `could not wake the agent: ${error instanceof Error ? error.message : error}` }));
   });
 
   const server = http.createServer(async (req, res) => {
