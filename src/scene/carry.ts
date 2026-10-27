@@ -86,27 +86,30 @@ export function ran(dir: string, step: string, painting: Buffer) {
   fs.writeFileSync(file, painting);
 }
 
-/** What each place step leaves, newer than the painting it was made from. */
+/** What each place step leaves. */
 const MADE: Record<string, string> = { masks: 'masks.json', plates: 'plates.json', derive: 'geometry.json', backdrop: 'backdrop.png' };
 
 /**
- * For a place whose steps ran before they kept their painting: each step whose output is newer than the painting
- * on disk was made from it, so that painting is what it ran on. Called before a repaint replaces it.
+ * For a place whose steps have not kept their painting (built before .ran/, or put back by an Undo that predates it):
+ * each step that left its output takes the painting on disk as the one it ran on. File times say nothing here (an
+ * Undo writes every file anew), and they need not: the carried questions are asked about this painting, a real one,
+ * so the worst a wrong guess costs is the model calls it would have cost anyway. Called before a repaint replaces it.
  */
-export function seedRan(dir: string) {
+export function seedRan(dir: string): string[] {
   const file = path.join(dir, 'painting.png');
-  if (!fs.existsSync(file)) return;
-  const painted = fs.statSync(file).mtimeMs;
+  if (!fs.existsSync(file)) return [];
   let painting: Buffer | undefined;
+  const seeded: string[] = [];
   for (const [step, made] of Object.entries(MADE)) {
-    const out = path.join(dir, made);
-    if (fs.existsSync(ranFile(dir, step)) || !fs.existsSync(out) || fs.statSync(out).mtimeMs < painted) continue;
+    if (fs.existsSync(ranFile(dir, step)) || !fs.existsSync(path.join(dir, made))) continue;
     ran(dir, step, (painting ??= fs.readFileSync(file)));
+    seeded.push(step);
   }
   // The far flats and the water were cut from the backdrop on disk.
   if (fs.existsSync(ranFile(dir, 'backdrop')) && !fs.existsSync(ranFile(dir, 'backdrop-made')) && fs.existsSync(path.join(dir, 'backdrop.png'))) {
     ran(dir, 'backdrop-made', fs.readFileSync(path.join(dir, 'backdrop.png')));
   }
+  return seeded;
 }
 
 /** Whether the change reaches a region (a mask, a box, or several), grown by `margin` px. No region is never reached. */

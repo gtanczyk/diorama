@@ -63,7 +63,8 @@ defineCommand({
       const fresh = onTop ? fixes.issues.filter((i) => !done.includes(id(i))) : fixes.issues;
       const base = onTop ? fs.readFileSync(files.place(place.key, 'painting.png')) : first;
       // A place built before the steps kept their painting (.ran/) gets it now, so this first repaint carries too.
-      seedRan(files.place(place.key));
+      const seeded = seedRan(files.place(place.key));
+      if (seeded.length) console.log(`  ${place.key}: ${seeded.join(', ')} take the painting before this repaint as the one they ran on`);
       files.write(files.place(place.key, 'painting.png'), await repaint(files.memo, place, base, { issues: fresh }));
       files.write(kept, { inputs, applied: fixes.issues.map(id) });
       console.log(`${place.key}: painted, ${fresh.length} fix(es)${onTop ? ' over the last painting' : ''}${fresh.map((i) => ` · ${i.key} ${i.problem}`).join('')}`);
