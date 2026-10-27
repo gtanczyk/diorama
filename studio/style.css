@@ -466,6 +466,9 @@ main.workshop.dock-left-folded { grid-template-columns: 44px minmax(0, 1fr); }
 main.workshop.dock-left-folded > .dock { order: -1; }
 main.workshop.dock-float { grid-template-columns: minmax(0, 1fr); }
 .dock { position: relative; }
+/* Docked, the agent keeps the window's height whatever the tab and however long the page: it stays put while the page scrolls. */
+main.workshop:not(.fit) > .dock:not(.float) { position: sticky; top: 20px; align-self: start; height: calc(100dvh - var(--top-h, 55px) - 40px); min-height: 0; }
+main.workshop:not(.fit) > .dock:not(.float):not(.folded) .dock-body { flex: 1 1 0; min-height: 0; overflow: hidden; }
 .dock-body { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
 .dock-body[hidden] { display: none; }
 .dock-body > section.agent { flex: 1 1 0; min-height: 200px; max-height: none; }
