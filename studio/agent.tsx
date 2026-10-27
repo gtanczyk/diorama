@@ -113,7 +113,8 @@ export function describeCalls(state: SessionState | null, jobs: readonly JobInfo
   const job = (id: unknown) => jobs.find((j) => j.id === id);
   const turns = state.turns.map((turn) => ({
     ...turn,
-    entries: turn.entries.map((e) => {
+    // An approved Studio call is followed by the call itself, which says the same; only a pending or denied one is news.
+    entries: turn.entries.filter((e) => !(e.kind === 'approval' && e.decision === 'approve' && e.request.summary?.includes('mcp__diorama__'))).map((e) => {
       // An approval names the raw tool; say it the way the steps do.
       if (e.kind === 'approval' && e.request.summary?.includes('mcp__diorama__')) {
         return { ...e, request: { ...e.request, summary: e.request.summary.replace(/mcp__diorama__(\w+)/g, (_, name: string) => SAYS[name] ?? name.replace(/_/g, ' ')) } };
