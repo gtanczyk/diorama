@@ -287,6 +287,7 @@ function Workshop({ slug }: { slug: string }) {
   const [jobPlan, setJobPlan] = useState<string[] | null>(null);
   /** What the last undo or redo put back, until the next job. */
   const [undone, setUndone] = useState<string | null>(null);
+  const undoneJob = useRef<string | null>(null);
   /** Places the build is mending right now, with what it tries. */
   const [repairing, setRepairing] = useState<Record<string, string>>({});
   const [calls, setCalls] = useState(0);
@@ -316,7 +317,13 @@ function Workshop({ slug }: { slug: string }) {
     const stop = follow(slug, (e) => {
       switch (e.type) {
         // Verify's notes on a playable place live in the place's inspector; Activity sums them up in one line.
-        case 'log': if (/^\s+flag\s|^# |^calls sent:/.test(String(e.line))) return; if (String(e.line).trim()) setJobTail(String(e.line).trim().slice(0, 160)); return add(e, String(e.line), e.stream === 'err' ? 'err' : 'out');
+        case 'log': {
+          // place.verdict says it once, in words; the folder on this machine is nobody's business on a recording.
+          const line = String(e.line).replace(/\/(?:Users|home)\/[^/\s]+/g, '~');
+          if (/^\s+flag\s|^# |^calls sent:|^[a-z][a-z0-9-]*: (ok|\d+ error\(s\)), \d+ flag\(s\)$|^[a-z][a-z0-9-]*: playable, flagged and continued/.test(line)) return;
+          if (line.trim()) setJobTail(line.trim().slice(0, 160));
+          return add(e, line, e.stream === 'err' ? 'err' : 'out');
+        }
         case 'build.start': return setJobPlan(e.steps as string[]);
         case 'step.start': setRunning((r) => ({ ...r, [String(e.step)]: 'run' })); return add(e, `▸ ${e.step}`, 'step');
         case 'step.end': setJobDone((d) => ({ ...d, [String(e.step)]: Number(e.seconds) })); setRunning((r) => { const n = { ...r }; delete n[String(e.step)]; return n; }); soon(); return add(e, `✓ ${e.step} · ${e.seconds}s`, 'step');
@@ -331,7 +338,16 @@ function Workshop({ slug }: { slug: string }) {
           if (e.type === 'job.end' && job.by === 'agent' && job.state === 'done') setPlaying((p) => (p ? { ...p, round: (p.round ?? 0) + 1 } : p));
           return add(e, `${e.type === 'job.end' ? (job.state === 'done' ? 'done' : job.state) : e.type === 'job.start' ? 'started' : 'queued'}: ${job.label} (by ${job.by})${job.error ? ` · ${job.error}` : ''}`, e.type === 'job.end' && job.state !== 'done' ? 'err' : 'job');
         }
-        case 'history.undo': soon(); setCanRedo(!e.redo); setUndone(`${e.by === 'agent' ? 'The agent ' : ''}${e.by === 'agent' ? (e.redo ? 'redid' : 'undid') : e.redo ? 'Redone' : 'Undone'}: ${e.redo ? 'the undo' : String(e.label ?? '').replace(/^before /, '') || 'the last job'} · ${(e.restored as string[]).length + (e.removed as string[]).length} files`); setPlaying((p) => (p ? { ...p, round: (p.round ?? 0) + 1 } : p)); return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.redo ? 'redo' : `undo to ${e.id}`} · ${(e.restored as string[]).length} restored, ${(e.removed as string[]).length} removed`, e.by === 'agent' ? 'agent' : 'act');
+        case 'history.undo': {
+          soon();
+          setCanRedo(!e.redo);
+          // A redo puts back what the undo took away, so it is named the same.
+          if (!e.redo) undoneJob.current = String(e.label ?? '').replace(/^before /, '') || 'the last job';
+          const files = (e.restored as string[]).length + (e.removed as string[]).length;
+          setUndone(`${e.by === 'agent' ? `The agent ${e.redo ? 'redid' : 'undid'}` : e.redo ? 'Redone' : 'Undone'}: ${undoneJob.current ?? 'the last job'} · ${files} file${files === 1 ? '' : 's'}`);
+          setPlaying((p) => (p ? { ...p, round: (p.round ?? 0) + 1 } : p));
+          return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.redo ? 'redo' : `undo to ${e.id}`} · ${(e.restored as string[]).length} restored, ${(e.removed as string[]).length} removed`, e.by === 'agent' ? 'agent' : 'act');
+        }
         // The build mending itself: free fixes first, then the agent is asked.
         case 'place.fail': return add(e, `✕ ${e.place}: ${e.step} failed, set aside · ${e.error}`, 'err');
         case 'place.verdict': if (e.ok) { const n = (e.flagged as string[] | undefined)?.length ?? 0; return add(e, `✓ ${e.place}: playable${n ? ` · ${n} note${n === 1 ? '' : 's'}, nothing to do (open the place to read them)` : ''}`, 'step'); } return add(e, `✕ ${e.place}: not playable · ${(e.errors as string[] | undefined)?.join('; ') || 'see verify'}`, 'err');

@@ -83,7 +83,8 @@ function useReplay(slug: string, file: string | null, speed: number): [SessionSt
         timers.push(setTimeout(() => {
           if (stopped) return;
           turns.set(l.turn!.id, l.turn!);
-          setState({ agent: l.agent ?? 'muse', cwd: '', status: l.status ?? 'idle', turns: [...turns.values()], queued: [], approvals: [], usage: {}, canSteer: false });
+          // The recording can end inside a turn; once it is played through, nothing is working any more.
+          setState({ agent: l.agent ?? 'muse', cwd: '', status: i === lines.length - 1 ? 'idle' : l.status ?? 'idle', turns: [...turns.values()], queued: [], approvals: [], usage: {}, canSteer: false });
           if (i === lines.length - 1) setDone(true);
         }, 600 + clock));
       });
@@ -113,6 +114,10 @@ export function describeCalls(state: SessionState | null, jobs: readonly JobInfo
   const turns = state.turns.map((turn) => ({
     ...turn,
     entries: turn.entries.map((e) => {
+      // An approval names the raw tool; say it the way the steps do.
+      if (e.kind === 'approval' && e.request.summary?.includes('mcp__diorama__')) {
+        return { ...e, request: { ...e.request, summary: e.request.summary.replace(/mcp__diorama__(\w+)/g, (_, name: string) => SAYS[name] ?? name.replace(/_/g, ' ')) } };
+      }
       if (e.kind !== 'tool' || !e.name.startsWith('mcp__diorama__') || !e.input || typeof e.input !== 'object') return e;
       const input = e.input as Record<string, unknown>;
       const j = job(input.id);
