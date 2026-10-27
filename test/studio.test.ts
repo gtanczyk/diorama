@@ -81,6 +81,15 @@ test('world files need the session cookie and stay inside the world', async () =
   expect((await request('/files/foghorn/%2e%2e/%2e%2e/etc/passwd', { headers: { cookie } })).body).not.toContain('root:');
   expect((await request('/files/foghorn/places%2F..%2F..%2F..%2Fworld.json', { headers: { cookie } })).status).toBe(404);
   expect((await request('/files/foghorn/memo/calls.jsonl', { headers: { cookie } })).status).toBe(404);
+  // The game page for the Workshop's frame: same cookie, same guards on its files, framed only by the Studio.
+  expect((await request('/play/foghorn/')).status).toBe(401);
+  const game = await request('/play/foghorn/', { headers: { cookie } });
+  expect(game.status).toBe(200);
+  expect(String(game.headers['content-security-policy'])).toContain("frame-ancestors 'self'");
+  expect((await request('/play/foghorn/files/world.json', { headers: { cookie } })).status).toBe(200);
+  expect((await request('/play/foghorn/files/memo/calls.jsonl', { headers: { cookie } })).status).toBe(404);
+  expect((await request('/play/foghorn/files/%2e%2e/%2e%2e/etc/passwd', { headers: { cookie } })).body).not.toContain('root:');
+  expect((await request('/play/nowhere/', { headers: { cookie } })).status).toBe(404);
 });
 
 test('every action is served over HTTP with its input schema (parity with the CLI and MCP)', async () => {
