@@ -311,15 +311,37 @@ const WAIT_WORDS = {
   Polish: { title: 'Wasza gra powstaje', left: (n: number) => `jeszcze około ${n} min`, soon: 'już prawie', listen: 'Posłuchaj historii', place: 'Nowe miejsce!', play: 'Zagrajmy!', oops: 'Coś poszło nie tak: dorosły zaraz zerknie.', hide: 'Ukryj' },
 };
 
-type Slide = { id: string; from?: string; to: string; label: string; place?: boolean };
+/** What the build is doing, as a child would follow it. */
+const DOING: Record<string, [string, string]> = {
+  world: ['Wymyślamy wasz świat…', 'Dreaming up your world…'],
+  story: ['Piszemy, kto co mówi…', 'Writing who says what…'],
+  layout: ['Planujemy, gdzie co stoi…', 'Planning where everything goes…'],
+  paint: ['Malujemy miejsca…', 'Painting the places…'],
+  masks: ['Wycinamy rzeczy z obrazków…', 'Cutting things out of the pictures…'],
+  plates: ['Wycinamy rzeczy z obrazków…', 'Cutting things out of the pictures…'],
+  icons: ['Rysujemy rzeczy do plecaka…', 'Drawing things for the bag…'],
+  derive: ['Sprawdzamy, gdzie można chodzić…', 'Finding where you can walk…'],
+  backdrop: ['Malujemy niebo i to, co daleko…', 'Painting the sky and far away…'],
+  weather: ['Dodajemy słońce i wiatr…', 'Adding sun and wind…'],
+  cast: ['Ożywiamy postacie…', 'Bringing the characters to life…'],
+  model: ['Uczymy postacie chodzić…', 'Teaching the characters to walk…'],
+  sprites: ['Uczymy postacie chodzić…', 'Teaching the characters to walk…'],
+  sound: ['Szukamy dźwięków…', 'Finding the sounds…'],
+  voices: ['Nagrywamy głosy…', 'Recording the voices…'],
+  verify: ['Sprawdzamy, czy da się zagrać…', 'Checking it can be played…'],
+};
+
+type Slide = { id: string; from?: string; to?: string; text?: string; label: string; place?: boolean };
 
 /**
  * While a workshop world builds (a quarter of an hour), the children watch it come together: their drawings beside
  * what they became, every place as soon as it is painted, the story read aloud, and their hero walking along the
  * road to the end of the build. When the game is ready one big button starts it.
  */
-export function KidsWait({ slug, places, progress, left, ready, failed, onPlay, onHide }: {
+export function KidsWait({ slug, places, progress, left, doing, ready, failed, onPlay, onHide }: {
   slug: string;
+  /** The build step running now. */
+  doing?: string;
   places: Array<{ key: string; image: { file: string; v: number | null } | null }>;
   progress: number;
   left: number | null;
@@ -340,6 +362,8 @@ export function KidsWait({ slug, places, progress, left, ready, failed, onPlay, 
   // English keys are for the painters; in another language a thing goes unnamed until the world step names it.
   const name = (key: string) => world?.names?.[key] ?? (words === WAIT_WORDS.English ? key.replace(/-/g, ' ') : '');
   const slides: Slide[] = [
+    // Their story, on screen while it is read: something to look at from the first second.
+    ...(m?.idea ? [{ id: 'story', text: m.idea.idea, label: '' }] : []),
     ...(m?.drawings ?? []).filter((d) => d.preview && d.drawn?.kind !== 'place').map((d) => ({ id: d.file, from: fileUrl(slug, d.file, d.v), to: fileUrl(slug, d.preview!.file, d.preview!.v), label: name(d.drawn!.key) })),
     ...places.filter((p) => p.image?.file.endsWith('painting.png')).map((p) => ({ id: p.key, to: fileUrl(slug, p.image!.file, p.image!.v), label: name(p.key), place: true })),
   ];
@@ -354,10 +378,12 @@ export function KidsWait({ slug, places, progress, left, ready, failed, onPlay, 
     if (at >= 0 && primed.current) (setAt(at), setFresh(slides[at].id));
     primed.current = true;
   }, [painted]);
+  // The story stays up long enough to be read along; a picture for a few seconds.
+  const showing = slides.length ? slides[at % slides.length] : null;
   useEffect(() => {
-    const timer = setInterval(() => setAt((i) => i + 1), 7000);
-    return () => clearInterval(timer);
-  }, []);
+    const timer = setTimeout(() => setAt((i) => i + 1), showing?.text ? 25000 : 7000);
+    return () => clearTimeout(timer);
+  }, [at, showing?.id]);
   const read = () => {
     if (!m?.reading) return;
     reader.current?.pause();
@@ -367,7 +393,7 @@ export function KidsWait({ slug, places, progress, left, ready, failed, onPlay, 
   // The story is read once as the wait begins (the click on Build lets the page play sound).
   useEffect(() => (m?.reading && !reader.current && read(), undefined), [m]);
   useEffect(() => () => reader.current?.pause(), []);
-  const slide = slides.length ? slides[at % slides.length] : null;
+  const slide = showing;
   const hero = m?.drawings.find((d) => d.drawn?.kind === 'hero' && d.preview);
   const done = Math.max(0, Math.min(1, ready ? 1 : progress));
   // Only a world made from drawings or recordings waits like this.
@@ -381,10 +407,11 @@ export function KidsWait({ slug, places, progress, left, ready, failed, onPlay, 
       </div>
       <div class="screen">
         {slide && (
-          <figure key={slide.id} class={slide.place ? 'place' : ''}>
+          <figure key={slide.id} class={slide.place ? 'place' : slide.text ? 'telling' : ''}>
             {slide.from && <img class="from" src={slide.from} alt="" />}
             {slide.from && <span class="arrow">→</span>}
-            <img class="to" src={slide.to} alt="" />
+            {slide.to && <img class="to" src={slide.to} alt="" />}
+            {slide.text && <p class="telling-text">{slide.text}</p>}
             <figcaption>{slide.id === fresh && !ready ? `${words.place} ` : ''}{slide.label}</figcaption>
           </figure>
         )}
@@ -398,7 +425,7 @@ export function KidsWait({ slug, places, progress, left, ready, failed, onPlay, 
           <div class="done" style={{ width: `${done * 100}%` }} />
           {hero && <img class="walker" style={{ left: `${done * 100}%` }} src={fileUrl(slug, hero.preview!.file, hero.preview!.v)} alt="" />}
           <span class="flag">🏁</span>
-          <span class="detail">{left === null ? '' : left > 60 ? words.left(Math.round(left / 60)) : words.soon}</span>
+          <span class="detail">{doing && DOING[doing] ? `${DOING[doing][words === WAIT_WORDS.Polish ? 0 : 1]}${left === null ? '' : ' · '}` : ''}{left === null ? '' : left > 60 ? words.left(Math.round(left / 60)) : words.soon}</span>
         </div>
       )}
     </div>

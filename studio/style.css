@@ -299,7 +299,8 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
 .wait h1 { font-size: clamp(24px, 4vw, 48px); margin: 0; }
 .wait .screen { flex: 1; min-height: 0; display: grid; place-items: center; }
 .wait figure { margin: 0; display: grid; grid-template-columns: 1fr auto 1.5fr; align-items: center; gap: 2vh 3vw; width: 100%; animation: arrive 1.2s ease-out; }
-.wait figure.place { grid-template-columns: 1fr; }
+.wait figure.place, .wait figure.telling { grid-template-columns: 1fr; }
+.wait .telling-text { margin: 0 auto; max-width: 40ch; font-size: clamp(22px, 2.6vw, 34px); line-height: 1.45; text-align: center; text-wrap: pretty; }
 .wait figure img { max-width: 100%; max-height: 54vh; margin: auto; border-radius: 16px; object-fit: contain; }
 .wait figure img.to { background: #fff; }
 .wait figure.place img.to { background: none; }

@@ -448,7 +448,14 @@ function Workshop({ slug }: { slug: string }) {
   const plan = jobPlan ?? steps;
   const took = (s: string) => status?.build[s]?.seconds ?? status?.typical?.[s] ?? 30;
   const total = plan.reduce((sum, s) => sum + took(s), 0);
-  const left = plan.filter((s) => jobDone[s] === undefined).reduce((sum, s) => sum + took(s), 0);
+  // A running step counts as far along as its time so far says (never quite done), so the road moves every second, not only between steps.
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!shown || shown.state !== 'running') return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [shown?.id, shown?.state]);
+  const left = plan.filter((s) => jobDone[s] === undefined).reduce((sum, s) => sum + took(s) - (running[s] === 'run' && since[s] ? Math.min((now - since[s]) / 1000, took(s) * 0.9) : 0), 0);
   // The build stage: the running job's own steps (the build says them; until then, its arguments).
   const arg = (name: string) => (job && job.args.includes(name) ? job.args[job.args.indexOf(name) + 1] : undefined);
   const ownPlan = jobPlan ?? (job?.args[0] === 'build' ? steps.slice(arg('--from') ? steps.indexOf(arg('--from')!) : 0, arg('--to') ? steps.indexOf(arg('--to')!) + 1 : steps.length) : []);
@@ -468,7 +475,7 @@ function Workshop({ slug }: { slug: string }) {
   return (
     <>
       <Header world={slug} live={live} />
-      {shown && status && <KidsWait slug={slug} places={status.placeDetail} progress={total ? 1 - left / total : 0} left={shown.state === 'running' ? left : null}
+      {shown && status && <KidsWait slug={slug} places={status.placeDetail} progress={total ? 1 - left / total : 0} left={shown.state === 'running' ? left : null} doing={plan.find((s) => running[s] === 'run')}
         ready={shown.state === 'done' && playable} failed={shown.state === 'failed' || shown.state === 'cancelled'}
         onPlay={() => (setHidden(shown.id), setPlaying({ full: true }))} onHide={() => setHidden(shown.id)} />}
       <main class="workshop">
