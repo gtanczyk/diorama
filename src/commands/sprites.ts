@@ -65,7 +65,7 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
   // blocks it keeps the pose about half the time; over the textured render it traces about 3 takes in 4.
   // A frame whose legs do not follow the guide makes the walk skip: with --tries, more takes, and the
   // whole take whose legs follow best wins (frames mixed from several takes do not match).
-  const facings: Record<string, { sheet: string; yaw: number; stand: number; iou: number[]; legs: number[]; same: number[] }> = {};
+  const facings: Record<string, { sheet: string; yaw: number; stand: number; off: number[]; iou: number[]; legs: number[]; same: number[] }> = {};
   if (plan.walk.length) {
     const guides = await renderGuides(modelDir, plan.walk);
     const clay = await renderGuides(modelDir, plan.walk, undefined, true);
@@ -102,8 +102,8 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
       painted[f] = best.painted;
       files.write(out(`painted-${f}.png`), best.painted);
       files.write(out(`${f}.png`), best.sheet);
-      facings[f] = { sheet: `${f}.png`, yaw: FACINGS[f], stand: best.stand, iou: best.iou, legs: best.legs, same: best.same };
-      console.log(`${key} walk ${f}: take ${best.n + 1} (${['textured', 'clay', 'flat'][(best.n - take) % 3]} guide, ${takes.length} painted), pose IoU ${mean(best.iou).toFixed(3)}, legs ${mean(best.legs).toFixed(3)} (worst ${Math.min(...best.legs)}), same ${mean(best.same).toFixed(3)}${traced(best) ? '  <- Muse kept the 3D look, try --take' : mean(best.iou) < POSE_OK ? '  <- frames left the pose, try --take' : ''}`);
+      facings[f] = { sheet: `${f}.png`, yaw: FACINGS[f], stand: best.stand, off: best.off, iou: best.iou, legs: best.legs, same: best.same };
+      console.log(`${key} walk ${f}: take ${best.n + 1} (${['textured', 'clay', 'flat'][(best.n - take) % 3]} guide, ${takes.length} painted), pose IoU ${mean(best.iou).toFixed(3)}, legs ${mean(best.legs).toFixed(3)} (worst ${Math.min(...best.legs)}), same ${mean(best.same).toFixed(3)}${best.off.length ? `, off the walk: cell ${best.off.join(', ')}` : ''}${traced(best) ? '  <- Muse kept the 3D look, try --take' : mean(best.iou) < POSE_OK ? '  <- frames left the pose, try --take' : ''}`);
     };
     await walk(first, [view('front'), view('right')]);
     await Promise.all(plan.walk.filter((f) => f !== first).map((f) => walk(f, refsFor(f, painted[first]))));
@@ -140,7 +140,7 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
     cols: SHEET.cols, rows: SHEET.rows, frames: SHEET.cols * SHEET.rows, width: SHEET.width, height: SHEET.height,
     // In each cell the feet stand at (cell width / 2, cell height * feetAt); the figure is about `px` tall.
     feetAt: SHEET.feetAt, px: SHEET.px,
-    // Walk sheets: 8 frames of a full cycle; `stand` is the frame shown standing still.
+    // Walk sheets: 8 frames of a full cycle; `stand` is the frame shown standing still; a walk skips the `off` cells.
     facings,
     // Talk sheets: cell i is gestures[i]; cell 0 is `listen` (also how an NPC stands when idle).
     talk,

@@ -38,6 +38,12 @@ type RoutePage = {
 export const TRACED = 0.5;
 
 /**
+ * A walk cell whose painted figure is shorter than this share of the sheet's usual one is not a step (a
+ * crouch, a sit). Walk frames vary by under 6% (5 worlds, 18 sheets); lamp-quarter's crouches were 0.73-0.78.
+ */
+export const OFF_GAIT = 0.88;
+
+/**
  * The model walking (or, given `gestures`, standing in those talking poses of src/play/gestures.ts, one
  * per cell), one transparent sheet per facing, rendered in headless Chromium with WebGL.
  */
@@ -177,7 +183,7 @@ function sameEdges(guide: Buffer, drawn: Buffer, W: number, [x0, y0, cw, ch]: nu
  * centre, same height. Returns the transparent sheet and how well each frame kept the guide's pose (IoU)
  * and its look (`same`, sameEdges).
  */
-export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ sheet: Buffer; iou: number[]; legs: number[]; same: number[]; stand: number }> {
+export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ sheet: Buffer; iou: number[]; legs: number[]; same: number[]; stand: number; off: number[] }> {
   const { cols, rows, width: W, height: H } = SHEET;
   const guide = await rgba(guidePng, [W, H]);
   const painted = await rgba(paintedPng, [W, H]);
@@ -187,6 +193,7 @@ export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ 
   const legs: number[] = [];
   const same: number[] = [];
   const spread: number[] = [];
+  const tall: number[] = [];
   for (let i = 0; i < cols * rows; i++) {
     const cell = [(i % cols) * cw, Math.floor(i / cols) * ch, cw, ch];
     const [x0, y0] = cell;
@@ -204,7 +211,8 @@ export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ 
     }
     const gb = maskBox(want);
     const pb = maskBox(kept);
-    if (!gb || !pb) { iou.push(0); legs.push(0); same.push(0); spread.push(Infinity); continue; }
+    if (!gb || !pb) { iou.push(0); legs.push(0); same.push(0); spread.push(Infinity); tall.push(0); continue; }
+    tall.push(pb[3] - pb[1]);
     // Same height, same feet line, same centre across.
     const s = Math.min(1.2, Math.max(0.8, (gb[3] - gb[1]) / (pb[3] - pb[1])));
     const [gcx, pcx] = [(gb[0] + gb[2]) / 2, (pb[0] + pb[2]) / 2];
@@ -228,8 +236,13 @@ export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ 
     const feet = maskBox(low(want));
     spread.push(feet ? feet[2] - feet[0] : Infinity);
   }
+  // Muse now and then paints one frame of a walk as a crouch (lamp-quarter: the courier set down his lantern
+  // in the last cell of 3 of 4 sheets). Each cell is scaled to the guide's height above, so the cut sheet
+  // hides it; the painted figure, a fifth shorter than the rest, does not. A walk steps over such a cell.
+  const usual = [...tall].sort((a, b) => a - b)[Math.floor(tall.length / 2)];
+  const off = tall.flatMap((t, i) => (t < OFF_GAIT * usual ? [i] : []));
   // Standing still shows the frame whose feet are closest together (the legs passing each other).
-  const stand = spread.indexOf(Math.min(...spread));
-  return { sheet: await sharp(out, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer(), iou, legs, same, stand };
+  const stand = spread.reduce((best, s, i) => (!off.includes(i) && (best < 0 || s < spread[best]) ? i : best), -1);
+  return { sheet: await sharp(out, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer(), iou, legs, same, stand: Math.max(0, stand), off };
 }
 

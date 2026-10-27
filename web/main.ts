@@ -44,13 +44,14 @@ export type SpriteInfo = {
   /** Feet at (cell width / 2, cell height * feetAt); the figure is about `px` tall. */
   feetAt: number; px: number;
   /** Walk facings the story's routes use (none for an NPC). */
-  facings: Record<string, { sheet: string; yaw: number; iou?: number[]; stand?: number }>;
+  facings: Record<string, { sheet: string; yaw: number; iou?: number[]; stand?: number; off?: number[] }>;
   /** Talking sheets, same grid, usually one: cell i shows gestures[i] (cell 0 listens). */
   talk?: Record<string, { sheet: string; yaw: number; gestures?: string[] }>;
   /** The gesture the story gives each line this character says; a line not listed is said listening. */
   lines?: Record<string, string>;
 };
-type Sheet = { yaw: number; stand: number; img: HTMLImageElement; gestures: string[] };
+/** walk: the cells a walk steps through, without the ones the sprites step found off the gait (a crouch, a sit). */
+type Sheet = { yaw: number; stand: number; img: HTMLImageElement; gestures: string[]; walk: number[] };
 /** height: metres standing (a grown-up 1.62, a cat 0.3), so each is drawn at its own size; upright false: an animal, drawn as painted. */
 type Figure = { img: HTMLImageElement; height?: number; upright?: boolean; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
 /** y: the floor row the cut stands on, which sets how far it slides with parallax. */
@@ -288,8 +289,12 @@ class Game {
       }
       if (cast.sprites && params.get('model') !== '1') {
         const { dir, info } = cast.sprites;
-        const sheets = (list: Array<{ sheet: string; yaw: number; stand?: number; gestures?: string[] }>) =>
-          Promise.all(list.map(async (f) => ({ yaw: f.yaw, stand: f.stand ?? 0, gestures: f.gestures ?? ['listen'], img: await loadImage(files(`${dir}/${f.sheet}`)) })));
+        const sheets = (list: Array<{ sheet: string; yaw: number; stand?: number; off?: number[]; gestures?: string[] }>) =>
+          Promise.all(list.map(async (f) => {
+            const img = await loadImage(files(`${dir}/${f.sheet}`));
+            const walk = [...Array(info.frames).keys()].filter((i) => !f.off?.includes(i));
+            return { yaw: f.yaw, stand: f.stand ?? 0, gestures: f.gestures ?? ['listen'], img, walk };
+          }));
         const [walk, talk] = await Promise.all([sheets(Object.values(info.facings ?? {})), sheets(Object.values(info.talk ?? {})).catch(() => [])]);
         if (walk.length || talk.length) figure.sprites = { info, sheets: walk, talk };
       }
@@ -1533,7 +1538,8 @@ class Game {
         const sheet = onTalk ? nearest(sprites.talk, Math.abs(a)) : nearest(sprites.sheets, Math.abs(a));
         const { cols, rows, frames, feetAt, px } = sprites.info;
         const [cw, ch] = [sheet.img.width / cols, sheet.img.height / rows];
-        const i = onTalk ? (talk === 'speak' ? this.gestureCell(sheet, sprites.info) : 0) : walking ? Math.floor((((phase % 1) + 1) % 1) * frames) % frames : sheet.stand;
+        const steps = sheet.walk.length ? sheet.walk : [...Array(frames).keys()];
+        const i = onTalk ? (talk === 'speak' ? this.gestureCell(sheet, sprites.info) : 0) : walking ? steps[Math.floor((((phase % 1) + 1) % 1) * steps.length) % steps.length] : sheet.stand;
         const s = h / px;
         if (a < 0) c.scale(-1, 1);
         c.drawImage(sheet.img, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch, (-cw / 2) * s, -ch * feetAt * s, cw * s, ch * s);
