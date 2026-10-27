@@ -43,6 +43,11 @@ export const PLAYBOOK: Record<string, Play> = {
     tools: ['mask_fix phrase: a name SAM can find', 'mask_fix box: the box where it is', 'mask_brush: paint its mask'],
     last: 'repaint_region: make the thing visible (one Muse edit)',
   },
+  MASK_WRONG: {
+    look: 'place_view layer masks: the thing\'s mask against the box it should be in; the error gives the box where Spark sees the thing',
+    tools: ['mask_fix box: the box from the error (or the one you see)', 'mask_fix phrase: a name SAM tells apart from its neighbour'],
+    last: 'repaint_region: when the thing is not painted at all (one Muse edit)',
+  },
   THING_MISSING: {
     look: 'world_status: the place lost the thing between layout and derive',
     tools: ['run_step masks, then derive, for the world'],

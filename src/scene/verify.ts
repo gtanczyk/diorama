@@ -6,12 +6,12 @@ import { personPx } from '../play/geometry.ts';
 import type { Place } from '../world/schema.ts';
 import { Grid, reach, roomy } from './walk.ts';
 
-export type Finding = { code: string; key?: string; detail: string };
+export type Finding = { code: string; key?: string; detail: string; /** Where the thing really is, when a check found it elsewhere. */ box?: [number, number, number, number] };
 export type Verdict = { ok: boolean; errors: Finding[]; flags: Finding[] };
 
 /** What masks.json says about each mask. */
 export type MaskNotes = {
-  things: Record<string, { coarse: boolean; source: string }>;
+  things: Record<string, { coarse: boolean; source: string; check?: { ok: boolean; seen?: string; box?: [number, number, number, number] | null } }>;
   floors: Record<string, { coarse: boolean; source: string; iouLayout: number }>;
 };
 
@@ -64,6 +64,12 @@ export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates:
     if (!reached[at]) {
       const finding = { code: 'SPOT_UNREACHABLE', key: thing.key, detail: `its spot (${t.stand.map(Math.round).join(', ')}) can't be reached` };
       // A prop can stay a thing to look at; exits, items and people must be usable.
+      (thing.role === 'prop' ? flags : errors).push(finding);
+    }
+    const check = notes.things[thing.key]?.check;
+    if (check && !check.ok) {
+      const finding: Finding = { code: 'MASK_WRONG', key: thing.key, detail: `Spark sees ${check.seen ?? 'something else'} in its mask${check.box ? `; it is at [${check.box.join(', ')}]` : check.box === null ? '; it is not painted' : ''}`, ...(check.box && { box: check.box }) };
+      // The player clicks exits and items: a mask on the wrong thing breaks the game. A prop only looks wrong.
       (thing.role === 'prop' ? flags : errors).push(finding);
     }
     if (notes.things[thing.key]?.source === 'colour-cut') flags.push({ code: 'COLOUR_CUT', key: thing.key, detail: 'SAM missed it; its mask was cut out of its box by colour' });

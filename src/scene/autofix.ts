@@ -53,5 +53,11 @@ export function autoFixes(g: Geometry, floorKeys: string[], errors: Finding[]): 
       fixes.push({ what: `moved the stand spot of ${s.thing} to (${at.join(', ')}), the nearest reachable floor`, from: 'derive', apply: (c) => void ((c.things[s.thing] ??= { strokes: [] }).stand = at) });
     }
   }
+  // Spark found the thing in another box: give SAM that box (one SAM call when the place is rebuilt).
+  for (const e of errors.filter((x) => x.code === 'MASK_WRONG' && x.key)) {
+    const box = e.box;
+    if (!box) continue;
+    fixes.push({ what: `gave SAM the box Spark sees ${e.key} in: [${box.join(', ')}]`, from: 'masks', apply: (c) => void ((c.things[e.key!] ??= { strokes: [] }).box = box) });
+  }
   return fixes;
 }

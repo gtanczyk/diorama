@@ -7,6 +7,7 @@ import { Brief } from '../scene/brief.ts';
 import { brushed, correctCells, correctSpots, readCorrections } from '../scene/corrections.ts';
 import { Layout } from '../scene/layout.ts';
 import { locateThings, markFloors } from '../scene/locate.ts';
+import { checkMasks, type MaskCheck } from '../scene/maskcheck.ts';
 import { maskFloors, maskThings } from '../scene/masks.ts';
 import { maskBox, type Rect } from '../image/raster.ts';
 import { WorldFiles } from '../world/files.ts';
@@ -54,9 +55,17 @@ defineCommand({
       const labels = [...floors.map((f) => ({ key: f.key, box: maskBox(f.mask) })), ...things.map((t) => ({ key: t.key, box: t.box as Rect | undefined }))]
         .map((l, i) => (l.box ? svgLabel(l.box[0] + 4, l.box[1] + 18, l.key, PALETTE[i % PALETTE.length]) : ''));
       files.write(at('masks', 'overlay.png'), await tintOver(painting, tints, labels.join('')));
+      // Is each thing really in its mask? A box someone fixed by hand is taken as given.
+      let checks: Record<string, MaskCheck> = {};
+      try {
+        checks = await checkMasks(files.memo, place.key, painting, things.filter((t) => !fixes.things[t.key]?.box).map((t) => ({ key: t.key, looks: brief.looks[t.key] ?? place.things.find((x) => x.key === t.key)?.looks ?? t.key, box: t.box as Rect | undefined })));
+        for (const [key, c] of Object.entries(checks)) if (!c.ok) log(`${key}: Spark sees ${c.seen ?? 'something else'} in its mask`);
+      } catch (error) {
+        log(`mask check skipped: ${error instanceof Error ? error.message : error}`);
+      }
       const round = (v: number) => Math.round(v * 100) / 100;
       files.write(at('masks.json'), {
-        things: Object.fromEntries(things.map(({ key, mask: _, ...t }) => [key, t])),
+        things: Object.fromEntries(things.map(({ key, mask: _, ...t }) => [key, { ...t, ...(checks[key] && { check: checks[key] }) }])),
         floors: Object.fromEntries(floors.map(({ key, mask: _, iouCells, iouLayout, ...f }) => [key, { ...f, iouCells: round(iouCells), iouLayout: round(iouLayout) }])),
         flagged,
       });
