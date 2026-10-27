@@ -78,7 +78,7 @@ function Verdict({ status, onStep }: { status: Status; onStep: (step: string) =>
   );
 }
 
-const COL = 210;
+const COL = 300;
 const ROW = 84;
 const NODE = { w: 170, h: 58 };
 
@@ -128,7 +128,7 @@ function StoryMap({ status, story, pick, onPick }: { status: Status; story: Stor
           return (
             <g class={`join ${j.locked.length ? 'locked' : ''}`}>
               <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
-              {j.locked.length > 0 && <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 6} text-anchor="middle">locked until {j.locked.join(' / ')}</text>}
+              {j.locked.length > 0 && <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 6} text-anchor="middle">until {j.locked.join(' / ')}</text>}
             </g>
           );
         })}
