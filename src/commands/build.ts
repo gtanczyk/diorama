@@ -4,7 +4,7 @@ import { defineCommand, emit, registry, takeOption } from '../registry.ts';
 import type { Finding, Verdict } from '../scene/verify.ts';
 import { WorldFiles } from '../world/files.ts';
 
-export const STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'derive', 'backdrop', 'sound', 'voices', 'verify'] as const;
+export const STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'derive', 'backdrop', 'cast', 'model', 'sprites', 'sound', 'voices', 'verify'] as const;
 type Step = (typeof STEPS)[number];
 
 /** Model calls sent (not answered from the memo) since `since`, read from the memo's call log. */
