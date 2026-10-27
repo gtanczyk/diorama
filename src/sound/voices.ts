@@ -88,7 +88,7 @@ export async function stockVoices(): Promise<Voice[]> {
   return body.voices.filter((v) => v.category === 'premade' && (v.labels?.language ?? 'en') === 'en');
 }
 
-const PITCH: Partial<Record<Profile['age'], number>> = { child: 3.5, teen: 1.5 };
+const PITCH: Partial<Record<Profile['age'], number>> = { child: 4, teen: 2.5 };
 const ageOf = (v: Voice) => AGES.indexOf((v.labels?.age as Profile['age']) ?? 'middle_aged');
 
 /** How far a stock voice is from who should speak: a wrong gender rules it out, then age steps apart. */
@@ -117,7 +117,7 @@ Game: ${world.title}. ${world.pitch}
 Character key: ${who.key}${hero ? ' (the hero the player plays)' : ''}
 Description: ${who.looks}
 ${who.says?.length ? `They say: ${who.says.map((l) => `"${l}"`).join(' ')}\n` : ''}
-Who are they, as far as their voice goes? The key, the description, the game text and how they talk decide gender when they say it (a "girl", "he", a name); otherwise judge by the picture. Judge age by the face and body${who.figure ? ' in the picture' : ''} and the text: a child is under 13, a teen 13-19.
+Who are they, as far as their voice goes? The key, the description, the game text and how they talk decide gender when they say it (a "girl", "he", a name); otherwise judge by the picture. Judge age by the face and body${who.figure ? ' in the picture' : ''} and the text: a child is under 14 (a boy, a girl, a kid, an errand boy, a small figure next to the adults), a teen 14-19 with a grown body. When unsure between child and teen, say child: an adult-sounding boy is worse than a young-sounding one.
 Reply with JSON only: {"gender": "male | female", "age": "child | teen | young | middle_aged | old", "sound": "how their voice should sound, a few words"}`;
   return Profile.parse(await askSparkJson(memo, { label: `voice-profile:${who.key}`, prompt, images: who.figure ? [who.figure] : [] }));
 }
