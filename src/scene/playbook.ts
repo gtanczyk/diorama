@@ -13,7 +13,7 @@ export type Play = {
 };
 
 const FLOOR_GAP: Play = {
-  look: 'place_status: walk.png shows each floor in its own tint and the start as a green dot; find where two floors should meet and do not',
+  look: 'place_view: the red patches are floor the hero cannot reach; each yellow dashed gap names the cells to bridge and the things standing in it',
   tools: [
     'floor_cells: add the cells that bridge the gap (stairs, a gangway, a jetty edge)',
     'mask_fix kind: a thing drawn over the join that people walk on becomes walk-on',
@@ -31,11 +31,11 @@ export const PLAYBOOK: Record<string, Play> = {
     last: 'repaint_region: make the floor read as floor (one Muse edit)',
   },
   START_BLOCKED: {
-    look: 'place_status: the start (green dot on walk.png) sits off the floor',
+    look: 'place_view: the start (green dot) sits off the green floor',
     tools: ['floor_cells: open the cells under the start', 'mask_brush: erase the thing mask that covers the start'],
   },
   SPOT_UNREACHABLE: {
-    look: 'place_status: the stand spot of the thing (white dot on walk.png) is off the reachable floor',
+    look: 'place_view: the spot is a red dot, with a dashed line to the nearest reachable point',
     tools: ['stand_set: a spot on reachable floor next to the thing', 'mask_fix box: the box where the thing really is'],
   },
   MASK_MISSING: {

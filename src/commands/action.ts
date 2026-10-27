@@ -29,6 +29,8 @@ defineCommand({
       if (job.state !== 'done') throw new Error(`${job.label}: ${job.state}${job.error ? `, ${job.error}` : ''}`);
       return;
     }
-    console.log(JSON.stringify(result, null, 2));
+    // Pictures are for the agent; here their file is enough.
+    const { images: _, ...shown } = (result && typeof result === 'object' && !Array.isArray(result) ? result : { result }) as { images?: unknown };
+    console.log(JSON.stringify(Array.isArray(result) || !result || typeof result !== 'object' ? result : shown, null, 2));
   },
 });

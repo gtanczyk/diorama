@@ -42,8 +42,9 @@ export async function handleMcp(message: Message, ctx: ActionContext): Promise<R
       const name = String(message.params?.name ?? '');
       if (!actions.has(name)) return { jsonrpc: '2.0', id, error: { code: -32602, message: `no tool ${name}` } };
       try {
-        const result = await runAction(name, message.params?.arguments ?? {}, ctx);
-        return ok({ content: [{ type: 'text', text: redact(JSON.stringify(result, null, 1)) }], structuredContent: wrap(result), isError: false });
+        const { result, images } = withoutImages(await runAction(name, message.params?.arguments ?? {}, ctx));
+        const content = [{ type: 'text', text: redact(JSON.stringify(result, null, 1)) }, ...images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType }))];
+        return ok({ content, structuredContent: wrap(result), isError: false });
       } catch (error) {
         return ok({ content: [{ type: 'text', text: redact(error instanceof Error ? error.message : String(error)) }], isError: true });
       }
@@ -55,3 +56,12 @@ export async function handleMcp(message: Message, ctx: ActionContext): Promise<R
 
 /** structuredContent must be an object. */
 const wrap = (result: unknown) => (result && typeof result === 'object' && !Array.isArray(result) ? result : { result });
+
+type Image = { mimeType: string; data: string };
+
+/** An action that shows a picture returns it as `images`: the agent gets it as image content, not as text. */
+function withoutImages(result: unknown): { result: unknown; images: Image[] } {
+  if (!result || typeof result !== 'object' || !Array.isArray((result as { images?: unknown }).images)) return { result, images: [] };
+  const { images, ...rest } = result as { images: Image[] };
+  return { result: rest, images };
+}
