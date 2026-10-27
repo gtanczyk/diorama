@@ -10,10 +10,13 @@
   canvas { max-width: 100vw; max-height: 100vh; aspect-ratio: 1200 / 896; image-rendering: auto; }
   #bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 14px; background: linear-gradient(transparent, #000a); font-size: 14px; pointer-events: none; display: flex; justify-content: space-between; }
   #bar .hint { opacity: 0.6; }
+  /* The HTML over the game sits in the canvas's own 1200 x 896 frame, scaled with it, so it lines up with the picture at any window size and in recordings. */
+  #hud { position: absolute; left: 0; top: 0; width: 1200px; height: 896px; transform-origin: 0 0; pointer-events: none; }
+  #hud > * { pointer-events: auto; }
   :root { --paper: #f3e8cf; --paper-hi: #fbf4e2; --ink: #2b2118; --glow: #ffe7a8; --clay: #c9774a; }
-  #inventory { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 10px 14px 10px 10px; background: var(--paper); border: 2.5px solid var(--ink); border-radius: 18px; box-shadow: 0 5px 0 #2b211840, 0 12px 28px #0006; transition: opacity .3s, left .3s, transform .3s; }
+  #inventory { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 10px 14px 10px 10px; background: var(--paper); border: 2.5px solid var(--ink); border-radius: 18px; box-shadow: 0 5px 0 #2b211840, 0 12px 28px #0006; transition: opacity .3s, left .3s, transform .3s; }
   #inventory[hidden] { display: none; }
-  #inventory.quiet { opacity: .55; left: 24px; transform: none; }
+  #inventory.quiet { opacity: .55; left: 22px; transform: none; }
   #inventory .bag { width: 46px; display: flex; justify-content: center; border-right: 2px dashed #2b211855; padding-right: 6px; }
   #inventory .slots { display: flex; gap: 8px; }
   #inventory .slot { width: 72px; height: 72px; padding: 0; display: grid; place-items: center; background: #e7d8b6; border: 2px solid #2b211866; border-radius: 14px; transition: transform .15s; }
@@ -28,8 +31,8 @@
   .held-cursor img[hidden] { display: none; }
   .held-cursor .label { margin: 2px 0 0 12px; padding: 4px 10px; background: #2b2118e8; color: var(--paper); border-radius: 9px; font-size: 15px; white-space: nowrap; }
   .flying { position: fixed; z-index: 6; pointer-events: none; object-fit: contain; }
-  .toast { position: fixed; left: 50%; bottom: 136px; transform: translateX(-50%); padding: 6px 14px; background: #2b2118e8; color: var(--paper); border-radius: 10px; font-size: 17px; opacity: 0; pointer-events: none; }
-  #talk { position: absolute; right: 24px; bottom: 48px; display: flex; flex-direction: column; gap: 8px; width: min(460px, 90vw); }
+  .toast { position: absolute; left: 50%; bottom: 122px; transform: translateX(-50%); padding: 6px 14px; background: #2b2118e8; color: var(--paper); border-radius: 10px; font-size: 17px; opacity: 0; pointer-events: none; }
+  #talk { position: absolute; right: 22px; bottom: 22px; display: flex; flex-direction: column; gap: 8px; width: min(460px, 90vw); }
   #talk[hidden] { display: none; }
   #talk .who { display: flex; align-items: center; gap: 10px; }
   #talk .face { width: 52px; height: 52px; border-radius: 50%; background: #e9c46a; border: 2.5px solid var(--ink); overflow: hidden; }
@@ -39,16 +42,20 @@
   #talk .answer:hover { background: var(--glow); border-color: var(--clay); transform: translateX(-6px); }
   #talk .key { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border: 2px solid var(--ink); border-radius: 7px; background: var(--paper-hi); font-size: 14px; }
   button { font: inherit; cursor: pointer; text-align: left; }
-  #ending { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; background: #000c; padding: 24px; }
+  #ending { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at center, #0006, #000b); padding: 24px; }
   #ending[hidden] { display: none; }
-  #ending h1 { font-weight: normal; font-size: 40px; margin: 0 0 12px; }
+  #ending .card { max-width: 560px; padding: 28px 36px 26px; text-align: center; color: var(--ink); background: var(--paper-hi); border: 3px solid var(--ink); border-radius: 22px; box-shadow: 0 7px 0 #2b211855, 0 24px 60px #000a; }
+  #ending .over { font-size: 14px; letter-spacing: .2em; text-transform: uppercase; color: var(--clay); margin-bottom: 6px; }
+  #ending h1 { font-weight: normal; font-size: 40px; line-height: 1.1; margin: 0 0 12px; }
+  #ending p { font-size: 19px; line-height: 1.45; margin: 0 0 16px; }
+  #ending .carried { display: flex; justify-content: center; gap: 8px; margin-bottom: 18px; }
+  #ending .carried img { width: 52px; height: 52px; object-fit: contain; padding: 4px; background: #e7d8b6; border-radius: 12px; }
+  #ending .again { padding: 9px 20px; background: var(--glow); border: 2.5px solid var(--clay); border-radius: 12px; box-shadow: 0 4px 0 #2b211840; color: var(--ink); font-size: 17px; text-align: center; }
 </style>
 </head>
 <body>
 <div id="stage"><canvas id="view" width="1200" height="896"></canvas></div>
-<div id="inventory" hidden></div>
-<div id="talk" hidden></div>
-<div id="ending" hidden></div>
+<div id="hud"><div id="inventory" hidden></div><div id="talk" hidden></div><div id="ending" hidden></div></div>
 <div id="bar"><span id="where"></span><span id="hover"></span><span class="hint">click to walk or use · right click to look or put back · g grid · m sound</span></div>
 <script type="module" src="main.js"></script>
 </body>

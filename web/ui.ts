@@ -38,7 +38,8 @@ export class Bag {
     this.cursor.hidden = true;
     // Off the page until the pointer first moves.
     this.cursor.style.transform = 'translate(-300px, -300px)';
-    document.body.append(this.toast, this.cursor);
+    document.getElementById('hud')!.append(this.toast);
+    document.body.append(this.cursor);
   }
 
   /** Redraws the slots for the items carried now; `holding` is lifted and becomes the cursor. */
@@ -155,4 +156,39 @@ export class Answers {
       return b;
     }));
   }
+}
+
+/** The ending as a paper card over the dimmed scene: its title, its text, what the hero carried, and a way to play again. */
+export function showEnding(ending: { title: string; text: string } | undefined, carried: ItemLook[]) {
+  const root = document.getElementById('ending')!;
+  root.hidden = !ending;
+  if (!ending) return root.replaceChildren();
+  const card = el('div', 'card');
+  const icons = el('div', 'carried');
+  for (const item of carried.filter((i) => i.icon)) {
+    const img = el('img');
+    img.src = item.icon!;
+    img.alt = item.name;
+    img.title = item.name;
+    icons.append(img);
+  }
+  const again = el('button', 'again', 'Play again');
+  again.onclick = () => {
+    // From the start: drop a place= the page may have been opened with.
+    const url = new URL(location.href);
+    url.searchParams.delete('place');
+    location.href = url.toString();
+  };
+  card.append(el('div', 'over', 'The end'), el('h1', '', ending.title), el('p', '', ending.text), ...(icons.childElementCount ? [icons] : []), again);
+  root.replaceChildren(card);
+  card.animate([{ opacity: 0, transform: 'translateY(16px) scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 700, easing: 'ease-out' });
+}
+
+/** Lays the HTML layer over the canvas as drawn (letterboxed, scaled): 1 CSS px of it is 1 px of the frame. */
+export function fitHud(canvas: HTMLCanvasElement) {
+  const hud = document.getElementById('hud')!;
+  const r = canvas.getBoundingClientRect();
+  const k = r.width / canvas.width;
+  const t = `translate(${r.left}px, ${r.top}px) scale(${k})`;
+  if (hud.style.transform !== t) hud.style.transform = t;
 }

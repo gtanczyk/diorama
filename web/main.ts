@@ -7,7 +7,7 @@ import { actions, activeChanges, apply, hiddenThings, pickInteraction, startStat
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 import { Mixer, type Listened } from './audio.ts';
-import { Answers, Bag, displayName, type ItemLook } from './ui.ts';
+import { Answers, Bag, displayName, fitHud, showEnding, type ItemLook } from './ui.ts';
 import type { SoundData } from '../src/play/sound.ts';
 import type { Figure3D, ModelInfo } from './hero3d.ts';
 
@@ -149,6 +149,7 @@ class Game {
   holding: string | undefined;
   readonly bag = new Bag((key) => this.itemLook(key), (key) => this.hold(this.holding === key ? undefined : key), !hideCursor);
   private readonly answers = new Answers();
+  private endingShown = '';
   hover: Hot | undefined;
   grid = params.has('grid');
   /** 0 clear, 1 black; eases toward darkTarget. */
@@ -484,6 +485,7 @@ class Game {
     if (this.holding && !this.state.items.includes(this.holding)) this.holding = undefined;
     this.bag.show(this.state.items, this.holding);
     this.bag.quiet(!!this.state.talk);
+    if (this.state.ending) document.getElementById('inventory')!.hidden = true;
     const options = story && this.state.talk ? actions(this.data.world, story, this.state) : [];
     const hero = this.data.world.hero.key;
     this.answers.show(options.map((a) => ({
@@ -491,9 +493,11 @@ class Game {
       pick: () => void this.act(a),
     })), { name: displayName(hero), portrait: this.data.cast[hero] && files(this.data.cast[hero].image) });
     const ending = story?.endings.find((e) => e.key === this.state.ending);
-    const end = document.getElementById('ending')!;
-    end.hidden = !ending;
-    if (ending) end.innerHTML = `<h1></h1><p></p>`, (end.querySelector('h1')!.textContent = ending.title), (end.querySelector('p')!.textContent = ending.text);
+    // Drawn once per ending, so the card's entrance plays once.
+    if ((ending?.key ?? '') !== this.endingShown) {
+      this.endingShown = ending?.key ?? '';
+      showEnding(ending, this.state.items.map((k) => this.itemLook(k)));
+    }
   }
 
   /** Shows (and voices) a line; `who` (a cast key) gestures while it lasts. */
@@ -1144,6 +1148,7 @@ class Game {
   /** A paper bubble over the speaker with their name on a tag; its tail points down at them. The narrator's has no tag. */
   private drawSpeech([left, top, right]: [number, number, number, number], name?: string) {
     if (!this.speech) return;
+    if (!this.speech.who) return this.drawCaption(this.speech.text);
     ctx.save();
     ctx.font = '22px Georgia, serif';
     const words = this.speech.text.split(/\s+/);
@@ -1201,6 +1206,46 @@ class Game {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     lines.forEach((l, i) => ctx.fillText(l, cx, y + (name ? 18 : 12) + i * 28));
+    ctx.restore();
+  }
+
+  /** The narrator (the intro) speaks in a caption across the top of the frame, not from anyone's mouth. */
+  private drawCaption(text: string) {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.font = 'italic 23px Georgia, serif';
+    const max = Math.min(820, canvas.width - 80);
+    const lines: string[] = [];
+    for (const word of text.split(/\s+/)) {
+      const last = lines[lines.length - 1];
+      if (last && ctx.measureText(`${last} ${word}`).width < max - 56) lines[lines.length - 1] = `${last} ${word}`;
+      else lines.push(word);
+    }
+    const width = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 56;
+    const height = lines.length * 30 + 26;
+    const x = (canvas.width - width) / 2;
+    const y = 22;
+    ctx.fillStyle = 'rgba(251,244,226,0.95)';
+    ctx.strokeStyle = '#2b2118';
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = 'rgba(43,33,24,0.3)';
+    ctx.shadowOffsetY = 4;
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, 16);
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.stroke();
+    // A fold mark at each end, like a pinned paper strip.
+    ctx.fillStyle = '#c9774a';
+    for (const cx of [x + 16, x + width - 16]) {
+      ctx.beginPath();
+      ctx.arc(cx, y + 14, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#2b2118';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    lines.forEach((l, i) => ctx.fillText(l, canvas.width / 2, y + 14 + i * 30));
     ctx.restore();
   }
 
@@ -1331,6 +1376,7 @@ Object.assign(window, { diorama: Object.assign(game, { sound: mixer }) });
 let last = performance.now();
 const frame = (now: number) => {
   requestAnimationFrame(frame);
+  fitHud(canvas);
   if (!game.place) return;
   // Capture mode steps a fixed 1/60 s per frame so a recorded run is the same every time.
   const dt = capture ? 1 / 60 : Math.min(0.05, (now - last) / 1000);
