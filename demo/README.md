@@ -7,3 +7,4 @@ The 3-minute demo film is rendered from data, so every improvement to the tool f
 - Clips live in `demo/footage/` (not in git): camera shots, plus clips the tool makes:
   - `diorama reel <slug> [place]`: the build-up of a place, one beat per step, captioned with the model that made it.
   - `diorama playthrough <slug> [ending] --video`: a story ending played in the browser.
+  - `npx tsx demo/term.ts <log.txt> "<command>" footage/term.mp4`: the terminal shot, typed and scrolled from a real build log.

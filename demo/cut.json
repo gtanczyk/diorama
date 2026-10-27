@@ -8,12 +8,18 @@
     },
     {
       "name": "Pitch at the desk",
-      "dur": 20,
+      "dur": 16,
       "src": "footage/pitch.mp4"
     },
     {
+      "name": "Terminal: one command builds the world",
+      "dur": 6,
+      "src": "footage/term.mp4",
+      "fade": 0.3
+    },
+    {
       "name": "Stands up, walks out the real door",
-      "dur": 7,
+      "dur": 5,
       "src": "footage/exit.mp4"
     },
     {
