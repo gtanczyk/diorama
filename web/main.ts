@@ -2250,7 +2250,9 @@ canvas.addEventListener('pointermove', (e) => {
   const r = canvas.getBoundingClientRect();
   pointer = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   game.hover = game.thingAt(...toFrame(e));
-  canvas.style.cursor = hideCursor || game.holding ? 'none' : game.hover ? 'pointer' : 'default';
+  // Off the floor (a wall, the sky, the water) the cursor says no, so nobody clicks blind.
+  const off = !game.hover && !game.place.grid.walkable(...game.floorAt(...toFrame(e)));
+  canvas.style.cursor = hideCursor || game.holding ? 'none' : game.hover ? 'pointer' : off ? 'not-allowed' : 'default';
   game.bag.point(e.clientX, e.clientY, game.hover?.thing.key.replace(/-/g, ' '));
   document.getElementById('hover')!.textContent = game.hover ? game.hover.thing.key.replace(/-/g, ' ') : '';
 });
@@ -2467,7 +2469,7 @@ function steer() {
 
 /** The way each walker was last sent, so a held direction does not restart its step every frame. */
 const headings = new Map<Body, string>();
-/** Sends a walker one short step toward (dx, dy), sliding along whatever is in the way. */
+/** Sends a walker one short step toward (dx, dy), sliding along walls and through gaps (WalkGrid.steer). */
 function walkStep(hero: Body, dx: number, dy: number) {
   if (!free()) return void headings.delete(hero);
   const dir = `${dx},${dy}`;
@@ -2476,15 +2478,8 @@ function walkStep(hero: Body, dx: number, dy: number) {
   const step = game.place.g.cell * 0.8;
   if (dir === headings.get(hero) && left > step * 0.4) return;
   headings.set(hero, dir);
-  const n = Math.hypot(dx, dy);
-  const [ux0, uy0] = [dx / n, dy / n];
-  // Straight on, then the two axes, then half-right and half-left of it, so a wall or a thing's foot is slid along.
-  const tries = [[ux0, uy0], [Math.sign(dx), 0], [0, Math.sign(dy)], [ux0 - uy0, uy0 + ux0], [ux0 + uy0, uy0 - ux0]].map(([x, y]) => [x / (Math.hypot(x, y) || 1), y / (Math.hypot(x, y) || 1)]);
-  for (const [ux, uy] of tries) {
-    if (!ux && !uy) continue;
-    const [tx, ty] = [hero.x + ux * step, hero.y + uy * step];
-    if (game.place.grid.walkable(tx, ty)) return void game.walkTo(tx, ty, hero);
-  }
+  const to = game.place.grid.steer([hero.x, hero.y], [dx, dy], step);
+  if (to) void game.walkTo(...to, hero);
 }
 if (capture) document.getElementById('bar')!.style.display = 'none';
 

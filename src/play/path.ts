@@ -64,6 +64,37 @@ export class WalkGrid {
     return true;
   }
 
+  /**
+   * Where a held direction (keys or a pad) takes a walker next, `step` long, or undefined when nothing is open that way.
+   * Straight on if the floor is clear; else it slides along the wall (the two axes, then 45 degrees either side); else,
+   * facing a gap a little to one side, it sidesteps toward the gap (up to two cells), so a doorway or a narrow way
+   * between two things lets the walker through instead of snagging on a corner.
+   */
+  steer(from: Point, dir: Point, step: number): Point | undefined {
+    const n = Math.hypot(dir[0], dir[1]);
+    if (!n) return undefined;
+    const [ux, uy] = [dir[0] / n, dir[1] / n];
+    // A walker standing just off the floor (on a cell's edge, or left there by a talk) steers from the floor beside it.
+    const at = this.walkable(...from) ? from : this.snap(...from);
+    if (!at) return undefined;
+    const to = (p: Point, vx: number, vy: number, len: number): Point => [p[0] + vx * len, p[1] + vy * len];
+    const ways: Point[] = [[ux, uy], [Math.sign(ux), 0], [0, Math.sign(uy)], [ux - uy, uy + ux], [ux + uy, uy - ux]];
+    for (const [x, y] of ways) {
+      const l = Math.hypot(x, y);
+      if (!l) continue;
+      const t = to(at, x / l, y / l, step);
+      if (this.clear(at, t)) return t;
+    }
+    // A gap to one side: the nearest sidestep from which the way ahead is clear.
+    for (let d = this.cell / 4; d <= this.cell * 2; d += this.cell / 4) {
+      for (const [px, py] of [[-uy, ux], [uy, -ux]] as Point[]) {
+        const side = to(at, px, py, d);
+        if (this.clear(at, side) && this.clear(side, to(side, ux, uy, step))) return to(at, px, py, Math.min(d, step));
+      }
+    }
+    return undefined;
+  }
+
   /** A* over 8 neighbours without cutting corners, then string-pulled. Empty when unreachable. */
   route(from: Point, to: Point): Point[] {
     const a = this.snap(...from);
