@@ -94,7 +94,8 @@ defineAction({
 defineAction({
   name: 'floor_cells',
   description: 'Say which 60 px grid cells are (add) or are not (remove) a floor people walk on, when Spark marked them wrong; cells are named like C12 '
-    + '(column letter from A at the left, row number from 1 at the top). Reruns masks to verify for that place.',
+    + '(column letter from A at the left, row number from 1 at the top). The cells guide SAM; brush strokes (mask_brush) are painted over its mask after, '
+    + 'so removing cells does not take back a stroke: corrections_clear or mask_brush erase does. Reruns masks to verify for that place.',
   input: z.object({ slug: Slug, place: z.string().min(1), floor: z.string().min(1), add: z.array(Cell).optional(), remove: z.array(Cell).optional() }),
   job: true,
   async run({ slug, place, floor, add, remove }, ctx) {

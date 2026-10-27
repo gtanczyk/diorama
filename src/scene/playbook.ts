@@ -13,7 +13,9 @@ export type Play = {
 };
 
 const FLOOR_GAP: Play = {
-  look: 'place_view: the red patches are floor the hero cannot reach; each yellow dashed gap names the cells to bridge and the things standing in it',
+  look: 'place_view: the red patches are floor the hero cannot reach; each yellow dashed gap names the cells to bridge and the things standing in it. '
+    + 'A red patch that is no floor at all (a wall, the sky, water) is taken back, not bridged: when corrections_get shows a brush stroke or added cells there, '
+    + 'corrections_clear that floor (or mask_brush erase over it); floor_cells remove does not undo a brush stroke, strokes are painted after the cells',
   tools: [
     'floor_cells: add the cells that bridge the gap (stairs, a gangway, a jetty edge)',
     'mask_fix kind: a thing drawn over the join that people walk on becomes walk-on',
