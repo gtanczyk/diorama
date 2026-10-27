@@ -39,6 +39,12 @@ export function studioTool(request: ApprovalRequest): boolean {
   return /"mcp__diorama__[a-z_]+"/.test(text) || /"(server|serverName|mcpServer)"\s*:\s*"diorama"/.test(text);
 }
 
+/**
+ * A shell call in a turn's transcript (Muse's shell or bash, Codex's exec, a REPL). Counted from the transcript,
+ * not from approvals: Muse runs a read-only command without asking, so most shell calls never reach autoApprove.
+ */
+export const shellTool = (name: string) => /(^|[/_.])(shell|bash|sh|exec|exec_command|repl|js)$/i.test(name);
+
 /** Turns a session snapshot into what the page may see: secrets blanked. */
 const safe = (state: SessionState): SessionState => JSON.parse(redact(JSON.stringify(state))) as SessionState;
 
@@ -55,8 +61,8 @@ class Talk {
   rebrief() {
     this.briefed = false;
   }
-  /** Tool calls outside the Studio's in the current turn. */
-  outside = 0;
+  /** Shell calls in the current turn. */
+  shell = 0;
   /** How far each turn's transcript has been announced on the event feed. */
   private seen = new Map<number, number>();
   private ended = new Set<number>();
@@ -97,12 +103,20 @@ class Talk {
     for (const turn of state.turns) {
       if (!this.seen.has(turn.id)) {
         this.seen.set(turn.id, 0);
-        this.outside = 0;
+        this.shell = 0;
         this.publish('turn.start', { turn: turn.id });
       }
       const from = this.seen.get(turn.id)!;
       for (const entry of turn.entries.slice(from)) {
-        if (entry.kind === 'tool') this.publish('tool', { name: entry.name.replace(/^mcp__diorama__/, '') });
+        if (entry.kind === 'tool') {
+          this.publish('tool', { name: entry.name.replace(/^mcp__diorama__/, '') });
+          // The shell sees files, not the pictures the Studio's tools show: after a few shell calls in a turn,
+          // the agent is reminded once which tools look for it. It is still let through.
+          if (shellTool(entry.name) && ++this.shell === NUDGE_AFTER) {
+            this.publish('nudge', { text: NUDGE });
+            setTimeout(() => this.session.send(NUDGE), 0);
+          }
+        }
         if (entry.kind === 'approval' && entry.decision === 'deny') this.publish('blocked', { kind: entry.request.kind, summary: entry.request.summary ?? entry.request.kind });
         if (entry.kind === 'error') this.publish('error', { text: entry.message });
       }
@@ -181,12 +195,6 @@ export class AgentHub {
       autoApprove: (request) => {
         if (studioTool(request) || readsOnly(request)) return 'approve';
         t?.record({ type: 'outside', kind: request.kind, detail: request.detail });
-        // The shell sees files, not the pictures the Studio's tools show: after a few shell calls in a turn,
-        // the agent is reminded once which tools look for it. It is still let through.
-        if (t && ++t.outside === NUDGE_AFTER) {
-          t.publish('nudge', { text: NUDGE });
-          setTimeout(() => session.send(NUDGE), 0);
-        }
         return ask ? undefined : 'approve';
       },
       // The first prompt carries the brief; later ones resume Muse's own session and go as typed.

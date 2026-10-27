@@ -79,6 +79,12 @@ test('only the Studio\'s own MCP tools run without asking: a path with "diorama"
   expect(readsOnly({ id: '5', kind: 'file-change', detail: { subject: { kind: 'fileAccess', access: 'write', path: 'x' } } })).toBe(false);
 });
 
+test('shell calls are told from the Studio\'s tools and reading by name, as the transcript shows them', async () => {
+  const { shellTool } = await import('../src/studio/agent.ts');
+  for (const name of ['shell', 'bash', 'exec_command', 'cua_repl/js']) expect(shellTool(name)).toBe(true);
+  for (const name of ['read_file', 'place_view', 'diorama/place_status', 'mcp__diorama__job_wait', 'corrections_clear']) expect(shellTool(name)).toBe(false);
+});
+
 test('the agent can be switched between turns; Muse Code is the default', async () => {
   const get = async () => (await (await fetch(`${studio.url}api/agent/harbour/agents`, { headers: { authorization: `Bearer ${studio.token}` } })).json()) as Array<{ name: string; using: boolean }>;
   const offers = await get();
