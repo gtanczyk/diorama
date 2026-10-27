@@ -18,6 +18,16 @@ const STAGES = [
   ['verify', 'verify.json'],
 ] as const;
 
+/** What a place looks like after each step: Spark's block-in, Muse's first paint and the final one, SAM's masks, the depth map, the walk grid. */
+const LAYERS = [
+  ['blockin', 'blockin.png'],
+  ['first', 'painting-first.png'],
+  ['painting', 'painting.png'],
+  ['masks', 'masks/overlay.png'],
+  ['depth', 'depth.png'],
+  ['walk', 'walk.png'],
+] as const;
+
 function stamp(file: string): number | null {
   try {
     return Math.round(fs.statSync(file).mtimeMs);
@@ -120,6 +130,8 @@ defineAction({
         exits: p.exits,
         stages,
         image: image ? { file: `places/${p.key}/${image}`, v: stamp(at(image)) } : null,
+        // The pictures each step leaves, in build order: Studio stacks them as the place is built.
+        layers: Object.fromEntries(LAYERS.map(([name, f]) => [name, stamp(at(f)) && { file: `places/${p.key}/${f}`, v: stamp(at(f)) }]).filter(([, l]) => l)),
         verdict: verdict && { ok: verdict.ok, errors: verdict.errors.map((e) => withPlay(e, verdict.flags)), flags: verdict.flags },
       };
     });
