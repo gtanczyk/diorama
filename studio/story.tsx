@@ -129,7 +129,7 @@ function StoryMap({ status, story, pick, onPick }: { status: Status; story: Stor
   const things = (p: Place, role: string) => p.things.filter((t) => t.role === role).map((t) => t.key);
   return (
     <div class="map" role="group" aria-label="Places, exits and endings">
-      <svg width={layout.width} height={layout.height} viewBox={`0 0 ${layout.width} ${layout.height}`}>
+      <svg style={`width:100%;max-width:${layout.width}px;min-width:${Math.round(layout.width * 0.6)}px;height:auto`} viewBox={`0 0 ${layout.width} ${layout.height}`}>
         {layout.joins.map((j) => {
           const a = mid(j.a);
           const b = mid(j.b);

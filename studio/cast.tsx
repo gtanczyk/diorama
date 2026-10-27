@@ -50,7 +50,7 @@ function Items({ slug, version, onError }: { slug: string; version: number; onEr
               <form class="row" onSubmit={(e) => (e.preventDefault(), (hints[it.key] ?? '').trim().length >= 3 && void act('icon_redo', { item: it.key, hint: hints[it.key].trim() }))}>
                 <input value={hints[it.key] ?? it.fix?.hint ?? ''} placeholder="How it should look" aria-label={`How ${it.name} should look`} onInput={(e) => setHints({ ...hints, [it.key]: e.currentTarget.value })} />
                 <button type="button" class="ghost small" onClick={() => act('icon_redo', { item: it.key, anotherTake: true })}>Another take</button>
-                <button type="submit" class="primary small">Redraw</button>
+                <button type="submit" class={`${(hints[it.key] ?? '').trim().length >= 3 ? 'primary' : 'ghost'} small`}>Redraw</button>
               </form>
             </div>
           </li>
@@ -104,7 +104,7 @@ function Card({ slug, c, onError }: { slug: string; c: Character; onError: (m: s
           {c.voice
             ? <>
                 <label>Voice <select onFocus={loadVoices} onMouseDown={loadVoices} disabled={busy} value={c.voice.voice} onChange={(e) => act('voice_set', { voice: e.currentTarget.value })}>
-                  {(voices ?? [{ id: c.voice.voice, name: c.voice.why, sounds: '' }]).map((v) => <option value={v.id} title={v.sounds}>{v.fits === false ? '(does not fit) ' : ''}{v.name}{v.sounds ? ` · ${v.sounds.slice(0, 40)}` : ''}</option>)}
+                  {(voices ?? [{ id: c.voice.voice, name: c.voice.why, sounds: '' }]).map((v) => <option value={v.id} title={[v.name, v.sounds].filter(Boolean).join(' · ')}>{v.fits === false ? '(does not fit) ' : ''}{short(v.name, 32)}{v.sounds ? ` · ${short(v.sounds, 40)}` : ''}</option>)}
                 </select></label>
                 <span class="detail">{c.lines} line{c.lines === 1 ? '' : 's'}{c.flagged ? `, ${c.flagged} misheard` : ''}</span>
               </>
@@ -114,4 +114,12 @@ function Card({ slug, c, onError }: { slug: string; c: Character; onError: (m: s
       </div>
     </li>
   );
+}
+
+// A designed voice is named by its description; keep the select readable and the whole text in the tooltip.
+function short(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const stop = Math.max(cut.lastIndexOf(','), cut.lastIndexOf(' '));
+  return `${(stop > max / 2 ? cut.slice(0, stop) : cut).replace(/[,\s]+$/, '')}…`;
 }

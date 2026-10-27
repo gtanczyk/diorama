@@ -56,6 +56,8 @@ async function bundleApp(): Promise<string> {
     // genaicode's chat is a React component; Preact's compat layer stands in for React.
     alias: { react: 'preact/compat', 'react-dom': 'preact/compat', 'react/jsx-runtime': 'preact/jsx-runtime' },
     sourcemap: 'inline',
+    // Aliases resolve from the working dir; Studio may be started from anywhere, so resolve from the package.
+    absWorkingDir: path.dirname(STUDIO_WEB),
   });
   return out.outputFiles[0].text;
 }
