@@ -22,6 +22,12 @@ export type Action =
 
 export type Step = { state: State; say: string[] };
 
+/** Who says an interaction's line: a person talked to answers in their own voice; everything else is the hero's remark. */
+export function speakerOf(world: World, it: { place: string; thing: string; verb: string }): string {
+  const npc = it.verb === 'talk' && world.places.find((p) => p.key === it.place)?.things.some((t) => t.key === it.thing && t.role === 'npc');
+  return npc ? it.thing : world.hero.key;
+}
+
 export function startState(world: World): State {
   return { place: world.start, flags: [], items: [], spent: [] };
 }

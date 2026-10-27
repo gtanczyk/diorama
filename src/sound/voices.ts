@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { inputHash, type Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import { transcribe } from '../meta/voice.ts';
+import { speakerOf } from '../story/engine.ts';
 import type { Story } from '../story/schema.ts';
 import type { World } from '../world/schema.ts';
 import { decode, encodeMp3, normalise, pitchHz, pitchShift, RATE, seconds, trim, type Pcm } from './pcm.ts';
@@ -22,8 +23,10 @@ export type Line = { speaker: string; text: string };
  */
 export function storyLines(world: World, story: Story, all = false): Line[] {
   const lines: Line[] = [{ speaker: NARRATOR, text: story.intro }];
+  // A person's own talk lines (a fisherman who answers when spoken to) are spoken like a conversation.
+  for (const i of story.interactions) if (speakerOf(world, i) !== world.hero.key) lines.push({ speaker: speakerOf(world, i), text: i.say });
   if (all) {
-    for (const i of story.interactions) lines.push({ speaker: world.hero.key, text: i.say });
+    for (const i of story.interactions) if (speakerOf(world, i) === world.hero.key) lines.push({ speaker: world.hero.key, text: i.say });
     for (const l of story.locks) lines.push({ speaker: world.hero.key, text: l.say });
     for (const it of story.items) if (it.nope) lines.push({ speaker: world.hero.key, text: it.nope });
   }

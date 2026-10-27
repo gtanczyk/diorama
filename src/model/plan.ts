@@ -10,6 +10,7 @@ import { WalkGrid, type Point } from '../play/path.ts';
 import type { Story } from '../story/schema.ts';
 import type { WorldFiles } from '../world/files.ts';
 import { readBodies } from '../scene/cast.ts';
+import { speakerOf } from '../story/engine.ts';
 import { FACINGS, SHEET, type Facing } from './sprites.ts';
 
 export type CharacterPlan = {
@@ -82,7 +83,7 @@ async function gesturesFor(memo: Memo, lines: SpokenLine[]): Promise<string[]> {
   return lines.map((_, i) => (gestureIndex(reply.gestures?.[i] ?? '') >= 0 ? reply.gestures[i] : 'listen'));
 }
 
-/** Each character who needs sprites: the hero, and NPCs with a conversation. */
+/** Each character who needs sprites: the hero, and NPCs who speak (a conversation or their own talk lines). */
 export async function planSprites(files: WorldFiles, story: Story | undefined): Promise<CharacterPlan[]> {
   const world = files.world();
   const hero = world.hero.key;
@@ -103,6 +104,13 @@ export async function planSprites(files: WorldFiles, story: Story | undefined): 
       spoken.push({ speaker: d.npc, text: l.says, facing: facing.npc });
       for (const c of l.choices) spoken.push({ speaker: hero, text: c.text, facing: facing.hero });
     }
+  }
+  // A person's own talk lines, without a conversation, are said to the hero the same way.
+  for (const it of story?.interactions ?? []) {
+    if (speakerOf(world, it) === hero) continue;
+    const g = geometry(it.place);
+    if (!plans.has(it.thing)) plans.set(it.thing, { key: it.thing, walk: [], talk: {}, lines: {} });
+    spoken.push({ speaker: it.thing, text: it.say, facing: (g ? conversationFacings(g, it.thing) : { npc: 'front-right' as Facing }).npc });
   }
   const gestures = await gesturesFor(files.memo, spoken);
   spoken.forEach((l, i) => {

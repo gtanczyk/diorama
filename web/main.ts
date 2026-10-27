@@ -5,7 +5,7 @@ import { WalkGrid, type Point } from '../src/play/path.ts';
 import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, RIM_ALPHA, RIM_COLOUR, RIM_WIDTH, SEPARATE_ALPHA, SEPARATE_BLUR, SEPARATE_SHIFT } from '../src/play/focus.ts';
 import { decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
-import { actions, activeChanges, apply, hiddenThings, pickDialogue, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
+import { actions, activeChanges, apply, hiddenThings, pickDialogue, pickInteraction, speakerOf, startState, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 import { Mixer, type Listened } from './audio.ts';
@@ -656,7 +656,9 @@ class Game {
     // Who says each line: in a conversation the NPC answers after the hero's choice; everything else is the hero's.
     const hero = this.data.world.hero.key;
     const npc = story && (action.kind === 'talk' ? action.npc : action.kind === 'choose' && before.talk ? story.dialogues[before.talk.dialogue]?.npc : undefined);
-    for (const [i, line] of say.entries()) await this.say(line, npc && (action.kind === 'talk' || i > 0) ? npc : hero);
+    // A person talked to without a conversation answers with their own talk line.
+    const answers = action.kind === 'do' && speakerOf(this.data.world, { place: from, thing: action.thing, verb: action.verb }) !== hero;
+    for (const [i, line] of say.entries()) await this.say(line, answers ? (action as { thing: string }).thing : npc && (action.kind === 'talk' || i > 0) ? npc : hero);
     if (this.state.place !== from) {
       this.emit('exit', { from, to: this.state.place });
       await this.fadeOut();
