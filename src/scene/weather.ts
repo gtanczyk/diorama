@@ -57,8 +57,6 @@ Answer with JSON only: {"fall": "rain", "strength": 0.6, "wind": 0.1, "drips": [
     const puddles = (await samFind(memo, { label: `rain-puddle:${place.key}`, image: painting, prompt: 'puddle' })).map((h) => h.mask).filter((m) => maskArea(m) < PUDDLE_MAX * W * H);
     // SAM's water also takes wet planks and shiny cobbles: those are the floors and the things, where rings would float.
     const m = unionAll(W, H, [subtract(water, dry), ...puddles]);
-    // Nothing above the horizon rings: that far, a ring is smaller than a pixel.
-    m.bits.fill(0, 0, Math.max(0, Math.round(g.scale.horizonY)) * W);
     if (maskArea(m) > 400) ripples = m;
   }
   return { weather: { fall, strength, wind: fall === 'none' ? 0 : read.wind, drips }, ripples };
@@ -90,15 +88,23 @@ export function dripEdge(mask: Mask, g: Geometry, depth?: Depth): { from: Array<
 
 function landing(g: Geometry, depth: Depth | undefined, x: number, y: number): number {
   const H = g.frame.height;
+  const col = Math.floor(x / g.cell);
+  // The floor under the edge: the first walkable cell below it, and how far that floor runs toward the viewer.
+  // An eave over a porch drips at the porch's front edge, not into the yard beyond, whatever the depth says.
+  const floorOf = (r: number) => (g.zone ? g.zone[r]?.[col] : g.walk[r]?.[col] === '#' ? '#' : '.');
+  let first = -1;
+  for (let r = Math.floor(y / g.cell) + 1; r < g.walk.length; r++) if (g.walk[r][col] === '#') { first = r; break; }
+  let front = first;
+  if (first >= 0) while (front + 1 < g.walk.length && floorOf(front + 1) === floorOf(first) && floorOf(first) !== '.') front++;
+  const runEnd = first >= 0 ? Math.min(H - 1, (front + 1) * g.cell) : H - 1;
   if (depth) {
     const c = Math.min(depth.w - 1, Math.floor(x / DEPTH_SCALE));
     const r = Math.min(depth.h - 1, Math.floor(y / DEPTH_SCALE));
     const rows = depth.rows[r * depth.w + c];
     const at = g.scale.horizonY + rows;
-    if (rows > 0 && at > y + 6) return Math.min(H - 1, at);
+    if (rows > 0 && at > y + 6) return Math.min(runEnd, at);
   }
-  const col = Math.floor(x / g.cell);
-  for (let r = Math.floor(y / g.cell) + 1; r < g.walk.length; r++) if (g.walk[r][col] === '#') return Math.min(H - 1, (r + 0.5) * g.cell);
+  if (first >= 0) return Math.min(H - 1, (first + 0.5) * g.cell);
   return Math.min(H - 1, y + 60);
 }
 

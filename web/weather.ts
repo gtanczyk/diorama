@@ -72,10 +72,10 @@ export class WeatherFx {
 
   /** A ring on water or a puddle, a splash on the floor, nothing elsewhere (a roof, the sky). */
   private land(x: number, y: number) {
-    if (y <= this.g.scale.horizonY) return;
-    const p = personPx(this.g, y);
+    // Water past the horizon line still rings, small (the scale's horizon is only where people shrink to nothing).
+    const p = Math.max(24, personPx(this.g, y));
     if (this.wetAt(x, y)) this.marks.push({ x, y, t: 0, size: p * 0.09, ring: true });
-    else if (this.walkable(x, y)) this.marks.push({ x, y, t: 0, size: p * 0.05, ring: false });
+    else if (y > this.g.scale.horizonY && this.walkable(x, y)) this.marks.push({ x, y, t: 0, size: p * 0.05, ring: false });
   }
 
   update(dt: number) {
