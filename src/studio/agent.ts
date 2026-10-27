@@ -8,13 +8,14 @@ import { museLive, withoutProviderCredentials, type AgentEvent, type AgentRun, t
 import { redact, withoutSecrets } from '../secrets.ts';
 import type { Events } from './events.ts';
 
-/** How Muse Code is told about the Studio's MCP server for one run: `-c` overrides, the token by ${VAR} reference. */
+/** How Muse Code is told about the Studio's MCP server for one run: `-c` overrides (JSON values), the header by a
+ * whole-value ${VAR} reference, the only form Muse expands (checked with Muse Code 1.4.13). */
 export function museMcpArgs(url: string): string[] {
   const key = 'mcp_servers.diorama';
   return [
     '-c', `${key}.transport="streamable_http"`,
     '-c', `${key}.url=${JSON.stringify(url)}`,
-    '-c', `${key}.headers.Authorization="Bearer \${DIORAMA_AGENT_TOKEN}"`,
+    '-c', `${key}.headers.Authorization="\${DIORAMA_AGENT_AUTH}"`,
   ];
 }
 
@@ -30,6 +31,8 @@ type Pending = { request: ApprovalRequest; resolve: (d: ApprovalDecision) => voi
 class Conversation {
   run: AgentRun | null = null;
   readonly turns: Turn[] = [];
+  /** Muse's own session id, to resume the conversation in the next turn. */
+  session: string | null = null;
   readonly approvals = new Map<string, Pending>();
   readonly log: string;
 
@@ -85,14 +88,18 @@ export class AgentHub {
   }
 
   private start(c: Conversation, text: string) {
-    // Until genaicode resumes muse sessions, a new turn carries the recent conversation in its prompt.
+    const agent = museLive({ command: this.opts.command ?? process.env.DIORAMA_MUSE_COMMAND ?? 'muse' });
+    // With a genaicode that resumes Muse sessions, the next turn continues the same session; until then
+    // a new turn carries the recent conversation in its prompt.
+    const resume = agent.capabilities.resume && c.session ? c.session : undefined;
     const earlier = c.turns.slice(0, -1).slice(-12).map((t) => `${t.role === 'user' ? 'Person' : 'You'}: ${t.text}`).join('\n');
-    const prompt = `${AGENT_BRIEF(c.slug)}\n\n${earlier ? `The conversation so far:\n${earlier}\n\n` : ''}Person: ${text}`;
+    const prompt = resume ? text : `${AGENT_BRIEF(c.slug)}\n\n${earlier ? `The conversation so far:\n${earlier}\n\n` : ''}Person: ${text}`;
     const cwd = fs.existsSync(c.dir) ? c.dir : this.opts.root;
     fs.mkdirSync(cwd, { recursive: true });
-    const env = { ...withoutProviderCredentials(withoutSecrets(process.env)), DIORAMA_AGENT_TOKEN: this.opts.agentToken } as Record<string, string>;
-    const run = museLive({ command: this.opts.command ?? process.env.DIORAMA_MUSE_COMMAND ?? 'muse' }).run({
+    const env = { ...withoutProviderCredentials(withoutSecrets(process.env)), DIORAMA_AGENT_AUTH: `Bearer ${this.opts.agentToken}` } as Record<string, string>;
+    const run = agent.run({
       prompt,
+      ...(resume && { resume }),
       cwd,
       env,
       extraArgs: museMcpArgs(this.opts.mcpUrl),
@@ -106,6 +113,7 @@ export class AgentHub {
       try {
         for await (const event of run) {
           if (event.type === 'message') said = event.text;
+          if (event.type === 'session') c.session = event.sessionId;
           this.relay(c, event);
         }
         const result = await run.result;
