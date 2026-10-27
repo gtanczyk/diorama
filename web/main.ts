@@ -570,7 +570,7 @@ class Game {
   }
 
   /** Where a thing (or a person in this place) is on the page, for an item to fly from. */
-  private pageRect(key: string): DOMRect | undefined {
+  pageRect(key: string): DOMRect | undefined {
     const figure = this.drawn.find((d) => d.hot.thing.key === key)?.rect;
     const box = figure ?? this.place.hots.find((h) => h.thing.key === key)?.thing.box;
     if (!box) return undefined;
@@ -1850,6 +1850,9 @@ function steer() {
       game.hover = near;
       document.getElementById('hover')!.textContent = near ? near.thing.key.replace(/-/g, ' ') : '';
     }
+    // With an item in hand, its "Use X on Y" hangs over the lit thing, as it would under a mouse.
+    const r = near && game.holding ? game.pageRect(near.thing.key) : undefined;
+    if (game.holding) game.bag.point(r ? r.left + r.width / 2 : -300, r ? r.top : -300, near?.thing.key.replace(/-/g, ' '));
   }
   if (!keys.size || !free()) return void (heading = '');
   let [dx, dy] = [0, 0];

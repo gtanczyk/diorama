@@ -11,6 +11,12 @@
   canvas { width: min(100vw, calc(100vh * 1200 / 896)); height: auto; aspect-ratio: 1200 / 896; image-rendering: auto; touch-action: manipulation; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
   #bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 14px; background: linear-gradient(transparent, #000a); font-size: 14px; pointer-events: none; display: flex; justify-content: space-between; }
   #bar .hint { opacity: 0.6; }
+  /* A finger has no hover and no keys: the bar's hints only cover the picture. */
+  @media (hover: none) { #bar { display: none; } }
+  /* Held upright, a phone shows the game a third of its height: it asks to be turned, once, and can be told no. */
+  #turn { position: fixed; inset: 0; z-index: 10; display: none; place-items: center; align-content: center; gap: 18px; padding: 24px; background: #0b0b0ef2; text-align: center; font-size: 20px; }
+  #turn button { padding: 8px 18px; color: #e8e2d6; background: none; border: 1.5px solid #e8e2d688; border-radius: 10px; font-size: 15px; text-align: center; }
+  @media (hover: none) and (orientation: portrait) { #turn:not([hidden]) { display: grid; } }
   /* The HTML over the game sits in the canvas's own 1200 x 896 frame, scaled with it, so it lines up with the picture at any window size and in recordings. */
   #hud { position: absolute; left: 0; top: 0; width: 1200px; height: 896px; transform-origin: 0 0; pointer-events: none; }
   #hud > * { pointer-events: auto; }
@@ -57,6 +63,7 @@
 <body>
 <div id="stage"><canvas id="view" width="1200" height="896"></canvas></div>
 <div id="hud"><div id="inventory" hidden></div><div id="talk" hidden></div><div id="ending" hidden></div></div>
+<div id="turn"><svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true"><rect x="20" y="8" width="24" height="42" rx="4" fill="none" stroke="#e8e2d6" stroke-width="3"/><path d="M14 52 a22 22 0 0 0 36 0" fill="none" stroke="#e9c46a" stroke-width="3"/><path d="M46 46 l4 6 l-7 1" fill="none" stroke="#e9c46a" stroke-width="3" stroke-linejoin="round"/></svg><div>Turn your phone sideways to play.</div><button type="button" onclick="this.parentElement.hidden = true">Play upright anyway</button></div>
 <div id="bar"><span id="where"></span><span id="hover"></span><span class="hint">click to walk or use · right click or long press to look or put back · WASD or arrows walk, E uses · 1-9 items · g grid · m sound</span></div>
 <script type="module" src="main.js"></script>
 </body>
