@@ -40,6 +40,17 @@ export const Corrections = z.object({
     strokes: z.array(Stroke).default([]),
   })).default({}),
   repaint: z.array(z.object({ region: RectIn, fix: z.string().min(3) })).default([]),
+  /**
+   * How the place is worded for the painter, instead of world.json and Spark's brief: set by paint_words, or by
+   * paint itself when the image safety filter refused the painting and Spark reworded it.
+   */
+  words: z.object({
+    shows: z.string().min(10).optional(),
+    mood: z.string().min(2).optional(),
+    /** One sentence per thing or floor key, used as its look as it is (Spark does not expand it again). */
+    looks: z.record(z.string(), z.string().min(10)).default({}),
+    by: z.enum(['filter', 'person']).default('person'),
+  }).optional(),
 });
 export type Corrections = z.infer<typeof Corrections>;
 

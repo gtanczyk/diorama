@@ -5,6 +5,7 @@ import type { Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import type { Place, World } from '../world/schema.ts';
 import type { Layout } from './layout.ts';
+import { SAFE_WORDS } from './words.ts';
 
 export const Brief = z.object({
   looks: z.record(z.string(), z.string().min(10)),
@@ -31,6 +32,8 @@ Mood: ${place.mood}
 
 For each subject below write its look in one sentence: shape, material, surface texture, wear, colour in this light. Be concrete enough that nobody could paint it as a plain block.
 ${subjects.map((s) => `- ${s}`).join('\n')}
+
+${SAFE_WORDS}
 
 Also list which subjects move in the game: water that flows, fire, smoke, animals, cloth in wind, flickering light. They are painted still and animated later, so their look must describe them at rest (an animal is left out of the painting: describe the empty spot it uses).
 

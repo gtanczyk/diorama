@@ -4,13 +4,17 @@ import fs from 'node:fs';
 import { writeBrief } from '../scene/brief.ts';
 import { seedRan } from '../scene/carry.ts';
 import { critique, repaint } from '../scene/critic.ts';
-import { readCorrections } from '../scene/corrections.ts';
+import { readCorrections, writeCorrections } from '../scene/corrections.ts';
 import { Layout } from '../scene/layout.ts';
 import { paintPlace } from '../scene/paint.ts';
 import { paintPhoto } from '../scene/photo.ts';
+import { refusedByFilter, reword, withWords, worded, type Words } from '../scene/words.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { drawingsIn } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
+
+/** Rewords Spark may try after the image safety filter refuses a painting, before the place is set aside. */
+const REWORDS = 2;
 
 defineCommand({
   name: 'paint',
@@ -27,7 +31,14 @@ defineCommand({
       const blockin = fs.readFileSync(files.place(place.key, 'blockin.png'));
       // The first painting is kept while its block-in, layout and take stay the same, even without the model
       // cache (a world copied without memo/): a person's region repaint must not repaint the whole place.
-      const inputs = createHash('sha256').update(blockin).update(JSON.stringify(layout)).update(String(take)).digest('hex');
+      const hash = (words?: Words) => {
+        const h = createHash('sha256').update(blockin).update(JSON.stringify(layout)).update(String(take));
+        // A new wording paints the place anew; a place never reworded keeps the inputs it had.
+        if (words) h.update(JSON.stringify(words));
+        return h.digest('hex');
+      };
+      let words = readCorrections(files.place(place.key)).words;
+      let inputs = hash(words);
       const kept = files.place(place.key, 'painting-first.json');
       const mtime = (f: string) => fs.statSync(files.place(place.key, f)).mtimeMs;
       const have = ['painting-first.png', 'brief.json', 'critique.json'].every((f) => fs.existsSync(files.place(place.key, f)));
@@ -43,14 +54,35 @@ defineCommand({
         first = fs.readFileSync(files.place(place.key, 'painting-first.png'));
         found = files.readJson(files.place(place.key, 'critique.json')) as typeof found;
       } else {
-        const brief = await writeBrief(files.memo, world, place, layout);
-        files.write(files.place(place.key, 'brief.json'), brief);
         const fromPhoto = fs.existsSync(files.place(place.key, 'photo.png'));
-        first = fromPhoto
-          ? await paintPhoto(files.memo, world, place, blockin, brief, take)
-          : await paintPlace(files.memo, world, place, layout, blockin, brief, take, drawingsIn(files, place));
+        let brief: Awaited<ReturnType<typeof writeBrief>>;
+        // When the image safety filter refuses the painting, Spark rewords the place and it is painted again;
+        // the wording is kept in corrections.json, so every later paint asks with it and no rebuild repeats the refusal.
+        for (let refusals = 0; ; refusals++) {
+          const told = worded(place, words);
+          brief = withWords(await writeBrief(files.memo, world, told, layout), words);
+          files.write(files.place(place.key, 'brief.json'), brief);
+          try {
+            first = fromPhoto
+              ? await paintPhoto(files.memo, world, told, blockin, brief, take)
+              : await paintPlace(files.memo, world, told, layout, blockin, brief, take, drawingsIn(files, place));
+            break;
+          } catch (error) {
+            if (!refusedByFilter(error)) throw error;
+            if (refusals >= REWORDS) {
+              throw new Error(`the image safety filter refused to paint ${place.key} ${refusals + 1} times, also after ${refusals} reword(s) by Spark: `
+                + `reword its scene and looks with paint_words (calm, plain words), which paints it again (${error instanceof Error ? error.message.slice(0, 160) : error})`);
+            }
+            words = await reword(files.memo, told, layout, brief, refusals);
+            const fixes = readCorrections(files.place(place.key));
+            fixes.words = words;
+            writeCorrections(files.place(place.key), fixes);
+            console.log(`  ${place.key}: the image safety filter refused the painting; Spark reworded it (kept in corrections.json), painting again: ${words.shows ?? place.shows}`);
+          }
+        }
+        inputs = hash(words);
         files.write(files.place(place.key, 'painting-first.png'), first);
-        found = await critique(files.memo, place, brief, first);
+        found = await critique(files.memo, worded(place, words), brief, first);
         files.write(files.place(place.key, 'critique.json'), found);
       }
       // The person's repaints join the critic's. When the painting already has every earlier fix, only the new
@@ -65,7 +97,16 @@ defineCommand({
       // A place built before the steps kept their painting (.ran/) gets it now, so this first repaint carries too.
       const seeded = seedRan(files.place(place.key));
       if (seeded.length) console.log(`  ${place.key}: ${seeded.join(', ')} take the painting before this repaint as the one they ran on`);
-      files.write(files.place(place.key, 'painting.png'), await repaint(files.memo, place, base, { issues: fresh }));
+      let painting: Buffer;
+      try {
+        painting = await repaint(files.memo, place, base, { issues: fresh });
+      } catch (error) {
+        // The critic's own fixes are nice to have: a refused repaint leaves the painting as it is. The person's are not.
+        if (!refusedByFilter(error) || asked.length) throw error;
+        console.log(`  ${place.key}: the image safety filter refused the critic's repaint; the painting is kept without it`);
+        painting = base;
+      }
+      files.write(files.place(place.key, 'painting.png'), painting);
       files.write(kept, { inputs, applied: fixes.issues.map(id) });
       console.log(`${place.key}: painted, ${fresh.length} fix(es)${onTop ? ' over the last painting' : ''}${fresh.map((i) => ` · ${i.key} ${i.problem}`).join('')}`);
     }));

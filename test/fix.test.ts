@@ -131,6 +131,35 @@ test('a failed build is retried from the step it failed on', async () => {
   await jobs.wait(third.id, 5000);
 });
 
+test('a retry goes back to the step where a place was set aside, not the last step the build reached', async () => {
+  const { ctx, jobs, dir } = world();
+  const first = jobs.start('w', ['fail', 'w'], 'build', 'user');
+  await jobs.wait(first.id, 5000);
+  Object.assign(jobs.get(first.id)!, { args: ['build', 'w', '--from', 'layout', '--to', 'weather'], step: 'weather' });
+  fs.writeFileSync(path.join(dir, 'build.json'), JSON.stringify({ steps: {}, places: [{ place: 'dock', ok: false, from: 'paint', errors: [], flagged: [], issues: [] }, { place: 'quay', ok: true, errors: [], flagged: [], issues: [] }] }));
+  const again = (await runAction('job_retry', { id: first.id }, ctx('user'))) as { id: string; args: string[] };
+  expect(again.args).toEqual(['build', 'w', '--from', 'paint', '--to', 'weather']);
+  await jobs.wait(again.id, 5000);
+});
+
+test('paint_words keeps the painter\'s wording in corrections.json and repaints the place; only painted keys', async () => {
+  const { dir, place, ctx, jobs } = world();
+  fs.writeFileSync(path.join(dir, 'world.json'), JSON.stringify({
+    title: 'Quay', pitch: 'A small quay on a river at dusk.', style: 'gouache, muted river colours', start: 'dock',
+    hero: { key: 'wren', looks: 'a keeper in a yellow oilskin' },
+    places: [{ key: 'dock', shows: 'a dock between bare trees', mood: 'calm', exits: [], things: [{ key: 'swing', role: 'prop', looks: 'a swing frame' }, { key: 'franek', role: 'npc', looks: 'an old man' }] }],
+  }));
+  await expect(runAction('paint_words', { slug: 'w', place: 'dock', looks: { franek: 'an old man in a grey coat' } }, ctx('user'))).rejects.toThrow(/no painted thing or floor franek/);
+  const job = (await runAction('paint_words', { slug: 'w', place: 'dock', shows: 'a dock between leafless trees', looks: { swing: 'a faded swing frame, its two seats resting low' } }, ctx('agent'))) as { id: string; args: string[] };
+  expect(job.args).toEqual(['build', 'w', '--from', 'paint', '--to', 'verify', '--place', 'dock']);
+  await jobs.wait(job.id, 5000);
+  expect(readCorrections(place).words).toEqual({ shows: 'a dock between leafless trees', looks: { swing: 'a faded swing frame, its two seats resting low' }, by: 'person' });
+  const cleared = (await runAction('corrections_clear', { slug: 'w', place: 'dock' }, ctx('user'))) as { id: string; args: string[] };
+  expect(cleared.args).toContain('paint');
+  await jobs.wait(cleared.id, 5000);
+  expect(readCorrections(place).words).toBeUndefined();
+});
+
 test('the agent gets three fixes of a place that leave it unplayable; then it must hand over to the person', async () => {
   const { ctx, jobs } = world();
   process.env.FAKE_FAIL = '1';

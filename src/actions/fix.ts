@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { Corrections, readCorrections, RectIn, Stroke, writeCorrections } from '../scene/corrections.ts';
+import { Layout } from '../scene/layout.ts';
 import { KINDS, parseCell } from '../scene/locate.ts';
+import { wordKeys } from '../scene/words.ts';
 import { agentBlocked } from '../studio/locks.ts';
 import { WorldFiles } from '../world/files.ts';
 import { Slug } from '../world/schema.ts';
@@ -42,7 +44,7 @@ const floorOf = (c: Corrections, key: string) => (c.floors[key] ??= { add: [], r
 defineAction({
   name: 'corrections_get',
   reads: true,
-  description: 'The fixes the person (or you) made to a place so far: SAM phrases, boxes, kinds, brush strokes, floor cells, stand spots, repaints.',
+  description: 'The fixes the person (or you) made to a place so far: SAM phrases, boxes, kinds, brush strokes, floor cells, stand spots, repaints, the painter\'s wording.',
   input: z.object({ slug: Slug, place: z.string().min(1) }),
   async run({ slug, place }, ctx) {
     return readCorrections(path.join(ctx.root, slug, 'places', place));
@@ -151,21 +153,53 @@ defineAction({
 });
 
 defineAction({
+  name: 'paint_words',
+  description: 'Reword how a place is described to the painter: what the place shows, its mood, and the look of things and floors (one sentence each, '
+    + 'used as it is). Use it when paint failed with content_policy_violation (the image safety filter refused a word such as "bare" or "hanging"), '
+    + 'or when the painting keeps getting a thing wrong in kind. world.json and the story stay as they are. Repaints the place from paint to verify.',
+  input: z.object({
+    slug: Slug,
+    place: z.string().min(1),
+    shows: z.string().min(10).optional().describe('What the place shows, in place of world.json\'s.'),
+    mood: z.string().min(2).optional(),
+    looks: z.record(z.string(), z.string().min(10)).optional().describe('Thing or floor key to one sentence on how it looks.'),
+  }),
+  job: true,
+  async run({ slug, place, shows, mood, looks }, ctx) {
+    const world = new WorldFiles(slug, ctx.root).world();
+    const p = world.places.find((x) => x.key === place);
+    if (!p) throw new ActionError(404, `${slug} has no place ${place}`);
+    if (!shows && !mood && !looks) throw new ActionError(400, 'give shows, mood or looks');
+    const layoutFile = path.join(ctx.root, slug, 'places', place, 'layout.json');
+    const floors = fs.existsSync(layoutFile) ? Layout.parse(JSON.parse(fs.readFileSync(layoutFile, 'utf8'))).floors : [];
+    const keys = wordKeys(p, { floors });
+    const unknown = Object.keys(looks ?? {}).filter((k) => !keys.includes(k));
+    if (unknown.length) throw new ActionError(400, `${place} has no painted thing or floor ${unknown.join(', ')}: it has ${keys.join(', ')}`);
+    return fixPlace(ctx, slug, place, 'paint', 'reword', (c) => {
+      const had = c.words ?? { looks: {}, by: 'person' as const };
+      c.words = { ...had, ...(shows && { shows }), ...(mood && { mood }), looks: { ...had.looks, ...looks }, by: 'person' };
+    });
+  },
+});
+
+defineAction({
   name: 'corrections_clear',
   description: 'Take back fixes of a place: all of them, or those of one thing or floor. Reruns that place from paint (repaints) or masks.',
   input: z.object({ slug: Slug, place: z.string().min(1), key: z.string().min(1).optional().describe('One thing or floor; leave out to clear every fix of the place.') }),
   job: true,
   async run({ slug, place, key }, ctx) {
     const had = readCorrections(path.join(ctx.root, slug, 'places', place));
-    const repaints = !key && had.repaint.length > 0;
+    const repaints = !key ? had.repaint.length > 0 || !!had.words : !!had.words?.looks[key];
     return fixPlace(ctx, slug, place, repaints ? 'paint' : 'masks', `clear ${key ?? 'fixes'}`, (c) => {
       if (key) {
         delete c.things[key];
         delete c.floors[key];
+        if (c.words) delete c.words.looks[key];
       } else {
         c.things = {};
         c.floors = {};
         c.repaint = [];
+        delete c.words;
       }
     });
   },

@@ -36,6 +36,13 @@ function world() {
   }));
   const outline = [[0, 0], [10, 0], [10, 10]];
   fs.writeFileSync(path.join(stuck, 'layout.json'), JSON.stringify({ horizon: 100, sky: '#88aacc', ground: '#998877', things: [], lights: [], floors: [{ key: 'deck', is: 'deck', colour: '#aa8844', outline }, { key: 'quay', is: 'quay', colour: '#888888', outline }] }));
+  // What earlier builds left: each place got through layout, paint, masks and derive once.
+  for (const key of ['good', 'bad', 'stuck']) {
+    fs.mkdirSync(path.join(dir, 'places', key), { recursive: true });
+    for (const f of ['blockin.png', 'painting.png', 'masks.json', 'geometry.json']) {
+      if (!fs.existsSync(path.join(dir, 'places', key, f))) fs.writeFileSync(path.join(dir, 'places', key, f), 'x');
+    }
+  }
   process.chdir(root);
   const ran: string[] = [];
   for (const step of ['icons', 'cast', 'model', 'sprites', 'sound', 'voices']) defineCommand({ name: step, usage: step, async run() {} });
@@ -81,6 +88,18 @@ test('verify\'s errors come with the playbook; playable places are not held back
   expect(stuck.issues[0].code).toBe('FLOOR_UNREACHABLE');
   expect(stuck.issues[0].play.tools[0]).toMatch(/^floor_cells/);
   expect(process.exitCode).toBe(1);
+});
+
+test('a place an earlier job never painted is set aside at paint, not failed later on a missing file', async () => {
+  const { dir, ran } = world();
+  fs.rmSync(path.join(dir, 'places', 'bad', 'painting.png'));
+  fs.rmSync(path.join(dir, 'places', 'bad', 'masks.json'));
+  await registry.get('build')!.run(['w', '--from', 'weather', '--to', 'weather']);
+  expect(ran).toContain('weather:good');
+  expect(ran).not.toContain('weather:bad');
+  const log = JSON.parse(fs.readFileSync(path.join(dir, 'build.json'), 'utf8'));
+  expect(log.places).toEqual([expect.objectContaining({ place: 'bad', ok: false, from: 'paint' })]);
+  expect(log.places[0].errors[0]).toMatch(/never got past paint \(no painting.png\)/);
 });
 
 test('when every place breaks, the step fails', async () => {

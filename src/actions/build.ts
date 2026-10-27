@@ -9,6 +9,14 @@ import { ActionError, defineAction } from './registry.ts';
 
 const Step = z.enum(STEPS);
 
+/** Places the last build set aside at a step (build.json `places[].from`), optionally only one. */
+export function brokenPlaces(dir: string, only?: string): Array<{ place: string; from: string }> {
+  const log = path.join(dir, 'build.json');
+  if (!fs.existsSync(log)) return [];
+  const places = (JSON.parse(fs.readFileSync(log, 'utf8')) as { places?: Array<{ place: string; from?: string }> }).places ?? [];
+  return places.filter((r): r is { place: string; from: string } => !!r.from && (!only || r.place === only));
+}
+
 defineAction({
   name: 'world_build',
   description: 'Build a world: every step from world to verify, or a range. A new world needs an idea. Runs as a job; follow it with world_status or the live feed.',
@@ -78,7 +86,7 @@ defineAction({
 
 defineAction({
   name: 'job_retry',
-  description: 'Run a failed or stopped job again; a build picks up at the step it failed on.',
+  description: 'Run a failed or stopped job again; a build picks up at the step it failed on, or earlier at the step where a place was set aside.',
   input: z.object({ id: z.string().min(1) }),
   job: true,
   async run({ id }, ctx) {
@@ -90,8 +98,14 @@ defineAction({
     const blocked = agentBlocked(path.join(ctx.root, job.world), ctx.by, place);
     if (blocked) throw new ActionError(423, blocked);
     const from = args.indexOf('--from');
-    // Steps before the failed one are done; start where it broke.
-    if (args[0] === 'build' && from >= 0 && job.step && (STEPS as readonly string[]).includes(job.step)) args[from + 1] = job.step;
+    // Steps before the failed one are done; start where it broke. A place set aside earlier in the build (its paint
+    // refused, say) broke at its own step while the others went on: start at the earliest such step, or the retry
+    // runs only the last step, which skips that place again.
+    if (args[0] === 'build' && from >= 0 && job.step && (STEPS as readonly string[]).includes(job.step)) {
+      const steps = STEPS as readonly string[];
+      const broke = brokenPlaces(path.join(ctx.root, job.world), place).map((r) => r.from).filter((s) => steps.includes(s));
+      args[from + 1] = [job.step, ...broke].sort((a, b) => steps.indexOf(a) - steps.indexOf(b))[0];
+    }
     return ctx.jobs.start(job.world, args, job.label, ctx.by);
   },
 });

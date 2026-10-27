@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import { Geometry } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
+import { gapError, placeGap } from './build.ts';
 import { verifyPlace, type MaskNotes, type PlateNotes } from '../scene/verify.ts';
 import { WorldFiles } from '../world/files.ts';
 
@@ -15,6 +16,8 @@ defineCommand({
     let failed = 0;
     for (const place of world.places.filter((p) => only.length === 0 || only.includes(p.key))) {
       const at = (...parts: string[]) => files.place(place.key, ...parts);
+      const gap = placeGap(files.place(place.key), 'verify');
+      if (gap) throw new Error(gapError(place.key, gap));
       const geometry = Geometry.parse(files.readJson(at('geometry.json')));
       const plates = (fs.existsSync(at('plates.json')) ? files.readJson(at('plates.json')) : {}) as PlateNotes;
       const verdict = verifyPlace(place, geometry, files.readJson(at('masks.json')) as MaskNotes, plates);

@@ -75,7 +75,11 @@ export const PLAYBOOK: Record<string, Play> = {
   },
   STEP_FAILED: {
     look: 'job_wait or job_list: the last lines of the failed job say why the step broke',
-    tools: ['job_retry: when it was a network or model hiccup', 'the fix tool for what the error names, then rebuild the place'],
+    tools: [
+      'job_retry: when it was a network or model hiccup (it starts at the step where the place broke)',
+      'paint_words: when paint was refused by the image safety filter (content_policy_violation) even after Spark reworded it: calm, plain words for the scene and the looks it names',
+      'the fix tool for what the error names, then rebuild the place',
+    ],
   },
 };
 

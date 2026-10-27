@@ -37,6 +37,7 @@ ${extra ? `${extra}
 - Exits are things you can see (door, path, ladder, boat) and every exit has one back.
 - The world has at least one item to pick up and one npc to talk to.
 - Everything is original: no characters, places or names from existing films, books, games or brands.
+- A place's shows and its props' looks go to a painter whose safety filter refuses single words: calm, plain words (leafless trees, not bare; a swing seat that rests, not hangs on chains; no blood, weapons, graves or bodies).
 
 Reply with JSON only, shaped like:
 ${EXAMPLE}`;

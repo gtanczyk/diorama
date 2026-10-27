@@ -17,6 +17,24 @@ type Step = (typeof STEPS)[number];
 /** The steps that work place by place; `--place` runs only these, for that one place. */
 export const PLACE_STEPS: readonly Step[] = ['layout', 'paint', 'masks', 'plates', 'derive', 'backdrop', 'weather', 'verify'];
 
+/** What each place step leaves that later steps read; a place missing one never got past that step. */
+const MADE: Partial<Record<Step, string>> = { layout: 'blockin.png', paint: 'painting.png', masks: 'masks.json', derive: 'geometry.json' };
+
+/**
+ * The earliest step before `step` whose file the place lacks, with that file; null when it has them all. Steps this
+ * build ran itself (`ran`) are not looked at: they made the file or set the place aside already.
+ */
+export function placeGap(placeDir: string, step: Step, ran: readonly Step[] = []): { step: Step; file: string } | null {
+  for (const s of PLACE_STEPS.slice(0, PLACE_STEPS.indexOf(step)).filter((x) => !ran.includes(x))) {
+    const file = MADE[s];
+    if (file && !fs.existsSync(`${placeDir}/${file}`)) return { step: s, file };
+  }
+  return null;
+}
+
+export const gapError = (place: string, gap: { step: string; file: string }) =>
+  `${place} never got past ${gap.step} (no ${gap.file}): fix why ${gap.step} failed there (place_status, the job log) and rebuild the place from ${gap.step}`;
+
 type Report = { place: string; ok: boolean; errors: string[]; flagged: string[]; issues: Array<Finding & { play?: Play }>; from?: Step };
 type Repair = { place: string; by: 'auto'; fixes: string[]; ok: boolean };
 const line = (f: Finding) => `${f.code}${f.key ? ` ${f.key}` : ''}: ${f.detail}`;
@@ -68,6 +86,16 @@ defineCommand({
     /** Runs a place step for the places given, side by side (as each command does inside); a place that throws is set aside. */
     const runPlaces = async (step: Step, keys: string[]) => {
       const command = registry.get(step)!;
+      // A place an earlier job left unfinished (its paint refused, say) is set aside at the step it never got past,
+      // not failed here with a missing file, so the report and job_retry point at the step to redo.
+      keys = keys.filter((p) => {
+        const gap = placeGap(files.place(p), step, range);
+        if (!gap) return true;
+        broken.set(p, { step: gap.step, error: gapError(p, gap) });
+        console.log(`${p}: ${step} skipped: ${gapError(p, gap)}`);
+        emit('place.fail', { place: p, step: gap.step, error: gapError(p, gap) });
+        return false;
+      });
       const exit = process.exitCode;
       const settled = await Promise.allSettled(keys.map((p) => command.run([slug, p])));
       // verify says "not playable" with its exit code; the build reports that itself, below.
