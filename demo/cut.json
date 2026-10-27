@@ -1,94 +1,28 @@
 {
   "fps": 30,
   "shots": [
-    {
-      "name": "Hook: real room, painted room, hero in the door",
-      "dur": 5,
-      "src": "footage/hook.mp4"
-    },
-    {
-      "name": "Pitch at the desk",
-      "dur": 16,
-      "src": "footage/pitch.mp4"
-    },
-    {
-      "name": "Terminal: one command builds the world",
-      "dur": 6,
-      "src": "footage/term.mp4",
-      "fade": 0.3
-    },
-    {
-      "name": "Stands up, walks out the real door",
-      "dur": 5,
-      "src": "footage/exit.mp4"
-    },
-    {
-      "name": "Conjuring the place, one gesture per step",
-      "dur": 34.6,
-      "src": "footage/conjure.mp4",
-      "fade": 0.5
-    },
-    {
-      "name": "Studio: one sentence to the Muse agent",
-      "dur": 4.4,
-      "src": "footage/studio/take.mp4",
-      "from": 5.3,
-      "fade": 0.4
-    },
-    {
-      "name": "Studio: Muse repaints (sped up)",
-      "dur": 5,
-      "src": "footage/studio/take.mp4",
-      "from": 9.7,
-      "speed": 39.6
-    },
-    {
-      "name": "Studio: repaint, undo, redo",
-      "dur": 9,
-      "src": "footage/studio/take.mp4",
-      "from": 207.9
-    },
-    {
-      "name": "Becomes the hero",
-      "dur": 12,
-      "src": "footage/become.mp4",
-      "fade": 0.4
-    },
-    {
-      "name": "Guides the tour as the hero",
-      "dur": 53,
-      "src": "footage/tour.mp4",
-      "fade": 0.4,
-      "audio": 0.9
-    },
-    {
-      "name": "Any world: three more prompts + numbers",
-      "dur": 18,
-      "src": "footage/worlds.mp4"
-    },
-    {
-      "name": "Back at the desk; npx github:gtanczyk/diorama",
-      "dur": 12,
-      "src": "footage/outro.mp4",
-      "fade": 0.4
-    }
+    { "name": "1 Hook: real room, painted room, hero in the door", "dur": 5, "src": "footage/hook.mp4" },
+    { "name": "2 Pitch at the desk, walks out the real door", "dur": 20, "src": "footage/pitch.mp4" },
+    { "name": "3 WOW: the world, no talking", "dur": 40, "src": "footage/tour.mp4", "fade": 0.6, "audio": 0.9 },
+    { "name": "4 Terminal: one command builds the world", "dur": 8, "src": "footage/term.mp4", "fade": 0.3 },
+    { "name": "5 How it's made: one step per beat", "dur": 29.7, "src": "footage/conjure.mp4", "fade": 0.4 },
+    { "name": "6 Studio: one sentence to the Muse agent", "dur": 5, "src": "footage/studio/take.mp4", "from": 4.7, "fade": 0.4 },
+    { "name": "6 Studio: Muse repaints (sped up)", "dur": 5, "src": "footage/studio/take.mp4", "from": 9.7, "speed": 39.6 },
+    { "name": "6 Studio: repaint, undo, redo, play", "dur": 12, "src": "footage/studio/take.mp4", "from": 207.9 },
+    { "name": "7 Technique: SAM 3.1 cuts out every thing", "dur": 6, "image": "footage/stills/masks-harbour.png", "fade": 0.5 },
+    { "name": "7 Technique: floor, scale and occlusion from the masks", "dur": 6, "image": "footage/stills/walk-harbour.png", "fade": 0.4 },
+    { "name": "7 Technique: depth, shadows and parallax in play", "dur": 10, "src": "footage/mist.mp4", "from": 40, "fade": 0.4 },
+    { "name": "7 Technique: Spark critiques the painting", "dur": 5, "image": "footage/stills/critic.png", "fade": 0.4 },
+    { "name": "7 Technique: Muse repaints only those regions", "dur": 4, "image": "footage/stills/repaint.png", "fade": 0.3 },
+    { "name": "7 Technique: same pipeline, another place", "dur": 5, "image": "footage/stills/masks-beacon.png", "fade": 0.4 },
+    { "name": "7 Technique: MusicGen score, cast voices", "dur": 5, "src": "footage/sound.mp4", "fade": 0.4 },
+    { "name": "8 Thanks", "dur": 14.3, "card": "Thanks for watching  ·  github.com/gtanczyk/diorama", "fade": 0.6 }
   ],
-  "music": {
-    "src": "footage/music.mp3",
-    "volume": 0.35
-  },
+  "music": { "src": "footage/music.mp3", "volume": 0.35 },
   "voice": [
-    {
-      "src": "footage/vo/pitch-tail.wav",
-      "at": 32
-    },
-    {
-      "src": "footage/vo/studio.wav",
-      "at": 66.6
-    },
-    {
-      "src": "footage/vo/tour.wav",
-      "at": 100
-    }
+    { "src": "footage/vo/pitch.wav", "at": 5 },
+    { "src": "footage/vo/how.wav", "at": 73 },
+    { "src": "footage/vo/studio.wav", "at": 102.7 },
+    { "src": "footage/vo/techniques.wav", "at": 124.7 }
   ]
 }
