@@ -11,22 +11,24 @@ type Character = {
   voice: { voice: string; why: string; stability: number; style: number } | null;
   lines: number; flagged: number; sample: { text: string; file: string } | null;
 };
-type Voice = { id: string; name: string; sounds: string };
+type Voice = { id: string; name: string; sounds: string; fits?: boolean };
 
 export function CastView({ slug, version, onError }: { slug: string; version: number; onError: (m: string) => void }) {
   const [cast, setCast] = useState<Character[] | null>(null);
-  const [voices, setVoices] = useState<Voice[] | null>(null);
   useEffect(() => void call<Character[]>('cast_status', { slug }).then(setCast).catch((e) => onError(e.message)), [slug, version]);
-  const loadVoices = () => voices ?? call<Voice[]>('voice_list').then(setVoices).catch((e) => onError(e.message));
   if (!cast) return <p class="detail">Reading the cast…</p>;
   return (
     <ul class="cast">
-      {cast.map((c) => <Card key={c.key} slug={slug} c={c} voices={voices} loadVoices={loadVoices} onError={onError} />)}
+      {cast.map((c) => <Card key={c.key} slug={slug} c={c} onError={onError} />)}
     </ul>
   );
 }
 
-function Card({ slug, c, voices, loadVoices, onError }: { slug: string; c: Character; voices: Voice[] | null; loadVoices: () => unknown; onError: (m: string) => void }) {
+function Card({ slug, c, onError }: { slug: string; c: Character; onError: (m: string) => void }) {
+  // The voices that fit this character (gender and age seen in the figure) come first; the rest are marked.
+  const [voices, setVoices] = useState<Voice[] | null>(null);
+  const loadVoices = () => voices ?? call<{ voices: Voice[] } | Voice[]>('voice_list', { slug, key: c.key })
+    .then((r) => setVoices(Array.isArray(r) ? r : r.voices)).catch((e) => onError(e.message));
   const [looks, setLooks] = useState(c.looksNow);
   const [busy, setBusy] = useState(false);
   useEffect(() => setLooks(c.looksNow), [c.looksNow]);
@@ -66,7 +68,7 @@ function Card({ slug, c, voices, loadVoices, onError }: { slug: string; c: Chara
           {c.voice
             ? <>
                 <label>Voice <select onFocus={loadVoices} onMouseDown={loadVoices} disabled={busy} value={c.voice.voice} onChange={(e) => act('voice_set', { voice: e.currentTarget.value })}>
-                  {(voices ?? [{ id: c.voice.voice, name: c.voice.why, sounds: '' }]).map((v) => <option value={v.id} title={v.sounds}>{v.name}{v.sounds ? ` · ${v.sounds.slice(0, 40)}` : ''}</option>)}
+                  {(voices ?? [{ id: c.voice.voice, name: c.voice.why, sounds: '' }]).map((v) => <option value={v.id} title={v.sounds}>{v.fits === false ? '(does not fit) ' : ''}{v.name}{v.sounds ? ` · ${v.sounds.slice(0, 40)}` : ''}</option>)}
                 </select></label>
                 <span class="detail">{c.lines} line{c.lines === 1 ? '' : 's'}{c.flagged ? `, ${c.flagged} misheard` : ''}</span>
               </>

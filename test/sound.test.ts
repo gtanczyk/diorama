@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { placeSound, zoneAt } from '../src/play/sound.ts';
 import { loopProblem, RATE, seamless, steps, type Pcm } from '../src/sound/pcm.ts';
 import { planIssues, soundIds, type SoundPlan } from '../src/sound/plan.ts';
-import { heardMatch, heardOk, storyLines } from '../src/sound/voices.ts';
+import { heardMatch, heardOk, storyLines, voiceCandidates } from '../src/sound/voices.ts';
 import type { Story } from '../src/story/schema.ts';
 import type { World } from '../src/world/schema.ts';
 
@@ -89,4 +89,12 @@ test('conversations, intro and endings are spoken; the hero\'s remarks on things
 test('a short line may be two letters off, a long one 10%', () => {
   expect(heardOk('Tell me of fog.', heardMatch('Tell me of fog.', 'Tell me a fog.'))).toBe(true);
   expect(heardOk('Tell me of fog.', heardMatch('Tell me of fog.', 'Tell me.'))).toBe(false);
+});
+
+test('a voice is cast from who speaks: a boy never gets a woman or an old man, a child gets the youngest voices', () => {
+  const v = (id: string, gender: string, age: string) => ({ voice_id: id, name: id, labels: { gender, age } });
+  const stock = [v('old-man', 'male', 'old'), v('young-man', 'male', 'young'), v('mid-man', 'male', 'middle_aged'), v('young-woman', 'female', 'young'), v('river', 'neutral', 'middle_aged')];
+  expect(voiceCandidates(stock, { gender: 'male', age: 'child', sound: '' }).map((x) => x.voice_id)).toEqual(['young-man']);
+  expect(voiceCandidates(stock, { gender: 'female', age: 'old', sound: '' }).map((x) => x.voice_id)).toEqual(['river']);
+  expect(voiceCandidates(stock, { gender: 'male', age: 'old', sound: '' }).map((x) => x.voice_id)).toEqual(['old-man']);
 });

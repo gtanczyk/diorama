@@ -33,6 +33,25 @@ export function encodeMp3(pcm: Pcm, kbps = 128): Buffer {
   return ffmpeg(['-f', 'f32le', '-ac', '2', '-ar', String(RATE), '-i', 'pipe:0', '-c:a', 'libmp3lame', '-b:a', `${kbps}k`, '-f', 'mp3', 'pipe:1'], Buffer.from(all.buffer));
 }
 
+/**
+ * Raises (or lowers) the pitch by `semitones` and keeps the length: a young adult voice read a few semitones up
+ * sounds like a child, which no stock voice does.
+ */
+export function pitchShift(pcm: Pcm, semitones: number): Pcm {
+  if (!semitones) return pcm;
+  const r = 2 ** (semitones / 12);
+  const n = pcm.left.length;
+  const all = new Float32Array(n * 2);
+  for (let i = 0; i < n; i++) (all[2 * i] = pcm.left[i]), (all[2 * i + 1] = pcm.right[i]);
+  const out = ffmpeg(['-f', 'f32le', '-ac', '2', '-ar', String(RATE), '-i', 'pipe:0', '-af', `asetrate=${Math.round(RATE * r)},aresample=${RATE},atempo=${(1 / r).toFixed(5)}`, '-f', 'f32le', '-ac', '2', '-ar', String(RATE), 'pipe:1'], Buffer.from(all.buffer));
+  const f = new Float32Array(out.buffer, out.byteOffset, out.byteLength / 4);
+  const m = f.length / 2;
+  const left = new Float32Array(m);
+  const right = new Float32Array(m);
+  for (let i = 0; i < m; i++) (left[i] = f[2 * i]), (right[i] = f[2 * i + 1]);
+  return { left, right };
+}
+
 export const seconds = (pcm: Pcm) => pcm.left.length / RATE;
 
 /** RMS per window of `ms`, both channels. */

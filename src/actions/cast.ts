@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { CastFixes, castFixesFile, readCastFixes } from '../scene/cast-fixes.ts';
-import { stockVoices, Voices } from '../sound/voices.ts';
+import { stockVoices, voiceCandidates, Voices } from '../sound/voices.ts';
 import { agentBlocked } from '../studio/locks.ts';
 import { WorldFiles } from '../world/files.ts';
 import { Slug } from '../world/schema.ts';
@@ -82,14 +82,22 @@ defineAction({
 defineAction({
   name: 'voice_list',
   reads: true,
-  description: 'The stock ElevenLabs voices a character can be given: id, name and what they sound like.',
-  input: z.object({}),
-  async run() {
+  description: 'The stock ElevenLabs voices a character can be given: id, name and what they sound like. With slug and key, '
+    + 'the voices that fit that character (gender and age Spark saw in their figure) come first, marked fits; a child or teen is read a few semitones higher.',
+  input: z.object({ slug: Slug.optional(), key: z.string().min(1).optional() }),
+  async run({ slug, key }, ctx) {
+    let stock;
     try {
-      return (await stockVoices()).map((v) => ({ id: v.voice_id, name: v.name, sounds: [...Object.values(v.labels ?? {}), v.description].filter(Boolean).join(', ') }));
+      stock = await stockVoices();
     } catch (error) {
       throw new ActionError(503, `no voices: ${error instanceof Error ? error.message : error}`);
     }
+    const files = slug ? new WorldFiles(slug, ctx.root) : undefined;
+    const voices = files && fs.existsSync(files.path('voices.json')) ? Voices.safeParse(files.readJson(files.path('voices.json'))) : null;
+    const profile = key && voices?.success ? voices.data.cast[key]?.profile : undefined;
+    const fit = new Set(profile ? voiceCandidates(stock, profile).map((v) => v.voice_id) : []);
+    const list = stock.map((v) => ({ id: v.voice_id, name: v.name, sounds: [...Object.values(v.labels ?? {}), v.description].filter(Boolean).join(', '), ...(profile && { fits: fit.has(v.voice_id) }) }));
+    return profile ? { character: { key, ...profile }, voices: [...list.filter((v) => v.fits), ...list.filter((v) => !v.fits)] } : list;
   },
 });
 

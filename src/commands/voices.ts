@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { defineCommand } from '../registry.ts';
 import { elevenKey } from '../sound/sources.ts';
 import { castVoices, stockVoices, storyLines, voiceLine, Voices, type Cast } from '../sound/voices.ts';
-import { readCastFixes } from '../scene/cast-fixes.ts';
+import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
 
@@ -24,11 +24,17 @@ defineCommand({
     const outFile = files.path('voices.json');
     const old = fs.existsSync(outFile) ? Voices.parse(files.readJson(outFile)) : undefined;
     let cast: Cast;
-    if (old && !recast && lines.every((l) => old.cast[l.speaker])) cast = old.cast;
-    else cast = await castVoices(files.memo, world, story, lines, await stockVoices());
+    // A cast is kept only when it was made from profiles (who Spark saw in each figure); older casts are redone.
+    if (old && !recast && lines.every((l) => old.cast[l.speaker]?.profile)) cast = old.cast;
+    else {
+      const figure = (key: string) => (fs.existsSync(files.path('cast', `${key}.png`)) ? fs.readFileSync(files.path('cast', `${key}.png`)) : undefined);
+      const people = [world.hero, ...world.places.flatMap((p) => p.things).filter((t) => t.role === 'npc')];
+      const speakers = people.map((p) => ({ ...fixedLooks(files, { key: p.key, looks: p.looks }), figure: figure(p.key) }));
+      cast = await castVoices(files.memo, world, lines, await stockVoices(), speakers);
+    }
     // The voices the person picked (cast/fixes.json) replace Spark's casting.
     for (const [key, fix] of Object.entries(readCastFixes(files))) if (fix.voice && cast[key]) cast = { ...cast, [key]: { ...cast[key], ...fix.voice } };
-    for (const [who, v] of Object.entries(cast)) console.log(`  ${who.padEnd(16)} ${v.voice}  ${v.why}`);
+    for (const [who, v] of Object.entries(cast)) console.log(`  ${who.padEnd(16)} ${v.profile ? `${v.profile.age} ${v.profile.gender}`.padEnd(18) : ''} ${v.voice}${v.pitch ? ` +${v.pitch} st` : ''}  ${v.why}`);
 
     fs.rmSync(files.path('sound', 'voice'), { recursive: true, force: true });
     const done: Voices['lines'] = new Array(lines.length);

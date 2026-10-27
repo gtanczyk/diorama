@@ -6,7 +6,7 @@ import { askSparkJson } from '../meta/spark.ts';
 import { transcribe } from '../meta/voice.ts';
 import type { Story } from '../story/schema.ts';
 import type { World } from '../world/schema.ts';
-import { decode, encodeMp3, normalise, RATE, seconds, trim, type Pcm } from './pcm.ts';
+import { decode, encodeMp3, normalise, pitchShift, RATE, seconds, trim, type Pcm } from './pcm.ts';
 import { elevenKey } from './sources.ts';
 
 export const NARRATOR = 'narrator';
@@ -35,12 +35,25 @@ export function storyLines(world: World, story: Story, all = false): Line[] {
   return lines.filter((l) => !seen.has(l.text) && seen.add(l.text));
 }
 
+export const AGES = ['child', 'teen', 'young', 'middle_aged', 'old'] as const;
+export const Profile = z.object({
+  gender: z.enum(['male', 'female', 'any']),
+  age: z.enum(AGES),
+  /** How they should sound, in a few words ("bright, quick, cheeky"). */
+  sound: z.string().default(''),
+});
+export type Profile = z.infer<typeof Profile>;
+
 export const Cast = z.record(z.string(), z.object({
   voice: z.string(),
   why: z.string().default(''),
   /** ElevenLabs voice settings: lower stability is more expressive, style exaggerates the delivery. */
   stability: z.number().min(0).max(1).default(0.45),
   style: z.number().min(0).max(1).default(0.2),
+  /** Who Spark saw in the figure; the voice was picked to match it. Missing on casts made before profiles. */
+  profile: Profile.optional(),
+  /** Semitones the takes are raised: stock voices are adults, so a child or a teen is a young voice read higher. */
+  pitch: z.number().default(0),
 }));
 export type Cast = z.infer<typeof Cast>;
 
@@ -57,7 +70,7 @@ export const VoiceLine = z.object({
 export const Voices = z.object({ cast: Cast, lines: z.array(VoiceLine) });
 export type Voices = z.infer<typeof Voices>;
 
-type Voice = { voice_id: string; name: string; category?: string; labels?: Record<string, string>; description?: string };
+export type Voice = { voice_id: string; name: string; category?: string; labels?: Record<string, string>; description?: string };
 
 async function eleven(route: string, init?: RequestInit): Promise<Response> {
   for (let n = 1; ; n++) {
@@ -75,34 +88,74 @@ export async function stockVoices(): Promise<Voice[]> {
   return body.voices.filter((v) => v.category === 'premade' && (v.labels?.language ?? 'en') === 'en');
 }
 
-export async function castVoices(memo: Memo, world: World, story: Story, lines: Line[], voices: Voice[]): Promise<Cast> {
-  const speakers = [...new Set(lines.map((l) => l.speaker))];
-  const who = (key: string) => {
-    if (key === NARRATOR) return 'the narrator who reads the intro and the endings';
-    if (key === world.hero.key) return `the hero, ${world.hero.looks}`;
-    const npc = world.places.flatMap((p) => p.things).find((t) => t.key === key);
-    return npc ? `${npc.looks}` : key;
-  };
-  const sample = (key: string) => lines.filter((l) => l.speaker === key).slice(0, 3).map((l) => `"${l.text}"`).join(' ');
-  const prompt = `You cast voice actors for a 2D painted point-and-click adventure.
+const PITCH: Partial<Record<Profile['age'], number>> = { child: 3.5, teen: 1.5 };
+const ageOf = (v: Voice) => AGES.indexOf((v.labels?.age as Profile['age']) ?? 'middle_aged');
 
+/** How far a stock voice is from who should speak: a wrong gender rules it out, then age steps apart. */
+export function voiceDistance(v: Voice, p: Profile): number {
+  const gender = v.labels?.gender;
+  if (p.gender !== 'any' && gender && gender !== 'neutral' && gender !== p.gender) return Infinity;
+  const age = ageOf(v);
+  return Math.abs((age < 0 ? 3 : age) - Math.max(AGES.indexOf(p.age), AGES.indexOf('young')));
+}
+
+/** The voices that fit a profile: right gender, nearest in age (a child gets the youngest voices there are). */
+export function voiceCandidates(voices: Voice[], p: Profile): Voice[] {
+  const scored = voices.map((v) => ({ v, d: voiceDistance(v, p) })).filter((x) => Number.isFinite(x.d));
+  const best = Math.min(...scored.map((x) => x.d));
+  return scored.filter((x) => x.d <= Math.max(best, 0)).map((x) => x.v);
+}
+
+export type Speaker = { key: string; looks: string; figure?: Buffer; says?: string[] };
+
+/** Spark looks at the figure (and reads its description): gender, age and how they should sound. */
+export async function profileOf(memo: Memo, world: World, who: Speaker): Promise<Profile> {
+  if (who.key === NARRATOR) return { gender: 'any', age: 'middle_aged', sound: `a storyteller for: ${world.style}` };
+  const hero = who.key === world.hero.key;
+  const prompt = `This is a character of a 2D adventure game${who.figure ? ' (the picture shows them)' : ''}.
 Game: ${world.title}. ${world.pitch}
-Look: ${world.style}
+Character key: ${who.key}${hero ? ' (the hero the player plays)' : ''}
+Description: ${who.looks}
+${who.says?.length ? `They say: ${who.says.map((l) => `"${l}"`).join(' ')}\n` : ''}
+Who are they, as far as their voice goes? The key, the description, the game text and how they talk decide gender when they say it (a "girl", "he", a name); otherwise judge by the picture. Judge age by the face and body${who.figure ? ' in the picture' : ''} and the text: a child is under 13, a teen 13-19.
+Reply with JSON only: {"gender": "male | female", "age": "child | teen | young | middle_aged | old", "sound": "how their voice should sound, a few words"}`;
+  return Profile.parse(await askSparkJson(memo, { label: `voice-profile:${who.key}`, prompt, images: who.figure ? [who.figure] : [] }));
+}
 
-Characters:
-${speakers.map((k) => `- ${k}: ${who(k)}. Says: ${sample(k)}`).join('\n')}
+/**
+ * Casts a stock voice for each speaker. Spark sees each figure and says who they are; code keeps only the voices
+ * of that gender and age; Spark picks among those for temperament; code checks the pick and falls back to the
+ * nearest unused voice. Children and teens are read higher (pitch), since no stock voice is a child.
+ */
+export async function castVoices(memo: Memo, world: World, lines: Line[], voices: Voice[], speakers: Speaker[]): Promise<Cast> {
+  const keys = [...new Set(lines.map((l) => l.speaker))];
+  const byKey = new Map(speakers.map((s) => [s.key, s]));
+  const profiles = Object.fromEntries(await Promise.all(keys.map(async (k) => [k, await profileOf(memo, world, { ...(byKey.get(k) ?? { key: k, looks: k }), says: lines.filter((l) => l.speaker === k).slice(0, 4).map((l) => l.text) })] as const)));
+  const candidates = Object.fromEntries(keys.map((k) => [k, voiceCandidates(voices, profiles[k])]));
+  const sample = (key: string) => lines.filter((l) => l.speaker === key).slice(0, 2).map((l) => `"${l.text}"`).join(' ');
+  const describe = (v: Voice) => `${v.voice_id}: ${v.name}; ${Object.values(v.labels ?? {}).join(', ')}; ${v.description ?? ''}`;
+  const prompt = `You cast voice actors for a 2D painted point-and-click adventure: ${world.title}. ${world.pitch}
 
-Voices you can cast (id: name, labels, description):
-${voices.map((v) => `- ${v.voice_id}: ${v.name}; ${Object.values(v.labels ?? {}).join(', ')}; ${v.description ?? ''}`).join('\n')}
+For each character pick ONE voice from that character's own list (the lists already match their gender and age). Pick by temperament and how they talk. Give different characters different voices when you can. Set "stability" 0.3-0.7 (lower is more expressive) and "style" 0-0.5.
 
-For each character pick the voice that fits their age, gender, temperament and the world. Use a different voice for each character. Set "stability" 0.3-0.7 (lower is more expressive) and "style" 0-0.5 (higher exaggerates the delivery).
+${keys.map((k) => `## ${k}: ${profiles[k].age.replace('_', ' ')} ${profiles[k].gender === 'any' ? '' : profiles[k].gender}, ${profiles[k].sound}. Says: ${sample(k)}
+${candidates[k].map((v) => `- ${describe(v)}`).join('\n')}`).join('\n\n')}
 
 Reply with JSON only: {"<character key>": {"voice": "<voice id>", "why": "few words", "stability": 0.45, "style": 0.2}}`;
-  const ids = new Set(voices.map((v) => v.voice_id));
-  const answer = await askSparkJson<unknown>(memo, { label: 'cast-voices', prompt });
-  const cast = Cast.parse(answer);
-  for (const key of speakers) {
-    if (!cast[key] || !ids.has(cast[key].voice)) throw new Error(`voice cast: ${key} has no stock voice (${cast[key]?.voice ?? 'none'})`);
+  const picked = Cast.safeParse(await askSparkJson<unknown>(memo, { label: 'cast-voices', prompt }).catch(() => ({})));
+  const cast: Cast = {};
+  const used = new Set<string>();
+  for (const k of keys) {
+    const p = profiles[k];
+    const allowed = candidates[k];
+    let choice = picked.success ? picked.data[k] : undefined;
+    // A pick outside the character's list is not trusted: the nearest unused voice that fits takes its place.
+    if (!choice || !allowed.some((v) => v.voice_id === choice!.voice)) {
+      const v = allowed.find((x) => !used.has(x.voice_id)) ?? allowed[0] ?? voices[0];
+      choice = { voice: v.voice_id, why: `nearest ${p.age.replace('_', ' ')} ${p.gender} voice`, stability: 0.45, style: 0.2, pitch: 0 };
+    }
+    used.add(choice.voice);
+    cast[k] = { ...choice, profile: p, pitch: PITCH[p.age] ?? 0 };
   }
   return cast;
 }
@@ -155,7 +208,7 @@ export async function voiceLine(memo: Memo, line: Line, voice: Cast[string], wri
   const id = lineId(line);
   let best: { pcm: Pcm; heard: string; match: number; take: number } | undefined;
   for (let take = 1; take <= 3; take++) {
-    const pcm = trim(decode(await speak(memo, `${id}-${take}`, line.text, voice, take)), 0.005);
+    const pcm = pitchShift(trim(decode(await speak(memo, `${id}-${take}`, line.text, voice, take)), 0.005), voice.pitch ?? 0);
     const heard = await transcribe(memo, `${id}-${take}`, pcm24k(pcm), 10);
     const match = heardMatch(line.text, heard);
     if (!best || match > best.match) best = { pcm, heard, match, take };
