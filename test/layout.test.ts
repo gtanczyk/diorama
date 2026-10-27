@@ -39,3 +39,18 @@ test('npcs get no mass in the block-in', () => {
   expect(svg).toContain('#888888');
   expect(svg).not.toContain('#aa6644');
 });
+
+test('a quay across a canal, with the exit on it, is caught; a bridge floor joins it', () => {
+  const canal: Place = { key: 'canal-steps', shows: 'steps, canal, houses', mood: 'night', exits: [], things: [{ key: 'bridge-stairs', role: 'exit', looks: 'stairs' }] };
+  const floors: Layout['floors'] = [
+    { key: 'fore-steps', is: 'steps', colour: '#555555', outline: [[0, 760], [1200, 740], [1200, 896], [0, 896]] },
+    { key: 'fore-quay', is: 'quay', colour: '#555555', outline: [[0, 630], [1200, 610], [1200, 740], [0, 760]] },
+    { key: 'far-quay', is: 'quay', colour: '#555555', outline: [[68, 410], [1132, 410], [1152, 492], [48, 492]] },
+  ];
+  const things = [{ key: 'bridge-stairs', colour: '#777777', x: 1020, footY: 488, width: 200, height: 260, metres: 4 }];
+  const issues = layoutIssues(layout({ horizon: 400, floors, things }), canal);
+  expect(issues).toEqual([expect.stringMatching(/^floor far-quay doesn't touch fore-steps/), 'bridge-stairs stands on far-quay, which the hero can\'t reach']);
+  const bridge = { key: 'bridge', is: 'footbridge', colour: '#666666', outline: [[900, 490], [1000, 490], [1000, 615], [900, 615]] as [number, number][] };
+  expect(layoutIssues(layout({ horizon: 400, floors: [...floors, bridge], things }), canal)).toEqual([]);
+  expect(layoutIssues(layout({ horizon: 400, floors, things }), canal, false)).toEqual([]);
+});
