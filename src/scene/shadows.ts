@@ -19,7 +19,7 @@ const { width: W, height: H } = FRAME;
  * per px of the caster's height, and how much darker the floor is in shadow (0 none, 1 black). */
 export type Light = { dir: [number, number]; length: number; strength: number };
 export type CasterShadow = { thing: string; px: number; dir?: [number, number]; length?: number };
-export type Shadows = { mask: Mask; light?: Light; casters: CasterShadow[]; source: 'casters' | 'none' };
+export type Shadows = { mask: Mask; light?: Light; casters: CasterShadow[]; source: 'casters' | 'spark' | 'none' };
 
 /** Darker than this share of the lit floor around it is shadow. */
 export const SHADOW_DARK = 0.74;
@@ -97,7 +97,8 @@ Reply with JSON only: {"sunlit": true, "dx": 0.5, "dy": 0.5, "length": 0.8}  (dx
   const a = SparkLight.parse(await askSparkJson(memo, { label, prompt, images: [painting] }));
   const d = Math.hypot(a.dx, a.dy);
   if (!a.sunlit || d < 1e-3) return undefined;
-  return { dir: [a.dx / d, a.dy / d], length: Math.min(3, Math.max(0.2, a.length)), strength: 0.35 };
+  const r = (v: number) => Math.round(v * 1000) / 1000;
+  return { dir: [r(a.dx / d), r(a.dy / d)], length: r(Math.min(3, Math.max(0.2, a.length))), strength: 0.35 };
 }
 
 /** The painted shadows on `floor` (ground the hero walks on, minus things) and the light behind them.
@@ -123,6 +124,11 @@ export async function findShadows(memo: Memo, label: string, painting: Buffer, f
     const r = 4 * height, cx = (b.box[0] + b.box[2]) / 2;
     for (let y = Math.max(0, Math.round(b.baseY - r)); y < Math.min(H, b.baseY + r); y++) for (let x = Math.max(0, Math.round(cx - r)); x < Math.min(W, cx + r); x++) near.bits[y * W + x] = 1;
     const shadow = intersect(unionAll(W, H, own), near);
+    // A shadow many times the thing's size is shade it stands in (the risers of stairs, a tree), not its own.
+    if (maskArea(shadow) > 3 * maskArea(b.mask)) {
+      measured.push({ thing: b.key, px: maskArea(shadow) });
+      continue;
+    }
     kept.push(...own);
     // Measured from where the shadow meets the foot: a wide thing's base is a line, not its box's corner.
     const contact = centroid(intersect(shadow, touch)) ?? [cx, b.baseY];
@@ -130,10 +136,12 @@ export async function findShadows(memo: Memo, label: string, painting: Buffer, f
   }
   const mask = unionAll(W, H, kept);
   const directed = measured.filter((m) => m.dir);
-  // No thing casts a painted shadow: neither does the hero, or he'd have one the painting lacks.
-  if (!directed.length) return { mask: emptyMask(W, H), casters: measured, source: 'none' };
   // Dark wet planks next to a teapot look like a shadow too: Spark says whether there is sun at all.
-  if (!(await sparkLight(memo, `light:${label}`, painting))) return { mask: emptyMask(W, H), casters: measured, source: 'none' };
+  const sun = await sparkLight(memo, `light:${label}`, painting);
+  if (!sun) return { mask: emptyMask(W, H), casters: measured, source: 'none' };
+  // Sun, but no thing whose own shadow could be measured: the hero casts the shadow Spark sees, and no
+  // painted shadow is masked (nothing says which dark patches are shadows).
+  if (!directed.length) return { mask: emptyMask(W, H), light: sun, casters: measured, source: 'spark' };
   // The things agree on the light when their directions add up; if they don't, the biggest shadow wins.
   const weight = (m: CasterShadow) => Math.sqrt(m.px);
   const total = directed.reduce((s, m) => s + weight(m), 0);
