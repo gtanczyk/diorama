@@ -6,7 +6,7 @@ import { FRAME } from '../src/scene/layout.ts';
 import { pasteInside } from '../src/scene/plates.ts';
 
 const { width: W, height: H } = FRAME;
-const solid = (colour: string, width = W, height = H) => sharp({ create: { width, height, channels: 3, background: colour } }).png().toBuffer();
+const solid = (colour: string, width: number = W, height: number = H) => sharp({ create: { width, height, channels: 3, background: colour } }).png().toBuffer();
 const red = (raw: Buffer, x: number, y: number) => raw[(y * W + x) * 4];
 
 test('an edit lands only inside its region or mask; the rest of the painting stays exactly as it was', async () => {
