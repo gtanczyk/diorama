@@ -220,5 +220,5 @@ section.agent .row { padding: 12px 14px 0; }
 .progress { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
 .progress .steps li { background: var(--raised); }
 .progress .tail { font-family: ui-monospace, Menlo, monospace; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
-/* A turn that ended well: a step that failed on the way is a retry, not an alarm. */
-section.agent .gc-turn:not(:has(.gc-turn-footer.gc-bad)) .gc-fold .gc-err { color: var(--muted); }
+/* A turn that ended well: a step that failed on the way was retried, so its summary says no "errors" (the step itself still shows it). */
+section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-err { display: none; }
