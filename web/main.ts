@@ -1020,12 +1020,25 @@ class Game {
     ctx.save();
     // Parallax: the person slides with the floor under their feet; size and light still come from where they stand.
     ctx.translate(sx, sy);
-    ctx.fillStyle = `rgba(0,0,0,${(0.12 + 0.4 * strength).toFixed(3)})`;
-    ctx.beginPath();
-    ctx.ellipse(x, y, h * 0.16, Math.max(2, h * 0.035), 0, 0, Math.PI * 2);
-    ctx.fill();
+    // One shadow per person. Under the sun the cast shadow is it, so the soft blob around the feet gives way to
+    // it (two shadows read as two lights) and only a thin dark contact under the soles stays. In shade, fog or
+    // no measured light, the blob is the whole shadow.
+    const cast = g.light && g.light.length > 0 && shaded < 0.98 ? 1 - shaded : 0;
+    const blob = (0.12 + 0.4 * strength) * (1 - cast);
+    if (blob > 0.01) {
+      ctx.fillStyle = `rgba(0,0,0,${blob.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.ellipse(x, y, h * 0.16, Math.max(2, h * 0.035), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (cast > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${(0.3 * cast).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.ellipse(x, y, h * 0.07, Math.max(1.5, h * 0.014), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     this.shadowRect = undefined;
-    if (g.light && g.light.length > 0 && shaded < 0.98) this.shadowRect = this.castShadow(x, y, h, g.light, (1 - shaded) * strength, paint, [sx, sy]);
+    if (cast > 0) this.shadowRect = this.castShadow(x, y, h, g.light!, cast * strength, paint, [sx, sy]);
     const bright = this.lightAt(x, y - h * 0.5) * (1 - shaded * strength);
     ctx.filter = `brightness(${bright.toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}`;
     ctx.translate(x, y - bob);
