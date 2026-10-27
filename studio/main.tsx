@@ -1,6 +1,6 @@
 // Diorama Studio: Start (worlds and a new idea), Setup (what this machine needs) and the Workshop (a world
 // building live). Everything here goes through actions, the same ones `diorama action` and the agent use.
-import { render } from 'preact';
+import { render, type ComponentChildren } from 'preact';
 import { signal } from '@preact/signals';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { askAgent, call, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
@@ -108,7 +108,6 @@ function HistoryMenu({ slug, version, onError }: { slug: string; version: number
 
 /** Sharing: a zip to download, or the public link. The last export or publish job says where it went. */
 function Share({ slug, jobs, onError }: { slug: string; jobs: Job[]; onError: (m: string) => void }) {
-  const [open, setOpen] = useState(false);
   const last = (args0: string) => jobs.findLast((j) => j.args[0] === args0 && j.state === 'done');
   const exported = last('export');
   const link = last('publish')?.tail.map((l) => /play: (https?:\S+)/.exec(l)?.[1]).find(Boolean);
@@ -117,25 +116,22 @@ function Share({ slug, jobs, onError }: { slug: string; jobs: Job[]; onError: (m
     if (confirm(`Put ${slug} on the public web? Anyone with the link can play it.`)) call('world_publish', { slug }).catch((e) => onError(e.message));
   };
   return (
-    <div class="share">
-      <button type="button" class="ghost" aria-expanded={open} onClick={() => setOpen(!open)}>Share</button>
-      {open && (
-        <div class="share-menu" role="menu">
-          <button type="button" class="ghost small" onClick={() => call('world_export', { slug }).catch((e) => onError(e.message))}>Make a zip</button>
-          {exported && <a class="detail" href={`/exports/${slug}.zip`} download>Download {slug}.zip</a>}
-          <p class="detail">A zip plays offline and goes on itch.io as an HTML game.</p>
-          <button type="button" class="ghost small" onClick={publish}>Publish a link</button>
-          {link && <a class="detail" href={link} target="_blank" rel="noopener">{link}</a>}
-          {firstTime && <p class="detail">{firstTime}</p>}
-          <p class="detail">Puts it on this repository's GitHub Pages, public.</p>
-        </div>
-      )}
+    <div class="menu-group">
+      <p class="menu-head">Share this game</p>
+      <button type="button" class="ghost small" onClick={() => call('world_export', { slug }).catch((e) => onError(e.message))}>Make a zip</button>
+      {exported && <a class="detail" href={`/exports/${slug}.zip`} download>Download {slug}.zip</a>}
+      <p class="detail">A zip plays offline and goes on itch.io as an HTML game.</p>
+      <button type="button" class="ghost small" onClick={publish}>Publish a link</button>
+      {link && <a class="detail" href={link} target="_blank" rel="noopener">{link}</a>}
+      {firstTime && <p class="detail">{firstTime}</p>}
+      <p class="detail">Puts it on this repository's GitHub Pages, public.</p>
     </div>
   );
 }
 
 /** In a workshop run in Polish (pl), the header says nothing in English. */
-function Header({ world, live, pl }: { world?: string; live?: boolean; pl?: boolean }) {
+function Header({ world, live, pl, onActivity, more }: { world?: string; live?: boolean; pl?: boolean; onActivity?: () => void; more?: ComponentChildren }) {
+  const [menu, setMenu] = useState(false);
   // The Workshop fits under it, so its height is the page's to know.
   const top = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -153,9 +149,19 @@ function Header({ world, live, pl }: { world?: string; live?: boolean; pl?: bool
       </a>
       {world && <><span class="sep">/</span><span class="crumb">{world}</span></>}
       <span class="grow" />
-      {live !== undefined && <span class={`live ${live ? 'on' : ''}`}>{live ? 'live' : 'reconnecting'}</span>}
-      <label class="follow"><input type="checkbox" checked={followAgent.value} onChange={(e) => (followAgent.value = e.currentTarget.checked)} /> {pl ? 'Śledź agenta' : 'Follow agent'}</label>
-      <a href="/setup" class="navlink" onClick={(e) => (e.preventDefault(), go('/setup'))}>{pl ? 'Ustawienia' : 'Setup'}</a>
+      {live !== undefined && <span class={`live-dot ${live ? 'on' : ''}`} title={live ? 'Live: changes show as they happen' : 'Reconnecting to the studio…'} aria-label={live ? 'live' : 'reconnecting'} />}
+      {onActivity && <button type="button" class="ghost small" onClick={onActivity}>Activity</button>}
+      {/* What is seldom needed waits behind one button. */}
+      <div class="share">
+        <button type="button" class="ghost tiny menu-button" aria-label={pl ? 'Więcej' : 'More'} aria-expanded={menu} onClick={() => setMenu(!menu)}>☰</button>
+        {menu && (
+          <div class="share-menu top-menu" role="menu" onClick={(e) => (e.target as HTMLElement).closest('a') && setMenu(false)}>
+            <label class="follow" title="When the agent opens a place, a tab or the game, the page goes there too"><input type="checkbox" checked={followAgent.value} onChange={(e) => (followAgent.value = e.currentTarget.checked)} /> {pl ? 'Śledź agenta' : 'Follow agent'}</label>
+            <a href="/setup" class="navlink" onClick={(e) => (e.preventDefault(), go('/setup'))}>{pl ? 'Ustawienia' : 'Setup'}</a>
+            {more}
+          </div>
+        )}
+      </div>
     </header>
   );
 }
@@ -386,22 +392,14 @@ function Workshop({ slug }: { slug: string }) {
   /** Activity shows what happened; what each step prints is there too, on request (the job card shows its last line). */
   const [allLines, setAllLines] = useState(false);
   const [dock, setDock] = useDock();
-  /** Activity stays folded unless the person opened it last time. */
-  const [logOpen, setLogOpen] = useState(() => {
-    try {
-      return localStorage.getItem('diorama.activity') === 'open';
-    } catch {
-      return false;
-    }
-  });
-  const keepLogOpen = (open: boolean) => {
-    setLogOpen(open);
-    try {
-      localStorage.setItem('diorama.activity', open ? 'open' : 'closed');
-    } catch {
-      // A private window keeps it for this visit only.
-    }
-  };
+  /** Activity, the raw record of what ran, opens as a drawer from the top bar. */
+  const [logOpen, setLogOpen] = useState(false);
+  useEffect(() => {
+    if (!logOpen) return;
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setLogOpen(false);
+    addEventListener('keydown', esc);
+    return () => removeEventListener('keydown', esc);
+  }, [logOpen]);
   /** The agent that would have repaired the last build, when it is not installed. */
   const [noAgent, setNoAgent] = useState<string | null>(null);
   /** Places the build is mending right now, with what it tries. */
@@ -551,7 +549,7 @@ function Workshop({ slug }: { slug: string }) {
 
   return (
     <>
-      <Header world={slug} live={live} />
+      <Header world={slug} live={live} onActivity={() => setLogOpen(true)} more={playable && !job && <Share slug={slug} jobs={status?.jobs ?? []} onError={setError} />} />
       {shown && status && <KidsWait slug={slug} places={status.placeDetail} progress={total ? 1 - left / total : 0} left={shown.state === 'running' ? left : null} doing={plan.find((s) => running[s] === 'run')}
         ready={shown.state === 'done' && playable} failed={shown.state === 'failed' || shown.state === 'cancelled'}
         onPlay={() => (setHidden(shown.id), setPlaying({ full: true }))} onHide={() => setHidden(shown.id)} />}
@@ -562,7 +560,6 @@ function Workshop({ slug }: { slug: string }) {
             <h1>{status?.title ?? slug}</h1>
             <span class="grow" />
             {playable && <button type="button" class={playing ? 'primary' : 'ghost'} onClick={() => setPlaying(playing ? null : {})}>{playing ? 'Close game' : 'Play'}</button>}
-            {playable && !job && <Share slug={slug} jobs={status?.jobs ?? []} onError={setError} />}
             {!job && status && status.steps.length > 0 && <HistoryMenu slug={slug} version={tick} onError={setError} />}
             {!job && canRedo && <button type="button" class="ghost" title="Take back the undo" onClick={() => call('history_redo', { slug }).catch((e) => setError(e.message))}>Redo</button>}
             {/* Stop sits beside the build button, never in its place: a double click must not start a build and stop it again. */}
@@ -619,18 +616,19 @@ function Workshop({ slug }: { slug: string }) {
         </div>
         <Dock dock={dock} onChange={setDock} title="Agent">
           <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} />
-          {/* Activity is the raw record, for when something needs explaining; folded it shows only the latest line. */}
-          <details class="log" open={logOpen} onToggle={(e) => keepLogOpen((e.currentTarget as HTMLDetailsElement).open)}>
-            <summary>
-              <h2>Activity</h2>
-              <span class="latest">{lines.findLast((l) => l.kind !== 'out')?.text ?? ''}</span>
-            </summary>
+        </Dock>
+      </main>
+      {logOpen && (
+        <div class="drawer-back" onClick={(e) => e.target === e.currentTarget && setLogOpen(false)}>
+          <section class="drawer log" role="dialog" aria-label="Activity">
+            <div class="row"><h2>Activity</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" onClick={() => setLogOpen(false)}>✕</button></div>
             <div class="row"><span class="detail" title={status ? `this world: ${Object.entries(status.calls).map(([m, n]) => `${m} ${n}`).join(', ') || 'no calls yet'}` : undefined}>{calls} calls this session{budget ? ` · ${spend(budget.today)} today · ${spend(budget.total)}${budget.limitUsd !== null ? ` of $${budget.limitUsd}` : ''} total` : ''}</span></div>
             <label class="detail"><input type="checkbox" checked={allLines} onChange={(e) => setAllLines(e.currentTarget.checked)} /> Every line the steps print</label>
             <ol>{[...lines].reverse().filter((l) => allLines || l.kind !== 'out').map((l) => <li key={l.seq} class={l.kind}>{l.text}</li>)}</ol>
-          </details>
-        </Dock>
-      </main>
+          </section>
+        </div>
+      )}
+
     </>
   );
 }

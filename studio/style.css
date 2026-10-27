@@ -495,3 +495,20 @@ body.dragging iframe { pointer-events: none; }
 .dock.float.folded .dockbar { flex-direction: row; }
 .dock.float.folded .dock-title { writing-mode: horizontal-tb; transform: none; }
 @media (max-width: 960px) { main.workshop[class*="dock-"] { grid-template-columns: 1fr; } .dock-edge { display: none; } }
+
+/* Top bar: a live dot, Activity, and the seldom-used options behind ☰. */
+.live-dot { width: 8px; height: 8px; border-radius: 4px; background: var(--faint); }
+.live-dot.on { background: var(--ok); box-shadow: 0 0 0 3px rgba(108, 195, 181, 0.18); }
+.menu-button { font-size: 16px; }
+.share-menu.top-menu { width: 220px; gap: 4px; }
+.top-menu .navlink { padding: 6px 4px; border-radius: 8px; }
+.top-menu .follow { padding: 6px 4px; }
+/* Activity as a drawer from the right, scrolling inside. */
+.drawer-back { position: fixed; inset: 0; z-index: 50; background: rgba(8, 9, 11, 0.5); display: flex; justify-content: flex-end; }
+.drawer { width: min(560px, 92vw); height: 100%; display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; background: var(--panel); border-left: 1px solid var(--line-strong); box-shadow: -20px 0 50px rgba(0, 0, 0, 0.45); animation: drawer-in 0.18s ease-out; }
+.drawer.log ol { flex: 1; min-height: 0; max-height: none; overflow: auto; }
+@keyframes drawer-in { from { transform: translateX(24px); opacity: 0; } }
+.share-menu.top-menu:has(.menu-group) { width: 300px; }
+.menu-group { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.menu-group p { margin: 0; }
+.menu-head { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
