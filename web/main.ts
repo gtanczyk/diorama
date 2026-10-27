@@ -2,6 +2,7 @@
 import { FLAME_GLOW, FLAME_SWAY_M, flameAt, flicker, floorYAt, hiddenRuns, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
+import { FOCUS_BLUR, focusMask, planeDepth } from '../src/play/focus.ts';
 import { decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, pickDialogue, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
@@ -80,6 +81,8 @@ type Place = {
   shade?: Bits;
   /** How far every pixel is (geometry.depth): cast shadows follow the ground's shape with it. */
   depth?: Depth;
+  /** How far every pixel is for the camera's focus: the depth map, or the floor plane with the cards stood on it. */
+  focus?: Depth;
   /** The water's soft mask over the frame, 0..255: a shadow barely shows on water. */
   wet?: Uint8Array;
   /** The fire or lamp's work here (see Game.fireOf), made on first use. */
@@ -137,6 +140,9 @@ const hideCursor = capture || params.get('cursor') === '0';
 // unless they ask for it, since they read frame pixels at painting coordinates. ?sway=1 adds a slow idle drift.
 const parallaxScale = Number(params.get('parallax') ?? (capture ? '0' : '1')) || 0;
 const sway = params.get('sway') === '1';
+// ?focus=0: everything as sharp as painted; ?focus=1.5 a shallower focus. The camera focuses on the hero, so
+// what stands behind them softens and pales with its distance. Capture runs stay sharp unless they ask for it.
+const focusScale = Number(params.get('focus') ?? (capture ? '0' : '1')) || 0;
 // ?track=1: walking along a place, the camera is closer in and pans after the hero, so near things pass faster
 // than far ones, like a side-scroller. It only drives the parallax, so a flat place stays as it was.
 const track = Number(params.get('track') ?? '0') || 0;
@@ -166,6 +172,24 @@ async function loadDepth(src: string): Promise<Depth> {
   const cx = c.getContext('2d', { willReadFrequently: true, colorSpace: 'srgb' })!;
   cx.drawImage(img, 0, 0);
   return decodeDepth(cx.getImageData(0, 0, img.width, img.height).data, img.width, img.height);
+}
+
+/** Depth for the camera's focus without a depth map: the floor plane, each card standing at its floor row. */
+function standIn(g: Geometry, edge: Float32Array, cuts: Cut[]): Depth {
+  const d = planeDepth(g.frame, g.scale.horizonY, g.cell, edge, DEPTH_SCALE);
+  for (const c of cuts) {
+    const { width: cw, height: ch } = c.canvas;
+    if (!cw || !ch) continue;
+    const a = c.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, cw, ch).data;
+    const rows = Math.max(0, c.y - g.scale.horizonY);
+    for (let r = Math.floor(c.y0 / DEPTH_SCALE); r < Math.min(d.h, (c.y0 + ch) / DEPTH_SCALE); r++) {
+      for (let k = Math.floor(c.x0 / DEPTH_SCALE); k < Math.min(d.w, (c.x0 + cw) / DEPTH_SCALE); k++) {
+        const [u, v] = [k * DEPTH_SCALE - c.x0, r * DEPTH_SCALE - c.y0];
+        if (r >= 0 && k >= 0 && u >= 0 && v >= 0 && u < cw && v < ch && a[(v * cw + u) * 4 + 3] > 127) d.rows[r * d.w + k] = rows;
+      }
+    }
+  }
+  return d;
 }
 
 /** The water's soft mask (drawn over its box) as one byte per frame pixel. */
@@ -372,7 +396,8 @@ class Game {
     const wx = entry.weather && !params.has('still') && params.get('weather') !== '0' ? entry.weather : undefined;
     const ripples = wx?.ripples ? await loadBits(files(wx.ripples), g.frame.width, g.frame.height).catch(() => undefined) : undefined;
     const weather = wx && new WeatherFx(wx, g, ripples?.bits, key);
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, wet, hots, cuts: kept, byKey, weather };
+    const focus = focusScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather };
     this.cache.set(key, place);
     return place;
   }
@@ -1123,6 +1148,7 @@ class Game {
       this.drawClimbs();
     }
     this.place.weather?.drawDrips(ctx, (y) => this.shift(y));
+    this.drawFocus();
     // Everyone is drawn far to near, and each one gets the things in front of them put back.
     let rect: Rect = [0, 0, 0, 0];
     const lit = this.hover && !hideCursor ? this.hover : undefined;
@@ -1164,6 +1190,59 @@ class Game {
       ctx.fillStyle = `rgba(0,0,0,${this.dark})`;
       ctx.fillRect(0, 0, W, H);
     }
+  }
+
+  private soft = document.createElement('canvas');
+  private maskCanvas = document.createElement('canvas');
+  private focusAt = { place: '', row: -1, eased: 0 };
+
+  /**
+   * The camera focuses where the hero stands: the frame drawn so far (the painting and its cards, no people yet)
+   * is laid over itself blurred and a little paler, through a mask of how far behind the hero each pixel is
+   * (src/play/focus.ts). People and the cards put back in front of them are drawn after, sharp.
+   */
+  private drawFocus() {
+    const { focus, g } = this.place;
+    if (!focus || focusScale <= 0) return;
+    const W = canvas.width;
+    const H = canvas.height;
+    // Eased, so walking toward or away from the camera pulls focus smoothly instead of stepping.
+    const target = Math.max(1, this.hero.y - g.scale.horizonY);
+    const f = this.focusAt;
+    if (f.place !== this.place.key) Object.assign(f, { place: this.place.key, row: -1, eased: target });
+    f.eased += (target - f.eased) * 0.15;
+    // The mask is remade only when the focus has moved a few rows.
+    const row = Math.round(f.eased / 3) * 3;
+    const m = this.maskCanvas;
+    if (row !== f.row) {
+      if (m.width !== focus.w || m.height !== focus.h) Object.assign(m, { width: focus.w, height: focus.h });
+      const mc = m.getContext('2d')!;
+      const img = mc.createImageData(focus.w, focus.h);
+      focusMask(focus, row, img.data);
+      mc.putImageData(img, 0, 0);
+      f.row = row;
+    }
+    // Blurred at half size: cheaper, and the upscale softens it further.
+    const s = this.soft;
+    const [sw, sh] = [Math.ceil(W / 2), Math.ceil(H / 2)];
+    if (s.width !== sw || s.height !== sh) Object.assign(s, { width: sw, height: sh });
+    const sc = s.getContext('2d')!;
+    const z = ctx.getTransform();
+    sc.setTransform(1, 0, 0, 1, 0, 0);
+    sc.globalCompositeOperation = 'copy';
+    sc.filter = `blur(${((FOCUS_BLUR * focusScale * z.a) / 2).toFixed(2)}px) saturate(0.85) contrast(0.92) brightness(1.04)`;
+    sc.drawImage(canvas, 0, 0, sw, sh);
+    sc.filter = 'none';
+    // The mask in painting coordinates, under the same camera as the frame (zoom, tracking).
+    sc.globalCompositeOperation = 'destination-in';
+    sc.setTransform(z.a / 2, z.b / 2, z.c / 2, z.d / 2, z.e / 2, z.f / 2);
+    sc.imageSmoothingEnabled = true;
+    sc.drawImage(m, 0, 0, focus.w * DEPTH_SCALE, focus.h * DEPTH_SCALE);
+    sc.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(s, 0, 0, W, H);
+    ctx.restore();
   }
 
   /** A glowing line along the edge of the thing's mask (its box, when it has no mask). */
