@@ -27,6 +27,8 @@ export type Derived = { geometry: Geometry; grid: Grid; blobs: Blob[]; footprint
 const { width: W, height: H } = FRAME;
 /** The tallest the hero may be: three quarters of the picture. */
 export const NEAR_MAX_PX = Math.round(0.75 * H);
+/** How far (px) a layout light's point may lie outside the thing it belongs to: a glow drawn just off the lamp. */
+const LIGHT_REACH = 24;
 
 /** The floor hidden behind a standing blob: its pixels behind the footprint, in rows with floor on both sides. */
 export function hiddenFloor(blob: Blob, floor: Mask, reachPx = 24): Mask {
@@ -192,10 +194,22 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   // (a lamp lit by one is the light below), so Spark is asked about the painting before it.
   const shadowsAsked = findShadows(memo, place.key, paintingFor(carry, painting, [lit, ...casters.map((b) => b.box)], 24), lit, casters, carry?.old ?? painting);
   // A fire or a lamp outshining the sky throws each person's shadow away from itself.
-  const lights = layout.lights.map((l) => {
-    const t = things.find((t) => t.key === l.key);
-    return { key: l.key, box: t ? (maskBox(t.mask) ?? undefined) : undefined };
-  });
+  // The layout names a light by its glow ("lamp-glow" at the lamp's head, "oven-fire") as often as by its
+  // thing ("street-lamp", "warm-oven"), so a light that names no thing goes to a thing near its point: one
+  // sharing a word with it, else one whose mask holds the point, else the smallest box around it.
+  const boxed = things.flatMap((t) => { const b = maskBox(t.mask); return b ? [{ key: t.key, box: b, mask: t.mask }] : []; });
+  const near = (b: [number, number, number, number], x: number, y: number) => x >= b[0] - LIGHT_REACH && x <= b[2] + LIGHT_REACH && y >= b[1] - LIGHT_REACH && y <= b[3] + LIGHT_REACH;
+  const area = (b: [number, number, number, number]) => (b[2] - b[0]) * (b[3] - b[1]);
+  const words = (k: string) => k.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+  const lights = [...new Map(layout.lights.map((l) => {
+    const around = boxed.filter((t) => near(t.box, l.x, l.y)).sort((a, b) => area(a.box) - area(b.box));
+    const inMask = (m: Mask) => m.bits[Math.min(H - 1, Math.max(0, Math.round(l.y))) * W + Math.min(W - 1, Math.max(0, Math.round(l.x)))] === 1;
+    const t = boxed.find((t) => t.key === l.key)
+      ?? around.find((t) => words(t.key).some((w) => words(l.key).includes(w)))
+      ?? around.find((t) => inMask(t.mask))
+      ?? around[0];
+    return [t?.key ?? l.key, { key: t?.key ?? l.key, box: t?.box }] as const;
+  })).values()];
   // A repaint of a lamp or of its glow is asked again; one elsewhere does not change what lights the ground.
   const fireAsked = lights.length ? localLight(memo, `light-source:${place.key}`, paintingFor(carry, painting, lights.map((l) => l.box), 80), lights) : Promise.resolve(undefined);
   // Stairs: the walk-on things and floors named as stairs get their steps, so feet land on the treads.
