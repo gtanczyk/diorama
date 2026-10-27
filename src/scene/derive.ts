@@ -25,6 +25,8 @@ export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors
 export type Derived = { geometry: Geometry; grid: Grid; blobs: Blob[]; footprint: Mask; probes: Sample[]; shadows: Shadows };
 
 const { width: W, height: H } = FRAME;
+/** The tallest the hero may be: three quarters of the picture. */
+export const NEAR_MAX_PX = Math.round(0.75 * H);
 
 /** The floor hidden behind a standing blob: its pixels behind the footprint, in rows with floor on both sides. */
 export function hiddenFloor(blob: Blob, floor: Mask, reachPx = 24): Mask {
@@ -110,7 +112,10 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   const groundTop = Math.min(...floors.map((f) => maskBox(f)?.[1] ?? H), ...layout.floors.flatMap((f) => f.outline.map(([, y]) => y)));
   const nearFloor = dilate(union(ground, planned), 48);
   let water: Mask | undefined;
+  // Cells the gates below shut stay shut: joining the floor up again must not reopen them.
+  const shut = new Uint8Array(grid.open.length);
   const cost = (i: number) => {
+    if (shut[i]) return Infinity;
     const [x, y] = grid.centre(i).map(Math.floor);
     const p = Math.min(H - 1, y) * W + Math.min(W - 1, x);
     if (blocked.bits[p] && !behind.bits[p]) return Infinity;
@@ -230,11 +235,20 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     const h = Math.max(8, sized.pxPerY * (y - sized.horizonY));
     if (x < 0.1 * h || x > W - 0.1 * h || y < 0.7 * h) {
       grid.open[i] = 0;
+      shut[i] = 1;
       framed++;
     }
   });
+  // The near gate: in a close-up interior the front rows sit right under the camera, where the hero would be
+  // taller than the picture (a bakery at 942 px). Those rows are foreground to look past, not floor to stand on.
+  const tooNear = [...grid.open.keys()].filter((i) => grid.open[i] && sized.pxPerY * (grid.centre(i)[1] - sized.horizonY) > NEAR_MAX_PX);
+  if (tooNear.length && grid.count() - tooNear.length >= 200) {
+    tooNear.forEach((i) => (grid.open[i] = 0, shut[i] = 1));
+    framed += tooNear.length;
+    flag(`closed ${tooNear.length} front cells where the hero would be over ${NEAR_MAX_PX} px tall (too near the camera)`);
+  }
   if (framed) {
-    log(`closed ${framed} cells at the frame edge, where the hero would be cut off`);
+    log(`closed ${framed} cells at the frame edge or too near the camera, where the hero would be cut off`);
     if (!roomy(grid)[startCell]) startCell = startOf() ?? startCell;
     const again = connect(grid, startCell, cost);
     for (const island of again.stranded) flag(`${island.length} walkable cells can't be reached from the start after the frame gate`);

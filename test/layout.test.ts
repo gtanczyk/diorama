@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { blockinSvg } from '../src/scene/blockin.ts';
-import { layoutIssues, type Layout } from '../src/scene/layout.ts';
+import { closeUpIssues, layoutIssues, type Layout } from '../src/scene/layout.ts';
 import type { Place } from '../src/world/schema.ts';
 
 const place: Place = {
@@ -53,4 +53,15 @@ test('a quay across a canal, with the exit on it, is caught; a bridge floor join
   const bridge = { key: 'bridge', is: 'footbridge', colour: '#666666', outline: [[900, 490], [1000, 490], [1000, 615], [900, 615]] as [number, number][] };
   expect(layoutIssues(layout({ horizon: 400, floors: [...floors, bridge], things }), canal)).toEqual([]);
   expect(layoutIssues(layout({ horizon: 400, floors, things }), canal, false)).toEqual([]);
+});
+
+test('a close-up camera is caught from the things\' sizes', () => {
+
+  const bakery = layout({ horizon: 420, things: [
+    { key: 'oven', colour: '#888888', x: 300, footY: 540, width: 300, height: 340, metres: 2.4 },
+    { key: 'rack', colour: '#888888', x: 700, footY: 560, width: 200, height: 310, metres: 1.9 },
+    { key: 'door', colour: '#888888', x: 1000, footY: 630, width: 200, height: 350, metres: 2.1 },
+  ] });
+  expect(closeUpIssues(bakery)[0]).toMatch(/camera is too close/);
+  expect(closeUpIssues(layout())).toEqual([]);
 });

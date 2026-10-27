@@ -40,7 +40,7 @@ export function layoutIssues(layout: Layout, place: Place, reach = true): string
     if (Math.min(...floor.outline.map(([, y]) => y)) < layout.horizon) issues.push(`floor ${floor.key} rises above the horizon at ${layout.horizon}`);
     if (i === 0 && Math.max(...floor.outline.map(([, y]) => y)) < H - 30) issues.push(`floor ${floor.key} is listed first, so it must reach the bottom edge (y >= ${H - 30})`);
   });
-  if (reach) issues.push(...reachIssues(layout, place));
+  if (reach) issues.push(...reachIssues(layout, place), ...closeUpIssues(layout));
   for (const thing of place.things) if (!layout.things.some((t) => t.key === thing.key)) issues.push(`${thing.key} is missing`);
   for (const t of layout.things) {
     if (!place.things.some((thing) => thing.key === t.key)) issues.push(`${t.key} is not a thing of ${place.key}`);
@@ -88,6 +88,26 @@ export function reachIssues(layout: Layout, place: Place): string[] {
     else if (!joined.has(on)) issues.push(`${t.key} stands on ${layout.floors[on].key}, which the hero can't reach`);
   }
   return issues;
+}
+
+/** The tallest a person may stand at the bottom of the picture, as the layout's things imply it. */
+export const CLOSE_UP_MAX = 0.6;
+
+/**
+ * A camera too close: the things' sizes say how tall a 1.62 m person is at each depth, and at the bottom edge
+ * that must leave the hero room to walk (a bakery laid out at 610 px came out 940 px painted).
+ */
+export function closeUpIssues(layout: Layout): string[] {
+  const { height: H } = FRAME;
+  const implied = layout.things
+    .filter((t) => t.metres >= 0.5 && t.footY - layout.horizon > 40)
+    .map((t) => ((t.height * 1.62) / t.metres / (t.footY - layout.horizon)) * (H - layout.horizon))
+    .sort((a, b) => a - b);
+  if (implied.length < 2) return [];
+  const person = implied[Math.floor(implied.length / 2)];
+  return person > CLOSE_UP_MAX * H
+    ? [`the camera is too close: by the things' sizes a person at the bottom edge would be ${Math.round(person)} px tall (keep it under ${Math.round(CLOSE_UP_MAX * H)}): make the things smaller, set them deeper, or raise the horizon`]
+    : [];
 }
 
 function brief(world: World, place: Place): string {
