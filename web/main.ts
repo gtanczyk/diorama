@@ -1,5 +1,5 @@
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
-import { floorYAt, hiddenRuns, personPx, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
+import { floorYAt, hiddenRuns, personPx, stepFootY, stepRestY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
@@ -350,6 +350,9 @@ class Game {
   /** Walks to a point; resolves on arrival, or at once when there is no way there. */
   walkTo(x: number, y: number): Promise<boolean> {
     this.pending?.();
+    // Nobody stops on a riser: on stairs the walk ends in the middle of a step.
+    const ry = stepRestY(this.place.g, x, y);
+    if (ry !== y && this.place.grid.walkable(x, ry)) y = ry;
     const path = this.place.grid.route([this.hero.x, this.hero.y], [x, y]);
     this.hero.path = path;
     if (!path.length) return Promise.resolve(false);
@@ -929,7 +932,9 @@ class Game {
   /** Draws a person with feet at (x, y); returns the box the figure covers (its cast shadow's box is in shadowRect). */
   private drawPerson(x: number, y: number, facing: number, phase: number, walking: boolean, figure: Figure | undefined, colour: string, lit = false, [sx, sy]: [number, number] = [0, 0], yaw = facing * Math.PI / 3, talk?: 'speak' | 'listen'): Rect {
     const g = this.place.g;
+    // Size comes from where the person stands on the floor; on stairs the feet sit on the tread under them.
     const h = personPx(g, y);
+    y = stepFootY(g, x, y);
     const sprites = figure?.sprites;
     const model = sprites ? undefined : figure?.model;
     const rig = model || sprites ? undefined : figure?.rig;

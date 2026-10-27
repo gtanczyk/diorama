@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { floorYAt, hiddenRuns, hides, personPx, type Geometry, type Occluder } from '../src/play/geometry.ts';
+import { floorYAt, hiddenRuns, hides, personPx, stepFootY, stepRestY, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { WalkGrid } from '../src/play/path.ts';
 import { previewGeometry } from '../src/play/preview.ts';
 import type { Layout } from '../src/scene/layout.ts';
@@ -71,4 +71,19 @@ test('preview geometry walks the layout floors around things, scaled by their he
   expect(g.occluders.map((o) => o.key)).toEqual(['well']);
   expect(personPx(g, 600)).toBeGreaterThan(100);
   expect(grid.walkable(...g.things[0].stand)).toBe(true);
+});
+
+test('on stairs the feet rest on each tread and step over the risers', () => {
+  const band = (t: number, b: number) => ({ x0: 100, every: 8, top: [t, t, t, t], bottom: [b, b, b, b] });
+  const g = { steps: [band(600, 650), band(650, 700), band(700, 750)] } as unknown as Geometry;
+  // Off the stairs, nothing changes.
+  expect(stepFootY(g, 50, 640)).toBe(640);
+  expect(stepFootY(g, 110, 580)).toBe(580);
+  expect(stepFootY(g, 110, 760)).toBe(760);
+  // Across a tread the feet stay at one height, and only climb over the riser.
+  expect(stepFootY(g, 110, 666)).toBeCloseTo(stepFootY(g, 110, 680));
+  const ys = Array.from({ length: 151 }, (_, i) => stepFootY(g, 110, 600 + i));
+  for (let i = 1; i < ys.length; i++) expect(ys[i]).toBeGreaterThanOrEqual(ys[i - 1] - 1e-9);
+  expect(stepRestY(g, 110, 690)).toBe(675);
+  expect(stepRestY(g, 300, 690)).toBe(690);
 });
