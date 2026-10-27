@@ -104,15 +104,18 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   const planned = unionAll(W, H, layout.floors.map((f) => polygonMask(W, H, f.outline)));
   const blocked = union(inTheWay, footprint);
   const groundTop = Math.min(...floors.map((f) => maskBox(f)?.[1] ?? H), ...layout.floors.flatMap((f) => f.outline.map(([, y]) => y)));
+  const nearFloor = dilate(union(ground, planned), 48);
   const cost = (i: number) => {
     const [x, y] = grid.centre(i).map(Math.floor);
     const p = Math.min(H - 1, y) * W + Math.min(W - 1, x);
     if (blocked.bits[p] && !behind.bits[p]) return Infinity;
     // Muse moves floors away from the layout, so the ground between them is fair game too, at a price.
-    return ground.bits[p] ? 1 : planned.bits[p] ? 3 : y >= groundTop ? 6 : Infinity;
+    // A corridor between floors stays near them: no paths cut across a lawn or open water.
+    return ground.bits[p] ? 1 : planned.bits[p] ? 3 : y >= groundTop && nearFloor.bits[p] ? 6 : Infinity;
   };
   // The start is clear of every thing (by about a hero's width), so nobody begins standing in a lamp.
-  const nearThings = dilate(unionAll(W, H, things.map((t) => t.mask)), 24);
+  // Walk-on and flat things (a jetty, a rug) are floor: near them is fine.
+  const nearThings = dilate(unionAll(W, H, things.filter((t) => t.kind !== 'walk-on' && t.kind !== 'flat').map((t) => t.mask)), 24);
   const clear = roomy(grid).map((v, i) => {
     const [x, y] = grid.centre(i).map(Math.floor);
     return v && !nearThings.bits[Math.min(H - 1, y) * W + Math.min(W - 1, x)] ? 1 : 0;
@@ -170,6 +173,14 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     startCell = nearestRoomy(grid, ...grid.centre(startCell), clear.map((v, i) => v & grid.open[i])) ?? nearestRoomy(grid, ...grid.centre(startCell)) ?? startCell;
     const again = connect(grid, startCell, cost);
     for (const island of again.stranded) flag(`${island.length} walkable cells can't be reached from the start after the frame gate`);
+    joined.stranded = again.stranded;
+  }
+  // Floor walled off by a thing (a dock strip behind a kayak) is painted, not walkable: close it, as long as
+  // it is a small part. A big part cut off means something else is wrong, and verify should say so.
+  const cutOff = joined.stranded.flat();
+  if (cutOff.length && cutOff.length < 0.25 * grid.count()) {
+    cutOff.forEach((i) => (grid.open[i] = 0));
+    flag(`closed ${cutOff.length} cells no path reaches (walled off by things)`);
   }
 
   /** The standing blob a thing on top rests on: its middle column is over it, its base near or inside it. */
