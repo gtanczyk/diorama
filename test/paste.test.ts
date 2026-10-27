@@ -1,9 +1,10 @@
 import sharp from 'sharp';
 import { expect, test } from 'vitest';
-import { emptyMask } from '../src/image/mask.ts';
+import { emptyMask, maskArea } from '../src/image/mask.ts';
+import { dilate, rectMask } from '../src/image/raster.ts';
 import { pasteRegions } from '../src/scene/critic.ts';
 import { FRAME } from '../src/scene/layout.ts';
-import { pasteInside } from '../src/scene/plates.ts';
+import { pasteInside, withAttached } from '../src/scene/plates.ts';
 
 const { width: W, height: H } = FRAME;
 const solid = (colour: string, width: number = W, height: number = H) => sharp({ create: { width, height, channels: 3, background: colour } }).png().toBuffer();
@@ -22,4 +23,20 @@ test('an edit lands only inside its region or mask; the rest of the painting sta
   const byMask = await sharp(await pasteInside(painting, patched, mask)).ensureAlpha().raw().toBuffer();
   expect(red(byMask, 750, 450)).toBeGreaterThan(240);
   expect(red(byMask, 200, 200)).toBe(0);
+});
+
+test('a part SAM left out of the mask (a rope off a bucket) joins the patch when Muse removed it too', async () => {
+  // The painting: a bucket (in the mask) and a rope tail going off it to the right (not in the mask).
+  const painting = await sharp(await solid('#5a646e')).composite([
+    { input: await solid('#dcdcdc', 60, 60), left: 500, top: 400 },
+    { input: await solid('#c8963c', 50, 6), left: 560, top: 440 },
+  ]).png().toBuffer();
+  const mask = rectMask(W, H, [500, 400, 560, 460]);
+  const area = dilate(mask, 4);
+  // Muse's edit: all ground, a touch darker, with a stone far away that is not the thing's.
+  const edited = await sharp(await solid('#545e68')).composite([{ input: await solid('#fafafa', 20, 20), left: 100, top: 100 }]).png().toBuffer();
+  const grown = await withAttached(painting, edited, mask, area);
+  expect(grown.bits[443 * W + 600]).toBe(1);
+  expect(grown.bits[110 * W + 110]).toBe(0);
+  expect(maskArea(grown)).toBeLessThan(maskArea(area) + 60 * 14 + 400);
 });

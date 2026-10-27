@@ -1,7 +1,7 @@
 import sharp from 'sharp';
 import { expect, test } from 'vitest';
-import { emptyMask } from '../src/image/mask.ts';
-import { cutIcon, ICON_PX, itemSources } from '../src/scene/icons.ts';
+import { emptyMask, maskArea } from '../src/image/mask.ts';
+import { cutIcon, ICON_PX, itemSources, offGround, peelGround } from '../src/scene/icons.ts';
 import { Story } from '../src/story/schema.ts';
 
 test('an item comes from the thing the hero takes it from, or is handed over', () => {
@@ -28,4 +28,26 @@ test('a cut-out icon is square, transparent around the thing, and the thing fill
   expect(alpha(ICON_PX / 2, ICON_PX / 2)).toBe(255);
   // 60x20 fits 168 wide: the thing spans most of the icon's width.
   expect(alpha(30, ICON_PX / 2)).toBeGreaterThan(200);
+});
+
+test("a painted item on a shaded wash is cut without the wash, and a band of ground is peeled off", async () => {
+  // 200x200: pale ground, a darker blue wash (a disc of r 60), an orange item (a disc of r 30) on it.
+  const W = 200;
+  const px = Buffer.alloc(W * W * 3);
+  for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
+    const d = Math.hypot(x - 100, y - 100);
+    const c = d < 30 ? [200, 120, 40] : d < 60 ? [150, 165, 175] : [185, 197, 193];
+    px.set(c, (y * W + x) * 3);
+  }
+  const picture = await sharp(px, { raw: { width: W, height: W, channels: 3 } }).png().toBuffer();
+  const mask = (await offGround(picture))!;
+  const area = maskArea(mask);
+  expect(area).toBeGreaterThan(Math.PI * 28 ** 2);
+  expect(area).toBeLessThan(Math.PI * 33 ** 2);
+  // SAM's mask took a band of the ground around the item: peeling brings it back to the item.
+  const wide = emptyMask(W, W);
+  for (let i = 0; i < W * W; i++) if (Math.hypot((i % W) - 100, Math.floor(i / W) - 100) < 72) wide.bits[i] = 1;
+  const peeled = maskArea(await peelGround(picture, wide));
+  expect(peeled).toBeLessThan(Math.PI * 64 ** 2);
+  expect(peeled).toBeGreaterThan(Math.PI * 58 ** 2);
 });

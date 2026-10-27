@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import sharp from 'sharp';
 import { z } from 'zod';
 import { emptyMask, imageSize, maskArea, maskFromPng, maskToPng, type Mask } from '../image/mask.ts';
-import { clampRect, components, maskBox } from '../image/raster.ts';
+import { clampRect, components, dilate, maskBox, subtract } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import { museEdit, musePaint } from '../meta/muse.ts';
 import { samFind } from '../meta/sam.ts';
@@ -73,11 +73,50 @@ async function samCut(memo: Memo, label: string, picture: Buffer, phrase: string
   for (const prompt of [phrase, 'object']) {
     const found = await samFind(memo, { label, image: picture, prompt });
     const best = found.sort((a, b) => maskArea(b.mask) - maskArea(a.mask))[0];
-    if (best) return cutIcon(picture, best.mask);
+    if (best) return cutIcon(picture, await peelGround(picture, best.mask));
   }
   const mask = await offGround(picture);
   if (!mask) throw new Error(`${label}: SAM did not find "${phrase}" on Muse's picture, and nothing stands out from its ground`);
-  return cutIcon(picture, mask);
+  return cutIcon(picture, await peelGround(picture, mask));
+}
+
+/**
+ * SAM's mask of a thing Muse painted often takes in the wash or shadow it stands on, a halo in the bag. Pixels at the
+ * mask's edge coloured like what lies just outside it are peeled off, a few px at a time; the thing keeps its holes filled.
+ */
+export async function peelGround(picture: Buffer, mask: Mask, rounds = 6): Promise<Mask> {
+  const { width: W, height: H } = mask;
+  const px = await sharp(picture).removeAlpha().resize(W, H, { fit: 'fill' }).raw().toBuffer();
+  const near = (i: number, c: number[]) => Math.hypot(px[i * 3] - c[0], px[i * 3 + 1] - c[1], px[i * 3 + 2] - c[2]) < 36;
+  let m = mask;
+  for (let r = 0; r < rounds; r++) {
+    const ring = subtract(dilate(m, 4), m);
+    const v: number[][] = [[], [], []];
+    for (let i = 0; i < W * H; i++) if (ring.bits[i]) for (let c = 0; c < 3; c++) v[c].push(px[i * 3 + c]);
+    if (!v[0].length) break;
+    const ground = v.map((a) => a.sort((x, y) => x - y)[a.length >> 1]);
+    const edge = subtract(m, dilate(m, -4));
+    const next = { ...m, bits: m.bits.slice() };
+    let peeled = 0;
+    for (let i = 0; i < W * H; i++) if (edge.bits[i] && near(i, ground)) (next.bits[i] = 0, peeled++);
+    if (!peeled) break;
+    const blob = components(next)[0];
+    // Never peel the thing itself away: stop where most of it would go.
+    if (!blob || maskArea(blob) < maskArea(mask) * 0.4) break;
+    m = blob;
+  }
+  return fillHoles(m);
+}
+
+function fillHoles(m: Mask): Mask {
+  const { width: W, height: H } = m;
+  const out = { ...m, bits: m.bits.slice() };
+  const outside = { ...m, bits: m.bits.map((b) => 1 - b) };
+  for (const hole of components(outside)) {
+    const box = maskBox(hole)!;
+    if (box[0] > 0 && box[1] > 0 && box[2] < W && box[3] < H) for (let i = 0; i < W * H; i++) if (hole.bits[i]) out.bits[i] = 1;
+  }
+  return out;
 }
 
 /** The largest blob whose colour differs from the picture's border (the plain ground), or null. */
@@ -88,15 +127,35 @@ export async function offGround(picture: Buffer): Promise<Mask | null> {
   for (let x = 0; x < w; x++) for (const y of [0, 1, h - 2, h - 1]) for (let c = 0; c < 3; c++) border[c].push(data[(y * w + x) * 3 + c]);
   for (let y = 0; y < h; y++) for (const x of [0, 1, w - 2, w - 1]) for (let c = 0; c < 3; c++) border[c].push(data[(y * w + x) * 3 + c]);
   const ground = border.map((v) => v.sort((a, b) => a - b)[v.length >> 1]);
+  const dist = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) dist[i] = Math.hypot(data[i * 3] - ground[0], data[i * 3 + 1] - ground[1], data[i * 3 + 2] - ground[2]);
+  // Muse's "plain" ground is often a wash with its own shades: the cut is where the distances split in two (Otsu),
+  // never closer to the ground than 40.
+  const cut = Math.max(40, otsu(dist));
   const small = emptyMask(w, h);
-  for (let i = 0; i < w * h; i++) {
-    const d = Math.hypot(data[i * 3] - ground[0], data[i * 3 + 1] - ground[1], data[i * 3 + 2] - ground[2]);
-    if (d > 40) small.bits[i] = 1;
-  }
+  for (let i = 0; i < w * h; i++) if (dist[i] > cut) small.bits[i] = 1;
   const blob = components(small).sort((a, b) => maskArea(b) - maskArea(a))[0];
   if (!blob || maskArea(blob) < w * h * 0.01) return null;
   const full = await imageSize(picture);
   return maskFromPng(await sharp(await maskToPng(blob)).resize(full.width, full.height, { fit: 'fill' }).png().toBuffer());
+}
+
+/** The threshold that best splits `values` (0-442) into two groups. */
+function otsu(values: Float32Array): number {
+  const bins = new Float64Array(443);
+  for (const v of values) bins[Math.min(442, Math.round(v))]++;
+  let total = 0, sum = 0;
+  for (let t = 0; t < bins.length; t++) (total += bins[t], sum += t * bins[t]);
+  let best = 0, at = 0, n0 = 0, s0 = 0;
+  for (let t = 0; t < bins.length; t++) {
+    n0 += bins[t];
+    s0 += t * bins[t];
+    const n1 = total - n0;
+    if (!n0 || !n1) continue;
+    const between = n0 * n1 * (s0 / n0 - (sum - s0) / n1) ** 2;
+    if (between > best) (best = between, at = t);
+  }
+  return at;
 }
 
 const look = (name: string, hint?: string) => (hint ? `${name} (${hint})` : name);

@@ -48,7 +48,7 @@ defineCommand({
       const brief = Brief.parse(files.readJson(at('brief.json')));
       const painting = fs.readFileSync(at('painting.png'));
       const floors = await Promise.all(layout.floors.map(async (f) => ({ f, mask: await maskFromPng(fs.readFileSync(at('masks', 'floors', `${f.key}.png`))) })));
-      const report: Record<string, { stillThere: boolean; iou: number; ringError: number }> = {};
+      const report: Record<string, { stillThere: boolean; iou: number; ringError: number; stain: number }> = {};
       for (const key of keys) {
         if (!notes[key]) {
           console.log(`  ${place.key}: ${key} has no mask, no plate`);
@@ -61,8 +61,8 @@ defineCommand({
         const ground = under?.px ? (brief.looks[under.f.key] ?? under.f.is) : 'the ground around it';
         const plate = await plateFor(files.memo, place, { key, phrase: notes[key].phrase, mask }, painting, ground);
         files.write(at('plates', `${key}.png`), plate.png);
-        report[key] = { stillThere: plate.stillThere, iou: Math.round(plate.iou * 100) / 100, ringError: Math.round(plate.ringError * 10) / 10 };
-        console.log(`${place.key}: plate for ${key} (seam ${plate.ringError.toFixed(1)})${plate.stillThere ? ' (SAM still finds it: check the plate)' : ''}`);
+        report[key] = { stillThere: plate.stillThere, iou: Math.round(plate.iou * 100) / 100, ringError: Math.round(plate.ringError * 10) / 10, stain: Math.round(plate.stain * 100) / 100 };
+        console.log(`${place.key}: plate for ${key} (seam ${plate.ringError.toFixed(1)}, stain ${Math.round(plate.stain * 100)}%)${plate.stillThere ? ' (SAM still finds it: check the plate)' : ''}`);
       }
       files.write(at('plates.json'), report);
     }));

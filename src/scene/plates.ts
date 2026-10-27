@@ -2,8 +2,8 @@
 // around the thing; only the thing's mask (grown a little, feathered, matched in tone) is taken from it.
 // SAM then looks for the thing again on the plate: if it is still there, the plate is flagged.
 import sharp from 'sharp';
-import { maskArea, maskToPng, type Mask } from '../image/mask.ts';
-import { dilate, intersect, maskBox, maskIou, subtract } from '../image/raster.ts';
+import { emptyMask, maskArea, maskToPng, type Mask } from '../image/mask.ts';
+import { components, dilate, intersect, maskBox, maskIou, subtract, union, unionAll } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import { museEdit } from '../meta/muse.ts';
 import { samFind } from '../meta/sam.ts';
@@ -45,7 +45,7 @@ export async function pasteAlpha(painting: Buffer, patch: Buffer, alpha: Buffer)
  * often shifts its tone (darker, wetter, another light), so the patch is first matched, channel by channel, to the
  * painting in a ring just outside the area: mean and spread of the edit's ring are mapped onto the painting's.
  */
-export async function patchInside(painting: Buffer, edited: Buffer, area: Mask, feather = 4): Promise<{ png: Buffer; ringError: number }> {
+export async function patchInside(painting: Buffer, edited: Buffer, area: Mask, feather = 4): Promise<{ png: Buffer; ringError: number; stain: number }> {
   const { width: W, height: H } = FRAME;
   const [paint, edit] = await Promise.all([painting, edited].map((b) => sharp(b).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer()));
   const ring = subtract(dilate(area, 18), area);
@@ -78,7 +78,21 @@ export async function patchInside(painting: Buffer, edited: Buffer, area: Mask, 
     }
     out[i * 4 + 3] = alpha[i];
   }
-  return { png: await sharp(out, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer(), ringError: n ? err / n : 0 };
+  // A stain: the share of the patch darker or lighter than nearly all of the ground around it (a hole, a puddle,
+  // a smear Muse painted where the thing was).
+  const luma = (px: Buffer, i: number, step: number) => 0.3 * px[i * step] + 0.59 * px[i * step + 1] + 0.11 * px[i * step + 2];
+  const around: number[] = [];
+  for (let i = 0; i < W * H; i++) if (ring.bits[i]) around.push(luma(paint, i, 3));
+  around.sort((a, b) => a - b);
+  const [lo, hi] = around.length ? [around[Math.floor(around.length * 0.02)] - 20, around[Math.floor(around.length * 0.98)] + 20] : [0, 255];
+  let inside = 0, off = 0;
+  for (let i = 0; i < W * H; i++) {
+    if (!area.bits[i]) continue;
+    inside++;
+    const l = luma(out, i, 4);
+    if (l < lo || l > hi) off++;
+  }
+  return { png: await sharp(out, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer(), ringError: n ? err / n : 0, stain: inside ? off / inside : 0 };
 }
 
 /**
@@ -104,8 +118,58 @@ async function editAround(memo: Memo, label: string, prompt: string, painting: B
   return sharp(full).composite([{ input: back, left: crop.left, top: crop.top }]).png().toBuffer();
 }
 
+/** How far from the thing's mask a part SAM left out (a rope, a handle, a strap) may reach. */
+export const ATTACHED_REACH = 72;
+
+/**
+ * SAM's mask often leaves out a part of the thing (the rope tied to a bucket), which then lies on the floor once the
+ * thing is gone. Muse, asked to remove the thing, removes those parts too: where the edit differs strongly from the
+ * painting just outside the area, in blobs touching it, the area grows to take them in. A shifted or retoned edit
+ * changes everything a little, and Muse adds things of its own; only clear changes towards the ground count, and at most as much again as the thing itself.
+ */
+export async function withAttached(painting: Buffer, edited: Buffer, mask: Mask, area: Mask): Promise<Mask> {
+  const { width: W, height: H } = FRAME;
+  const [paint, edit] = await Promise.all([painting, edited].map((b) => sharp(b).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer()));
+  const near = subtract(dilate(mask, ATTACHED_REACH), area);
+  // The edit's overall shift in tone, read on the ring around the area, is taken out first.
+  const ring = subtract(dilate(area, 10), area);
+  const shift = [0, 1, 2].map((c) => {
+    const d: number[] = [];
+    for (let i = 0; i < W * H; i++) if (ring.bits[i]) d.push(edit[i * 3 + c] - paint[i * 3 + c]);
+    return d.length ? d.sort((a, b) => a - b)[d.length >> 1] : 0;
+  });
+  // The ground, as the painting has it around the area.
+  const ground = [0, 1, 2].map((c) => {
+    const v: number[] = [];
+    for (let i = 0; i < W * H; i++) if (ring.bits[i]) v.push(paint[i * 3 + c]);
+    return v.length ? v.sort((a, b) => a - b)[v.length >> 1] : 0;
+  });
+  const fromGround = (px: Buffer, i: number, off = [0, 0, 0]) => Math.hypot(...[0, 1, 2].map((c) => px[i * 3 + c] - off[c] - ground[c]));
+  const changed = emptyMask(W, H);
+  for (let i = 0; i < W * H; i++) {
+    if (!near.bits[i]) continue;
+    const d = Math.hypot(...[0, 1, 2].map((c) => edit[i * 3 + c] - shift[c] - paint[i * 3 + c]));
+    // Removed means the edit turned it into ground: something Muse added (a stain, a shadow) is not part of the thing.
+    if (d > 60 && fromGround(edit, i, shift) < fromGround(paint, i) - 40) changed.bits[i] = 1;
+  }
+  const touching = dilate(area, 2);
+  let budget = maskArea(mask);
+  const parts: Mask[] = [];
+  for (const blob of components(dilate(changed, 1))) {
+    const size = maskArea(blob);
+    if (size < 40 || size > budget || maskArea(intersect(blob, touching)) === 0) continue;
+    parts.push(blob);
+    budget -= size;
+  }
+  return parts.length ? union(area, dilate(unionAll(W, H, parts), 4)) : area;
+}
+
+/** How bad a patch looks, in seam units: its seam, and a stain over a tenth of it as bad as a seam that shows. */
+const STAIN_WEIGHT = SEAM_SHOWS * 10;
+const flaw = (p: { ringError: number; stain: number }) => p.ringError + STAIN_WEIGHT * p.stain;
+
 /** ringError: mean difference (0-255) from the painting just around the patch (see SEAM_SHOWS). */
-export type Plate = { thing: string; png: Buffer; stillThere: boolean; iou: number; ringError: number };
+export type Plate = { thing: string; png: Buffer; stillThere: boolean; iou: number; ringError: number; stain: number };
 
 export async function plateFor(memo: Memo, place: Place, thing: { key: string; phrase: string; mask: Mask }, painting: Buffer, ground: string): Promise<Plate> {
   const prompt = `Remove the ${thing.phrase} from this picture. Where it was, paint only ${ground}, continuing the surroundings exactly: the same flat colours, texture, ink lines and light as right next to it. Add nothing new: no objects, stones, debris, stains, puddles or shadows. Leave everything else exactly as it is. No people, no text.`;
@@ -116,18 +180,18 @@ export async function plateFor(memo: Memo, place: Place, thing: { key: string; p
     const edits = (await Promise.all([museEdit(memo, { label, prompt, images: [painting], take }), editAround(memo, label, prompt, painting, thing.mask, take)]))
       .filter((e): e is Buffer => e !== null);
     // The plate is only the patch where the thing was: drawn over the painting (or the backdrop), nothing else can differ.
-    return Promise.all(edits.map((e) => patchInside(painting, e, area)));
+    return Promise.all(edits.map(async (e) => patchInside(painting, e, await withAttached(painting, e, thing.mask, area))));
   };
   let patches = await takes(0);
-  // A seam that shows: one more take of each, and the best of all four.
-  if (Math.min(...patches.map((p) => p.ringError)) > SEAM_SHOWS) patches = [...patches, ...(await takes(1))];
-  const { png, ringError } = patches.sort((a, b) => a.ringError - b.ringError)[0];
+  // A seam or a stain that shows: one more take of each, and the best of all four.
+  if (Math.min(...patches.map(flaw)) > SEAM_SHOWS) patches = [...patches, ...(await takes(1))];
+  const { png, ringError, stain } = patches.sort((a, b) => flaw(a) - flaw(b))[0];
   // Is it still there? SAM by the same phrase on the painting with the patch on, inside the area the plate replaced.
   const patched = await sharp(painting).resize(FRAME.width, FRAME.height, { fit: 'fill' }).composite([{ input: png }]).png().toBuffer();
   const found = await samFind(memo, { label: `plate-check:${place.key}/${thing.key}`, image: patched, prompt: thing.phrase });
   const iou = Math.max(0, ...found.map((f) => maskIou(intersect(f.mask, area), thing.mask)));
   const left = found.reduce((px, f) => px + maskArea(intersect(f.mask, thing.mask)), 0);
-  return { thing: thing.key, png, iou, ringError, stillThere: iou > 0.4 || left > 0.4 * maskArea(thing.mask) };
+  return { thing: thing.key, png, iou, ringError, stain, stillThere: iou > 0.4 || left > 0.4 * maskArea(thing.mask) };
 }
 
 /** For a thing the story changes (a beacon lit): the thing as it looks after, transparent elsewhere, so several
