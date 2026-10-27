@@ -29,11 +29,14 @@ defineAction({
   description: 'Point the Studio view at a world, a screen or a place, so the person sees what the agent is talking about (when they follow the agent).',
   input: z.object({
     slug: Slug.optional(),
-    view: z.enum(['start', 'setup', 'workshop', 'story', 'cast', 'play']).optional(),
+    view: z.enum(['worlds', 'start', 'setup', 'workshop', 'story', 'cast', 'play']).optional()
+      .describe('worlds: leave the world for the list of all worlds (start is the same); setup: keys and tools; workshop: the world\'s places; story, cast; play: the game'),
     place: Slug.optional(),
   }),
   async run(input, ctx) {
-    ctx.events.publish('ui.focus', { ...input, world: input.slug, by: ctx.by });
+    // Pointing at a world or a place never means leaving it: "start" there reads as "begin at this place".
+    const view = (input.view === 'start' || input.view === 'worlds') && (input.slug || input.place) ? 'workshop' : input.view === 'worlds' ? 'start' : input.view;
+    ctx.events.publish('ui.focus', { ...input, ...(view && { view }), world: input.slug, by: ctx.by });
     return { ok: true };
   },
 });

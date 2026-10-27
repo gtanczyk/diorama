@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import '../src/actions/index.ts';
-import { actions } from '../src/actions/registry.ts';
+import { actions, runAction } from '../src/actions/registry.ts';
 import { startStudio, type Studio } from '../src/studio/server.ts';
 
 const FAKE = fileURLToPath(new URL('./fixtures/fake-diorama.mjs', import.meta.url));
@@ -191,4 +191,13 @@ test('job_wait answers when the job ends, with its last lines', async () => {
   const call = JSON.parse((await mcp({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'job_wait', arguments: { id: job.id, timeoutSeconds: 20 } } })).body);
   expect(call.result.structuredContent.state).toBe('done');
   expect(call.result.structuredContent.tail.join('\n')).toContain('laying out foghorn');
+});
+
+test('ui_focus with a world or place never leaves it', async () => {
+  const seen: Array<{ type: string; view?: unknown }> = [];
+  const off = studio.events.subscribe((e) => seen.push(e));
+  await runAction('ui_focus', { slug: 'foghorn', place: 'pier', view: 'start' }, { by: 'agent', root: studio.root, jobs: studio.jobs, events: studio.events });
+  await runAction('ui_focus', { view: 'worlds' }, { by: 'agent', root: studio.root, jobs: studio.jobs, events: studio.events });
+  off();
+  expect(seen.filter((e) => e.type === 'ui.focus').map((e) => e.view)).toEqual(['workshop', 'start']);
 });
