@@ -13,13 +13,15 @@ import type { MaskSource } from './masks.ts';
 import { blobsOf, footDepth, lineYAt, simplifyLine, type Blob } from './occluders.ts';
 import { findShadows, localLight, type Shadows } from './shadows.ts';
 import { atFrame, findSteps, STAIRS } from './stairs.ts';
+import { paintingFor, reaches, type Carry } from './carry.ts';
 import { PERSON_M, probePoints, scaleFrom, sparkPeople, type Sample, type Scale } from './scale.ts';
 import { CELL, connect, gridFromPixels, islands, nearestRoomy, reach, roomy, type Grid } from './walk.ts';
 import { samFind } from '../meta/sam.ts';
 
 export type ThingIn = { key: string; kind: Kind; phrase?: string; source: MaskSource; coarse: boolean; mask: Mask };
 /** `plates`: things that have a clean plate (plates/<key>.png), for the runtime to hide them once taken. */
-export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors: Mask[]; painting: Buffer; plates?: string[] };
+/** carry: after a small repaint, each question whose region the change does not reach is asked about the old painting; lastScale: the scale it had. */
+export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors: Mask[]; painting: Buffer; plates?: string[]; carry?: Carry; lastScale?: Scale };
 export type Derived = { geometry: Geometry; grid: Grid; blobs: Blob[]; footprint: Mask; probes: Sample[]; shadows: Shadows };
 
 const { width: W, height: H } = FRAME;
@@ -76,7 +78,7 @@ function anchorSamples(blobs: Blob[], layout: Layout): Sample[] {
 }
 
 export async function derive(memo: Memo, input: DeriveIn, log: (line: string) => void): Promise<Derived> {
-  const { place, layout, things, floors, painting } = input;
+  const { place, layout, things, floors, painting, carry } = input;
   const role = new Map(place.things.map((t) => [t.key, t.role]));
   const floorAny = unionAll(W, H, floors);
   const walkOn = unionAll(W, H, things.filter((t) => t.kind === 'walk-on').map((t) => t.mask));
@@ -139,7 +141,10 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   // Joining floors may have laid a path across the water between them: SAM finds the water (only then),
   // and the floor is joined again around it.
   if (joined.reopened) {
-    const hits = await samFind(memo, { label: `water:${place.key}/painting`, image: painting, prompt: 'water' });
+    // The water found last time stands when the change reaches none of it.
+    const ask = (image: Buffer) => samFind(memo, { label: `water:${place.key}/painting`, image, prompt: 'water' });
+    let hits = await ask(carry?.old ?? painting);
+    if (carry && reaches(carry, hits.map((f) => atFrame(f.mask)))) hits = await ask(painting);
     const wet = subtract(unionAll(W, H, hits.map((f) => atFrame(f.mask))), ground);
     const fresh = gridFromPixels(walkPx, floorOf, floors.length);
     const wetAt = (i: number) => {
@@ -172,9 +177,38 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     const metres = layout.things.find((t) => t.key === b.thing)?.metres;
     return metres ? [{ key: b.thing, x: (b.box[0] + b.box[2]) / 2, footY: b.baseY, px: b.baseY - b.box[1], metres }] : [];
   });
-  const probes = await sparkPeople(memo, `scale:${place.key}`, painting, probePoints([...byRow].map(([y, xs]) => ({ y, xs }))), refs);
-  let scale: Scale | undefined;
-  for (const [source, samples] of [['spark', probes], ['anchors', anchorSamples(sharpOnFloor, layout)]] as const) {
+  // Spark's questions about one painting are asked side by side: they do not wait on each other.
+  // Painted shadows on the open floor, and the light they tell of.
+  // Casters: sharp things on the floor, and things resting on walkable ground (a basket on the steps) too.
+  const restsOnGround = (b: Blob) => ground.bits[Math.min(H - 1, Math.round(b.baseY) + 3) * W + Math.round((b.box[0] + b.box[2]) / 2)] === 1;
+  const casters = [...sharpOnFloor, ...blobs.filter((b) => !onFloor.includes(b) && !isCoarse(b) && restsOnGround(b))];
+  const lit = subtract(ground, dilate(inTheWay, 2));
+  const shadowsAsked = findShadows(memo, place.key, paintingFor(carry, painting, [lit, ...casters.map((b) => b.box)], 24), lit, casters);
+  // A fire or a lamp outshining the sky throws each person's shadow away from itself.
+  const lights = layout.lights.map((l) => {
+    const t = things.find((t) => t.key === l.key);
+    return { key: l.key, box: t ? (maskBox(t.mask) ?? undefined) : undefined };
+  });
+  // A repaint of a lamp or of its glow is asked again; one elsewhere does not change what lights the ground.
+  const fireAsked = lights.length ? localLight(memo, `light-source:${place.key}`, paintingFor(carry, painting, lights.map((l) => l.box), 80), lights) : Promise.resolve(undefined);
+  // Stairs: the walk-on things and floors named as stairs get their steps, so feet land on the treads.
+  const looks = new Map(place.things.map((t) => [t.key, t.looks ?? '']));
+  const stairs = unionAll(W, H, [
+    ...things.filter((t) => t.kind === 'walk-on' && STAIRS.test(`${t.key} ${t.phrase ?? ''} ${looks.get(t.key)}`)).map((t) => t.mask),
+    ...layout.floors.flatMap((f, i) => (STAIRS.test(`${f.key} ${f.is}`) && floors[i] ? [floors[i]] : [])),
+  ]);
+  const stepsAsked = findSteps(memo, place.key, paintingFor(carry, painting, stairs), stairs, log);
+  // Their failures surface where they are awaited, below, not as an unhandled rejection while the scale is asked.
+  for (const asked of [shadowsAsked, fireAsked, stepsAsked]) asked.catch(() => undefined);
+
+  const points = probePoints([...byRow].map(([y, xs]) => ({ y, xs })));
+  // A repaint changes how a place looks, not how big a person is in it, and Spark's sizes drift from one asking
+  // to the next: after a small repaint the place keeps the scale it had.
+  const kept = carry && input.lastScale;
+  const probes = kept ? [] : await sparkPeople(memo, `scale:${place.key}`, painting, points, refs);
+  let scale: Scale | undefined = kept || undefined;
+  if (kept) log(`scale kept from before the repaint (${kept.source})`);
+  for (const [source, samples] of kept ? [] : ([['spark', probes], ['anchors', anchorSamples(sharpOnFloor, layout)]] as const)) {
     const fit = scaleFrom(samples, topY, layout.horizon, source);
     if (fit.scale) {
       scale = fit.scale;
@@ -265,31 +299,13 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   // The runtime gives each occluder pixel to the first box that holds it: small boxes first.
   occluders.sort((a, b) => (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]) - (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]));
 
-  // Painted shadows on the open floor, and the light they tell of.
-  // Casters: sharp things on the floor, and things resting on walkable ground (a basket on the steps) too.
-  const restsOnGround = (b: Blob) => ground.bits[Math.min(H - 1, Math.round(b.baseY) + 3) * W + Math.round((b.box[0] + b.box[2]) / 2)] === 1;
-  const casters = [...sharpOnFloor, ...blobs.filter((b) => !onFloor.includes(b) && !isCoarse(b) && restsOnGround(b))];
-  const shadows = await findShadows(memo, place.key, painting, subtract(ground, dilate(inTheWay, 2)), casters);
-  // A fire or a lamp outshining the sky throws each person's shadow away from itself.
-  if (layout.lights.length) {
-    const fire = await localLight(memo, `light-source:${place.key}`, painting, layout.lights.map((l) => {
-      const t = things.find((t) => t.key === l.key);
-      return { key: l.key, box: t ? (maskBox(t.mask) ?? undefined) : undefined };
-    }));
-    if (fire) {
-      shadows.light = { dir: [0, 1], length: 1.5, strength: shadows.light?.strength ?? 0.45, at: fire.at, ...(fire.flame && { flame: true }) };
-      log(`light from ${fire.key} at ${fire.at.join(', ')}${fire.flame ? ' (a flame)' : ''}`);
-    }
+  // The questions about shadows, lights and steps were asked alongside the scale's.
+  const [shadows, fire, steps] = await Promise.all([shadowsAsked, fireAsked, stepsAsked]);
+  if (fire) {
+    shadows.light = { dir: [0, 1], length: 1.5, strength: shadows.light?.strength ?? 0.45, at: fire.at, ...(fire.flame && { flame: true }) };
+    log(`light from ${fire.key} at ${fire.at.join(', ')}${fire.flame ? ' (a flame)' : ''}`);
   }
   if (shadows.light && !shadows.light.at) log(`light ${shadows.light.dir.join(', ')} x${shadows.light.length}, strength ${shadows.light.strength} (${shadows.source})`);
-
-  // Stairs: the walk-on things and floors named as stairs get their steps, so feet land on the treads.
-  const looks = new Map(place.things.map((t) => [t.key, t.looks ?? '']));
-  const stairs = unionAll(W, H, [
-    ...things.filter((t) => t.kind === 'walk-on' && STAIRS.test(`${t.key} ${t.phrase ?? ''} ${looks.get(t.key)}`)).map((t) => t.mask),
-    ...layout.floors.flatMap((f, i) => (STAIRS.test(`${f.key} ${f.is}`) && floors[i] ? [floors[i]] : [])),
-  ]);
-  const steps = await findSteps(memo, place.key, painting, stairs, log);
 
   const { walk, zone } = grid.rowsOut();
   const geometry: Geometry = {

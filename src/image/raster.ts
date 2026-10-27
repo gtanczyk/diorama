@@ -92,25 +92,26 @@ export function maskIou(a: Mask, b: Mask): number {
   return either > 0 ? inter / either : 0;
 }
 
-/** Grows (r > 0) or shrinks (r < 0) a mask by a square of |r| px, as two separable passes. */
+/** Grows (r > 0) or shrinks (r < 0) a mask by a square of |r| px, as two separable passes of running counts. */
 export function dilate(m: Mask, r: number): Mask {
   if (r === 0) return { ...m, bits: m.bits.slice() };
   const grow = r > 0;
   const k = Math.abs(r);
   const { width: W, height: H } = m;
+  // One line at a time (a row, or a column with stride W): a pixel is set when any pixel within k is (growing),
+  // or when all 2k+1 are, inside the frame (shrinking: outside the frame counts as empty, so it eats in from the edges).
   const pass = (src: Uint8Array, along: 'x' | 'y') => {
     const out = new Uint8Array(src.length);
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        let v = grow ? 0 : 1;
-        for (let d = -k; d <= k; d++) {
-          const nx = along === 'x' ? x + d : x;
-          const ny = along === 'y' ? y + d : y;
-          // Outside the frame counts as empty: shrinking eats in from the edges, growing doesn't wrap.
-          const s = nx < 0 || ny < 0 || nx >= W || ny >= H ? 0 : src[ny * W + nx];
-          if (grow ? s : !s) { v = grow ? 1 : 0; break; }
-        }
-        out[y * W + x] = v;
+    const [lines, len, step, lineStep] = along === 'x' ? [H, W, 1, W] : [W, H, W, 1];
+    const sum = new Int32Array(len + 1);
+    for (let l = 0; l < lines; l++) {
+      const base = l * lineStep;
+      for (let i = 0; i < len; i++) sum[i + 1] = sum[i] + src[base + i * step];
+      for (let i = 0; i < len; i++) {
+        const lo = i - k;
+        const hi = i + k;
+        const n = sum[Math.min(len, hi + 1)] - sum[Math.max(0, lo)];
+        out[base + i * step] = grow ? (n > 0 ? 1 : 0) : lo >= 0 && hi < len && n === 2 * k + 1 ? 1 : 0;
       }
     }
     return out;

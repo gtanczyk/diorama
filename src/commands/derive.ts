@@ -7,6 +7,7 @@ import { defineCommand } from '../registry.ts';
 import { placeNpcs, readCorrections } from '../scene/corrections.ts';
 import { derive, type ThingIn } from '../scene/derive.ts';
 import { depthMap } from '../scene/depthmap.ts';
+import { carryFrom, ran, tilesLine } from '../scene/carry.ts';
 import { Layout, FRAME } from '../scene/layout.ts';
 import { CELL } from '../scene/walk.ts';
 import { WorldFiles } from '../world/files.ts';
@@ -63,7 +64,11 @@ defineCommand({
       const things = await Promise.all(Object.entries(made.things).map(async ([key, t]) => ({ ...t, key, mask: await maskFromPng(fs.readFileSync(at('masks', `${key}.png`))) })));
       const floors = await Promise.all(layout.floors.map(async (f) => maskFromPng(fs.readFileSync(at('masks', 'floors', `${f.key}.png`)))));
       const plates = fs.existsSync(at('plates')) ? fs.readdirSync(at('plates')).filter((f) => f.endsWith('.png')).map((f) => f.slice(0, -4)) : [];
-      const out = await derive(files.memo, { place, layout, things, floors, painting, plates }, (line) => console.log(`  ${place.key}: ${line}`));
+      const carry = await carryFrom(at(), 'derive', painting);
+      if (carry) console.log(`  ${place.key}: ${tilesLine(carry)}; questions it does not reach keep their answers`);
+      const last = carry && fs.existsSync(at('geometry.json')) ? Geometry.parse(files.readJson(at('geometry.json'))).scale : undefined;
+      const lastScale = last && { ...last, source: last.source ?? ('spark' as const) };
+      const out = await derive(files.memo, { place, layout, things, floors, painting, plates, carry, lastScale }, (line) => console.log(`  ${place.key}: ${line}`));
       // Shadows only with a light: without one the runtime has nothing to darken by.
       const lit = out.shadows.light && maskArea(out.shadows.mask) > 0;
       if (lit) files.write(at('masks', 'shadows.png'), await maskToPng(out.shadows.mask));
@@ -84,6 +89,7 @@ defineCommand({
       const geometry = Geometry.parse({ ...measured, ...('png' in depth && { depth: 'depth.png' }) });
       files.write(at('geometry.json'), geometry);
       files.write(at('walk.png'), await walkPicture(painting, geometry, out.footprint));
+      ran(at(), 'derive', carry?.old ?? painting);
       const open = geometry.walk.join('').split('#').length - 1;
       console.log(`${place.key}: ${open} walk cells, ${geometry.occluders.length} occluders, person ${Math.round(personPx(geometry, FRAME.height - 20))} px at the front (${geometry.scale.source})`);
     }));

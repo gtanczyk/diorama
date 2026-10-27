@@ -72,15 +72,16 @@ export async function backdropFor(memo: Memo, place: Place, cards: Card[], paint
   let png = await pasteInside(painting, edited, area);
   const report: Backdrop['report'] = {};
   const leftover: Mask[] = [];
-  for (const card of cards) {
-    // Is it still there? SAM by the same phrase, inside the area the backdrop replaced.
-    const found = await samFind(memo, { label: `backdrop-check:${place.key}/${card.key}`, image: png, prompt: card.phrase });
+  // Is each still there? SAM by the same phrase, inside the area the backdrop replaced; all cards at once.
+  const seen = await Promise.all(cards.map((card) => samFind(memo, { label: `backdrop-check:${place.key}/${card.key}`, image: png, prompt: card.phrase })));
+  cards.forEach((card, i) => {
+    const found = seen[i];
     const iou = Math.max(0, ...found.map((f) => maskIou(intersect(f.mask, area), card.mask)));
     const left = found.reduce((px, f) => px + maskArea(intersect(f.mask, card.mask)), 0);
     const stillThere = iou > 0.4 || left > 0.4 * maskArea(card.mask);
     report[card.key] = { stillThere, iou: Math.round(iou * 100) / 100 };
     if (stillThere) leftover.push(dilate(card.mask, BACKDROP_GROW));
-  }
+  });
   if (leftover.length) png = await pasteInside(png, await smearedBackdrop(cards, painting), unionAll(W, H, leftover), 2);
   return { png, report };
 }
