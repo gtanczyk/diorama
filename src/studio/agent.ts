@@ -1,16 +1,16 @@
-// The Muse Code agent in the Studio: one conversation per world, a genaicode AgentSession over museLive()
-// (`muse serve`), shown in the page with genaicode's own chat. It works only through the Studio's MCP tools,
+// The coding agent in the Studio: one conversation per world, a genaicode AgentSession over Muse Code
+// (museLive, `muse serve`, the default), Claude Code or Codex, the drivers that take MCP servers; shown in the page with genaicode's own chat. It works only through the Studio's MCP tools,
 // so each of its moves shows up in the page like a click would; Muse's own shell and file tools are refused.
 // It gets no provider key: its environment is scrubbed and Muse uses its own login.
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createAgentSession, museLive, withoutProviderCredentials, type AgentSession, type ApprovalDecision, type ApprovalRequest, type SessionState } from 'genaicode/agents';
+import { claude, codexLive, createAgentSession, detectAgents, museLive, type CodingAgent, withoutProviderCredentials, type AgentSession, type ApprovalDecision, type ApprovalRequest, type SessionState } from 'genaicode/agents';
 import { redact, withoutSecrets } from '../secrets.ts';
 import type { Events } from './events.ts';
 import { History } from './history.ts';
 
-export const AGENT_BRIEF = (slug: string) => `You are the Muse Code agent inside Diorama Studio, working on the world "${slug}" with the person.
+export const AGENT_BRIEF = (slug: string) => `You are the coding agent inside Diorama Studio, working on the world "${slug}" with the person.
 Use only the diorama MCP tools: they are the same actions as the Studio's buttons, and the person watches each call live.
 Start long work with world_build or run_step and follow it with job_wait. Call ui_focus to show the place you are talking about.
 Every place moves as a diorama (the backdrop step: cut-out things over a painted backdrop, far flats, flowing water). When the person says the water runs the wrong way or should stand still, call water_flow (reverse, still, or auto with a hint in their words), then show the place; never edit files by hand.
@@ -43,6 +43,11 @@ export function readsOnly(request: ApprovalRequest): boolean {
 
 class Talk {
   readonly log: string;
+  /** Whether the current agent session got the brief; a new agent starts without it. */
+  briefed = false;
+  rebrief() {
+    this.briefed = false;
+  }
   /** How far each turn's transcript has been announced on the event feed. */
   private seen = new Map<number, number>();
   private ended = new Set<number>();
@@ -93,6 +98,15 @@ class Talk {
   }
 }
 
+/** The agents the Studio offers: those genaicode can hand the Studio's MCP server to. Muse Code first, the default. */
+export const AGENTS = {
+  muse: { label: 'Muse Code', make: (command?: string) => museLive({ command: command ?? process.env.DIORAMA_MUSE_COMMAND ?? 'muse' }) },
+  claude: { label: 'Claude Code', make: () => claude() },
+  codex: { label: 'Codex', make: () => codexLive() },
+} satisfies Record<string, { label: string; make(command?: string): CodingAgent }>;
+export type AgentName = keyof typeof AGENTS;
+export const isAgentName = (name: string): name is AgentName => Object.hasOwn(AGENTS, name);
+
 export class AgentHub {
   private readonly talks = new Map<string, Talk>();
 
@@ -107,10 +121,9 @@ export class AgentHub {
     const dir = path.join(this.opts.root, slug);
     const cwd = fs.existsSync(dir) ? dir : this.opts.root;
     fs.mkdirSync(cwd, { recursive: true });
-    let briefed = false;
     const ask = process.env.DIORAMA_AGENT_TOOLS === 'ask';
     const session = createAgentSession({
-      agent: museLive({ command: this.opts.command ?? process.env.DIORAMA_MUSE_COMMAND ?? 'muse' }),
+      agent: this.make(this.defaultAgent()),
       cwd,
       task: {
         env: withoutProviderCredentials(withoutSecrets(process.env)) as Record<string, string>,
@@ -128,14 +141,39 @@ export class AgentHub {
       },
       // The first prompt carries the brief; later ones resume Muse's own session and go as typed.
       transformPrompt: (prompt) => {
-        if (briefed && session.get().sessionId) return prompt;
-        briefed = true;
+        if (t?.briefed && session.get().sessionId) return prompt;
+        if (t) t.briefed = true;
         return `${AGENT_BRIEF(slug)}\n\nPerson: ${prompt}`;
       },
     });
     t = new Talk(slug, session, dir, this.events);
     this.talks.set(slug, t);
     return t;
+  }
+
+  private make(name: AgentName): CodingAgent {
+    return name === 'muse' ? AGENTS.muse.make(this.opts.command) : AGENTS[name].make();
+  }
+
+  private defaultAgent(): AgentName {
+    const wanted = process.env.DIORAMA_AGENT ?? 'muse';
+    return isAgentName(wanted) ? wanted : 'muse';
+  }
+
+  /** The agents on offer, which are installed, and which one this world's conversation uses. */
+  agents(slug: string) {
+    const found = detectAgents((Object.keys(AGENTS) as AgentName[]).map((n) => this.make(n)));
+    const using = this.talks.get(slug)?.session.get().agent ?? this.make(this.defaultAgent()).name;
+    return (Object.keys(AGENTS) as AgentName[]).map((name, i) => ({ name, label: AGENTS[name].label, installed: !!found[i]?.path, using: found[i]?.agent.name === using }));
+  }
+
+  /** Switches this world's conversation to another agent; it starts a fresh session, the transcript stays. */
+  use(slug: string, name: AgentName) {
+    const t = this.talk(slug);
+    if (t.session.get().status === 'running') throw new Error('the agent is working: stop it or wait before switching');
+    t.session.setAgent(this.make(name));
+    t.rebrief();
+    t.publish('agent', { name, label: AGENTS[name].label });
   }
 
   /** What the page shows: genaicode's session state, secrets blanked; null before the first message. */

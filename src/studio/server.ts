@@ -16,7 +16,7 @@ import { redact } from '../secrets.ts';
 import { Slug } from '../world/schema.ts';
 import { Events, type StudioEvent } from './events.ts';
 import { Jobs } from './jobs.ts';
-import { AgentHub } from './agent.ts';
+import { AgentHub, isAgentName } from './agent.ts';
 import { History } from './history.ts';
 import { handleMcp } from './mcp.ts';
 
@@ -211,10 +211,11 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
         }
         if (url.pathname === '/api/actions' && req.method === 'GET') return json(200, describeActions());
         // The agent conversation: the person's side only (the agent itself never posts here).
-        const talk = /^\/api\/agent\/([a-z][a-z0-9-]*)(?:\/(say|stop|approval|live))?$/.exec(url.pathname);
+        const talk = /^\/api\/agent\/([a-z][a-z0-9-]*)(?:\/(say|stop|approval|live|agents|use))?$/.exec(url.pathname);
         if (talk && !asAgent) {
           const [, slug, verb] = talk;
           if (!verb && req.method === 'GET') return json(200, agents.state(slug));
+          if (verb === 'agents' && req.method === 'GET') return json(200, agents.agents(slug));
           if (verb === 'live' && req.method === 'GET') {
             // genaicode's session state, whole, on every change (at most ten a second while text streams).
             res.writeHead(200, { ...headers, 'content-type': 'text/event-stream; charset=utf-8', connection: 'keep-alive' });
@@ -240,12 +241,16 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
           if (verb && req.method === 'POST') {
             const { value, error } = await body();
             if (error) return json(error[0], { error: error[1] });
-            const input = (value ?? {}) as { text?: unknown; id?: unknown; decision?: unknown };
+            const input = (value ?? {}) as { text?: unknown; id?: unknown; decision?: unknown; name?: unknown };
             try {
               if (verb === 'say') {
                 if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > 8000) return json(400, { error: 'say something (up to 8000 characters)' });
                 await agents.say(slug, input.text.trim());
               } else if (verb === 'stop') agents.stop(slug);
+              else if (verb === 'use') {
+                if (typeof input.name !== 'string' || !isAgentName(input.name)) return json(400, { error: 'name one of the offered agents' });
+                agents.use(slug, input.name);
+              }
               else {
                 if (input.decision !== 'approve' && input.decision !== 'deny') return json(400, { error: 'decision is approve or deny' });
                 agents.answer(slug, String(input.id), input.decision);

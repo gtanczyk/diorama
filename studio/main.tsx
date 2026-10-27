@@ -358,7 +358,7 @@ function Failed({ slug, job, onError, onPlace }: { slug: string; job: Job; onErr
       {lines.length > 0 && <pre>{(more ? lines : lines.slice(-6)).join('\n')}</pre>}
       <div class="row">
         <button type="button" class="primary small" onClick={retry}>Try again</button>
-        <button type="button" class="ghost small" onClick={ask}>Ask Muse Code</button>
+        <button type="button" class="ghost small" onClick={ask}>Ask the agent</button>
         <button type="button" class="ghost small" title="Put the world back as it was before this job" onClick={() => call('history_undo', { slug }).catch((e) => onError(e.message))}>Undo it</button>
         <span class="grow" />
         {lines.length > 6 && <button type="button" class="ghost small" onClick={() => setMore(!more)}>{more ? 'Less' : `All ${lines.length} lines`}</button>}
@@ -381,7 +381,7 @@ function Notes({ slug, notes, onPlace, onError }: { slug: string; notes: Note[];
       <div class="row">
         <h2>Notes{open.length ? ` · ${open.length} open` : ''}</h2>
         <span class="grow" />
-        {open.length > 0 && <button type="button" class="primary small" onClick={() => askAgent(slug, `Go through my ${open.length} open note${open.length > 1 ? 's' : ''} (feedback_pending): fix each one and close it with feedback_done.`).catch((e) => onError(e.message))}>Hand {open.length > 1 ? 'them' : 'it'} to Muse Code</button>}
+        {open.length > 0 && <button type="button" class="primary small" onClick={() => askAgent(slug, `Go through my ${open.length} open note${open.length > 1 ? 's' : ''} (feedback_pending): fix each one and close it with feedback_done.`).catch((e) => onError(e.message))}>Hand {open.length > 1 ? 'them' : 'it'} to the agent</button>}
       </div>
       <ul>
         {open.map((n) => (

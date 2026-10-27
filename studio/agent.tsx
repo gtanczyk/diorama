@@ -56,13 +56,24 @@ function useSession(slug: string): [SessionState | null, boolean] {
   return [state, live];
 }
 
+type Offer = { name: string; label: string; installed: boolean; using: boolean };
+
 export function AgentPanel({ slug }: { slug: string }) {
   const [state, live] = useSession(slug);
   const [error, setError] = useState('');
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const loadOffers = () => fetch(`/api/agent/${slug}/agents`, { headers: auth }).then((r) => r.json()).then(setOffers).catch(() => {});
+  useEffect(() => void loadOffers(), [slug]);
+  const current = offers.find((o) => o.using);
+  const running = state?.status === 'running';
   const post = async (verb: string, body: object = {}) => {
     setError('');
     const res = await fetch(`/api/agent/${slug}/${verb}`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) setError(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `could not send (${res.status})`);
+    return res.ok;
+  };
+  const choose = async (name: string) => {
+    if (await post('use', { name })) void loadOffers();
   };
   return (
     <section class="agent">
@@ -75,7 +86,17 @@ export function AgentPanel({ slug }: { slug: string }) {
         foldSteps
         theme="dark"
         disabled={!live}
-        header={<div class="row"><h2>Muse Code</h2><span class="grow" /><span class={`live ${live ? 'on' : ''}`}>{state?.status === 'running' ? 'working…' : live ? 'ready' : 'reconnecting'}</span></div>}
+        header={
+          <div class="row">
+            {offers.length > 1
+              ? <select class="agent-pick" aria-label="Agent" title={running ? 'Stop the agent or wait to switch' : 'A new agent starts a fresh session; the conversation stays on screen'} disabled={running} value={current?.name} onChange={(e) => void choose(e.currentTarget.value)}>
+                  {offers.map((o) => <option value={o.name} disabled={!o.installed}>{o.label}{o.installed ? '' : ' (not installed)'}</option>)}
+                </select>
+              : <h2>{current?.label ?? 'Muse Code'}</h2>}
+            <span class="grow" />
+            <span class={`live ${live ? 'on' : ''}`}>{running ? 'working…' : live ? 'ready' : 'reconnecting'}</span>
+          </div>
+        }
         emptyState={<p class="note">Ask for a world, a fix or a check. Each step shows here and in Activity, and Undo takes back everything the agent did in its last turn.</p>}
         hint={error ? <span class="error">{error}</span> : null}
       />

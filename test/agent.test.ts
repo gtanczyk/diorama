@@ -78,3 +78,14 @@ test('only the Studio\'s own MCP tools run without asking: a path with "diorama"
   expect(readsOnly(bash)).toBe(false);
   expect(readsOnly({ id: '5', kind: 'file-change', detail: { subject: { kind: 'fileAccess', access: 'write', path: 'x' } } })).toBe(false);
 });
+
+test('the agent can be switched between turns; Muse Code is the default', async () => {
+  const get = async () => (await (await fetch(`${studio.url}api/agent/harbour/agents`, { headers: { authorization: `Bearer ${studio.token}` } })).json()) as Array<{ name: string; using: boolean }>;
+  const offers = await get();
+  expect(offers.map((o) => o.name)).toEqual(['muse', 'claude', 'codex']);
+  expect(offers.find((o) => o.using)?.name).toBe('muse');
+  expect((await post('api/agent/harbour/use', { name: 'codex' })).status).toBe(200);
+  expect((await get()).find((o) => o.using)?.name).toBe('codex');
+  expect((await post('api/agent/harbour/use', { name: 'gemini' })).status).toBe(400);
+  expect((await post('api/agent/harbour/use', { name: 'muse' })).status).toBe(200);
+});

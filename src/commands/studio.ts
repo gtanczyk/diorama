@@ -54,10 +54,11 @@ function describe(e: StudioEvent, verbose: boolean): string | null {
     case 'action.end': return e.ok ? null : `${e.by}: ${e.action} failed: ${e.error}`;
     case 'history.undo': return `${e.by}: undo to ${e.id}`;
     case 'lock.changed': return `${e.by}: ${e.locked ? 'locked' : 'unlocked'} ${e.place ?? 'world'}`;
-    case 'agent.user': return `you -> Muse Code: ${String(e.text).slice(0, 120)}`;
-    case 'agent.message': return `Muse Code: ${String(e.text).slice(0, 200)}`;
-    case 'agent.turn.end': return e.status === 'completed' ? null : `Muse Code stopped: ${e.error ?? e.status}`;
-    case 'agent.error': return `Muse Code error: ${e.text}`;
+    case 'agent.user': return `you -> agent: ${String(e.text).slice(0, 120)}`;
+    case 'agent.message': return `agent: ${String(e.text).slice(0, 200)}`;
+    case 'agent.turn.end': return e.status === 'completed' ? null : `agent stopped: ${e.error ?? e.status}`;
+    case 'agent.error': return `agent error: ${e.text}`;
+    case 'agent.agent': return `agent is now ${e.label}`;
     case 'log': return verbose || e.stream === 'err' ? `  ${e.line}` : null;
     default: return null;
   }
