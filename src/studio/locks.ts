@@ -21,11 +21,12 @@ export function writeLocks(dir: string, locks: Locks) {
   fs.writeFileSync(file(dir), `${JSON.stringify(locks, null, 2)}\n`);
 }
 
-/** Why the agent may not change this world now, or null. */
-export function agentBlocked(dir: string, by: string): string | null {
+/** Why the agent may not change this world (or, given one, this place) now, or null. */
+export function agentBlocked(dir: string, by: string, place?: string): string | null {
   if (by !== 'agent') return null;
   const locks = readLocks(dir);
   if (locks.world) return `the person locked this world (${locks.world.at}); ask them to unlock it`;
+  if (place) return locks.places[place] ? `the person locked ${place}; ask them to unlock it` : null;
   const places = Object.keys(locks.places);
   if (places.length) return `the person locked ${places.join(', ')}; a build would touch every place, so ask them first`;
   return null;

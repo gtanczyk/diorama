@@ -75,3 +75,23 @@ defineAction({
     return ctx.jobs.cancel(id);
   },
 });
+
+defineAction({
+  name: 'job_retry',
+  description: 'Run a failed or stopped job again; a build picks up at the step it failed on.',
+  input: z.object({ id: z.string().min(1) }),
+  job: true,
+  async run({ id }, ctx) {
+    const job = ctx.jobs.get(id);
+    if (!job) throw new ActionError(404, `no job ${id}`);
+    if (job.state === 'running' || job.state === 'queued') throw new ActionError(409, `${job.label} is still ${job.state}`);
+    const args = [...job.args];
+    const place = args.includes('--place') ? args[args.indexOf('--place') + 1] : undefined;
+    const blocked = agentBlocked(path.join(ctx.root, job.world), ctx.by, place);
+    if (blocked) throw new ActionError(423, blocked);
+    const from = args.indexOf('--from');
+    // Steps before the failed one are done; start where it broke.
+    if (args[0] === 'build' && from >= 0 && job.step && (STEPS as readonly string[]).includes(job.step)) args[from + 1] = job.step;
+    return ctx.jobs.start(job.world, args, job.label, ctx.by);
+  },
+});

@@ -40,7 +40,9 @@ Model answers are kept by a hash of their inputs under each world's memo folder,
 
 ## Studio
 
-`diorama studio [slug]` opens the GUI: describe a world and watch it build, place by place, with every step, model call and verify finding live. It listens on 127.0.0.1 only and opens through the one-time link it prints. Everything it does is an action, also runnable as `diorama action <name> '<json>'` (`diorama action` lists them), so a terminal, the page and the Muse Code agent drive the same things.
+`diorama studio [slug]` opens the GUI: describe a world and watch it build, place by place, with every step, model call and verify finding live. It listens on 127.0.0.1 only and opens through the one-time link it prints. Everything it does is an action, also runnable as `diorama action <name> '<json>'` (`diorama action` lists them), so a terminal, the page and the Muse Code agent drive the same things. The terminal running the Studio prints what runs (`--verbose` for every job line, `--quiet` for none).
+
+Fixing a place: pick it and use the tools on its picture. **Box** shows SAM where a thing really is, the table gives it a better name to search for or another kind (standing, wall, on-top, walk-on, flat), **Brush** paints onto or rubs out of a mask, **Stand** sets where the hero stands to use a thing, **Repaint** has Muse redo one region. Each fix goes to `places/<place>/corrections.json`, is applied again by every later build, and rebuilds only that place from the step it feeds (`diorama build <slug> --from masks --place <place>`). **Note** leaves a note on a spot; "Hand it to Muse Code" lets the agent work the open notes off (`feedback_pending`, `feedback_done`). The Setup page counts the model calls sent across all worlds and prices them once you enter the per-call prices from your billing pages.
 
 ## Sound
 

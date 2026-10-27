@@ -93,3 +93,9 @@ export function follow(world: string | null, onEvent: (e: StudioEvent) => void, 
 }
 
 export const fileUrl = (world: string, file: string, v?: number | null) => `/files/${world}/${file}${v ? `?v=${v}` : ''}`;
+
+/** Says something to the world's Muse Code agent, as if typed in its panel. */
+export async function askAgent(slug: string, text: string): Promise<void> {
+  const res = await fetch(`/api/agent/${slug}/say`, { method: 'POST', headers: headers(), body: JSON.stringify({ text }) });
+  if (!res.ok) throw new ApiError(res.status, ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `could not send (${res.status})`);
+}

@@ -12,11 +12,19 @@ export const AGENT_BRIEF = (slug: string) => `You are the Muse Code agent inside
 Use only the diorama MCP tools: they are the same actions as the Studio's buttons, and the person watches each call live.
 Start long work with world_build or run_step and follow it with job_wait. Call ui_focus to show the place you are talking about.
 Every place moves as a diorama (the backdrop step: cut-out things over a painted backdrop, far flats, flowing water). When the person says the water runs the wrong way or should stand still, call water_flow (reverse, still, or auto with a hint in their words), then show the place; never edit files by hand.
+To fix a place use the fix tools, which are kept across rebuilds: mask_fix (a better SAM phrase, the real box, or the kind of a thing), floor_cells, mask_brush, stand_set, repaint_region (costs a Muse edit); corrections_get shows what is fixed already, corrections_clear takes fixes back. When asked to go through the person's notes, read feedback_pending, fix each one and close it with feedback_done in one sentence. Check budget before a rebuild of many places.
 Before a risky change, say what you will do; history_undo can take back a job. Respect locks. Keys are never yours: if a key is missing, ask the person to run \`diorama setup\` in a terminal.
 Answer briefly, in the person's language.`;
 
 type Turn = { role: 'user' | 'agent'; text: string };
-type Pending = { request: ApprovalRequest; resolve: (d: ApprovalDecision) => void };
+type Card = { id: string; kind: ApprovalRequest['kind']; summary?: string; detail?: string };
+type Pending = { card: Card; resolve: (d: ApprovalDecision) => void };
+
+/** What the approval card shows: the summary and the request itself, shortened and with secrets blanked. */
+function card(request: ApprovalRequest): Card {
+  const detail = request.detail === undefined ? undefined : redact(typeof request.detail === 'string' ? request.detail : JSON.stringify(request.detail, null, 1));
+  return { id: request.id, kind: request.kind, ...(request.summary && { summary: redact(request.summary) }), ...(detail && { detail: detail.length > 600 ? `${detail.slice(0, 600)}…` : detail }) };
+}
 
 class Conversation {
   run: AgentRun | null = null;
@@ -42,7 +50,7 @@ export class AgentHub {
 
   state(slug: string) {
     const c = this.talks.get(slug);
-    return { seq: this.events.last, running: !!c?.run, turns: c?.turns ?? [], approvals: [...(c?.approvals.values() ?? [])].map((p) => p.request) };
+    return { seq: this.events.last, running: !!c?.run, turns: c?.turns ?? [], approvals: [...(c?.approvals.values() ?? [])].map((p) => p.card) };
   }
 
   /** A message from the person: steers the running turn, or starts a new one that carries the conversation so far. */
@@ -126,9 +134,10 @@ export class AgentHub {
         this.publish(c, { type: 'approval.resolved', id: request.id, decision: d });
         resolve(d);
       };
-      c.approvals.set(request.id, { request, resolve: done });
+      const shown = card(request);
+      c.approvals.set(request.id, { card: shown, resolve: done });
       signal?.addEventListener('abort', () => done('deny'), { once: true });
-      this.publish(c, { type: 'approval', request: { id: request.id, kind: request.kind, summary: request.summary } });
+      this.publish(c, { type: 'approval', request: shown });
     });
   }
 

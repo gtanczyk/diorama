@@ -4,6 +4,7 @@ import { maskToPng } from '../image/mask.ts';
 import { PALETTE, svgLabel, tintOver } from '../image/overlay.ts';
 import { defineCommand } from '../registry.ts';
 import { Brief } from '../scene/brief.ts';
+import { brushed, correctCells, correctSpots, readCorrections } from '../scene/corrections.ts';
 import { Layout } from '../scene/layout.ts';
 import { locateThings, markFloors } from '../scene/locate.ts';
 import { maskFloors, maskThings } from '../scene/masks.ts';
@@ -29,15 +30,21 @@ defineCommand({
         console.log(`  ${place.key}: ${line}`);
       };
 
-      const [spots, cells] = await Promise.all([
+      const [found, marked] = await Promise.all([
         locateThings(files.memo, place, brief, painting),
         markFloors(files.memo, place, layout, brief, painting),
       ]);
-      files.write(at('locate.json'), { things: spots, floors: cells });
-      const [things, floors] = await Promise.all([
+      files.write(at('locate.json'), { things: found, floors: marked });
+      // The person's fixes go in before SAM is asked and their brush strokes after, every time.
+      const fixes = readCorrections(at());
+      const spots = correctSpots(found, fixes);
+      const cells = correctCells(marked, fixes);
+      const [rawThings, rawFloors] = await Promise.all([
         maskThings(files.memo, place, layout, spots, painting, log),
         maskFloors(files.memo, place, layout, cells, painting, log),
       ]);
+      const things = rawThings.map((t) => brushed(t, fixes.things[t.key]?.strokes));
+      const floors = rawFloors.map((f) => brushed(f, fixes.floors[f.key]?.strokes));
 
       fs.rmSync(at('masks'), { recursive: true, force: true });
       for (const t of things) files.write(at('masks', `${t.key}.png`), await maskToPng(t.mask));

@@ -4,6 +4,7 @@ import { maskArea, maskFromPng, maskToPng, emptyMask } from '../image/mask.ts';
 import { PALETTE, svgLabel, tintOver } from '../image/overlay.ts';
 import { Geometry, personPx } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
+import { readCorrections } from '../scene/corrections.ts';
 import { derive, type ThingIn } from '../scene/derive.ts';
 import { Layout, FRAME } from '../scene/layout.ts';
 import { CELL } from '../scene/walk.ts';
@@ -63,7 +64,10 @@ defineCommand({
       const lit = out.shadows.light && maskArea(out.shadows.mask) > 0;
       if (lit) files.write(at('masks', 'shadows.png'), await maskToPng(out.shadows.mask));
       else fs.rmSync(at('masks', 'shadows.png'), { force: true });
-      const geometry = Geometry.parse({ ...out.geometry, ...(out.shadows.light && { light: out.shadows.light }), ...(lit && { shadows: 'masks/shadows.png' }) });
+      // Where the person said the hero should stand to use a thing.
+      const fixes = readCorrections(at());
+      const placed = out.geometry.things.map((t) => (fixes.things[t.key]?.stand ? { ...t, stand: fixes.things[t.key].stand! } : t));
+      const geometry = Geometry.parse({ ...out.geometry, things: placed, ...(out.shadows.light && { light: out.shadows.light }), ...(lit && { shadows: 'masks/shadows.png' }) });
       files.write(at('geometry.json'), geometry);
       files.write(at('walk.png'), await walkPicture(painting, geometry, out.footprint));
       const open = geometry.walk.join('').split('#').length - 1;

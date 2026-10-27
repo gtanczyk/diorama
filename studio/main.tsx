@@ -3,7 +3,8 @@
 import { render } from 'preact';
 import { signal } from '@preact/signals';
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { call, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
+import { askAgent, call, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
+import { PlaceEditor } from './place.tsx';
 
 type Check = { id: string; label: string; state: 'ok' | 'missing' | 'optional' | 'fail'; detail: string; fix?: string[] };
 type Summary = { slug: string; title: string; pitch: string | null; issue: string | null; places: number; playable: number; verified: number; steps: string[]; cover: { file: string; v: number | null } | null };
@@ -16,7 +17,10 @@ type PlaceDetail = {
   image: { file: string; v: number | null } | null;
   verdict: { ok: boolean; errors: Finding[]; flags: Finding[] } | null;
 };
-type Job = { id: string; label: string; state: string; by: string; step?: string; error?: string; startedAt?: string; endedAt?: string };
+type Job = { id: string; label: string; args: string[]; state: string; by: string; step?: string; error?: string; startedAt?: string; endedAt?: string; tail: string[] };
+type Note = { id: string; at: string; by: string; place?: string; point?: [number, number]; text: string; state: 'open' | 'done'; reply?: string };
+type Spend = { usd: number; priced: boolean; calls: Record<string, number> };
+type Budget = { total: Spend; today: Spend; limitUsd: number | null; over: boolean; prices: Record<string, number> };
 type Status = Summary & { placeDetail: PlaceDetail[]; build: Record<string, { seconds: number }>; calls: Record<string, number>; jobs: Job[] };
 
 const route = signal(location.pathname);
@@ -105,8 +109,47 @@ function Setup() {
           <button type="button" class="primary" disabled={!!busy} onClick={() => run('setup_status')}>{busy === 'setup_status' ? 'Checking…' : 'Check again'}</button>
           <button type="button" class="ghost" disabled={!!busy} onClick={() => run('setup_check')}>{busy === 'setup_check' ? 'Calling Meta…' : 'Test the Meta key live'}</button>
         </div>
+        <BudgetBox />
       </main>
     </>
+  );
+}
+
+const MODEL_NAMES: Record<string, string> = { spark: 'Muse Spark', muse: 'Muse Image', sam: 'SAM 3.1', sound: 'ElevenLabs sound', voice: 'Voices', music: 'Music', space: 'HF Spaces' };
+
+/** What the models cost so far, and the prices and limit to count it by. */
+function BudgetBox() {
+  const [b, setB] = useState<Budget | null>(null);
+  const [prices, setPrices] = useState<Record<string, string>>({});
+  const [limit, setLimit] = useState('');
+  const [saved, setSaved] = useState('');
+  const load = () => call<Budget>('budget').then((x) => {
+    setB(x);
+    setPrices(Object.fromEntries(Object.entries(x.prices).map(([k, v]) => [k, String(v)])));
+    setLimit(x.limitUsd === null ? '' : String(x.limitUsd));
+  }).catch(() => {});
+  useEffect(() => void load(), []);
+  const save = async (e: Event) => {
+    e.preventDefault();
+    const p = Object.fromEntries(Object.entries(prices).filter(([, v]) => v.trim() !== '' && !Number.isNaN(Number(v))).map(([k, v]) => [k, Number(v)]));
+    await call('budget_set', { prices: p, ...(limit.trim() && { limitUsd: Number(limit) }) });
+    setSaved('Saved');
+    setTimeout(() => setSaved(''), 1500);
+    void load();
+  };
+  if (!b) return null;
+  const models = Object.keys(MODEL_NAMES).filter((m) => b.total.calls[m] || m in b.prices || ['spark', 'muse', 'sam'].includes(m));
+  return (
+    <form class="budget" onSubmit={save}>
+      <h2>Budget</h2>
+      <p class="lead">{b.total.priced ? `$${b.total.usd.toFixed(2)} spent` : `${Object.values(b.total.calls).reduce((x, y) => x + y, 0)} model calls sent`}{b.limitUsd !== null ? ` of $${b.limitUsd}` : ''}, {b.today.priced ? `$${b.today.usd.toFixed(2)}` : `${Object.values(b.today.calls).reduce((x, y) => x + y, 0)} calls`} today. Answers already asked are reused for free.</p>
+      <p class="note">Dollars per call, from your Meta and ElevenLabs billing pages. Without a price a model is only counted.</p>
+      <div class="prices">
+        {models.map((m) => <label>{MODEL_NAMES[m]} · {b.total.calls[m] ?? 0} calls<input inputMode="decimal" placeholder="$ per call" value={prices[m] ?? ''} onInput={(e) => setPrices({ ...prices, [m]: e.currentTarget.value })} /></label>)}
+        <label>Warn at ($)<input inputMode="decimal" placeholder="150" value={limit} onInput={(e) => setLimit(e.currentTarget.value)} /></label>
+      </div>
+      <div class="row"><button type="submit" class="ghost small">Save</button><span class="detail">{saved}</span></div>
+    </form>
   );
 }
 
@@ -189,8 +232,16 @@ function Workshop({ slug }: { slug: string }) {
   const [running, setRunning] = useState<Record<string, 'run' | 'fail'>>({});
   const [calls, setCalls] = useState(0);
   const [focus, setFocus] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [budget, setBudget] = useState<Budget | null>(null);
 
-  const refresh = () => call<Status>('world_status', { slug }).then((s) => (setStatus(s), setError(''))).catch((e) => setError(e.status === 404 ? '' : e.message));
+  const refresh = () => {
+    setTick((t) => t + 1);
+    call<Note[]>('feedback_list', { slug }).then(setNotes).catch(() => {});
+    call<Budget>('budget').then(setBudget).catch(() => {});
+    return call<Status>('world_status', { slug }).then((s) => (setStatus(s), setError(''))).catch((e) => setError(e.status === 404 ? '' : e.message));
+  };
   useEffect(() => {
     refresh();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -206,7 +257,7 @@ function Workshop({ slug }: { slug: string }) {
         case 'step.end': setRunning((r) => { const n = { ...r }; delete n[String(e.step)]; return n; }); soon(); return add(e, `✓ ${e.step} · ${e.seconds}s`, 'step');
         case 'step.fail': setRunning((r) => ({ ...r, [String(e.step)]: 'fail' })); return add(e, `✕ ${e.step}: ${e.error}`, 'err');
         case 'call': if (!e.hit) setCalls((c) => c + 1); return;
-        case 'file.changed': return soon();
+        case 'file.changed': case 'feedback.changed': return soon();
         case 'job.start': case 'job.end': case 'job.queued': {
           const job = e.job as Job;
           soon();
@@ -227,6 +278,8 @@ function Workshop({ slug }: { slug: string }) {
   }, [slug]);
 
   const job = status?.jobs.findLast((j) => j.state === 'running' || j.state === 'queued');
+  const last = status?.jobs.at(-1);
+  const failed = last && last.state === 'failed' ? last : null;
   const stepState = (s: string): 'ok' | 'run' | 'fail' | 'todo' => running[s] ?? (status?.build[s] ? 'ok' : 'todo');
   const placeFocus = useMemo(() => status?.placeDetail.find((p) => p.key === focus), [status, focus]);
 
@@ -245,6 +298,8 @@ function Workshop({ slug }: { slug: string }) {
           </div>
           {status?.pitch && <p class="lead">{status.pitch}</p>}
           {error && <p class="error">{error}</p>}
+          {failed && !job && <Failed slug={slug} job={failed} onError={setError} />}
+          {budget?.over && <p class="banner">Budget: ${budget.total.usd} spent of the ${budget.limitUsd} limit. Check Setup before the next big build.</p>}
           <ol class="steps" aria-label="Build steps">
             {steps.map((s) => <li class={stepState(s)} title={status?.build[s] ? `${status.build[s].seconds}s` : undefined}><Mark state={stepState(s)} />{s}</li>)}
           </ol>
@@ -263,19 +318,19 @@ function Workshop({ slug }: { slug: string }) {
           </ul>
           {placeFocus && (
             <section class="inspect">
-              <h2>{placeFocus.key}</h2>
               <p class="detail">{placeFocus.shows}</p>
-              <p class="detail">{placeFocus.things.map((t) => `${t.key} (${t.role})`).join(' · ')}</p>
               {placeFocus.verdict && [...placeFocus.verdict.errors.map((f) => ['error', f] as const), ...placeFocus.verdict.flags.map((f) => ['flag', f] as const)].map(([kind, f]) => (
                 <p class={kind === 'error' ? 'error' : 'flag'}><code>{f.code}</code>{f.key ? ` ${f.key}` : ''}: {f.detail}</p>
               ))}
+              {placeFocus.stages.painting ? <PlaceEditor slug={slug} place={placeFocus.key} version={tick} onError={setError} /> : <p class="detail">Fixing opens once the place is painted.</p>}
             </section>
           )}
+          <Notes slug={slug} notes={notes} onPlace={setFocus} onError={setError} />
         </div>
         <aside class="right">
           <AgentPanel slug={slug} />
           <section class="log">
-            <div class="row"><h2>Activity</h2><span class="grow" /><span class="detail">{calls} model calls this session{status ? ` · ${Object.entries(status.calls).map(([m, n]) => `${m} ${n}`).join(', ') || 'none yet'} total` : ''}</span></div>
+            <div class="row"><h2>Activity</h2><span class="grow" /><span class="detail" title={status ? `this world: ${Object.entries(status.calls).map(([m, n]) => `${m} ${n}`).join(', ') || 'no calls yet'}` : undefined}>{calls} calls this session{budget ? ` · ${spend(budget.today)} today · ${spend(budget.total)}${budget.limitUsd !== null ? ` of $${budget.limitUsd}` : ''} total` : ''}</span></div>
             <ol>{[...lines].reverse().map((l) => <li key={l.seq} class={l.kind}>{l.text}</li>)}</ol>
           </section>
         </aside>
@@ -284,6 +339,76 @@ function Workshop({ slug }: { slug: string }) {
   );
 }
 
+const spend = (s: Spend) => (s.priced ? `$${s.usd.toFixed(2)}` : `${Object.values(s.calls).reduce((a, b) => a + b, 0)} calls${s.usd ? ` ($${s.usd.toFixed(2)}+)` : ''}`);
+
+/** The last job failed: where, why, its last lines, and what to do next. */
+function Failed({ slug, job, onError }: { slug: string; job: Job; onError: (m: string) => void }) {
+  const [more, setMore] = useState(false);
+  const lines = job.tail.filter((l) => l.trim());
+  const step = job.step;
+  const retry = () => call('job_retry', { id: job.id }).catch((e) => onError(e.message));
+  const ask = () => askAgent(slug, `The job "${job.label}" failed${step ? ` at the ${step} step` : ''}: ${job.error ?? 'see its output'}. Find out why with job_wait or world_status, fix what you can with the fix tools, and tell me what you did.`).catch((e) => onError(e.message));
+  return (
+    <section class="failed" role="alert">
+      <div class="row"><strong>{job.label} failed{step ? ` at ${step}` : ''}</strong><span class="detail">by {job.by}</span></div>
+      {job.error && <p class="error">{job.error}</p>}
+      {lines.length > 0 && <pre>{(more ? lines : lines.slice(-6)).join('\n')}</pre>}
+      <div class="row">
+        <button type="button" class="primary small" onClick={retry}>Try again</button>
+        <button type="button" class="ghost small" onClick={ask}>Ask Muse Code</button>
+        <button type="button" class="ghost small" title="Put the world back as it was before this job" onClick={() => call('history_undo', { slug }).catch((e) => onError(e.message))}>Undo it</button>
+        <span class="grow" />
+        {lines.length > 6 && <button type="button" class="ghost small" onClick={() => setMore(!more)}>{more ? 'Less' : `All ${lines.length} lines`}</button>}
+      </div>
+    </section>
+  );
+}
+
+/** The person's notes on this world: open ones wait for a fix, done ones say what was done. */
+function Notes({ slug, notes, onPlace, onError }: { slug: string; notes: Note[]; onPlace: (p: string) => void; onError: (m: string) => void }) {
+  const [text, setText] = useState('');
+  const open = notes.filter((n) => n.state === 'open');
+  const done = notes.filter((n) => n.state === 'done').slice(-5).reverse();
+  const add = (e: Event) => {
+    e.preventDefault();
+    call('feedback_add', { slug, text: text.trim() }).then(() => setText('')).catch((err) => onError(err.message));
+  };
+  return (
+    <section class="notes">
+      <div class="row">
+        <h2>Notes{open.length ? ` · ${open.length} open` : ''}</h2>
+        <span class="grow" />
+        {open.length > 0 && <button type="button" class="primary small" onClick={() => askAgent(slug, `Go through my ${open.length} open note${open.length > 1 ? 's' : ''} (feedback_pending): fix each one and close it with feedback_done.`).catch((e) => onError(e.message))}>Hand {open.length > 1 ? 'them' : 'it'} to Muse Code</button>}
+      </div>
+      <ul>
+        {open.map((n) => (
+          <li class="open">
+            {n.place && <button type="button" class="ghost small" onClick={() => onPlace(n.place!)}>{n.place}{n.point ? ` @${n.point.join(',')}` : ''}</button>}
+            <span>{n.text}</span>
+            <span class="grow" />
+            <button type="button" class="ghost small" onClick={() => call('feedback_done', { slug, id: n.id, reply: 'done by hand' }).catch((e) => onError(e.message))}>Done</button>
+          </li>
+        ))}
+        {done.map((n) => (
+          <li class="done">
+            <span>{n.text}</span>
+            <span class="detail">→ {n.reply}</span>
+            <span class="grow" />
+            <button type="button" class="ghost small" onClick={() => call('feedback_reopen', { slug, id: n.id }).catch((e) => onError(e.message))}>Reopen</button>
+          </li>
+        ))}
+      </ul>
+      <form class="row" onSubmit={add}>
+        <input class="grow" placeholder="A note on the whole world (or pick a place and use Note on its picture)" value={text} onInput={(e) => setText(e.currentTarget.value)} />
+        <button type="submit" class="ghost small" disabled={text.trim().length < 2}>Add</button>
+      </form>
+    </section>
+  );
+}
+
+type Ask = { id: string; kind: string; summary?: string; detail?: string };
+const ASK_TITLE: Record<string, string> = { command: 'The agent wants to run a command on your computer', 'file-change': 'The agent wants to change files directly' };
+
 type Bubble = { key: number; kind: 'user' | 'agent' | 'tool' | 'error' | 'note'; text: string; ok?: boolean };
 
 /** Chat with the Muse Code agent about this world. Its tool calls are Studio actions, so they also show in Activity. */
@@ -291,7 +416,7 @@ function AgentPanel({ slug }: { slug: string }) {
   const [items, setItems] = useState<Bubble[]>([]);
   const [stream, setStream] = useState('');
   const [running, setRunning] = useState(false);
-  const [asks, setAsks] = useState<Array<{ id: string; kind: string; summary?: string }>>([]);
+  const [asks, setAsks] = useState<Ask[]>([]);
   const [text, setText] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
@@ -300,7 +425,7 @@ function AgentPanel({ slug }: { slug: string }) {
     const push = (kind: Bubble['kind'], body: string, ok?: boolean) => setItems((l) => [...l.slice(-200), { key: n++, kind, text: body, ok }]);
     fetch(`/api/agent/${slug}`, { headers: { authorization: `Bearer ${token}` } })
       .then((r) => r.json())
-      .then((s: { seq: number; running: boolean; turns: Array<{ role: 'user' | 'agent'; text: string }>; approvals: Array<{ id: string; kind: string; summary?: string }> }) => {
+      .then((s: { seq: number; running: boolean; turns: Array<{ role: 'user' | 'agent'; text: string }>; approvals: Ask[] }) => {
         s.turns.forEach((t) => push(t.role, t.text));
         after = s.seq;
         setRunning(s.running);
@@ -319,7 +444,7 @@ function AgentPanel({ slug }: { slug: string }) {
         case 'agent.tool': return push('tool', String(v.name));
         case 'agent.tool.end': return setItems((l) => l.map((b) => (b.kind === 'tool' && b.text === v.name && b.ok === undefined ? { ...b, ok: !v.isError } : b)));
         case 'agent.error': return push('error', String(v.text));
-        case 'agent.approval': return setAsks((a) => [...a, (e as unknown as { request: { id: string; kind: string; summary?: string } }).request]);
+        case 'agent.approval': return setAsks((a) => [...a, (e as unknown as { request: Ask }).request]);
         case 'agent.approval.resolved': return setAsks((a) => a.filter((x) => x.id !== v.id));
         case 'agent.turn.end':
           setRunning(false);
@@ -350,8 +475,11 @@ function AgentPanel({ slug }: { slug: string }) {
         {stream && <li class="agent streaming">{stream}</li>}
       </ol>
       {asks.map((a) => (
-        <div class="ask" key={a.id}>
-          <span>The agent asks to run: <code>{a.summary ?? a.kind}</code></span>
+        <div class="ask" key={a.id} role="alert">
+          <strong>{ASK_TITLE[a.kind] ?? 'The agent asks to do something outside the Studio'}</strong>
+          {a.summary && <code>{a.summary}</code>}
+          {a.detail && a.detail !== a.summary && <details><summary>Exactly what it asked</summary><pre>{a.detail}</pre></details>}
+          <span class="detail">Studio tools never ask: they are logged and undoable. This one is not, so it is your call.</span>
           <div class="row"><button type="button" class="primary small" onClick={() => post('approval', { id: a.id, decision: 'approve' })}>Allow once</button><button type="button" class="ghost small" onClick={() => post('approval', { id: a.id, decision: 'deny' })}>Deny</button></div>
         </div>
       ))}

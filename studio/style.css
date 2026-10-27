@@ -99,3 +99,40 @@ main.workshop { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap:
 .ask { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--accent); border-radius: 10px; background: rgba(232, 168, 92, 0.06); font-size: 13px; }
 .say { display: flex; flex-direction: column; gap: 6px; }
 .say textarea { font-size: 14px; }
+
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 18px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; min-height: 32px; padding: 0 12px; font-size: 13px; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line-strong); }
+.seg button.on { background: var(--raised); color: var(--text); }
+.seg.tools { flex-wrap: wrap; }
+.editor { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.editor label { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
+.stage { position: relative; width: 100%; aspect-ratio: 1200 / 896; border-radius: 10px; overflow: hidden; background: var(--raised); user-select: none; }
+.stage img, .stage .noimg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+.stage svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.stage:not(.tool-look) svg { cursor: crosshair; }
+.stage .sel { fill: rgba(232, 168, 92, 0.15); stroke: var(--accent); stroke-width: 3; stroke-dasharray: 10 6; }
+.stage .sel.repaint { fill: rgba(108, 195, 181, 0.15); stroke: var(--ok); }
+.stage .stroke { fill: none; stroke-linecap: round; stroke-linejoin: round; opacity: 0.55; }
+.stage .stroke.add { stroke: #3ddc84; }
+.stage .stroke.erase { stroke: #ff5a5a; }
+.stage .stand { fill: #fff; stroke: #000; stroke-width: 2; }
+.stage .pin { fill: var(--accent); stroke: #000; stroke-width: 3; }
+table.things { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.things th { text-align: left; color: var(--faint); font-weight: 500; padding: 4px 6px; }
+table.things td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: middle; }
+table.things input { width: 100%; min-width: 120px; padding: 4px 8px; }
+table.things form { flex-wrap: nowrap; }
+table.things select { padding: 4px 6px; }
+.fixes ul, .notes ul { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.fixes li, .notes li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.notes { padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; gap: 6px; }
+.notes li.done { color: var(--faint); }
+.notes input { flex: 1; min-width: 200px; }
+.failed { padding: 12px 14px; border: 1px solid var(--bad); border-radius: 12px; background: rgba(229, 154, 154, 0.07); display: flex; flex-direction: column; gap: 8px; }
+.failed p { margin: 0; }
+.ask code { word-break: break-word; }
+.ask pre { max-height: 200px; overflow: auto; font-size: 12px; }
+.budget { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; }
+.budget .prices { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.budget label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }

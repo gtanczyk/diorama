@@ -75,6 +75,12 @@ export function zodToJson(schema: z.ZodTypeAny): Record<string, unknown> {
     case 'ZodNumber': return withDesc({ type: 'number' });
     case 'ZodBoolean': return withDesc({ type: 'boolean' });
     case 'ZodEnum': return withDesc({ type: 'string', enum: (schema as z.ZodEnum<[string]>).options });
+    case 'ZodTuple': {
+      const items = (schema as z.ZodTuple).items.map((i: z.ZodTypeAny) => zodToJson(i));
+      return withDesc({ type: 'array', prefixItems: items, items: items[0] ?? {}, minItems: items.length, maxItems: items.length });
+    }
+    case 'ZodRecord': return withDesc({ type: 'object', additionalProperties: zodToJson((schema as z.ZodRecord).valueSchema) });
+    case 'ZodEffects': return { ...zodToJson((schema as z.ZodEffects<z.ZodTypeAny>).innerType()), ...(schema.description && { description: schema.description }) };
     case 'ZodArray': return withDesc({ type: 'array', items: zodToJson((schema as z.ZodArray<z.ZodTypeAny>).element) });
     case 'ZodOptional':
     case 'ZodDefault': {

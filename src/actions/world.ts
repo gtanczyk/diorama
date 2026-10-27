@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import type { Verdict } from '../scene/verify.ts';
+import { readCorrections } from '../scene/corrections.ts';
 import { Slug, World } from '../world/schema.ts';
 import { ActionError, defineAction } from './registry.ts';
 
@@ -114,6 +115,31 @@ defineAction({
       build: build?.steps ?? {},
       calls: callCounts(dir),
       jobs: ctx.jobs.list(slug).slice(-10),
+    };
+  },
+});
+
+defineAction({
+  name: 'place_status',
+  reads: true,
+  description: 'One place up close: each thing\'s kind, SAM phrase and how its mask was found (coarse ones need a look), each floor, '
+    + 'the review pictures (masks/overlay.png, walk.png), the stand spots, and the fixes made so far.',
+  input: z.object({ slug: Slug, place: z.string().min(1) }),
+  async run({ slug, place }, ctx) {
+    const dir = path.join(ctx.root, slug, 'places', place);
+    if (!fs.existsSync(dir)) throw new ActionError(404, `${slug} has no place ${place} yet`);
+    type Made = { kind: string; phrase: string; source: string; coarse: boolean; brushed?: boolean };
+    const masks = readJson<{ things: Record<string, Made>; floors: Record<string, Omit<Made, 'kind' | 'phrase'>>; flagged: string[] }>(path.join(dir, 'masks.json'));
+    const geometry = readJson<{ things: Array<{ key: string; stand: [number, number] }>; start: [number, number] }>(path.join(dir, 'geometry.json'));
+    const picture = (f: string) => (fs.existsSync(path.join(dir, f)) ? { file: `places/${place}/${f}`, v: stamp(path.join(dir, f)) } : null);
+    return {
+      place,
+      pictures: { painting: picture('painting.png') ?? picture('blockin.png'), masks: picture('masks/overlay.png'), walk: picture('walk.png') },
+      things: Object.entries(masks?.things ?? {}).map(([key, t]) => ({ key, ...t, stand: geometry?.things.find((g) => g.key === key)?.stand ?? null })),
+      floors: Object.entries(masks?.floors ?? {}).map(([key, f]) => ({ key, ...f })),
+      flagged: masks?.flagged ?? [],
+      start: geometry?.start ?? null,
+      corrections: readCorrections(dir),
     };
   },
 });

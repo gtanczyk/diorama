@@ -1,6 +1,7 @@
 // diorama studio [slug]: the GUI. A local page to start, watch and fix worlds, driven by the same actions
 // as `diorama action` and the Muse Code agent.
 import { spawn } from 'node:child_process';
+import { actions } from '../actions/registry.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { writeStudioFile } from '../studio/discovery.ts';
 import type { StudioEvent } from '../studio/events.ts';
@@ -22,7 +23,7 @@ defineCommand({
     console.log(`Diorama Studio: ${link}\n(only this link opens it; Ctrl+C to stop)`);
     if (!quiet) studio.events.subscribe((e) => {
       const line = describe(e, verbose);
-      if (line) console.log(`${e.at.slice(11, 19)} ${e.world ? `${e.world}: ` : ''}${line}`);
+      if (line) console.log(`${new Date(e.at).toTimeString().slice(0, 8)} ${e.world ? `${e.world}: ` : ''}${line}`);
     });
     if (!noOpen) {
       const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
@@ -49,7 +50,7 @@ function describe(e: StudioEvent, verbose: boolean): string | null {
     case 'step.end': return `ok ${e.step} ${e.seconds}s`;
     case 'step.fail': return `FAILED ${e.step}: ${e.error}`;
     case 'place.verdict': return `${e.place}: ${e.ok ? 'playable' : 'NOT playable'}`;
-    case 'action.start': return e.by === 'agent' || !['world_list', 'world_status', 'setup_status', 'job_list', 'history_list'].includes(String(e.action)) ? `${e.by}: ${e.action}` : null;
+    case 'action.start': return e.by === 'agent' || !actions.get(String(e.action))?.reads ? `${e.by}: ${e.action}` : null;
     case 'action.end': return e.ok ? null : `${e.by}: ${e.action} failed: ${e.error}`;
     case 'history.undo': return `${e.by}: undo to ${e.id}`;
     case 'lock.changed': return `${e.by}: ${e.locked ? 'locked' : 'unlocked'} ${e.place ?? 'world'}`;
