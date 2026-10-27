@@ -8,6 +8,7 @@ import { actions, activeChanges, apply, hiddenThings, pickInteraction, startStat
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 import { Mixer, type Listened } from './audio.ts';
+import { readPads, type PadFrame } from './pad.ts';
 import { Answers, Bag, displayName, fitHud, showEnding, type ItemLook } from './ui.ts';
 import type { SoundData } from '../src/play/sound.ts';
 import type { Figure3D, ModelInfo } from './hero3d.ts';
@@ -197,7 +198,7 @@ class Game {
   /** The inventory item the next click uses. */
   holding: string | undefined;
   readonly bag = new Bag((key) => this.itemLook(key), (key) => this.hold(this.holding === key ? undefined : key), !hideCursor);
-  private readonly answers = new Answers();
+  readonly answers = new Answers();
   private endingShown = '';
   hover: Hot | undefined;
   grid = params.has('grid');
@@ -1773,6 +1774,7 @@ canvas.addEventListener('pointermove', (e) => {
   // A finger has no hover: nothing follows it, and the view does not look around after it.
   if (!game.place || e.pointerType === 'touch') return;
   keyboard = false;
+  usePad(false);
   const r = canvas.getBoundingClientRect();
   pointer = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   game.hover = game.thingAt(...toFrame(e));
@@ -1844,6 +1846,51 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 addEventListener('blur', () => keys.clear());
 
+// Gamepads, for a child who cannot use keys or a touchpad yet: the stick or d-pad walks, A uses the lit thing (or
+// picks the lit answer, or plays again at the end), B puts the item in hand back (or looks), the other face buttons and
+// the shoulders go through the bag one item at a time and back to empty hands. Any pad steers; several at once all do.
+let pad: PadFrame = { dir: null, pressed: [], pads: 0 };
+const KEY_HINT = document.querySelector('#bar .hint')?.textContent ?? '';
+const PAD_HINT = 'gamepad: stick or d-pad walks · A uses · B puts back or looks · X Y or shoulders pick an item · in a talk up/down and A answer';
+/** Pad mode lights the answer and Play again cards and shows the pad's hints; the mouse moving ends it. */
+function usePad(on: boolean) {
+  if (document.body.classList.contains('pad') === on) return;
+  document.body.classList.toggle('pad', on);
+  const hint = document.querySelector('#bar .hint');
+  if (hint) hint.textContent = on ? PAD_HINT : KEY_HINT;
+}
+function padInput() {
+  pad = readPads();
+  if (!pad.dir && !pad.pressed.length) return;
+  usePad(true);
+  keyboard = true;
+  // A pad press is not a gesture that unlocks sound everywhere, but where it is allowed this starts it.
+  mixer?.resume();
+  if (!game.place) return;
+  for (const b of pad.pressed) {
+    if (game.state.ending) {
+      if (b === 'use' || b === 'start') document.querySelector<HTMLButtonElement>('#ending .again')?.click();
+    } else if (game.state.talk) {
+      if (b === 'up' || b === 'left' || b === 'prev') game.answers.move(-1);
+      if (b === 'down' || b === 'right' || b === 'next') game.answers.move(1);
+      if (b === 'use') game.answers.pick();
+    } else if (free()) {
+      const hot = game.within();
+      if (b === 'use' && hot) void game.use(hot.thing.key);
+      if (b === 'back') {
+        if (game.holding) game.hold(undefined);
+        else if (hot) void game.use(hot.thing.key, 'look');
+      }
+      if (b === 'next' || b === 'prev') {
+        // Empty hands, then each item, then empty hands again.
+        const ring = [undefined, ...game.state.items];
+        const i = ring.indexOf(game.holding);
+        game.hold(ring[(i + (b === 'next' ? 1 : -1) + ring.length) % ring.length]);
+      }
+    }
+  }
+}
+
 let heading = '';
 /** Held direction keys walk the hero a short step at a time; along a wall it slides the way that is open. */
 function steer() {
@@ -1857,8 +1904,8 @@ function steer() {
     const r = near && game.holding ? game.pageRect(near.thing.key) : undefined;
     if (game.holding) game.bag.point(r ? r.left + r.width / 2 : -300, r ? r.top : -300, near?.thing.key.replace(/-/g, ' '));
   }
-  if (!keys.size || !free()) return void (heading = '');
-  let [dx, dy] = [0, 0];
+  if ((!keys.size && !pad.dir) || !free()) return void (heading = '');
+  let [dx, dy] = pad.dir ?? [0, 0];
   for (const k of keys) [dx, dy] = [dx + DIRS[k][0], dy + DIRS[k][1]];
   if (!dx && !dy) return;
   const hero = game.hero;
@@ -1892,6 +1939,7 @@ const frame = (now: number) => {
   // Capture mode steps a fixed 1/60 s per frame so a recorded run is the same every time.
   const dt = capture ? 1 / 60 : Math.min(0.05, (now - last) / 1000);
   last = now;
+  padInput();
   steer();
   game.update(dt);
   mixer?.update();

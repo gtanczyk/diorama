@@ -242,6 +242,11 @@ export class Mixer {
     this.seen = { items: [...s.items], flags: [...s.flags], talk: !!s.talk };
   }
 
+  /** Starts the sound if the browser lets the page do it without a click (a gamepad press is not one everywhere). */
+  resume() {
+    if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => undefined);
+  }
+
   toggleMute() {
     this.muted = !this.muted;
     this.master.gain.setTargetAtTime(this.muted ? 0 : 1, this.ctx.currentTime, 0.05);

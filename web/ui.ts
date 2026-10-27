@@ -124,10 +124,14 @@ export class Bag {
   }
 }
 
-/** The hero's answers as numbered cards; keys 1 to 4 pick them too. */
+/** The hero's answers as numbered cards; keys 1 to 4 pick them too, and a gamepad moves a lit card and picks it. */
 export class Answers {
   private readonly root = document.getElementById('talk')!;
   private picks: Array<() => void> = [];
+  private cards: HTMLButtonElement[] = [];
+  private texts = '';
+  /** The card a gamepad would pick; lit only once a pad has been used. */
+  private focus = 0;
 
   constructor() {
     addEventListener('keydown', (e) => {
@@ -139,6 +143,10 @@ export class Answers {
   show(options: Array<{ text: string; pick: () => void }>, hero?: { name: string; portrait?: string }) {
     this.picks = options.map((o) => o.pick);
     this.root.hidden = options.length === 0;
+    // New answers start from the first card; the same ones redrawn keep the lit one.
+    const texts = options.map((o) => o.text).join('\n');
+    if (texts !== this.texts) [this.texts, this.focus] = [texts, 0];
+    this.cards = [];
     if (!options.length) return this.root.replaceChildren();
     const who = el('div', 'who');
     if (hero?.portrait) {
@@ -150,12 +158,33 @@ export class Answers {
       who.append(face);
     }
     if (hero) who.append(el('span', 'tag', hero.name));
-    this.root.replaceChildren(who, ...options.map((o, i) => {
+    this.cards = options.map((o, i) => {
       const b = el('button', 'answer');
       b.append(el('span', 'key', String(i + 1)), document.createTextNode(o.text));
       b.onclick = o.pick;
       return b;
-    }));
+    });
+    this.root.replaceChildren(who, ...this.cards);
+    this.light();
+  }
+
+  /** Moves the lit card up (-1) or down (1), round from the last to the first. */
+  move(by: number) {
+    if (!this.picks.length) return;
+    this.focus = (this.focus + by + this.picks.length) % this.picks.length;
+    this.light();
+  }
+
+  /** Picks the lit card; false when no answers are up. */
+  pick(): boolean {
+    const card = this.cards[this.focus];
+    if (!card) return false;
+    card.click();
+    return true;
+  }
+
+  private light() {
+    this.cards.forEach((c, i) => c.classList.toggle('focus', i === this.focus));
   }
 }
 
