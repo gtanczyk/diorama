@@ -1,6 +1,6 @@
 // The story at a glance: places as a map joined by their exits, locked exits marked, endings on the right,
 // and the checker's verdict with a shortest route to each ending. Pick a place to read and reword what
-// happens there; anything that changes what the player can do goes to Spark as a wish.
+// happens there; anything that changes what the player can do is asked of the agent (story_redo).
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { call } from './api.ts';
 
@@ -46,19 +46,18 @@ export function StoryView({ slug, version, onError }: { slug: string; version: n
   const ending = story.endings.find((e) => `ending:${e.key}` === pick);
   return (
     <div class="story">
-      <Verdict status={status} onStep={step} />
+      <Verdict status={status} onStep={step} onFirst={() => call('story_redo', { slug }).catch((e) => onError(e.message))} />
       <StoryMap status={status} story={story} pick={pick} onPick={(k) => setPick(pick === k ? null : k)} />
       {place
         ? <PlaceStory place={place} story={story} hero={status.hero} unpainted={status.unpainted} onSave={save} />
         : ending
           ? <EndingStory story={story} ending={ending.key} route={status.routes.find((r) => r.ending === ending.key)?.steps ?? null} onSave={save} />
           : <Overview story={story} onSave={save} />}
-      <Wish slug={slug} wish={status.fixes.wish} reworded={Object.keys(status.fixes.texts).length} onError={onError} />
     </div>
   );
 }
 
-function Verdict({ status, onStep }: { status: Status; onStep: (step: string) => void }) {
+function Verdict({ status, onStep, onFirst }: { status: Status; onStep: (step: string) => void; onFirst: () => void }) {
   const ok = status.issues.length === 0;
   return (
     <section class="verdict">
@@ -66,6 +65,13 @@ function Verdict({ status, onStep }: { status: Status; onStep: (step: string) =>
         <span class={`badge ${ok ? 'ok' : 'fail'}`}>{ok ? 'winnable' : `${status.issues.length} problem${status.issues.length === 1 ? '' : 's'}`}</span>
         <span class="detail">{status.states.toLocaleString()} states played · {status.routes.map((r) => `${r.ending} in ${r.steps.length} clicks`).join(' · ')}</span>
       </div>
+      {status.fixes.wish && (
+        <div class="row">
+          <span class="detail">Rewritten by the agent to your wish: “{status.fixes.wish}”</span>
+          <span class="grow" />
+          <button type="button" class="ghost small" onClick={onFirst}>Back to the first story</button>
+        </div>
+      )}
       {!ok && <ul class="issues">{status.issues.map((i) => <li>{i}</li>)}</ul>}
       {(status.unvoiced.length > 0 || status.unpainted.length > 0) && (
         <div class="row">
@@ -264,24 +270,7 @@ function Overview({ story, onSave }: { story: Story; onSave: (path: string, text
         <strong>Items</strong>
         <ul class="items">{story.items.map((it, i) => <li><span class="verb">{it.key}</span><Text path={`items.${i}.name`} value={it.name} onSave={onSave} label={`Name of ${it.key}`} /></li>)}</ul>
       </>}
-      <p class="detail">Pick a place or an ending on the map to read and reword what happens there.</p>
+      <p class="detail">Pick a place or an ending on the map to read and reword what happens there. To change what happens (a puzzle, a lock, an ending), ask the agent in the panel: it rewrites the story and the checker plays it through.</p>
     </section>
-  );
-}
-
-function Wish({ slug, wish, reworded, onError }: { slug: string; wish?: string; reworded: number; onError: (m: string) => void }) {
-  const [text, setText] = useState('');
-  const send = (input: object) => call('story_redo', { slug, ...input }).then(() => setText('')).catch((e) => onError(e.message));
-  return (
-    <form class="say wish" onSubmit={(e) => (e.preventDefault(), text.trim().length >= 5 && void send({ wish: text.trim() }))}>
-      <label for="story-wish"><strong>Change the story</strong> <span class="detail">Spark writes it again to your wish and the checker plays it through{reworded ? `; your ${reworded} reworded line${reworded === 1 ? '' : 's'} will be dropped` : ''}.</span></label>
-      {wish && <p class="detail">Written to your wish: “{wish}”</p>}
-      <textarea id="story-wish" rows={2} value={text} placeholder="The ferrywoman wants something in return before she lends the boat" onInput={(e) => setText(e.currentTarget.value)} />
-      <div class="row">
-        {wish && <button type="button" class="ghost small" onClick={() => send({})}>Back to the first story</button>}
-        <span class="grow" />
-        <button type="submit" class="primary small" disabled={text.trim().length < 5}>Rewrite with Spark</button>
-      </div>
-    </form>
   );
 }
