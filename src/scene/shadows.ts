@@ -86,7 +86,8 @@ export function measure(shadow: Mask, base: [number, number], height: number): {
   return { dir, length: along[Math.floor(0.95 * (along.length - 1))] / height };
 }
 
-const SparkLight = z.object({ sunlit: z.boolean(), dx: z.number(), dy: z.number(), length: z.number() });
+// Without sun Spark often leaves the direction out.
+const SparkLight = z.object({ sunlit: z.boolean(), dx: z.number().default(0), dy: z.number().default(0), length: z.number().default(1) });
 
 /** Is there sun? (Its direction is not used: painted shadows are measured, not guessed.) */
 async function sparkLight(memo: Memo, label: string, painting: Buffer): Promise<Light | undefined> {

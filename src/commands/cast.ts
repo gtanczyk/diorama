@@ -22,9 +22,17 @@ defineCommand({
     const npcs = world.places.flatMap((p) => p.things.filter((t) => t.role === 'npc'));
     const fixes = readCastFixes(files);
     const cast: Who[] = [world.hero, ...new Map(npcs.map((n) => [n.key, n])).values()].filter((w) => !only.length || only.includes(w.key)).map((w) => fixedLooks(files, w));
+    const missing: string[] = [];
     await Promise.all(cast.map(async (who) => {
       // The person's description and chosen take (cast/fixes.json) win over the world's.
-      const { painting, figure } = await paintFigure(files.memo, world, who, fixes[who.key]?.take ?? take, who.key === world.hero.key ? photo : undefined);
+      // An NPC that cannot be cut out is set aside (the game draws a stand-in) so the rest of the cast is made.
+      const made = await paintFigure(files.memo, world, who, fixes[who.key]?.take ?? take, who.key === world.hero.key ? photo : undefined).catch((error: Error) => {
+        if (who.key === world.hero.key) throw error;
+        missing.push(`${who.key}: ${error.message}`);
+        return null;
+      });
+      if (!made) return;
+      const { painting, figure } = made;
       files.write(files.path('cast', `${who.key}-painting.png`), painting);
       files.write(files.path('cast', `${who.key}.png`), figure);
       // The same painting cut into parts, so the runtime can walk the figure.
@@ -37,6 +45,7 @@ defineCommand({
         console.log(`${who.key}: ${files.path('cast', `${who.key}.png`)} · no rig: ${error instanceof Error ? error.message : error}`);
       }
     }));
+    for (const m of missing) console.log(`set aside, shown as a stand-in: ${m}`);
     console.log(`calls sent: muse ${files.memo.sent.muse}, sam ${files.memo.sent.sam}`);
   },
 });

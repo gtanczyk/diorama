@@ -48,8 +48,13 @@ export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, 
     ? await museEdit(memo, { label: `figure:${who.key}:photo`, prompt: photoPrompt(world), images: [await sharp(photo).rotate().png().toBuffer()], take })
     : await musePaint(memo, { label: `figure:${who.key}`, prompt: figurePrompt(world, who), take });
   const png = await sharp(painting).png().toBuffer();
-  const found = await samFind(memo, { label: `figure:${who.key}`, image: png, prompt: 'person' });
-  if (!found.length) throw new Error(`${who.key}: SAM found no person in the painting; try --take 1`);
+  // Not every character is a person (a flock of pigeons, a cat): SAM is asked by their own description next.
+  let found: Awaited<ReturnType<typeof samFind>> = [];
+  for (const prompt of ['person', who.looks.split(/[,.;]/)[0].trim().split(/\s+/).slice(0, 6).join(' '), 'animal']) {
+    found = await samFind(memo, { label: `figure:${who.key}`, image: png, prompt });
+    if (found.length) break;
+  }
+  if (!found.length) throw new Error(`${who.key}: SAM found no one in the painting; try another take (cast_redo anotherTake)`);
   const biggest = found.reduce((a, b) => (area(b.mask) > area(a.mask) ? b : a));
   return { painting: png, figure: await cutHero(png, biggest.mask) };
 }
