@@ -2,7 +2,7 @@
 import { FLAME_GLOW, FLAME_SWAY_M, flameAt, flicker, floorYAt, hiddenRuns, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
-import { FOCUS_BLUR, focusMask, planeDepth } from '../src/play/focus.ts';
+import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, SEPARATE_ALPHA, SEPARATE_BLUR, SEPARATE_SHIFT } from '../src/play/focus.ts';
 import { decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, pickDialogue, pickInteraction, startState, type Action, type State } from '../src/story/engine.ts';
@@ -81,7 +81,7 @@ type Place = {
   shade?: Bits;
   /** How far every pixel is (geometry.depth): cast shadows follow the ground's shape with it. */
   depth?: Depth;
-  /** How far every pixel is for the camera's focus: the depth map, or the floor plane with the cards stood on it. */
+  /** How far every pixel is for focus and separation: the depth map, or the floor plane with the cards stood on it. */
   focus?: Depth;
   /** The water's soft mask over the frame, 0..255: a shadow barely shows on water. */
   wet?: Uint8Array;
@@ -140,9 +140,12 @@ const hideCursor = capture || params.get('cursor') === '0';
 // unless they ask for it, since they read frame pixels at painting coordinates. ?sway=1 adds a slow idle drift.
 const parallaxScale = Number(params.get('parallax') ?? (capture ? '0' : '1')) || 0;
 const sway = params.get('sway') === '1';
-// ?focus=0: everything as sharp as painted; ?focus=1.5 a shallower focus. The camera focuses on the hero, so
-// what stands behind them softens and pales with its distance. Capture runs stay sharp unless they ask for it.
-const focusScale = Number(params.get('focus') ?? (capture ? '0' : '1')) || 0;
+// ?focus=1: the camera focuses on the hero, so what stands behind them softens and pales with its distance
+// (off by default: it only tells apart things far behind, and blurs the painting doing it).
+const focusScale = Number(params.get('focus') ?? '0') || 0;
+// ?separate=0 turns off the soft shade a person throws on what stands just behind them; ?separate=1.5 darker.
+// Capture runs keep it off unless asked, since they read frame pixels.
+const separateScale = Number(params.get('separate') ?? (capture ? '0' : '1')) || 0;
 // ?track=1: walking along a place, the camera is closer in and pans after the hero, so near things pass faster
 // than far ones, like a side-scroller. It only drives the parallax, so a flat place stays as it was.
 const track = Number(params.get('track') ?? '0') || 0;
@@ -396,7 +399,7 @@ class Game {
     const wx = entry.weather && !params.has('still') && params.get('weather') !== '0' ? entry.weather : undefined;
     const ripples = wx?.ripples ? await loadBits(files(wx.ripples), g.frame.width, g.frame.height).catch(() => undefined) : undefined;
     const weather = wx && new WeatherFx(wx, g, ripples?.bits, key);
-    const focus = focusScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
+    const focus = focusScale > 0 || separateScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
     const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather };
     this.cache.set(key, place);
     return place;
@@ -1192,6 +1195,72 @@ class Game {
     }
   }
 
+  private sepCanvas = document.createElement('canvas');
+  private sepMask = document.createElement('canvas');
+
+  /**
+   * A soft shade the person throws on what stands just behind them (src/play/focus.ts separation): their
+   * silhouette, blurred and pushed a little away from the light, darkening only pixels a short way farther
+   * than the feet. Painted figures and painted things are equally lit and equally sharp; this occlusion is
+   * the cue that puts the figure in front. ctx is already shifted for parallax.
+   */
+  private separate(x: number, y: number, h: number, paint: (c: CanvasRenderingContext2D) => number) {
+    const { focus: d, g } = this.place;
+    const feet = y - g.scale.horizonY;
+    if (!d || separateScale <= 0 || feet < 4 || h < 8) return;
+    const blur = h * SEPARATE_BLUR;
+    const pad = Math.ceil(blur * 2.5 + h * SEPARATE_SHIFT);
+    const [bw, bh] = [Math.ceil(h * 1.2) + 2 * pad, Math.ceil(h * 1.15) + 2 * pad];
+    const [ox, oy] = [Math.round(bw / 2), Math.ceil(pad + h * 1.1)];
+    const c = this.sepCanvas;
+    if (c.width < bw || c.height < bh) Object.assign(c, { width: Math.max(c.width, bw), height: Math.max(c.height, bh) });
+    const cc = c.getContext('2d')!;
+    cc.setTransform(1, 0, 0, 1, 0, 0);
+    cc.clearRect(0, 0, c.width, c.height);
+    // Away from the light, as a shadow would fall on a wall behind; without a measured light, a little down-right.
+    const dir = g.light?.dir ?? [0.6, 0.25];
+    const n = Math.hypot(dir[0], dir[1]) || 1;
+    const [dx, dy] = [(dir[0] / n) * h * SEPARATE_SHIFT, (Math.max(0, dir[1]) / n) * h * SEPARATE_SHIFT * 0.5];
+    cc.filter = `blur(${blur.toFixed(1)}px)`;
+    cc.translate(ox + dx, oy + dy);
+    paint(cc);
+    cc.setTransform(1, 0, 0, 1, 0, 0);
+    cc.filter = 'none';
+    cc.globalCompositeOperation = 'source-in';
+    cc.fillStyle = '#121830';
+    cc.fillRect(0, 0, bw, bh);
+    // Only on what stands a short way behind: the depth mask, one value per depth pixel under the box.
+    const S = DEPTH_SCALE;
+    const [fx, fy] = [x - ox, y - oy];
+    const [c0, r0] = [Math.floor(fx / S), Math.floor(fy / S)];
+    const [mw, mh] = [Math.ceil(bw / S) + 1, Math.ceil(bh / S) + 1];
+    const m = this.sepMask;
+    if (m.width < mw || m.height < mh) Object.assign(m, { width: Math.max(m.width, mw), height: Math.max(m.height, mh) });
+    const mc = m.getContext('2d')!;
+    const img = mc.createImageData(mw, mh);
+    for (let r = 0; r < mh; r++) {
+      const dr = r0 + r;
+      if (dr < 0 || dr >= d.h) continue;
+      for (let k = 0; k < mw; k++) {
+        const dc = c0 + k;
+        if (dc < 0 || dc >= d.w) continue;
+        const i = (r * mw + k) * 4;
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+        img.data[i + 3] = Math.round(255 * behindWeight(d.rows[dr * d.w + dc], feet));
+      }
+    }
+    mc.clearRect(0, 0, m.width, m.height);
+    mc.putImageData(img, 0, 0);
+    cc.globalCompositeOperation = 'destination-in';
+    cc.imageSmoothingEnabled = true;
+    cc.drawImage(m, 0, 0, mw, mh, c0 * S - fx, r0 * S - fy, mw * S, mh * S);
+    cc.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.globalAlpha = Math.min(0.8, SEPARATE_ALPHA * separateScale);
+    ctx.drawImage(c, 0, 0, bw, bh, fx, fy, bw, bh);
+    ctx.restore();
+  }
+
   private soft = document.createElement('canvas');
   private maskCanvas = document.createElement('canvas');
   private focusAt = { place: '', row: -1, eased: 0 };
@@ -1431,6 +1500,7 @@ class Game {
     const bright = this.lightAt(x, y - h * 0.5) * (1 - shaded * strength) * breath;
     // A party member is edged in its player's colour (twice, so the edge reads at a glance on a busy painting).
     const edge = glow ? ` drop-shadow(0 0 ${Math.max(2, h * 0.008).toFixed(1)}px ${glow}) drop-shadow(0 0 ${Math.max(2, h * 0.008).toFixed(1)}px ${glow})` : '';
+    this.separate(x, y, h, paint);
     ctx.filter = `brightness(${bright.toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}${edge}`;
     ctx.translate(x, y - bob);
     ctx.rotate(rock);

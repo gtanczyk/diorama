@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { focusMask, planeDepth, softness } from '../src/play/focus.ts';
+import { behindWeight, focusMask, planeDepth, softness } from '../src/play/focus.ts';
 
 describe('focus', () => {
   it('keeps the hero and what stands in front of them sharp, softens what is behind with its distance', () => {
@@ -33,5 +33,13 @@ describe('focus', () => {
     expect(at(4, 16)).toBe(14);
     expect(at(20, 16)).toBe(20);
     expect(at(4, 36)).toBe(27);
+  });
+
+  it('lays the separation shade on what stands just behind a person, not in front of them or far away', () => {
+    expect(behindWeight(500, 500)).toBe(1);
+    expect(behindWeight(450, 500)).toBeGreaterThan(0.5);
+    expect(behindWeight(300, 500)).toBe(0);
+    expect(behindWeight(560, 500)).toBe(0);
+    expect(behindWeight(0, 500)).toBe(0);
   });
 });

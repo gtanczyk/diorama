@@ -52,3 +52,21 @@ export function planeDepth(frame: { width: number; height: number }, horizonY: n
   }
   return { w, h, rows };
 }
+
+/** The separation shade: its darkness, blur and push away from the light, per person height. */
+export const SEPARATE_ALPHA = 0.5;
+export const SEPARATE_BLUR = 0.05;
+export const SEPARATE_SHIFT = 0.12;
+/** Things up to this share of the feet's depth farther still take the shade, fading to none there. */
+const BEHIND = 0.3;
+
+/**
+ * How much of a person's separation shade lands on a depth pixel, for feet `feet` rows below the horizon:
+ * full on what stands right at or just behind them (the plinth at their back, the floor at their heels),
+ * fading over BEHIND of their depth, none on what is nearer (it is drawn over them) or has no depth (the sky).
+ */
+export function behindWeight(rows: number, feet: number): number {
+  if (rows <= 0 || feet <= 0 || rows > feet * 1.03) return 0;
+  const t = (feet - rows) / (feet * BEHIND);
+  return Math.max(0, 1 - Math.max(0, t));
+}
