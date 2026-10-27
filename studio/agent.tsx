@@ -76,7 +76,7 @@ export function AgentPanel({ slug }: { slug: string }) {
         theme="dark"
         disabled={!live}
         header={<div class="row"><h2>Muse Code</h2><span class="grow" /><span class={`live ${live ? 'on' : ''}`}>{state?.status === 'running' ? 'working…' : live ? 'ready' : 'reconnecting'}</span></div>}
-        emptyState={<p class="note">Ask for a world, a fix or a check. The agent changes things only through the Studio's tools, the same as the buttons, so you see each step here and in Activity and can undo its jobs.</p>}
+        emptyState={<p class="note">Ask for a world, a fix or a check. Each step shows here and in Activity, and Undo takes back everything the agent did in its last turn.</p>}
         hint={error ? <span class="error">{error}</span> : null}
       />
     </section>
