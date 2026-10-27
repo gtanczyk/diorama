@@ -3,3 +3,4 @@ import './world.ts';
 import './build.ts';
 import './studio.ts';
 import './history.ts';
+import './depth.ts';

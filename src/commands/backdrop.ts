@@ -7,7 +7,7 @@ import { FRAME } from '../scene/layout.ts';
 import { Geometry } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
 import { backdropFor, smearedBackdrop, type Card } from '../scene/backdrop.ts';
-import { farFlats, waterSheet } from '../scene/layers.ts';
+import { Depth, farFlats, waterSheet } from '../scene/layers.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
@@ -57,7 +57,8 @@ defineCommand({
       const floorDir = at('masks', 'floors');
       const floors = fs.existsSync(floorDir) ? await Promise.all(fs.readdirSync(floorDir).filter((f) => f.endsWith('.png')).map(async (f) => maskFromPng(fs.readFileSync(`${floorDir}/${f}`)))) : [];
       const dry = dilate(unionAll(FRAME.width, FRAME.height, [...floors, ...cards.map((c) => c.mask)]), 6);
-      const water = await waterSheet(files.memo, place, png, dry).catch(() => undefined);
+      const depth = Depth.parse(fs.existsSync(at('depth.json')) ? files.readJson(at('depth.json')) : {});
+      const water = await waterSheet(files.memo, place, png, dry, depth).catch(() => undefined);
       if (water) {
         files.write(at('layers', 'water.jpg'), water.tex);
         files.write(at('layers', 'water-mask.png'), water.mask);

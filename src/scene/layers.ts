@@ -139,9 +139,9 @@ const FlowAnswer = z.object({
  * often into the depth (down the frame toward the viewer, or up toward a far bridge), not just sideways.
  * Spark reads it as an upstream and a downstream point; a lake, a harbour basin or the sea stays still.
  */
-export async function flowOf(memo: Memo, place: Place, backdrop: Buffer, box: [number, number, number, number]): Promise<Flow> {
+export async function flowOf(memo: Memo, place: Place, backdrop: Buffer, box: [number, number, number, number], hint?: string): Promise<Flow> {
   const prompt = `This is a painted game scene, ${FRAME.width}x${FRAME.height} px. There is ${place.key.replace(/-/g, ' ')} water in the box x ${box[0]}..${box[2]}, y ${box[1]}..${box[3]}.
-Which way does the water run? A river or a canal runs along its banks: follow the channel, which may lead into the depth of the picture (toward a far bridge or arch, or toward the viewer), not only left or right. Pick the more natural direction; when nothing shows it, water runs toward the viewer.
+Which way does the water run?${hint ? ` The author says: "${hint}". Follow that.` : ''} A river or a canal runs along its banks: follow the channel, which may lead into the depth of the picture (toward a far bridge or arch, or toward the viewer), not only left or right. Pick the more natural direction; when nothing shows it, water runs toward the viewer.
 Answer with JSON only: {"flows": true, "from": [x, y], "to": [x, y]}, two points on the water in px, "from" upstream and "to" downstream, far apart along the channel. For still water (a pond, a lake, a harbour basin, the open sea) answer {"flows": false}.`;
   const a = FlowAnswer.parse(await askSparkJson(memo, { label: `water-flow:${place.key}`, prompt, images: [backdrop] }));
   if (!a.flows || !a.from || !a.to) return [0, 0];
@@ -155,7 +155,16 @@ Answer with JSON only: {"flows": true, "from": [x, y], "to": [x, y]}, two points
  * its edges from its own colours so a shifted copy never shows the bank, and its mask. None without water.
  * `notWater`: the floors and the cards, which SAM's water may take in when they are wet.
  */
-export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer, notWater: Mask): Promise<Water | undefined> {
+/** How the author wants a place's depth: places/<key>/depth.json, set by the water_flow action, kept across rebuilds. */
+export const Depth = z.object({
+  /** auto: as Spark reads it; reverse: the other way round; still: the water does not flow. */
+  flow: z.enum(['auto', 'reverse', 'still']).default('auto'),
+  /** What the author said about the flow ("toward the bridge"), handed to Spark. */
+  flowHint: z.string().optional(),
+});
+export type Depth = z.infer<typeof Depth>;
+
+export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer, notWater: Mask, depth: Depth = { flow: 'auto' }): Promise<Water | undefined> {
   const [W, H]: [number, number] = [FRAME.width, FRAME.height];
   let mask: Mask | undefined;
   let phrase = '';
@@ -181,9 +190,10 @@ export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer, not
   // The page cuts with the mask's alpha (destination-in), so it is white with the water as alpha.
   const alpha = await sharp(await maskToPng(dilate(mask, -2))).blur(2).extract(region).extractChannel(0).toBuffer();
   const soft = await sharp({ create: { width: region.width, height: region.height, channels: 3, background: '#ffffff' } }).joinChannel(alpha).png().toBuffer();
-  const flow = await flowOf(memo, place, backdrop, [mx0, my0, mx1, my1]).catch((error) => {
+  const read = depth.flow === 'still' ? ([0, 0] as Flow) : await flowOf(memo, place, backdrop, [mx0, my0, mx1, my1], depth.flowHint).catch((error) => {
     console.log(`  ${place.key}: flow direction unknown, left to right (${error instanceof Error ? error.message.slice(0, 120) : error})`);
     return [1, 0] as Flow;
   });
+  const flow: Flow = depth.flow === 'reverse' ? [-read[0] || 0, -read[1] || 0] : read;
   return { tex, mask: soft, box, phrase, flow };
 }

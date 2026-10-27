@@ -48,3 +48,10 @@ test('a post SAM cut into a cap and a foot becomes one card standing on the foot
   expect(cards.map((c) => c.key)).toEqual(['post#2', 'post#3']);
   expect(cards[0]).toMatchObject({ box: [315, 497, 423, 734], baseY: 734, stacked: true });
 });
+
+test('depth.json: flow setting defaults to auto and rejects unknown values', async () => {
+  const { Depth } = await import('../src/scene/layers.ts');
+  expect(Depth.parse({})).toEqual({ flow: 'auto' });
+  expect(Depth.parse({ flow: 'reverse', flowHint: 'toward the bridge' }).flowHint).toBe('toward the bridge');
+  expect(() => Depth.parse({ flow: 'sideways' })).toThrow();
+});
