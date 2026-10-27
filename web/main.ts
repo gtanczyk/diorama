@@ -229,7 +229,11 @@ async function loadBits(src: string, w: number, h: number): Promise<Bits> {
 }
 
 /** A walking person the player steers: where they are, the path ahead, and how they are drawn. */
-type Body = { x: number; y: number; path: Point[]; facing: number; phase: number; yaw: number; figure: Figure | undefined; foot: number | undefined; along: number | undefined; colour?: string };
+/** run: hurrying (a double click, Shift held) until the walk ends. */
+type Body = { x: number; y: number; path: Point[]; facing: number; phase: number; yaw: number; figure: Figure | undefined; foot: number | undefined; along: number | undefined; colour?: string; run?: boolean };
+/** Walking and hurrying pace, in person heights a second (a brisk walk, about 1.7 m/s; a run). */
+const WALK = 1.05;
+const RUN = 2.1;
 const newBody = (): Body => ({ x: 0, y: 0, path: [], facing: 1, phase: 0, yaw: Math.PI / 2, figure: undefined, foot: undefined, along: undefined });
 
 class Game {
@@ -816,7 +820,7 @@ class Game {
 
   /** Walks a body along its path for dt; the hero's arrival ends its walkTo. */
   private move(hero: Body, dt: number) {
-    let budget = personPx(this.place.g, hero.y) * 0.85 * dt;
+    let budget = personPx(this.place.g, hero.y) * (hero.run ? RUN : WALK) * dt;
     const fromY = hero.y;
     while (budget > 0 && hero.path.length) {
       const [tx, ty] = hero.path[0];
@@ -835,6 +839,7 @@ class Game {
       }
       // One cycle per CYCLE heights walked: the rig's planted foot keeps pace with the floor.
       hero.phase += moved / (CYCLE * personPx(this.place.g, hero.y));
+      if (!hero.path.length) hero.run = false;
       if (!hero.path.length && hero === this.hero) {
         this.emit('arrive', { x: hero.x, y: hero.y });
         this.pending?.();
@@ -2278,6 +2283,9 @@ canvas.addEventListener('click', (e) => {
   // The tap that ended a long press has done its work.
   if (press?.fired) return void (press = null);
   if (!game.place || game.dark > 0 || game.state.talk || game.state.ending) return;
+  // A double click hurries the walk the first click set off; a single one walks.
+  if (e.detail >= 2 && game.hero.path.length) return void (game.hero.run = true);
+  game.hero.run = false;
   const [x, y] = toFrame(e);
   const hot = game.thingAt(x, y);
   if (hot) void game.use(hot.thing.key);
@@ -2300,6 +2308,7 @@ const free = () => game.place && game.dark === 0 && !game.state.talk && !game.st
 addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
+  if (k === 'shift') keys.add(k);
   if (k in DIRS) {
     e.preventDefault();
     keys.add(k);
@@ -2463,7 +2472,8 @@ function steer() {
   }
   if ((!keys.size && !pad.dir) || !free()) return void headings.delete(game.hero);
   let [dx, dy] = pad.dir ?? [0, 0];
-  for (const k of keys) [dx, dy] = [dx + DIRS[k][0], dy + DIRS[k][1]];
+  for (const k of keys) if (k in DIRS) [dx, dy] = [dx + DIRS[k][0], dy + DIRS[k][1]];
+  game.hero.run = keys.has('shift');
   if (dx || dy) walkStep(game.hero, dx, dy);
 }
 
