@@ -160,7 +160,7 @@ function Setup() {
       <Header />
       <main class="narrow">
         <h1>Setup</h1>
-        <p class="lead">{!checks ? 'Checking this machine…' : blocking.length ? `${ok} of ${checks.length} checks pass. ${blocking.map((c) => c.label).join(' and ')} still ${blocking.length > 1 ? 'need' : 'needs'} you.` : 'Everything diorama needs is here.'}</p>
+        <p class="lead">{!checks ? 'Checking this machine…' : blocking.length ? `${blocking.map((c) => c.label).join(' and ')} still ${blocking.length > 1 ? 'need' : 'needs'} you. Everything else is ready or optional.` : `Everything diorama needs is here.${ok < checks.length ? ' The unticked ones are optional.' : ''}`}</p>
         <p class="note">Keys are typed only in your terminal with <code>diorama setup</code>, hidden, and kept in your system keychain. This page never sees them.</p>
         {error && <p class="error">{error}</p>}
         <ol class="checks">
@@ -182,7 +182,7 @@ function Setup() {
         </ol>
         <div class="row">
           <button type="button" class="primary" disabled={!!busy} onClick={() => run('setup_status')}>{busy === 'setup_status' ? 'Checking…' : 'Check again'}</button>
-          <button type="button" class="ghost" disabled={!!busy} onClick={() => run('setup_check')}>{busy === 'setup_check' ? 'Calling Meta…' : 'Test the Meta key live'}</button>
+          <button type="button" class="ghost" disabled={!!busy || checks?.find((c) => c.id === 'META_API_KEY')?.state === 'missing'} onClick={() => run('setup_check')}>{busy === 'setup_check' ? 'Calling Meta…' : 'Test the Meta key live'}</button>
         </div>
         <BudgetBox />
       </main>
@@ -234,6 +234,8 @@ const today = () => `workshop-${new Date().toISOString().slice(5, 10)}`;
 function Start() {
   const [worlds, setWorlds] = useState<Summary[] | null>(null);
   const [needs, setNeeds] = useState<Check[]>([]);
+  // Without the Meta key a build fails in its first step; say so before anyone waits for it.
+  const noKey = needs.some((n) => n.id === 'META_API_KEY');
   const [idea, setIdea] = useState('');
   // ?kids=<slug> opens a workshop world that is not built yet: its drawings and recordings.
   const [kids, setKids] = useState(new URLSearchParams(location.search).has('kids'));
@@ -281,7 +283,7 @@ function Start() {
             <label>Name <input value={name} onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
             <label>Places <select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
             <span class="grow" />
-            {!kids && <button type="submit" class="primary" disabled={idea.trim().length < 10 || !!taken}>{taken ? 'Name taken' : 'Build it'}</button>}
+            {!kids && <button type="submit" class="primary" disabled={idea.trim().length < 10 || !!taken || noKey}>{taken ? 'Name taken' : noKey ? 'Needs the Meta key' : 'Build it'}</button>}
           </div>
           {kids && /^[a-z][a-z0-9-]*$/.test(name) && <KidsStart slug={name} taken={!!taken} places={places} onBuild={(told) => void build(undefined, told)} onError={setError} />}
           {error && <p class="error">{error}</p>}

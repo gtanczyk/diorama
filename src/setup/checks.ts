@@ -53,17 +53,21 @@ export async function runChecks(opts: { live?: boolean } = {}): Promise<Check[]>
   checks.push(meta);
 
   const muse = await sh('muse', ['--version']);
-  checks.push(muse
-    ? { id: 'muse', label: 'Muse Code', state: 'ok', detail: muse.split('\n')[0] }
-    : { id: 'muse', label: 'Muse Code', state: 'missing', detail: 'The agent that builds and fixes worlds with you. Not found on PATH. macOS and Linux; on Windows use WSL2.', fix: ['curl -fsSL https://dev.meta.ai/install.sh | bash', 'muse login', 'muse --version'] });
   // Other agents the Studio can switch to (genaicode drives them the same way, with the Studio's MCP tools).
   const others = await Promise.all([['claude', 'Claude Code'], ['codex', 'Codex']].map(async ([cmd, label]) => ({ label, version: await sh(cmd, ['--version']) })));
   const found = others.filter((o) => o.version);
+  const install = ['curl -fsSL https://dev.meta.ai/install.sh | bash', 'muse login', 'muse --version'];
+  checks.push(muse
+    ? { id: 'muse', label: 'Muse Code', state: 'ok', detail: muse.split('\n')[0] }
+    : found.length
+      // Another agent stands in, so the Studio works; Muse Code stays the recommended one.
+      ? { id: 'muse', label: 'Muse Code', state: 'optional', detail: `Not found on PATH, so the Studio's agent is ${found[0].label} for now. Muse Code is the default once installed. macOS and Linux; on Windows use WSL2.`, fix: install }
+      : { id: 'muse', label: 'Muse Code', state: 'missing', detail: 'The agent that builds and fixes worlds with you. Not found on PATH. macOS and Linux; on Windows use WSL2.', fix: install });
   checks.push({
     id: 'agents',
     label: 'Other agents',
     state: found.length ? 'ok' : 'optional',
-    detail: `${others.map((o) => (o.version ? `${o.label} ${/\d+\.\d+[\w.-]*/.exec(o.version)?.[0] ?? 'found'}` : `${o.label} not found`)).join(' · ')}. Switch in the agent panel; Muse Code is the default (DIORAMA_AGENT=claude or codex changes it).`,
+    detail: `${others.map((o) => (o.version ? `${o.label} ${/\d+\.\d+[\w.-]*/.exec(o.version)?.[0] ?? 'found'}` : `${o.label} not found`)).join(' · ')}. Switch in the agent panel; DIORAMA_AGENT=muse, claude or codex sets the default.`,
   });
 
   let chromium: string | null = null;
