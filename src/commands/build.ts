@@ -90,7 +90,7 @@ defineCommand({
       const file = files.place(place, 'verify.json');
       if (!range.includes('verify') || !fs.existsSync(file)) return null;
       const v = files.readJson(file) as Verdict;
-      return { place, ok: v.ok, errors: v.errors.map(line), flagged: v.flags.map(line), issues: v.errors.map(withPlay) };
+      return { place, ok: v.ok, errors: v.errors.map(line), flagged: v.flags.map(line), issues: v.errors.map((e) => withPlay(e, v.flags)) };
     };
 
     emit('build.start', { slug, steps: range });

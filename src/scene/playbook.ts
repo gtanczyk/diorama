@@ -24,6 +24,16 @@ const FLOOR_GAP: Play = {
   last: 'repaint_region: paint steps or a plank across the gap (one Muse edit); when water or a drop parts the floors, the layout needs a floor that joins them (relayout: ask first)',
 };
 
+/** The camera stands too close: the hero would be taller than the frame at the front. */
+const CLOSE_UP: Play = {
+  look: 'place_status: the blue rulers on walk.png show how tall the hero is at the front; a DERIVE flag "too near the camera" counts the front cells shut for it',
+  tools: [
+    'run_step derive: shuts the front cells where the hero would be too tall; often enough on its own',
+    'floor_cells remove: floor cells at the very bottom edge that stretch the scale',
+  ],
+  last: 'relayout and repaint the place with the camera farther back (layout now refuses a close camera; ask first)',
+};
+
 export const PLAYBOOK: Record<string, Play> = {
   FLOOR_UNREACHABLE: FLOOR_GAP,
   UNREACHABLE: FLOOR_GAP,
@@ -58,10 +68,7 @@ export const PLAYBOOK: Record<string, Play> = {
     look: 'place_status: walk.png draws the horizon as a dashed blue line and the hero as blue rulers',
     tools: ['mask_fix phrase: the floor mask may reach into the sky', 'floor_cells remove: cells high up that are not floor'],
   },
-  SCALE_NEAR: {
-    look: 'place_status: the blue rulers on walk.png show how tall the hero is at the front',
-    tools: ['floor_cells remove: floor cells at the very bottom edge that stretch the scale'],
-  },
+  SCALE_NEAR: CLOSE_UP,
   SCALE_FAR: {
     look: 'place_status: the blue rulers on walk.png show how tall the hero is at the back',
     tools: ['floor_cells remove: far floor cells near the horizon that no one should walk to'],
@@ -72,8 +79,14 @@ export const PLAYBOOK: Record<string, Play> = {
   },
 };
 
-/** A finding with what to do about it, when the playbook knows. */
-export function withPlay(f: Finding): Finding & { play?: Play } {
-  const play = PLAYBOOK[f.code];
+const NEAR_CAMERA = /too near the camera/;
+
+/**
+ * A finding with what to do about it, when the playbook knows. flags: the place's verify flags; a floor cut off
+ * right after derive shut the front rows for a close camera is a close-up, not a gap to bridge.
+ */
+export function withPlay(f: Finding, flags: Finding[] = []): Finding & { play?: Play } {
+  const closeUp = (f.code === 'UNREACHABLE' || f.code === 'FLOOR_UNREACHABLE') && flags.some((x) => x.code === 'DERIVE' && NEAR_CAMERA.test(x.detail));
+  const play = closeUp ? CLOSE_UP : PLAYBOOK[f.code];
   return play ? { ...f, play } : f;
 }

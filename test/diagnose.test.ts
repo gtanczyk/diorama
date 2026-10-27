@@ -93,3 +93,13 @@ test('a mask check doubt without a box is a flag, not an error', async () => {
   expect(v.errors.map((e) => e.code)).not.toContain('MASK_WRONG');
   expect(v.flags.map((f) => f.code)).toContain('MASK_DOUBT');
 });
+
+test('a floor cut off after derive shut rows too near the camera gets the close-up play, not a bridge', async () => {
+  const { withPlay } = await import('../src/scene/playbook.ts');
+  const err = { code: 'UNREACHABLE', detail: '301 walkable cells cut off' };
+  expect(withPlay(err).play!.tools[0]).toMatch(/floor_cells/);
+  const near = [{ code: 'DERIVE', detail: 'closed 40 front cells where the hero would be over 672 px tall (too near the camera)' }];
+  expect(withPlay(err, near).play!.tools[0]).toMatch(/run_step derive/);
+  expect(withPlay(err, near).play!.last).toMatch(/relayout/);
+  expect(withPlay({ code: 'SCALE_NEAR', detail: 'x' }).play!.last).toMatch(/relayout/);
+});

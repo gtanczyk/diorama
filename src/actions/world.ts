@@ -155,7 +155,7 @@ defineAction({
     const broke = report?.issues?.filter((i) => i.code === 'STEP_FAILED') ?? [];
     return {
       playable: broke.length === 0 && (verdict?.ok ?? null),
-      errors: [...broke, ...(verdict?.errors ?? [])].map(withPlay),
+      errors: [...broke, ...(verdict?.errors ?? [])].map((e) => withPlay(e, verdict?.flags)),
       place,
       pictures: { painting: picture('painting.png') ?? picture('blockin.png'), masks: picture('masks/overlay.png'), walk: picture('walk.png') },
       things: Object.entries(masks?.things ?? {}).map(([key, t]) => ({ key, ...t, stand: geometry?.things.find((g) => g.key === key)?.stand ?? null })),
