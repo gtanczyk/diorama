@@ -8,7 +8,7 @@ import { actions, activeChanges, apply, hiddenThings, pickInteraction, startStat
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 import { Mixer, type Listened } from './audio.ts';
-import { PLAYER_COLOURS, readPads, Turns, type PadFrame } from './pad.ts';
+import { PLAYER_COLOURS, readEachPad, readPads, Turns, type PadButton, type PadFrame } from './pad.ts';
 import { Answers, Bag, displayName, fitHud, showEnding, type ItemLook } from './ui.ts';
 import { useLanguage, words } from './words.ts';
 import type { SoundData } from '../src/play/sound.ts';
@@ -32,7 +32,7 @@ type Data = {
 };
 
 type Bits = { bits: Uint8Array; area: number };
-type Who = { npc?: Hot; y: number };
+type Who = { npc?: Hot; body?: Body; y: number };
 type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement; outline?: HTMLCanvasElement };
 type Rect = [number, number, number, number];
 /** sprites.json, written by `diorama sprites`: one walk cycle per facing, a cols x rows grid of frames per sheet. */
@@ -191,13 +191,24 @@ async function loadBits(src: string, w: number, h: number): Promise<Bits> {
   return { bits, area };
 }
 
+/** A walking person the player steers: where they are, the path ahead, and how they are drawn. */
+type Body = { x: number; y: number; path: Point[]; facing: number; phase: number; yaw: number; figure: Figure | undefined; foot: number | undefined; along: number | undefined; colour?: string };
+const newBody = (): Body => ({ x: 0, y: 0, path: [], facing: 1, phase: 0, yaw: Math.PI / 2, figure: undefined, foot: undefined, along: undefined });
+
 class Game {
   data!: Data;
   place!: Place;
   private cache = new Map<string, Place>();
   private figures = new Map<string, Figure>();
   /** phase counts walk cycles; it only advances with distance walked, so feet keep pace with the floor. */
-  hero = { x: 0, y: 0, path: [] as Point[], facing: 1, phase: 0, yaw: Math.PI / 2, figure: undefined as Figure | undefined, foot: undefined as number | undefined, along: undefined as number | undefined };
+  hero: Body = newBody();
+  /**
+   * The other heroes on screen (?pads=party): one per extra gamepad, the hero's figure with a ring in its player's
+   * colour. They walk on their own; whoever uses something becomes `hero` for it (lead), so the story stays one.
+   */
+  party: Body[] = [];
+  /** A walk-and-use is under way: the lead does not change hands until it ends. */
+  busy = false;
   speech: { text: string; until: number; who?: string; from: number } | null = null;
   state!: State;
   /** The inventory item the next click uses. */
@@ -409,6 +420,7 @@ class Game {
     this.hero.path = [];
     this.hero.foot = undefined;
     this.hero.along = undefined;
+    for (const b of this.party) this.beside(b);
     this.speech = null;
     this.darkTarget = 0;
     canvas.width = place.g.frame.width;
@@ -417,19 +429,11 @@ class Game {
     this.emit('enter', { place: key, from });
   }
 
-  /** Walks to a point; resolves on arrival, or at once when there is no way there. */
-  walkTo(x: number, y: number): Promise<boolean> {
+  /** Walks to a point; resolves on arrival, or at once when there is no way there. Another body (`who`) just sets off. */
+  walkTo(x: number, y: number, who: Body = this.hero): Promise<boolean> {
+    if (who !== this.hero) return Promise.resolve(this.route(who, x, y).length > 0);
     this.pending?.();
-    // Along one step the walk follows it; elsewhere nobody stops on a riser, so on stairs the walk ends
-    // on the next tread ahead.
-    let path = this.alongStep([this.hero.x, this.hero.y], [x, y]);
-    this.hero.along = path ? stepAt(this.place.g, this.hero.x, this.hero.y)?.step : undefined;
-    if (!path) {
-      const ry = stepRestY(this.place.g, x, y, y < this.hero.y ? -1 : 1);
-      if (ry !== y && this.place.grid.walkable(x, ry)) y = ry;
-      path = this.place.grid.route([this.hero.x, this.hero.y], [x, y]);
-    }
-    this.hero.path = path;
+    const path = this.route(this.hero, x, y);
     if (!path.length) return Promise.resolve(false);
     return new Promise((resolve) => {
       this.pending = () => {
@@ -437,6 +441,21 @@ class Game {
         resolve(this.hero.path.length === 0);
       };
     });
+  }
+
+  /** Sets a body's path to a point and returns it (empty when there is no way there). */
+  private route(who: Body, x: number, y: number): Point[] {
+    // Along one step the walk follows it; elsewhere nobody stops on a riser, so on stairs the walk ends
+    // on the next tread ahead.
+    let path = this.alongStep([who.x, who.y], [x, y]);
+    who.along = path ? stepAt(this.place.g, who.x, who.y)?.step : undefined;
+    if (!path) {
+      const ry = stepRestY(this.place.g, x, y, y < who.y ? -1 : 1);
+      if (ry !== y && this.place.grid.walkable(x, ry)) y = ry;
+      path = this.place.grid.route([who.x, who.y], [x, y]);
+    }
+    who.path = path;
+    return path;
   }
 
   /**
@@ -465,8 +484,46 @@ class Game {
     return path;
   }
 
+  /** Puts a party body on the floor next to the hero (or on the hero's spot when nothing beside is free). */
+  beside(b: Body) {
+    const g = this.place.g;
+    const gap = personPx(g, this.hero.y) * 0.45;
+    const k = this.party.indexOf(b) + 1;
+    const offsets = [k * gap, -k * gap, (k + 1) * gap, -(k + 1) * gap, 0];
+    const spot = offsets.map((dx) => this.place.grid.snap(this.hero.x + dx, this.hero.y)).find((p) => !!p) ?? [this.hero.x, this.hero.y];
+    [b.x, b.y] = spot;
+    Object.assign(b, { path: [], foot: undefined, along: undefined, facing: this.hero.facing, figure: this.hero.figure });
+  }
+
+  /** A new party member next to the hero, in a player's colour. */
+  join(colour: string): Body {
+    const b = { ...newBody(), colour };
+    this.party.push(b);
+    if (this.place) this.beside(b);
+    return b;
+  }
+
+  /** Makes a party body the hero (the one the story, the camera and the bubbles follow); the old hero joins the party. */
+  lead(b: Body) {
+    if (b === this.hero || this.busy) return;
+    const i = this.party.indexOf(b);
+    if (i < 0) return;
+    this.pending?.();
+    this.party[i] = this.hero;
+    this.hero = b;
+  }
+
   /** Walks to a thing, faces it and clicks it: through an exit, talk to someone, or the verb the story offers. */
   async use(key: string, verb?: Verb) {
+    this.busy = true;
+    try {
+      await this.useNow(key, verb);
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private async useNow(key: string, verb?: Verb) {
     const hot = this.place.hots.find((h) => h.thing.key === key);
     if (!hot) throw new Error(`${this.place.key} has no thing "${key}"`);
     const placeKey = this.place.key;
@@ -482,25 +539,25 @@ class Game {
   }
 
   /** The thing the hero stands near enough to use from the keyboard: the one whose spot is nearest, within reach. */
-  within(): Hot | undefined {
+  within(who: Body = this.hero): Hot | undefined {
     const gone = this.gone();
     let best: Hot | undefined;
-    let bestD = personPx(this.place.g, this.hero.y) * 1.2;
+    let bestD = personPx(this.place.g, who.y) * 1.2;
     for (const hot of this.place.hots) {
       if (gone.has(hot.thing.key)) continue;
-      const [sx, sy] = this.approach(hot);
-      const d = Math.hypot(sx - this.hero.x, sy - this.hero.y);
+      const [sx, sy] = this.approach(hot, who);
+      const d = Math.hypot(sx - who.x, sy - who.y);
       if (d < bestD) [best, bestD] = [hot, d];
     }
     return best;
   }
 
   /** Where to stand to use a thing; beside a person rather than inside them, on the side the hero comes from. */
-  private approach(hot: Hot): Point {
+  private approach(hot: Hot, who: Body = this.hero): Point {
     if ((hot.spec?.role ?? hot.thing.role) !== 'npc') return hot.thing.stand;
     const [x0, , x1, y1] = hot.thing.box;
     const x = (x0 + x1) / 2;
-    const side = this.hero.x < x ? -1 : 1;
+    const side = who.x < x ? -1 : 1;
     const gap = personPx(this.place.g, y1) * 0.42;
     for (const s of [side, -side]) {
       const spot = this.place.grid.snap(x + s * gap, y1);
@@ -700,6 +757,12 @@ class Game {
     }
     this.swayCamera(dt);
     this.place.weather?.update(dt);
+    for (const b of this.party) this.move(b, dt);
+    this.move(hero, dt);
+  }
+
+  /** Walks a body along its path for dt; the hero's arrival ends its walkTo. */
+  private move(hero: Body, dt: number) {
     let budget = personPx(this.place.g, hero.y) * 0.85 * dt;
     const fromY = hero.y;
     while (budget > 0 && hero.path.length) {
@@ -719,7 +782,7 @@ class Game {
       }
       // One cycle per CYCLE heights walked: the rig's planted foot keeps pace with the floor.
       hero.phase += moved / (CYCLE * personPx(this.place.g, hero.y));
-      if (!hero.path.length) {
+      if (!hero.path.length && hero === this.hero) {
         this.emit('arrive', { x: hero.x, y: hero.y });
         this.pending?.();
       }
@@ -970,7 +1033,7 @@ class Game {
     ctx.setTransform(z, 0, 0, z, W / 2 - z * (this.viewX || W / 2), H / 2 - z * (this.viewY || H / 2));
     const gone = this.gone();
     const npcs = this.place.hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc' && !h.mask);
-    const people: Who[] = [...npcs.map((h) => ({ npc: h, y: h.thing.box[3] })), { npc: undefined, y: this.hero.y }].sort((a, b) => a.y - b.y);
+    const people: Who[] = [...npcs.map((h) => ({ npc: h, y: h.thing.box[3] })), ...[this.hero, ...this.party].map((body) => ({ body, y: body.y }))].sort((a, b) => a.y - b.y);
     const fire = this.fireOf(gone);
     this.climbs.length = 0;
     if (p && backdrop) {
@@ -1062,8 +1125,9 @@ class Game {
         this.drawn.push({ hot: who.npc, rect: drawn });
         this.occlude(drawn, who.y, gone);
       } else {
-        rect = this.drawWho(who, lit, 'body');
-        this.occlude(rect, this.hero.y, gone);
+        const drawn = this.drawWho(who, lit, 'body');
+        if (who.body === this.hero) rect = drawn;
+        this.occlude(drawn, who.y, gone);
       }
     }
     burn();
@@ -1111,8 +1175,48 @@ class Game {
       const x = (x0 + x1) / 2;
       return this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, false, this.figures.get(who.npc.thing.key), '#4b3b2a', lit === who.npc, this.shift(y1), undefined, this.talking(who.npc.thing.key), undefined, layer);
     }
-    const h = this.hero;
-    return this.drawPerson(h.x, h.y, h.facing, h.phase, h.path.length > 0, h.figure, '#2b2733', false, this.shift(h.y), h.yaw, this.talking(this.data.world.hero.key), h.foot, layer);
+    const h = who.body ?? this.hero;
+    // In a party each hero stands on a ring in its player's colour, so a child finds theirs.
+    if (h.colour && this.party.length && layer === 'shadow') this.drawRing(h);
+    const rect = this.drawPerson(h.x, h.y, h.facing, h.phase, h.path.length > 0, h.figure, '#2b2733', false, this.shift(h.y), h.yaw, h === this.hero ? this.talking(this.data.world.hero.key) : undefined, h.foot, layer);
+    if (h.colour && this.party.length && layer === 'body') this.drawTag(h, rect);
+    return rect;
+  }
+
+  /** The player's number in their colour over a party member's head. */
+  private drawTag(h: Body, [x0, y0, x1]: Rect) {
+    const r = Math.max(14, personPx(this.place.g, h.y) * 0.06);
+    const [x, y] = [(x0 + x1) / 2, y0 - r * 1.6];
+    ctx.save();
+    ctx.fillStyle = h.colour!;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = r * 0.22;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.round(r * 1.3)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(PLAYER_COLOURS.indexOf(h.colour!) + 1), x, y + r * 0.08);
+    ctx.restore();
+  }
+
+  /** A coloured ring on the floor round a party member's feet. */
+  private drawRing(h: Body) {
+    const unit = personPx(this.place.g, h.y);
+    const [sx, sy] = this.shift(h.y);
+    const y = (h.foot ?? stepFootY(this.place.g, h.x, h.y)) + sy;
+    ctx.save();
+    ctx.strokeStyle = h.colour!;
+    ctx.fillStyle = `${h.colour}55`;
+    ctx.lineWidth = Math.max(3, unit * 0.022);
+    ctx.beginPath();
+    ctx.ellipse(h.x + sx, y, unit * 0.2, unit * 0.06, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
   }
 
   /** Draws a person with feet at (x, y): their shadow (layer 'shadow', returns its box) or their body (returns the box it covers). */
@@ -1877,6 +1981,12 @@ function usePad(on: boolean) {
 }
 // ?pads=turns: the pads take turns (see Turns); ?turn=60 sets the seconds of a turn.
 const turns = params.get('pads') === 'turns' ? new Turns(Number(params.get('turn')) || 60) : undefined;
+// ?pads=party: every pad has its own hero on screen (Game.party); the first pad pressed steers the hero there was.
+const partyMode = params.get('pads') === 'party';
+/** Each pad's hero in party mode, by gamepad index, in the order they joined (player 1, 2, ...). */
+const bodies = new Map<number, Body>();
+/** The party member whose nearest thing is lit: the one that moved or pressed last. */
+let focus: Body | undefined;
 let talked = false;
 let talkEnded = false;
 /** The turn badge (whose turn, in the player's colour) and the hand-over card when it passes. */
@@ -1888,16 +1998,17 @@ function showTurn(index: number | undefined, handOver: boolean) {
   const n = turns!.player(index!);
   const colour = PLAYER_COLOURS[(n - 1) % PLAYER_COLOURS.length];
   badge.style.setProperty('--player', colour);
-  badge.textContent = `Player ${n}`;
+  badge.textContent = `${words.player} ${n}`;
   if (handOver) {
     const card = document.getElementById('handover')!;
     card.style.setProperty('--player', colour);
-    card.textContent = `Player ${n}`;
+    card.textContent = `${words.player} ${n}`;
     card.hidden = false;
     card.animate([{ opacity: 0, transform: 'translate(-50%, -50%) scale(.6)' }, { opacity: 1, transform: 'translate(-50%, -50%) scale(1.05)', offset: 0.2 }, { opacity: 1, transform: 'translate(-50%, -50%) scale(1)', offset: 0.8 }, { opacity: 0, transform: 'translate(-50%, -50%) scale(1)' }], { duration: 2600, easing: 'ease-out' }).finished.then(() => (card.hidden = true), () => undefined);
   }
 }
 function padInput() {
+  if (partyMode) return partyInput();
   let only: number | undefined;
   if (turns) {
     const now = performance.now();
@@ -1918,40 +2029,73 @@ function padInput() {
   pad = readPads(only);
   if (!pad.dir && !pad.pressed.length) return;
   turns?.touched(performance.now());
+  woke();
+  if (game.place) for (const b of pad.pressed) padPress(b, game.hero);
+}
+
+/** Any pad input: pad mode on, the nearest thing lit, and the sound started where the browser allows it. */
+function woke() {
   usePad(true);
   keyboard = true;
   // A pad press is not a gesture that unlocks sound everywhere, but where it is allowed this starts it.
   mixer?.resume();
-  if (!game.place) return;
-  for (const b of pad.pressed) {
-    if (game.state.ending) {
-      if (b === 'use' || b === 'start') document.querySelector<HTMLButtonElement>('#ending .again')?.click();
-    } else if (game.state.talk) {
-      if (b === 'up' || b === 'left' || b === 'prev') game.answers.move(-1);
-      if (b === 'down' || b === 'right' || b === 'next') game.answers.move(1);
-      if (b === 'use') game.answers.pick();
-    } else if (free()) {
-      const hot = game.within();
-      if (b === 'use' && hot) void game.use(hot.thing.key);
-      if (b === 'back') {
-        if (game.holding) game.hold(undefined);
-        else if (hot) void game.use(hot.thing.key, 'look');
-      }
-      if (b === 'next' || b === 'prev') {
-        // Empty hands, then each item, then empty hands again.
-        const ring = [undefined, ...game.state.items];
-        const i = ring.indexOf(game.holding);
-        game.hold(ring[(i + (b === 'next' ? 1 : -1) + ring.length) % ring.length]);
-      }
+}
+
+/** One press from the pad steering `body`: at the end, in a talk (only the hero's player answers), or in play. */
+function padPress(b: PadButton, body: Body) {
+  if (game.state.ending) {
+    if (b === 'use' || b === 'start') document.querySelector<HTMLButtonElement>('#ending .again')?.click();
+  } else if (game.state.talk) {
+    if (body !== game.hero) return;
+    if (b === 'up' || b === 'left' || b === 'prev') game.answers.move(-1);
+    if (b === 'down' || b === 'right' || b === 'next') game.answers.move(1);
+    if (b === 'use') game.answers.pick();
+  } else if (free()) {
+    const hot = game.within(body);
+    // Using or looking at something makes this player's hero the one the story follows, unless another is mid-walk.
+    const act = (verb?: Verb) => {
+      if (!hot || game.busy) return;
+      game.lead(body);
+      void game.use(hot.thing.key, verb);
+    };
+    if (b === 'use') act();
+    if (b === 'back') {
+      if (game.holding) game.hold(undefined);
+      else act('look');
+    }
+    if (b === 'next' || b === 'prev') {
+      // Empty hands, then each item, then empty hands again.
+      const ring = [undefined, ...game.state.items];
+      const i = ring.indexOf(game.holding);
+      game.hold(ring[(i + (b === 'next' ? 1 : -1) + ring.length) % ring.length]);
     }
   }
 }
 
-let heading = '';
-/** Held direction keys walk the hero a short step at a time; along a wall it slides the way that is open. */
+/** Party mode: each connected pad steers its own hero; a new pad brings a new hero in the next colour. */
+function partyInput() {
+  pad = { dir: null, pressed: [], pads: 0 };
+  for (const [index, f] of readEachPad()) {
+    if (!f.dir && !f.pressed.length) continue;
+    if (!game.place) continue;
+    let body = bodies.get(index);
+    if (!body) {
+      const colour = PLAYER_COLOURS[bodies.size % PLAYER_COLOURS.length];
+      // The first pad takes the hero already there; each next one a new hero beside it.
+      body = bodies.size === 0 ? Object.assign(game.hero, { colour }) : game.join(colour);
+      bodies.set(index, body);
+    }
+    woke();
+    focus = body;
+    if (f.dir) walkStep(body, f.dir[0], f.dir[1]);
+    for (const b of f.pressed) padPress(b, body);
+  }
+}
+
+/** Held direction keys (or a pad) walk the hero a short step at a time; along a wall it slides the way that is open. */
 function steer() {
   if (keyboard && game.place) {
-    const near = game.within();
+    const near = game.within(focus ?? game.hero);
     if (near !== game.hover) {
       game.hover = near;
       document.getElementById('hover')!.textContent = near ? near.thing.key.replace(/-/g, ' ') : '';
@@ -1960,17 +2104,23 @@ function steer() {
     const r = near && game.holding ? game.pageRect(near.thing.key) : undefined;
     if (game.holding) game.bag.point(r ? r.left + r.width / 2 : -300, r ? r.top : -300, near?.thing.key.replace(/-/g, ' '));
   }
-  if ((!keys.size && !pad.dir) || !free()) return void (heading = '');
+  if ((!keys.size && !pad.dir) || !free()) return void headings.delete(game.hero);
   let [dx, dy] = pad.dir ?? [0, 0];
   for (const k of keys) [dx, dy] = [dx + DIRS[k][0], dy + DIRS[k][1]];
-  if (!dx && !dy) return;
-  const hero = game.hero;
+  if (dx || dy) walkStep(game.hero, dx, dy);
+}
+
+/** The way each walker was last sent, so a held direction does not restart its step every frame. */
+const headings = new Map<Body, string>();
+/** Sends a walker one short step toward (dx, dy), sliding along whatever is in the way. */
+function walkStep(hero: Body, dx: number, dy: number) {
+  if (!free()) return void headings.delete(hero);
   const dir = `${dx},${dy}`;
   // A new step only near the end of the last one, unless the direction changed.
   const left = hero.path.length ? Math.hypot(hero.path.at(-1)![0] - hero.x, hero.path.at(-1)![1] - hero.y) : 0;
   const step = game.place.g.cell * 0.8;
-  if (dir === heading && left > step * 0.4) return;
-  heading = dir;
+  if (dir === headings.get(hero) && left > step * 0.4) return;
+  headings.set(hero, dir);
   const n = Math.hypot(dx, dy);
   const [ux0, uy0] = [dx / n, dy / n];
   // Straight on, then the two axes, then half-right and half-left of it, so a wall or a thing's foot is slid along.
@@ -1978,7 +2128,7 @@ function steer() {
   for (const [ux, uy] of tries) {
     if (!ux && !uy) continue;
     const [tx, ty] = [hero.x + ux * step, hero.y + uy * step];
-    if (game.place.grid.walkable(tx, ty)) return void game.walkTo(tx, ty);
+    if (game.place.grid.walkable(tx, ty)) return void game.walkTo(tx, ty, hero);
   }
 }
 if (capture) document.getElementById('bar')!.style.display = 'none';

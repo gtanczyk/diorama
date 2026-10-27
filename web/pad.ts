@@ -19,18 +19,11 @@ const IDLE_S = 25;
 
 const seen = new Map<number, Set<PadButton>>();
 
-/** Reads the connected pads once (only pad `only` when given); call it each frame. */
-export function readPads(only?: number): PadFrame {
-  const pressed = new Set<PadButton>();
-  let [dx, dy] = [0, 0];
-  let pads = 0;
+/** Reads every connected pad once, by gamepad index; call it once a frame (presses are edges since the last call). */
+export function readEachPad(): Map<number, PadFrame> {
+  const out = new Map<number, PadFrame>();
   for (const pad of navigator.getGamepads?.() ?? []) {
     if (!pad?.connected) continue;
-    pads++;
-    if (only !== undefined && pad.index !== only) {
-      seen.delete(pad.index);
-      continue;
-    }
     const down = new Set<PadButton>();
     const map = pad.mapping === 'standard' ? STANDARD : LOOSE;
     for (const [i, b] of map) if (pad.buttons[i]?.pressed) down.add(b);
@@ -49,12 +42,24 @@ export function readPads(only?: number): PadFrame {
     if (y < -0.5) down.add('up');
     if (y > 0.5) down.add('down');
     const was = seen.get(pad.index) ?? new Set();
-    for (const b of down) if (!was.has(b)) pressed.add(b);
     seen.set(pad.index, down);
-    [dx, dy] = [dx + x, dy + y];
+    out.set(pad.index, { dir: Math.hypot(x, y) < DEAD ? null : eighth(x, y), pressed: [...down].filter((b) => !was.has(b)), pads: 1 });
+  }
+  return out;
+}
+
+/** All pads (or only pad `only`) as one: their directions summed, their presses together. */
+export function readPads(only?: number): PadFrame {
+  const each = readEachPad();
+  const pressed = new Set<PadButton>();
+  let [dx, dy] = [0, 0];
+  for (const [index, f] of each) {
+    if (only !== undefined && index !== only) continue;
+    for (const b of f.pressed) pressed.add(b);
+    if (f.dir) [dx, dy] = [dx + f.dir[0], dy + f.dir[1]];
   }
   const dir: Point | null = Math.hypot(dx, dy) < DEAD ? null : eighth(dx, dy);
-  return { dir, pressed: [...pressed], pads };
+  return { dir, pressed: [...pressed], pads: each.size };
 }
 
 /** The nearest of the eight ways (straight or diagonal), so a wobbly thumb does not turn the hero every frame. */
