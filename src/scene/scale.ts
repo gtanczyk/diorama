@@ -1,5 +1,5 @@
 // How tall the hero is at each spot: a 1.62 m person is pxPerY * (feetY - horizonY) px tall.
-// Spark judges a person's height at four floor points from the painting's perspective; that has
+// Spark judges a person's height at eight floor points, asked three ways (median per point), from the painting's perspective; that has
 // been the steadiest source. Object heights are a fallback: Spark's guesses at metres are worse.
 import { z } from 'zod';
 import type { Memo } from '../meta/memo.ts';
@@ -71,7 +71,27 @@ const People = z.object({ people: z.array(z.object({ x: z.number(), y: z.number(
 /** A thing measured on its mask, to give Spark something to compare a person with. */
 export type Reference = { key: string; x: number; footY: number; px: number; metres: number };
 
+/** Spark's answers to one question drift by ±15% from run to run of the pipeline (a moved point is a new
+ * question). Asking the same points in a few orders and taking each point's median holds the scale still. */
+export const SCALE_ASKS = 3;
+
 export async function sparkPeople(memo: Memo, label: string, painting: Buffer, points: { x: number; y: number }[], refs: Reference[] = []): Promise<Sample[]> {
+  const orders = [points, [...points].reverse(), [...points.filter((_, i) => i % 2), ...points.filter((_, i) => i % 2 === 0)]].slice(0, SCALE_ASKS);
+  const takes = await Promise.all(orders.map((order, k) => askPeople(memo, k ? `${label}#${k}` : label, painting, order, refs).catch(() => [] as Sample[])));
+  return medianPeople(points, takes);
+}
+
+/** Each point's median answer over the takes; a take that skipped a point just has no say on it. */
+export function medianPeople(points: { x: number; y: number }[], takes: Sample[][]): Sample[] {
+  return points.flatMap((p) => {
+    const px = takes.flatMap((take) => take.filter((s) => Math.abs((s.x ?? p.x) - p.x) <= 4 && Math.abs(s.y - p.y) <= 4).slice(0, 1).map((s) => s.px)).sort((a, b) => a - b);
+    if (!px.length) return [];
+    const mid = px.length >> 1;
+    return [{ x: p.x, y: p.y, px: px.length % 2 ? px[mid] : (px[mid - 1] + px[mid]) / 2 }];
+  });
+}
+
+async function askPeople(memo: Memo, label: string, painting: Buffer, points: { x: number; y: number }[], refs: Reference[]): Promise<Sample[]> {
   const known = refs.length
     ? `\nFor reference, measured in this painting (the real heights are rough guesses):\n${refs.map((r) => `- ${r.key}: stands at (${Math.round(r.x)}, ${Math.round(r.footY)}), ${Math.round(r.px)} px tall, roughly ${r.metres} m`).join('\n')}\n`
     : '';

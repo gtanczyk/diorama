@@ -137,3 +137,10 @@ test('verify: a walkable, reachable place with sane scale is ok; a cut-off exit 
   expect(verdict.errors.map((e) => e.code)).toEqual(['SPOT_UNREACHABLE']);
   expect(verifyPlace(place, { ...g, scale: { horizonY: 600, pxPerY: 0.6 } }, notes).errors.map((e) => e.code)).toContain('HORIZON_LOW');
 });
+
+test('scale takes: each point gets the median of what Spark said, skipped points drop out', async () => {
+  const { medianPeople } = await import('../src/scene/scale.ts');
+  const points = [{ x: 100, y: 500 }, { x: 300, y: 800 }];
+  const takes = [[{ x: 100, y: 500, px: 100 }, { x: 300, y: 800, px: 300 }], [{ x: 101, y: 500, px: 140 }], [{ x: 100, y: 500, px: 120 }, { x: 300, y: 800, px: 260 }]];
+  expect(medianPeople(points, takes)).toEqual([{ x: 100, y: 500, px: 120 }, { x: 300, y: 800, px: 280 }]);
+});
