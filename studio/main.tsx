@@ -2,7 +2,7 @@
 // building live). Everything here goes through actions, the same ones `diorama action` and the agent use.
 import { render } from 'preact';
 import { signal } from '@preact/signals';
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { askAgent, call, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
 import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
@@ -378,11 +378,14 @@ function Workshop({ slug }: { slug: string }) {
 function Play({ slug, place, round, onRestart, version, onLine, onError }: { slug: string; place?: string; round: number; onRestart: () => void; version: number; onLine: (t: string) => void; onError: (m: string) => void }) {
   const [fresh, setFresh] = useState(true);
   const [loadedAt, setLoadedAt] = useState(version);
-  useEffect(() => void (version !== loadedAt && setFresh(false)), [version]);
+  const loadedTime = useRef(0);
+  // The refresh that follows a reload (an undo, a finished job) is not a change since the game started.
+  useEffect(() => void (version !== loadedAt && (Date.now() - loadedTime.current < 3000 ? setLoadedAt(version) : setFresh(false))), [version]);
   const src = `/play/${slug}/${place ? `?place=${encodeURIComponent(place)}` : ''}`;
   const hook = (e: Event) => {
     setFresh(true);
     setLoadedAt(version);
+    loadedTime.current = Date.now();
     const game = ((e.currentTarget as HTMLIFrameElement).contentWindow as unknown as { diorama?: { on(fn: (ev: string, d: Record<string, unknown>) => void): void } } | null)?.diorama;
     game?.on((ev, d) => {
       const say: Record<string, string> = {

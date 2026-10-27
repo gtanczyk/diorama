@@ -8,6 +8,7 @@ import { askSparkJson } from '../meta/spark.ts';
 import type { Place } from '../world/schema.ts';
 import type { Brief } from './brief.ts';
 import { FRAME } from './layout.ts';
+import { pasteAlpha } from './plates.ts';
 
 export const Critique = z.object({
   issues: z.array(z.object({
@@ -55,9 +56,10 @@ export async function repaint(memo: Memo, place: Place, painting: Buffer, found:
 ${fixes.join('\n')}
 No people, no animals, no text or letters.`;
   const patched = await museEdit(memo, { label: `repaint:${place.key}`, prompt, images: [painting] });
-  const { width: W, height: H } = FRAME;
-  const alpha = await regionAlpha(found.issues.map((i) => i.region));
-  const patch = await sharp(patched).resize(W, H, { fit: 'fill' }).removeAlpha()
-    .joinChannel(alpha, { raw: { width: W, height: H, channels: 1 } }).png().toBuffer();
-  return sharp(painting).composite([{ input: patch }]).png().toBuffer();
+  return pasteRegions(painting, patched, found.issues.map((i) => i.region));
+}
+
+/** `patched` over `painting` inside the regions only (feathered), everything else untouched. */
+export async function pasteRegions(painting: Buffer, patched: Buffer, regions: [number, number, number, number][]): Promise<Buffer> {
+  return pasteAlpha(painting, patched, await regionAlpha(regions));
 }

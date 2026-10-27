@@ -18,7 +18,25 @@ export const SEAM_SHOWS = 25;
 export async function pasteInside(painting: Buffer, patch: Buffer, mask: Mask, feather = 4): Promise<Buffer> {
   const { width: W, height: H } = FRAME;
   const alpha = await sharp(await maskToPng(mask)).blur(feather).toColourspace('b-w').raw().toBuffer();
-  const cut = await sharp(patch).resize(W, H, { fit: 'fill' }).removeAlpha().joinChannel(alpha, { raw: { width: W, height: H, channels: 1 } }).png().toBuffer();
+  return pasteAlpha(painting, patch, alpha);
+}
+
+/**
+ * `patch` over `painting` through `alpha` (raw, one byte per pixel, FRAME size); everything at alpha 0 is left as it
+ * was. The RGBA patch is built by hand: sharp's joinChannel with a raw alpha let the whole patch through, so every
+ * edit used to replace the whole painting.
+ */
+export async function pasteAlpha(painting: Buffer, patch: Buffer, alpha: Buffer): Promise<Buffer> {
+  const { width: W, height: H } = FRAME;
+  const rgb = await sharp(patch).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer();
+  const rgba = Buffer.alloc(W * H * 4);
+  for (let i = 0; i < W * H; i++) {
+    rgba[i * 4] = rgb[i * 3];
+    rgba[i * 4 + 1] = rgb[i * 3 + 1];
+    rgba[i * 4 + 2] = rgb[i * 3 + 2];
+    rgba[i * 4 + 3] = alpha[i];
+  }
+  const cut = await sharp(rgba, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer();
   return sharp(painting).resize(W, H, { fit: 'fill' }).composite([{ input: cut }]).png().toBuffer();
 }
 
