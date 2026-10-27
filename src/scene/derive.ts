@@ -188,7 +188,9 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   const restsOnGround = (b: Blob) => ground.bits[Math.min(H - 1, Math.round(b.baseY) + 3) * W + Math.round((b.box[0] + b.box[2]) / 2)] === 1;
   const casters = [...sharpOnFloor, ...blobs.filter((b) => !onFloor.includes(b) && !isCoarse(b) && restsOnGround(b))];
   const lit = subtract(ground, dilate(inTheWay, 2));
-  const shadowsAsked = findShadows(memo, place.key, paintingFor(carry, painting, [lit, ...casters.map((b) => b.box)], 24), lit, casters);
+  // The painted shadows are measured where the change reaches them; where the sun is does not move with a repaint
+  // (a lamp lit by one is the light below), so Spark is asked about the painting before it.
+  const shadowsAsked = findShadows(memo, place.key, paintingFor(carry, painting, [lit, ...casters.map((b) => b.box)], 24), lit, casters, carry?.old ?? painting);
   // A fire or a lamp outshining the sky throws each person's shadow away from itself.
   const lights = layout.lights.map((l) => {
     const t = things.find((t) => t.key === l.key);

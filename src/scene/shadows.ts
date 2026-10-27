@@ -103,7 +103,8 @@ Reply with JSON only: {"sunlit": true, "dx": 0.5, "dy": 0.5, "length": 0.8}  (dx
 
 /** The painted shadows on `floor` (ground the hero walks on, minus things) and the light behind them.
  * `casters` are the sharp standing blobs on the floor. */
-export async function findShadows(memo: Memo, label: string, painting: Buffer, floor: Mask, casters: Blob[]): Promise<Shadows> {
+/** `askWith`: the painting to ask Spark where the sun is (after a small repaint, the one before it). */
+export async function findShadows(memo: Memo, label: string, painting: Buffer, floor: Mask, casters: Blob[], askWith = painting): Promise<Shadows> {
   const luma = await lumaOf(painting);
   const lit = litFloor(luma, floor);
   const blobs = components(darkFloor(luma, lit, floor)).filter((c) => maskArea(c) >= 120);
@@ -137,7 +138,7 @@ export async function findShadows(memo: Memo, label: string, painting: Buffer, f
   const mask = unionAll(W, H, kept);
   const directed = measured.filter((m) => m.dir);
   // Dark wet planks next to a teapot look like a shadow too: Spark says whether there is sun at all.
-  const sun = await sparkLight(memo, `light:${label}`, painting);
+  const sun = await sparkLight(memo, `light:${label}`, askWith);
   if (!sun) return { mask: emptyMask(W, H), casters: measured, source: 'none' };
   // Sun, but no thing whose own shadow could be measured: the hero casts the shadow Spark sees, and no
   // painted shadow is masked (nothing says which dark patches are shadows).

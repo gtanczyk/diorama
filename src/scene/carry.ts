@@ -131,16 +131,45 @@ export function reaches(carry: Carry, region: Mask | Rect | Array<Mask | Rect | 
   return false;
 }
 
+/** A thing or floor this big (px) is masked again only when the change covers a good part of it. */
+const BIG = 20_000;
+const GRAZE = 0.3;
+
+/**
+ * Whether a repaint changes a mask's outline: it lies on the changed tiles (grown by 8 px), and it is small or a good
+ * part of it changed. A thermos repainted on a jetty changes the thermos, not where the jetty is.
+ */
+export function remakes(carry: Carry, mask: Mask): boolean {
+  let total = 0;
+  for (let i = 0; i < mask.bits.length; i++) total += mask.bits[i];
+  let on = 0;
+  const seen = new Uint8Array(mask.bits.length);
+  for (const [tx0, ty0, tx1, ty1] of carry.tiles) {
+    for (let y = Math.max(0, ty0 - 8); y < Math.min(mask.height, ty1 + 8); y++) {
+      for (let x = Math.max(0, tx0 - 8), i = y * mask.width + x; x < Math.min(mask.width, tx1 + 8); x++, i++) {
+        if (mask.bits[i] && !seen[i]) (seen[i] = 1, on++);
+      }
+    }
+  }
+  return on > 0 && (total < BIG || on / total > GRAZE);
+}
+
 /** The painting to ask a question about a region with: the old one when the change does not reach the region. */
 export function paintingFor(carry: Carry | undefined, painting: Buffer, region: Parameters<typeof reaches>[1], margin?: number): Buffer {
   return carry && !reaches(carry, region, margin) ? carry.old : painting;
 }
 
-/** `made` (built from the old painting) with the changed tiles taken from the new painting. */
-export async function withChange(made: Buffer, painting: Buffer, carry: Carry): Promise<Buffer> {
+/** `made` (built from the old painting) with the changed tiles taken from the new painting, except inside `keep`. */
+export async function withChange(made: Buffer, painting: Buffer, carry: Carry, keep?: Mask): Promise<Buffer> {
   const [out, now] = await Promise.all([rgb(made), rgb(painting)]);
   for (const [x0, y0, x1, y1] of carry.tiles) {
-    for (let y = y0; y < y1; y++) now.copy(out, (y * W + x0) * 3, (y * W + x0) * 3, (y * W + x1) * 3);
+    for (let y = y0; y < y1; y++) {
+      if (!keep) {
+        now.copy(out, (y * W + x0) * 3, (y * W + x0) * 3, (y * W + x1) * 3);
+        continue;
+      }
+      for (let x = x0, i = y * W + x0; x < x1; x++, i++) if (!keep.bits[i]) now.copy(out, i * 3, i * 3, i * 3 + 3);
+    }
   }
   return sharp(out, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
 }

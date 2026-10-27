@@ -4,7 +4,7 @@ import { maskFromPng, maskToPng, type Mask } from '../image/mask.ts';
 import { PALETTE, svgLabel, tintOver } from '../image/overlay.ts';
 import { defineCommand } from '../registry.ts';
 import { Brief } from '../scene/brief.ts';
-import { carryFrom, ran, reaches, tilesLine } from '../scene/carry.ts';
+import { carryFrom, ran, remakes, tilesLine } from '../scene/carry.ts';
 import { brushed, correctCells, correctSpots, readCorrections } from '../scene/corrections.ts';
 import { Layout } from '../scene/layout.ts';
 import { locateThings, markFloors } from '../scene/locate.ts';
@@ -43,25 +43,19 @@ defineCommand({
       files.write(at('locate.json'), { things: found, floors: marked });
       // The person's fixes go in before SAM is asked and their brush strokes after, every time.
       const fixes = readCorrections(at());
-      let spots = correctSpots(found, fixes);
+      const spots = correctSpots(found, fixes);
       const cells = correctCells(marked, fixes);
       const before = async (file: string): Promise<Mask | undefined> => (carry && fs.existsSync(at('masks', file)) ? maskFromPng(fs.readFileSync(at('masks', file))) : undefined);
-      // A thing or floor keeps its mask when the change reaches neither its last mask nor the box Spark gives it.
+      // A thing or floor keeps its mask when the change does not reach it, or only grazes a big one.
       const keptThing = new Set<string>();
       const keptFloor = new Set<string>();
       for (const t of place.things) {
         const last = await before(`${t.key}.png`);
-        if (carry && last && !reaches(carry, [last, spots[t.key]?.box ?? undefined])) keptThing.add(t.key);
+        if (carry && last && !remakes(carry, last)) keptThing.add(t.key);
       }
       for (const f of layout.floors) {
         const last = await before(`floors/${f.key}.png`);
-        if (carry && last && !reaches(carry, last)) keptFloor.add(f.key);
-      }
-      // A thing the change reaches is looked for again on the new painting: a repaint may have moved it.
-      if (carry && place.things.some((t) => t.role !== 'npc' && !keptThing.has(t.key))) {
-        const again = correctSpots(await locateThings(files.memo, place, brief, painting), fixes);
-        spots = Object.fromEntries(Object.entries(spots).map(([k, v]) => [k, keptThing.has(k) ? v : (again[k] ?? v)]));
-        files.write(at('locate.json'), { things: { ...found, ...Object.fromEntries(Object.keys(again).filter((k) => !keptThing.has(k)).map((k) => [k, again[k]])) }, floors: marked });
+        if (carry && last && !remakes(carry, last)) keptFloor.add(f.key);
       }
       const split = <T>(all: T[], kept: (x: T) => boolean) => [all.filter(kept), all.filter((x) => !kept(x))];
       const [oldThings, newThings] = split(place.things, (t) => keptThing.has(t.key));
@@ -75,7 +69,7 @@ defineCommand({
       const inOrder = <T extends { key: string }>(keys: string[], got: T[]) => keys.flatMap((k) => got.filter((g) => g.key === k));
       const things = inOrder(place.things.map((t) => t.key), [...thingsOld, ...thingsNew]).map((t) => brushed(t, fixes.things[t.key]?.strokes));
       const floors = inOrder(layout.floors.map((f) => f.key), [...floorsOld, ...floorsNew]).map((f) => brushed(f, fixes.floors[f.key]?.strokes));
-      if (carry) console.log(`  ${place.key}: kept ${thingsOld.length}/${things.length} things and ${floorsOld.length}/${floors.length} floors as they were`);
+      if (carry) console.log(`  ${place.key}: kept ${thingsOld.length}/${things.length} things and ${floorsOld.length}/${floors.length} floors as they were; masked again: ${[...thingsNew, ...floorsNew].map((m) => m.key).join(', ') || 'nothing'}`);
       const lastChecks = carry && fs.existsSync(at('masks.json')) ? ((files.readJson(at('masks.json')) as { things?: Record<string, { check?: MaskCheck }> }).things ?? {}) : {};
 
       fs.rmSync(at('masks'), { recursive: true, force: true });

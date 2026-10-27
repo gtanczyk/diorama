@@ -4,7 +4,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { expect, test } from 'vitest';
 import { rectMask } from '../src/image/raster.ts';
-import { carryFrom, MOST, paintingFor, ran, reaches, seedRan, withChange } from '../src/scene/carry.ts';
+import { carryFrom, MOST, paintingFor, ran, reaches, remakes, seedRan, withChange } from '../src/scene/carry.ts';
 import { pasteRegions } from '../src/scene/critic.ts';
 import { FRAME } from '../src/scene/layout.ts';
 
@@ -58,4 +58,16 @@ test('a place built before the steps kept their painting carries on its first re
   expect(fs.existsSync(path.join(dir, '.ran', 'plates.png'))).toBe(false);
   const after = await pasteRegions(before, await solid('#ffcc00'), [[100, 100, 220, 200]]);
   expect((await carryFrom(dir, 'masks', after))?.old.equals(before)).toBe(true);
+});
+
+test('a repaint of a small thing on a big one masks the small one again, not the big one', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'graze-'));
+  const before = await solid('#203040');
+  ran(dir, 'masks', before);
+  // A thermos (40x60) repainted on a jetty that spans the frame.
+  const after = await pasteRegions(before, await solid('#3060ff'), [[500, 600, 540, 660]]);
+  const carry = (await carryFrom(dir, 'masks', after))!;
+  expect(remakes(carry, rectMask(W, H, [500, 600, 540, 660]))).toBe(true);
+  expect(remakes(carry, rectMask(W, H, [0, 560, W, 760]))).toBe(false);
+  expect(remakes(carry, rectMask(W, H, [800, 100, 900, 200]))).toBe(false);
 });

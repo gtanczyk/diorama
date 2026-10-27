@@ -7,7 +7,7 @@ import { FRAME } from '../scene/layout.ts';
 import { Geometry } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
 import { BACKDROP_GROW, backdropFor, smearedBackdrop, type Card } from '../scene/backdrop.ts';
-import { carryBetween, carryFrom, paintingFor, ran, reaches, tilesLine, withChange } from '../scene/carry.ts';
+import { carryBetween, carryFrom, paintingFor, ran, remakes, tilesLine, withChange } from '../scene/carry.ts';
 import { Depth, farFlats, waterSheet } from '../scene/layers.ts';
 import { WorldFiles } from '../world/files.ts';
 
@@ -48,11 +48,13 @@ defineCommand({
       }
       // A repaint that reaches no card keeps the backdrop made last time; the repainted tiles come from the new painting.
       const carry = await carryFrom(at(), 'backdrop', painting);
-      const kept = carry && !reaches(carry, cards.map((c) => c.mask), BACKDROP_GROW + 8);
+      // A repaint that leaves every card's outline as it was keeps the backdrop made last time: behind the cards it is
+      // still what is there, and the repainted tiles around them come from the new painting.
+      const kept = carry && !cards.some((c) => remakes(carry, c.mask));
       const made = await backdropFor(files.memo, place, cards, kept ? carry.old : painting);
       const { report } = made;
-      const png = kept ? await withChange(made.png, painting, carry) : made.png;
-      if (carry) console.log(`  ${place.key}: ${tilesLine(carry)}; ${kept ? 'no card is reached, the backdrop is kept' : 'a card is reached, the backdrop is made again'}`);
+      const png = kept ? await withChange(made.png, painting, carry, dilate(unionAll(FRAME.width, FRAME.height, cards.map((c) => c.mask)), BACKDROP_GROW)) : made.png;
+      if (carry) console.log(`  ${place.key}: ${tilesLine(carry)}; ${kept ? 'no card changes, the backdrop is kept' : 'a card changes, the backdrop is made again'}`);
       files.write(at('backdrop.png'), png);
       files.write(at('backdrop.json'), report);
       const stuck = Object.entries(report).filter(([, r]) => r.stillThere).map(([k]) => k);
