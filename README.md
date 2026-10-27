@@ -43,6 +43,22 @@ In the page, loops pan and fade with where the hero stands, footsteps follow the
 
 `diorama explore <slug>` puts the hero on every part of each floor in the real play page and checks each frame; it needs Playwright with Chromium (`npm i -D playwright && npx playwright install chromium`). `--fix` closes the floor where he looked wrong.
 
+## Characters
+
+`build` paints places, not people; characters are separate steps, run after it:
+
+- `diorama cast <slug>` paints the hero and every NPC (cast/<key>.png) and cuts each into parts with SAM for a 2D walk rig (cast/<key>/rig.json).
+- `diorama model <slug>` and `diorama sprites <slug>` give a character painted walk and talk sheets (cast/<key>/sprites/). Only what the story uses is drawn: the walk facings the hero's routes need, one talk sheet per speaker in the facing of their conversation, and the gesture each line calls for.
+
+The page draws the best a character has: sprite sheets, else the 3D model (`?model=1` prefers it), else the 2D rig, else the plain cut-out.
+
+## In the play page
+
+- **Walking:** the hero routes over the walk grid; the walk phase follows the distance walked, so feet don't slide. Things in front of a person (per-column floor lines from `derive`) are drawn back over them.
+- **Light and shadow:** `derive` measures the painting's light from the shadows things cast (`light` in geometry.json) and masks those shadows (`masks/shadows.png`). A person then casts a matching soft shadow and darkens inside a painted one. A place where nothing casts a shadow (fog, overcast) gets neither.
+- **Talking:** each line knows who says it; the bubble sits over the speaker, who plays the line's gesture while the other listens.
+- **URL switches:** `place=<key>` start there, `spawn=x,y,left|right` put the hero, `capture=1` fixed 1/60 s steps for recording (flat, no parallax), `parallax=N` force parallax, `grid=1` show the walk grid and occluders, `model=1|0` prefer or skip the 3D figure, `sound=0` silent, `cursor=0` hide the cursor. `window.diorama` drives the page from scripts: `walkTo`, `use`, `act`, `play(steps)`, `wait`, `on(event)`.
+
 ## Playing and sharing a world
 
 - `diorama play <slug>` serves it on localhost.
