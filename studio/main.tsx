@@ -312,9 +312,11 @@ function Workshop({ slug }: { slug: string }) {
             <span class="grow" />
             {playable && <button type="button" class={playing ? 'primary' : 'ghost'} onClick={() => setPlaying(playing ? null : {})}>{playing ? 'Close game' : 'Play'}</button>}
             {!job && status && status.steps.length > 0 && <button type="button" class="ghost" title="Put the world back as it was before the last job" onClick={() => call('history_undo', { slug }).catch((e) => setError(e.message))}>Undo last job</button>}
-            {job
-              ? <button type="button" class="ghost" onClick={() => call('job_cancel', { id: job.id })}>Stop {job.label}</button>
-              : <button type="button" class="primary" disabled={!status || !!status.issue} onClick={() => call('world_build', { slug }).catch((e) => setError(e.message))}>{status && status.steps.length >= steps.length - 1 ? 'Rebuild verify' : 'Continue build'}</button>}
+            {/* Stop sits beside the build button, never in its place: a double click must not start a build and stop it again. */}
+            {job && <button type="button" class="ghost" title={`Stop ${job.label} (started by ${job.by === 'agent' ? 'the agent' : 'you'})`} onClick={() => call('job_cancel', { id: job.id })}>Stop</button>}
+            <button type="button" class="primary" disabled={!status || !!status.issue || !!job} title={job ? `${job.label} is running${job.step ? `: ${job.step}` : ''}` : undefined} onClick={() => call('world_build', { slug }).catch((e) => setError(e.message))}>
+              {job ? `${job.by === 'agent' ? 'Agent: ' : ''}${job.label}…` : status && status.steps.length >= steps.length - 1 ? 'Rebuild verify' : 'Continue build'}
+            </button>
           </div>
           {status?.pitch && <p class="lead">{status.pitch}</p>}
           {error && <p class="error">{error}</p>}
@@ -357,7 +359,7 @@ function Workshop({ slug }: { slug: string }) {
           <Notes slug={slug} notes={notes} onPlace={setFocus} onError={setError} />
         </div>
         <aside class="right">
-          <AgentPanel slug={slug} replay={replay} speed={speed} />
+          <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} />
           <section class="log">
             <div class="row"><h2>Activity</h2><span class="grow" /><span class="detail" title={status ? `this world: ${Object.entries(status.calls).map(([m, n]) => `${m} ${n}`).join(', ') || 'no calls yet'}` : undefined}>{calls} calls this session{budget ? ` · ${spend(budget.today)} today · ${spend(budget.total)}${budget.limitUsd !== null ? ` of $${budget.limitUsd}` : ''} total` : ''}</span></div>
             <ol>{[...lines].reverse().map((l) => <li key={l.seq} class={l.kind}>{l.text}</li>)}</ol>

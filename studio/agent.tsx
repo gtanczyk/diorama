@@ -100,10 +100,35 @@ type Offer = { name: string; label: string; installed: boolean; using: boolean }
 
 type Session = { file: string; started: string | null; agents: string[]; prompts: string[]; turns: number; replayable: boolean };
 
-export function AgentPanel({ slug, replay, speed = 1 }: { slug: string; replay?: string | null; speed?: number }) {
+type JobInfo = { id: string; label: string; state: string; step?: string; by: string };
+
+/**
+ * genaicode's chat shows a tool's argument only for the usual keys (command, path, description...), so a
+ * Studio tool would show as a bare name ("Wait for a job"). Each Studio call gets a description: the job's
+ * name and step for the job tools, the world, place and thing for the rest; a running job_wait says where it is.
+ */
+export function describeCalls(state: SessionState | null, jobs: readonly JobInfo[]): SessionState | null {
+  if (!state) return state;
+  const job = (id: unknown) => jobs.find((j) => j.id === id);
+  const turns = state.turns.map((turn) => ({
+    ...turn,
+    entries: turn.entries.map((e) => {
+      if (e.kind !== 'tool' || !e.name.startsWith('mcp__diorama__') || !e.input || typeof e.input !== 'object') return e;
+      const input = e.input as Record<string, unknown>;
+      const j = job(input.id);
+      const where = [input.slug, input.place, input.thing ?? input.npc ?? input.key ?? input.step, input.path].filter((v) => typeof v === 'string').join(' · ');
+      const description = j ? `${j.label}${j.state === 'running' && j.step ? ` · ${j.step}` : ` · ${j.state}`}` : where;
+      const output = !e.done && j && e.name.endsWith('job_wait') ? `${j.label}: ${j.state}${j.step ? `, at ${j.step}` : ''} (started by ${j.by === 'agent' ? 'the agent' : 'you'})` : e.output;
+      return description ? { ...e, input: { ...input, description }, output } : e;
+    }),
+  }));
+  return { ...state, turns };
+}
+
+export function AgentPanel({ slug, replay, speed = 1, jobs = [] }: { slug: string; replay?: string | null; speed?: number; jobs?: readonly JobInfo[] }) {
   const [liveState, live] = useSession(replay ? '' : slug);
   const [replayed, replayDone] = useReplay(slug, replay ?? null, speed);
-  const state = replay ? replayed : liveState;
+  const state = describeCalls(replay ? replayed : liveState, jobs);
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [error, setError] = useState('');
   const [offers, setOffers] = useState<Offer[]>([]);
