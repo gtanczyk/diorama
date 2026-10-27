@@ -173,12 +173,17 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer): Prom
   const feet = boots.map(inPerson).filter((b) => maskArea(b) > H * 2).sort((a, b) => maskArea(b) - maskArea(a)).slice(0, 2);
   if (feet.length < 2) issues.push(`found ${feet.length} boot(s), bare feet stay on the shins`);
   const footless = (m: Mask) => feet.reduce((acc, f) => subtract(acc, f), m);
-  // The lower body without the feet: SAM's trousers, else every leg it found.
-  const lower = footless(inPerson(trousers[0] ?? unionAll(W, Hh, legsFound)));
+  // The lower body without the feet: SAM's trousers with the bare legs below them (rolled-up trousers, shorts,
+  // a skirt), else every leg it found.
+  const legs = legsFound.map((l) => footless(inPerson(l))).filter((l) => maskArea(l) > H * 4).sort((a, b) => maskArea(b) - maskArea(a));
+  const worn = trousers[0] && inPerson(trousers[0]);
+  const lower = footless(worn ? legs.filter((l) => overlap(dilate(worn, 4), l) > 0).reduce((a, l) => union(a, l), worn) : unionAll(W, Hh, legs));
   if (maskArea(lower) < H * 4) throw new Error(`${key}: no legs found to rig`);
 
-  // Near leg: the bigger whole leg SAM sees; far leg: the rest of the lower body.
-  const leg = legsFound.map((l) => footless(inPerson(l))).filter((l) => maskArea(l) > H * 4).sort((a, b) => maskArea(b) - maskArea(a))[0];
+  // Near leg: the bigger whole leg SAM sees, from above the knee; far leg: the rest of the lower body.
+  // SAM's "leg" on bare legs under trousers is only the shin: then it marks where each leg ends instead.
+  const leg = legs.find((l) => maskBox(l)![1] < ground - 0.4 * H);
+  const shins = leg ? [] : legs.slice(0, 2);
   let near: Mask;
   let far: Mask;
   if (leg && maskArea(subtract(lower, leg)) > maskArea(lower) * 0.15) {
@@ -187,7 +192,7 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer): Prom
   } else {
     // One leg mask covering both (or none): each lower-body pixel goes to the leg whose line,
     // hip to knee to the top of its boot, runs nearest. The bigger boot is the near one.
-    issues.push('legs split along hip-to-boot lines, not by SAM');
+    issues.push(`legs split along hip-to-${feet.length < 2 && shins.length === 2 ? 'shin' : 'boot'} lines, not by SAM`);
     const lowerBox = maskBox(lower)!;
     const hipGuess: P = [centreX(lower, Math.max(ground - 0.5 * H, lowerBox[1] + 8), 10) ?? (px0 + px1) / 2, ground - 0.5 * H];
     const line = (f: Mask): P[] => {
@@ -195,7 +200,7 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer): Prom
       const foot: P = [centreX(f, t + 4, 4) ?? hipGuess[0], t];
       return [hipGuess, [(hipGuess[0] + foot[0]) / 2, (hipGuess[1] + foot[1]) / 2], foot];
     };
-    const lines = feet.map(line);
+    const lines = (feet.length < 2 && shins.length === 2 ? shins : feet).map(line);
     near = emptyMask(W, Hh);
     far = emptyMask(W, Hh);
     lower.bits.forEach((b, i) => {
@@ -246,6 +251,8 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer): Prom
     const length = Math.hypot(j.knee[0] - hip[0], j.knee[1] - hip[1]) + Math.hypot(j.ankle[0] - j.knee[0], j.ankle[1] - j.knee[1]);
     const r = Math.min(0.07 * H, Math.max(0.03 * H, maskArea(visible) / length / 2));
     const tube = subtract(capsule(W, Hh, [hip, j.knee, j.ankle], r), boot);
+    // A bare foot is all there in the painting: the tube stops above it, so no smear grows round the heel.
+    if (!maskArea(boot)) tube.bits.fill(0, Math.max(0, Math.round(j.ankle[1] - 0.06 * H)) * W);
     const mask = union(visible, tube);
     const pixels = Buffer.from(data);
     fillHole(pixels, W, visible, mask);
