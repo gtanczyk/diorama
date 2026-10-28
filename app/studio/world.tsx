@@ -32,7 +32,7 @@ export function PlacesCard({ slug, places, stage, onStage }: { slug: string; pla
     <Card kind="Places" by="Muse Image · SAM 3.1" on={stage.kind === 'place'}>
       <div class="thumbs">
         {places.map((p) => (
-          <button type="button" class={`thumb${stage.kind === 'place' && stage.place === p.key ? ' on' : ''}${p.trouble ? ' trouble' : ''}`} title={`${nice(p.key)}: ${p.shows}`} onClick={() => onStage({ kind: 'place', place: p.key })}
+          <button type="button" class={`thumb${stage.kind === 'place' && stage.place === p.key ? ' on' : ''}${p.trouble ? ' trouble' : p.verdict?.ok ? ' ready' : ''}`} title={`${nice(p.key)}: ${p.shows}${p.verdict?.ok ? ' (playable)' : ''}`} onClick={() => onStage({ kind: 'place', place: p.key })}
             style={p.image ? { backgroundImage: `url("${fileUrl(slug, p.image.file, p.image.v)}")` } : undefined}>
             {!p.image && <span>{nice(p.key)}</span>}
           </button>

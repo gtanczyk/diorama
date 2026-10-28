@@ -118,3 +118,33 @@ test('a short gap is bridged for free: a floor stroke in corrections.json, the p
   expect(log.repairs[0]).toMatchObject({ place: 'stuck', by: 'auto', ok: true });
   expect(process.exitCode).toBeUndefined();
 });
+
+test('places do not wait for each other: a quick place is played while a slow one is still painted, the cast is made alongside', async () => {
+  const { ran } = world();
+  for (const step of ['cast', 'model', 'sprites', 'voices', 'sound', 'icons']) defineCommand({ name: step, usage: step, async run() { ran.push(step); } });
+  const paint = registry.get('paint')!;
+  defineCommand({
+    name: 'paint',
+    usage: 'paint',
+    async run(args) {
+      if (args[1] === 'stuck') await new Promise((r) => setTimeout(r, 60));
+      await paint.run(args);
+      ran.push(`painted:${args[1]}`);
+    },
+  });
+  await registry.get('build')!.run(['w', '--from', 'layout', '--repair', 'off']);
+  const at = (r: string) => ran.indexOf(r);
+  expect(at('verify:good')).toBeGreaterThan(-1);
+  expect(at('verify:good')).toBeLessThan(at('painted:stuck'));
+  expect(at('cast')).toBeLessThan(at('painted:stuck'));
+  expect(at('model')).toBeLessThan(at('painted:stuck'));
+  // Sprites walk the routes of every place, sound listens to every painting: they wait for the slow one.
+  expect(at('sprites')).toBeGreaterThan(at('derive:stuck'));
+  expect(at('sound')).toBeGreaterThan(at('painted:stuck'));
+});
+
+test('a world step that fails ends the build with its error once what was running is done', async () => {
+  world();
+  defineCommand({ name: 'cast', usage: 'cast', async run() { throw new Error('the hero could not be painted'); } });
+  await expect(registry.get('build')!.run(['w', '--from', 'layout', '--repair', 'off'])).rejects.toThrow(/hero could not be painted/);
+});

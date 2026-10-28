@@ -4,6 +4,7 @@
 // the live feed (step, call and file events) and the story, icons and cast actions the other tabs read too.
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
+import { timeLeft } from '../src/world/schedule.ts';
 
 export type Layer = { file: string; v: number | null };
 export type LayerName = 'blockin' | 'first' | 'painting' | 'masks' | 'depth' | 'walk';
@@ -86,9 +87,11 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
   };
   const started = job?.startedAt ? Date.parse(job.startedAt) : null;
   const elapsed = started ? now - started : 0;
+  // Several steps run at once (places side by side, cast and voices alongside): each has its own clock.
   const runStep = Object.keys(running).find((s) => running[s] === 'run');
-  const runFor = runStep && live.since[runStep] ? now - live.since[runStep] : 0;
-  const left = plan.filter((s) => done[s] === undefined).reduce((sum, s) => sum + Math.max(0, took(s) * 1000 - (s === runStep ? runFor : 0)), 0);
+  const runFor = (s: string) => (running[s] === 'run' && live.since[s] ? now - live.since[s] : 0);
+  // Time left is the longest chain of what is still to do along the build's web, not the sum of every step.
+  const left = timeLeft(plan, (s) => (done[s] !== undefined ? 0 : Math.max(0, took(s) * 1000 - runFor(s))));
   const known = plan.length > 0 && plan.every((s) => done[s] !== undefined || build[s] || typical[s] !== undefined);
   const when = !job ? null : job.state === 'queued' ? 'waiting for the job before it'
     : `${clock(elapsed)}${!known ? '' : left > 30_000 ? ` · about ${Math.max(1, Math.round(left / 60_000))} min left` : runStep && left === 0 ? ' · longer than last time' : ' · almost done'}`;
@@ -110,7 +113,7 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
           const states = p.steps.map(state);
           const all = weight(p);
           // Filled by the steps done and by the running one's share of its usual time.
-          const filled = p.steps.reduce((sum, s, i) => sum + (states[i] === 'ok' ? took(s) : states[i] === 'run' ? Math.min(took(s) * 0.95, runFor / 1000) : 0), 0);
+          const filled = p.steps.reduce((sum, s, i) => sum + (states[i] === 'ok' ? took(s) : states[i] === 'run' ? Math.min(took(s) * 0.95, runFor(s) / 1000) : 0), 0);
           const phase = states.includes('fail') ? 'fail' : states.includes('run') ? 'run' : states.every((x) => x === 'ok') ? 'ok' : states.every((x) => x === 'skip') ? 'skip' : 'todo';
           // Something to show once a step has run (or runs now); a click puts it on the stage.
           const open = onOpen && phase !== 'todo' && phase !== 'skip';

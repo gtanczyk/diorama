@@ -30,6 +30,33 @@ function patience(route: string, body: unknown): number {
   return model.startsWith('sam') ? 60_000 : 240_000;
 }
 
+/**
+ * How many requests each model may have open at once. The build runs places, cast and sound side by side
+ * (src/world/schedule.ts), so without a cap a four-place world can ask SAM for dozens of cut-outs at the same
+ * moment. A request over the cap waits its turn; DIORAMA_LANES="muse=8,spark=12,sam=16" sets them.
+ */
+const LANES: Record<string, number> = { muse: 8, spark: 12, sam: 16 };
+for (const pair of (process.env.DIORAMA_LANES ?? '').split(',')) {
+  const [lane, n] = pair.split('=');
+  if (lane in LANES && Number(n) >= 1) LANES[lane] = Math.floor(Number(n));
+}
+const open: Record<string, number> = {};
+const waiting: Record<string, Array<() => void>> = {};
+const laneOf = (route: string, body: unknown) => (route.startsWith('/images/') ? 'muse' : ((body as { model?: string } | null)?.model ?? '').startsWith('sam') ? 'sam' : 'spark');
+
+async function inLane<T>(lane: string, work: () => Promise<T>): Promise<T> {
+  if ((open[lane] ?? 0) >= LANES[lane]) await new Promise<void>((go) => (waiting[lane] ??= []).push(go));
+  else open[lane] = (open[lane] ?? 0) + 1;
+  try {
+    return await work();
+  } finally {
+    // The slot passes straight to the next in line, or is given back.
+    const next = waiting[lane]?.shift();
+    if (next) next();
+    else open[lane]--;
+  }
+}
+
 /** POSTs JSON. Rate limits, server errors, network drops and stalls are retried with backoff (2, 4, 8 s). */
 export async function metaPost(route: string, body: unknown, accept?: string): Promise<Response> {
   const tries = 4;
@@ -37,14 +64,18 @@ export async function metaPost(route: string, body: unknown, accept?: string): P
   for (let n = 1; ; n++) {
     let failure: unknown;
     try {
-      const res = await fetch(META_API + route, {
-        signal: AbortSignal.timeout(limit),
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey()}`, 'Content-Type': 'application/json', ...(accept && { Accept: accept }) },
-        body: JSON.stringify(body),
+      // The slot is held until the answer is read or turned down, not through the wait before a retry.
+      const res = await inLane(laneOf(route, body), async () => {
+        const res = await fetch(META_API + route, {
+          signal: AbortSignal.timeout(limit),
+          method: 'POST',
+          headers: { Authorization: `Bearer ${apiKey()}`, 'Content-Type': 'application/json', ...(accept && { Accept: accept }) },
+          body: JSON.stringify(body),
+        });
+        return res.ok ? res : new MetaHttpError(res.status, `POST ${route}: ${res.status} ${(await res.text()).slice(0, 300)}`);
       });
-      if (res.ok) return res;
-      failure = new MetaHttpError(res.status, `POST ${route}: ${res.status} ${(await res.text()).slice(0, 300)}`);
+      if (!(res instanceof MetaHttpError)) return res;
+      failure = res;
       if (!TRANSIENT.has(res.status)) throw failure;
     } catch (error) {
       if (error instanceof MetaHttpError && !TRANSIENT.has(error.status)) throw error;
