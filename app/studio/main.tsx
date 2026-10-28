@@ -3,7 +3,7 @@
 import { render, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ChatNotice, SessionTurn } from 'genaicode/react';
-import { askAgent, call, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
+import { agentDefault, askAgent, call, type AgentDefaults, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
 import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
 import { base64, Camera, shrink } from './camera.tsx';
@@ -241,6 +241,7 @@ function Setup() {
           <button type="button" class="primary" disabled={!!busy} title="Look at this computer again: keys, tools, the agent. Free" onClick={() => run('setup_status')}>{busy === 'setup_status' ? 'Checking…' : 'Check again'}</button>
           <button type="button" class="ghost" disabled={!!busy || checks?.find((c) => c.id === 'META_API_KEY')?.state === 'missing'} title="Send one tiny request to Meta to see the key works. 1 small Meta call" onClick={() => run('setup_check')}>{busy === 'setup_check' ? 'Calling Meta…' : 'Test the Meta key live'}</button>
         </div>
+        <DefaultAgent />
         <BudgetBox />
         </div>
         <ol class="checks">
@@ -266,6 +267,26 @@ function Setup() {
 }
 
 const MODEL_NAMES: Record<string, string> = { spark: 'Muse Spark', muse: 'Muse Image', sam: 'SAM 3.1', sound: 'ElevenLabs sound', voice: 'Voices', music: 'Music', space: 'HF Spaces' };
+
+/** Which agent a new world's conversation starts with; a world keeps the one it last talked with. */
+function DefaultAgent() {
+  const [d, setD] = useState<AgentDefaults | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => void agentDefault().then(setD).catch((e) => setError(e.message)), []);
+  if (!d) return error ? <p class="error">{error}</p> : null;
+  const pick = d.agents.find((a) => a.default)?.name;
+  return (
+    <div class="budget default-agent">
+      <label title="The agent a new world talks with. A world keeps the one it last talked with; Hand over… in a world changes it there">Default agent
+        <select value={pick} disabled={!!d.env} onChange={(e) => void agentDefault(e.currentTarget.value).then(setD).catch((x) => setError(x.message))}>
+          {d.agents.map((a) => <option value={a.name} disabled={!a.installed}>{a.label}{a.installed ? '' : ' (not installed)'}</option>)}
+        </select>
+      </label>
+      {d.env && <span class="detail">Set by DIORAMA_AGENT={d.env} where the Studio was started.</span>}
+      {error && <span class="error">{error}</span>}
+    </div>
+  );
+}
 
 /** What the models cost so far, and the prices and limit to count it by. */
 function BudgetBox() {

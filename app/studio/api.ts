@@ -101,3 +101,11 @@ export async function askAgent(slug: string, text: string, gist?: string): Promi
   const res = await fetch(`/api/agent/${slug}/say`, { method: 'POST', headers: headers(), body: JSON.stringify({ text }) });
   if (!res.ok) throw new ApiError(res.status, ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `could not send (${res.status})`);
 }
+
+export type AgentDefaults = { env: string | null; agents: Array<{ name: string; label: string; installed: boolean; default: boolean }> };
+/** Setup: the agent new worlds start with; `name` sets it. */
+export async function agentDefault(name?: string): Promise<AgentDefaults> {
+  const res = await fetch('/api/agent-default', { method: name ? 'POST' : 'GET', headers: headers(), ...(name && { body: JSON.stringify({ name }) }) });
+  if (!res.ok) throw new ApiError(res.status, ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `could not reach the Studio (${res.status})`);
+  return (await res.json()) as AgentDefaults;
+}

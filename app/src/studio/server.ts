@@ -243,6 +243,18 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
           return send(200, 'application/json', '{"ok":true}', { 'set-cookie': `${COOKIE}=${cookie}; HttpOnly; SameSite=Strict; Path=/` });
         }
         if (url.pathname === '/api/actions' && req.method === 'GET') return json(200, describeActions());
+        // Setup: which agent new worlds start with.
+        if (url.pathname === '/api/agent-default' && !asAgent) {
+          if (req.method === 'GET') return json(200, agents.defaults());
+          if (req.method === 'POST') {
+            const { value, error } = await body();
+            if (error) return json(error[0], { error: error[1] });
+            const name = String((value as { name?: unknown } | undefined)?.name ?? '');
+            if (!isAgentName(name)) return json(400, { error: 'no such agent' });
+            agents.setDefault(name);
+            return json(200, agents.defaults());
+          }
+        }
         // The agent conversation: the person's side only (the agent itself never posts here).
         const talk = /^\/api\/agent\/([a-z][a-z0-9-]*)(?:\/(say|stop|approval|live|agents|use))?$/.exec(url.pathname);
         if (talk && !asAgent) {

@@ -433,6 +433,19 @@ export class AgentHub {
     return (Object.keys(AGENTS) as AgentName[]).map((name, i) => ({ name, label: AGENTS[name].label, agent: found[i]?.agent.name ?? name, installed: !!found[i]?.path, using: found[i]?.agent.name === using }));
   }
 
+  /** For Setup: the agents, which are installed, and the one new worlds start with. */
+  defaults() {
+    const names = Object.keys(AGENTS) as AgentName[];
+    const found = detectAgents(names.map((n) => this.make(n)));
+    const pick = this.defaultAgent();
+    return { env: process.env.DIORAMA_AGENT ?? null, agents: names.map((name, i) => ({ name, label: AGENTS[name].label, installed: !!found[i]?.path, default: name === pick })) };
+  }
+
+  /** Setup's choice of the agent new worlds start with. */
+  setDefault(name: AgentName) {
+    this.save(name);
+  }
+
   /** Switches this world's conversation to another agent; it starts a fresh session, the transcript stays. */
   use(slug: string, name: AgentName) {
     const t = this.talk(slug);
