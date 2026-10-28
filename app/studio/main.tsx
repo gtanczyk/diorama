@@ -16,6 +16,7 @@ import { Card, CastCard, CastStage, nice, PlacesCard, PlaceStage, WorldStrip, ty
 import { Tips } from './tip.tsx';
 import { Lightbox } from './lightbox.tsx';
 import { followAgent, go, movedFrom, route } from './nav.ts';
+import { MAX_WORLD_PHOTOS } from '../src/world/photo-limits.ts';
 
 type Check = { id: string; label: string; state: 'ok' | 'missing' | 'optional' | 'fail'; detail: string; fix?: string[] };
 type Summary = { slug: string; title: string; pitch: string | null; issue: string | null; places: number; playable: number; verified: number; steps: string[]; cover: { file: string; v: number | null } | null; workshop?: boolean };
@@ -349,8 +350,6 @@ export function plainError(error: string | undefined): string {
   const first = e.replace(/^diorama \w+: /, '').replace(/\{.*$/s, '').split(/[.\n]/)[0].trim();
   return first ? (first.length > 70 ? `${first.slice(0, 68)}…` : first) : 'see its output';
 }
-/** As many photos as a world_new takes: a class's drawings, a room, a person. */
-const MAX_PHOTOS = 16;
 /** The languages the game's voices speak (ElevenLabs multilingual); Spark writes in all of them. */
 const LANGUAGES = ['Arabic', 'Bulgarian', 'Chinese', 'Croatian', 'Czech', 'Danish', 'Dutch', 'English', 'Filipino', 'Finnish', 'French', 'German', 'Greek', 'Hindi', 'Indonesian', 'Italian', 'Japanese', 'Korean', 'Malay', 'Polish', 'Portuguese', 'Romanian', 'Russian', 'Slovak', 'Spanish', 'Swedish', 'Tamil', 'Turkish', 'Ukrainian'];
 
@@ -424,6 +423,7 @@ function Start() {
   const noKey = needs.some((n) => n.id === 'META_API_KEY');
   const [idea, setIdea] = useState('');
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(0);
   const [slug, setSlug] = useState('');
   const [places, setPlaces] = useState(0);
   const [language, setLanguage] = useState('');
@@ -432,17 +432,24 @@ function Start() {
   const [camera, setCamera] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const taken = !!slug && worlds?.some((w) => w.slug === slug);
-  const ready = idea.trim().length >= 10 && !taken && !noKey && !busy;
+  const tooManyPhotos = photos.length > MAX_WORLD_PHOTOS;
+  const ready = idea.trim().length >= 10 && !taken && !noKey && !busy && !loadingPhotos && !tooManyPhotos;
   const addPhotos = async (files: Iterable<File>) => {
     const pics = [...files].filter((f) => f.type.startsWith('image/'));
-    const kept = await Promise.all(pics.map(async (f) => ({ name: (f.name || 'pasted.png').replace(/\.[^.]+$/, '') + '.jpg', data: await shrink(f) })));
-    setPhotos((p) => [...p, ...kept].slice(0, MAX_PHOTOS));
+    setLoadingPhotos((n) => n + 1);
+    try {
+      const kept = await Promise.all(pics.map(async (f) => ({ name: (f.name || 'pasted.png').replace(/\.[^.]+$/, '') + '.jpg', data: await shrink(f) })));
+      setPhotos((p) => [...p, ...kept]);
+    } catch (e) {
+      setError(`Could not read the selected photos; this batch was not added. ${(e as Error).message}`);
+    } finally {
+      setLoadingPhotos((n) => n - 1);
+    }
   };
   // A snap from the camera: shrunk like a picked photo, named in the order taken.
   const snap = async (jpeg: string) => {
     const bytes = Uint8Array.from(atob(jpeg.slice(jpeg.indexOf(',') + 1)), (c) => c.charCodeAt(0));
-    const data = await shrink(new Blob([bytes], { type: 'image/jpeg' }));
-    setPhotos((p) => [...p, { name: `photo-${p.length + 1}.jpg`, data }].slice(0, MAX_PHOTOS));
+    await addPhotos([new File([bytes], `photo-${photos.length + 1}.jpg`, { type: 'image/jpeg' })]);
   };
   const build = async (e?: Event) => {
     e?.preventDefault();
@@ -480,11 +487,14 @@ function Start() {
                 {photos.map((p, i) => (
                   <span class="att" title={`${p.name}. Spark decides what it is: a real room becomes the first place, a person the hero, a drawing a character, thing or place of the game`}>
                     <button type="button" class="ghost bare" data-lightbox={p.data} aria-label="See it big"><img src={p.data} alt="" /></button>
-                    <button type="button" class="ghost bare" aria-label="Remove the photo" onClick={() => setPhotos(photos.filter((_, j) => j !== i))}>×</button>
+                    <button type="button" class="ghost bare remove-photo" aria-label="Remove the photo" onClick={() => setPhotos(photos.filter((_, j) => j !== i))}>×</button>
                   </span>
                 ))}
               </div>
             )}
+            {photos.length > 0 && <p role="status">{photos.length} / {MAX_WORLD_PHOTOS} photos</p>}
+            {loadingPhotos > 0 && <p role="status">Reading photos…</p>}
+            {tooManyPhotos && <p class="error" role="alert">One world takes up to {MAX_WORLD_PHOTOS} photos. Remove {photos.length - MAX_WORLD_PHOTOS} to continue. All selected photos are still shown.</p>}
             <div class="row">
               <label class="button ghost bare" title="A photo of a real room becomes the first place, of a person the hero, of a drawing a character, thing or place. Dropping or pasting pictures works too">
                 <input type="file" accept="image/*" multiple onChange={(e) => (void addPhotos(e.currentTarget.files ?? []), (e.currentTarget.value = ''))} />＋ Photo
@@ -513,8 +523,8 @@ function Start() {
         </form>
         {camera && (
           <div class="shoot" role="dialog" aria-label="Camera">
-            <Camera tip={photos.length >= MAX_PHOTOS ? `That is ${MAX_PHOTOS}, the most one world takes.` : 'Hold each drawing flat, filling the picture. Take as many as you like, then Done.'} words={{ snap: photos.length ? `Take another (${photos.length})` : 'Take the photo', done: 'Done', none: 'No camera' }}
-              onSnap={(jpeg) => photos.length < MAX_PHOTOS && void snap(jpeg)} onClose={() => setCamera(false)} />
+            <Camera tip={photos.length >= MAX_WORLD_PHOTOS ? `One world takes up to ${MAX_WORLD_PHOTOS} photos. Remove extras before building.` : 'Hold each drawing flat, filling the picture. Take as many as you like, then Done.'} words={{ snap: photos.length ? `Take another (${photos.length})` : 'Take the photo', done: 'Done', none: 'No camera' }}
+              onSnap={(jpeg) => void snap(jpeg)} onClose={() => setCamera(false)} />
             {photos.length > 0 && <div class="taken">{photos.map((p) => <img src={p.data} alt="" />)}</div>}
           </div>
         )}

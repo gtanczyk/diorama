@@ -12,6 +12,7 @@ import { pcm24k } from '../sound/voices.ts';
 import { PICTURE } from '../world/drawings.ts';
 import { pieces, SOUND } from '../world/told.ts';
 import { Slug } from '../world/schema.ts';
+import { MAX_WORLD_PHOTOS } from '../world/photo-limits.ts';
 import { ActionError, defineAction } from './registry.ts';
 
 /** Calls made before a world has a folder are remembered here (a dot folder, so it is never listed as a world). */
@@ -26,7 +27,7 @@ const Shape = z.object({
 });
 type Shape = z.infer<typeof Shape>;
 
-/** One Spark call: what the idea is called, how many places it needs to be told, its language, and what each photo is. */
+/** Read the idea and account for every photo before saving material or starting a build. */
 export async function shapeIdea(memo: Memo, idea: string, photos: Buffer[]): Promise<Shape> {
   const prompt = `Someone wants a short 2D point-and-click adventure game made from this idea:
 """${idea}"""
@@ -37,8 +38,27 @@ Decide:
 - places: how many places the story needs, 2 to 5. Make only what the story needs: one scene or one room with a small task is 2; a usual small story with a goal is 3; a journey or a story that names more places is 4 or 5. If the idea names a number of places, use it.
 - language: the language the idea is written in, in English ("English", "Polish").
 
-Reply with JSON only: {"title": "...", "slug": "...", "places": 3, "language": "English"${photos.length ? ', "pictures": ["place"]' : ''}}`;
-  return Shape.parse(await askSparkJson(memo, { label: 'idea-shape', prompt, images: photos, personal: true }));
+Reply with JSON only: {"title": "...", "slug": "...", "places": 3, "language": "English"${photos.length ? `, "pictures": ${JSON.stringify(photos.map(() => 'drawing'))}` : ''}}
+${photos.length ? `The pictures array must contain exactly ${photos.length} classifications, one for each photo in input order. The example uses drawing for every entry; classify each actual photo. Never omit an entry.` : ''}`;
+  const schema = Shape.superRefine((shape, ctx) => {
+    if ((shape.pictures?.length ?? 0) !== photos.length) {
+      ctx.addIssue({ code: 'custom', path: ['pictures'], message: `expected exactly ${photos.length} classifications in photo order; received ${shape.pictures?.length ?? 0}` });
+    }
+    for (const role of ['place', 'hero']) {
+      if ((shape.pictures ?? []).filter((p) => p === role).length > 1) {
+        ctx.addIssue({ code: 'custom', path: ['pictures'], message: `at most one ${role} photo is supported; do not silently discard the others` });
+      }
+    }
+  });
+  let ask = prompt, problem = '';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const answer = await askSparkJson(memo, { label: `idea-shape#${attempt}`, prompt: ask, images: photos, personal: true });
+    const parsed = schema.safeParse(answer);
+    if (parsed.success) return parsed.data;
+    problem = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+    ask = `${prompt}\n\nCorrection attempt ${attempt + 1}. Your last answer was:\n${JSON.stringify(answer)}\n\nFix: ${problem}`;
+  }
+  throw new ActionError(502, `Spark could not classify all ${photos.length} photos and read the idea after 3 attempts. No world build was started. ${problem}`);
 }
 
 /** The slug cleaned to a folder name, numbered when a world has it already. */
@@ -60,7 +80,7 @@ defineAction({
     slug: Slug.optional().describe('the folder name; picked from the idea when left out'),
     places: z.number().int().min(1).max(8).optional().describe('picked from the idea when left out'),
     language: z.string().min(2).max(30).optional().describe('the game\'s language ("Polish"); read from the idea when left out'),
-    photos: z.array(z.object({ name: z.string().min(1).max(120), data: z.string().min(10) })).max(16).optional().describe('photos, base64: a real room becomes the first place, a person the hero, drawings the characters, things and places they show'),
+    photos: z.array(z.object({ name: z.string().min(1).max(120), data: z.string().min(10) })).max(MAX_WORLD_PHOTOS).optional().describe('photos, base64: a real room becomes the first place, a person the hero, drawings the characters, things and places they show'),
   }),
   job: true,
   async run({ idea, slug, places, language, photos = [] }, ctx) {

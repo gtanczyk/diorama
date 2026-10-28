@@ -6,6 +6,7 @@ import { afterAll, beforeAll, expect, test } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright';
 import { startStudio, type Studio } from '../src/studio/server.ts';
 import { scene } from './fixtures/scene.ts';
+import { MAX_WORLD_PHOTOS } from '../src/world/photo-limits.ts';
 
 let root: string, studio: Studio, browser: Browser;
 let masksA: object, masksB: object;
@@ -24,6 +25,43 @@ beforeAll(async () => {
 }, 60_000);
 afterAll(async () => { await browser?.close(); await studio?.close(); if (root) fs.rmSync(root, { recursive: true, force: true }); });
 const open = async (page: Page) => { await page.goto(`${studio.url}w/w#${studio.token}`); await page.locator('.convo header h1').waitFor(); };
+
+test('the start form sends all 18 drawings in order and never silently drops excess attachments', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  page.setDefaultTimeout(8000);
+  const sent: Array<{ photos: Array<{ name: string; data: string }> }> = [];
+  await page.route('**/api/actions/setup_status', (r) => r.fulfill({ json: { result: [] } }));
+  await page.route('**/api/actions/world_new', async (r) => {
+    sent.push(r.request().postDataJSON());
+    // Keep the form open; this test must never call a live model or build a world.
+    await r.fulfill({ status: 400, json: { error: 'Test: no build started' } });
+  });
+  const photo = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=', 'base64');
+  const files = (count: number, from = 1) => Array.from({ length: count }, (_, i) => ({ name: `drawing-${from + i}.png`, mimeType: 'image/png', buffer: photo }));
+  try {
+    await page.goto(`${studio.url}#${studio.token}`);
+    await page.getByRole('textbox', { name: 'Your idea' }).fill('Make a story from these drawings');
+    const picker = page.locator('form.hero input[type=file]');
+    const build = page.getByRole('button', { name: 'Build it', exact: true });
+    await picker.setInputFiles(files(18));
+    await expect.poll(() => page.locator('.attached .att').count()).toBe(18);
+    await expect.poll(() => build.isEnabled()).toBe(true);
+    await build.click();
+    await expect.poll(() => sent.length).toBe(1);
+    expect(sent[0].photos.map((p) => p.name)).toEqual(files(18).map((p) => p.name.replace('.png', '.jpg')));
+    await expect.poll(() => build.isEnabled()).toBe(true);
+
+    await picker.setInputFiles(files(MAX_WORLD_PHOTOS + 1 - 18, 19));
+    await expect.poll(() => page.locator('.attached .att').count()).toBe(MAX_WORLD_PHOTOS + 1);
+    await expect.poll(() => page.getByRole('alert').innerText()).toContain('Remove 1 to continue');
+    expect(await build.isEnabled()).toBe(false);
+    expect(sent).toHaveLength(1);
+    await page.getByRole('button', { name: 'Remove the photo', exact: true }).last().click();
+    await expect.poll(() => build.isEnabled()).toBe(true);
+    expect(await page.locator('.attached .att').count()).toBe(MAX_WORLD_PHOTOS);
+    expect(await page.getByRole('alert').count()).toBe(0);
+  } finally { await page.close(); }
+}, 30_000);
 
 test('a late mask response cannot change the new place or the object sent to the agent', async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 860 } });
