@@ -34,10 +34,15 @@ defineCommand({
     files.write(files.path('cast', 'sprites-plan.json'), plans);
     for (const p of plans) {
       const talk = Object.entries(p.talk).map(([f, g]) => `${f} [${g.join(', ')}]`).join('; ');
-      console.log(`${p.key}: walk ${p.walk.join(', ') || '-'} · talk ${talk || '-'} · ${p.walk.length + Object.keys(p.talk).length} Muse sheets`);
+      console.log(p.creature ? `${p.key}: a creature · 0 Muse sheets (its 3D model moves)` : `${p.key}: walk ${p.walk.join(', ') || '-'} · talk ${talk || '-'} · ${p.walk.length + Object.keys(p.talk).length} Muse sheets`);
     }
     if (planOnly) return;
     for (const p of plans) {
+      // A creature has no walk or gestures to paint: its 3D model hops, squashes and blinks in the game itself.
+      if (p.creature) {
+        console.log(`${p.key}: a creature, no sheets: it moves as its 3D model (diorama model ${slug} ${p.key})`);
+        continue;
+      }
       if (!fs.existsSync(files.path('cast', p.key, 'model', 'model.json'))) {
         console.log(`${p.key}: no model yet, skipped (diorama model ${slug} ${p.key})`);
         continue;

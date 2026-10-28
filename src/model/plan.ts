@@ -21,6 +21,8 @@ export type CharacterPlan = {
   talk: Partial<Record<Facing, string[]>>;
   /** Gesture for each line this character says, by its text. */
   lines: Record<string, string>;
+  /** Not upright on two legs (cast/figures.json): a 3D model with no skeleton that hops and squashes (src/play/creature.ts), no sheets. */
+  creature?: boolean;
 };
 
 /** Facing for a yaw (0 faces the viewer, PI/2 screen right); left-facing yaws mirror onto the right ones. */
@@ -119,7 +121,7 @@ export async function planSprites(files: WorldFiles, story: Story | undefined): 
     const sheet = (plan.talk[l.facing] ??= ['listen']);
     if (!sheet.includes(gestures[i]) && sheet.length < SHEET.cols * SHEET.rows) sheet.push(gestures[i]);
   });
-  // A cat or a horse has no person's poses to draw over: it stays its painted figure (cast/figures.json).
+  // A cat or a round eye has no person's poses to draw over: it gets a 3D model that moves as one body.
   const bodies = readBodies(files, fs.existsSync);
-  return [...plans.values()].filter((p) => bodies[p.key]?.upright !== false);
+  return [...plans.values()].map((p) => (bodies[p.key]?.upright === false ? { ...p, creature: true } : p));
 }

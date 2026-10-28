@@ -16,6 +16,7 @@ import type { SoundData } from '../src/play/sound.ts';
 import type { Figure3D, ModelInfo } from './hero3d.ts';
 import type { Weather } from '../src/play/weather.ts';
 import { WeatherFx } from './weather.ts';
+import { creatureMotion } from '../src/play/creature.ts';
 
 type Data = {
   slug: string;
@@ -1521,11 +1522,13 @@ class Game {
     const sprites = figure?.sprites;
     const model = sprites ? undefined : figure?.model;
     const rig = model || sprites ? undefined : figure?.rig;
+    // A creature's cut-out (not upright, no 3D model) moves as one body: hops, squashes, leans, breathes, blinks.
+    const creature = figure?.upright === false && !model && !sprites ? creatureMotion({ phase, walking, time: this.time, talk, seed: x * 0.05 }) : undefined;
     // A rig walks its legs; a plain cut-out (or the stand-in) only bobs and rocks as it slides.
-    const bob = rig || model || sprites || !walking ? 0 : Math.abs(Math.sin(phase * Math.PI * 2)) * h * 0.025;
-    const rock = rig || model || sprites || !walking ? 0 : Math.sin(phase * Math.PI * 2) * 0.035;
+    const bob = creature ? creature.lift * h : rig || model || sprites || !walking ? 0 : Math.abs(Math.sin(phase * Math.PI * 2)) * h * 0.025;
+    const rock = creature ? creature.lean * (facing < 0 ? -1 : 1) : rig || model || sprites || !walking ? 0 : Math.sin(phase * Math.PI * 2) * 0.035;
     if (rig) drawRig(rig, pose(rig.rig, phase, walking));
-    const modelCanvas = model?.draw({ phase, walking, yaw, px: h });
+    const modelCanvas = model?.draw({ phase, walking, yaw, px: h, time: this.time, talk });
     /** Draws the figure into c with its feet at c's origin; returns its half width. */
     const paint = (c: CanvasRenderingContext2D): number => {
       if (sprites) {
@@ -1558,9 +1561,9 @@ class Game {
       }
       const img = figure?.img;
       const w = img ? (h * img.width) / img.height : h * 0.36;
-      // An animal standing still breathes: a slow swell from the feet up.
-      const breathe = figure?.upright === false && !walking ? 0.018 * Math.sin(this.time * 2.4 + x * 0.05) : 0;
-      if (img) c.drawImage(img, -w / 2, -h * (1 + breathe), w, h * (1 + breathe));
+      // A creature squashes and stretches from the feet up, keeping its volume.
+      const [sx2, sy2] = creature ? [1 / Math.sqrt(creature.stretch), creature.stretch] : [1, 1];
+      if (img) c.drawImage(img, (-w / 2) * sx2, -h * sy2, w * sx2, h * sy2);
       else drawFigure(c, h, colour);
       return w / 2;
     };

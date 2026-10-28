@@ -27,10 +27,17 @@ export const BANDS = 20;
 
 const R = 160;
 
-function silhouette(shape: Shape, view: ViewName): Uint8Array {
+/** How wide the silhouette grid is across, in heights: 1 for a person, more for a creature wider than it is tall (a cat side on). */
+function across(shape: Shape): number {
+  let most = 0;
+  for (let i = 0; i < shape.positions.length; i += 3) most = Math.max(most, Math.abs(shape.positions[i]), Math.abs(shape.positions[i + 2]));
+  return Math.max(1, 2 * most + 0.04);
+}
+
+function silhouette(shape: Shape, view: ViewName, W: number): Uint8Array {
   const { axis, sign } = VIEWS[view];
   const p = shape.positions;
-  const px = (i: number) => (sign * p[i * 3 + axis] + 0.5) * R;
+  const px = (i: number) => (sign * p[i * 3 + axis] / W + 0.5) * R;
   const py = (i: number) => (1 - p[i * 3 + 1]) * R;
   const out = new Uint8Array(R * R);
   const t = shape.triangles;
@@ -81,7 +88,7 @@ async function figureMask(png: Buffer): Promise<{ mask: Uint8Array; aspect: numb
  * off the model: above 1, a fit that covers the model wins, since a bare edge is painted from another view
  * (its nose, its mouth) while paint off the model shows nowhere.
  */
-function iou(sil: Uint8Array, mask: Uint8Array, a: number, b: number, c: number, d: number, rows: [number, number] = [0, R], bare = 1): number {
+function iou(sil: Uint8Array, mask: Uint8Array, a: number, b: number, c: number, d: number, rows: [number, number] = [0, R], bare = 1, W = 1): number {
   let both = 0;
   let silOnly = 0;
   let maskOnly = 0;
@@ -89,7 +96,7 @@ function iou(sil: Uint8Array, mask: Uint8Array, a: number, b: number, c: number,
     const v = c * (1 - (y + 0.5) / R) + d;
     const my = Math.floor(v * R);
     for (let x = 0; x < R; x++) {
-      const u = a * ((x + 0.5) / R - 0.5) + b;
+      const u = a * W * ((x + 0.5) / R - 0.5) + b;
       const mx = Math.floor(u * R);
       const m = mx >= 0 && mx < R && my >= 0 && my < R ? mask[my * R + mx] : 0;
       const s = sil[y * R + x];
@@ -102,7 +109,8 @@ function iou(sil: Uint8Array, mask: Uint8Array, a: number, b: number, c: number,
 }
 
 export async function fitView(shape: Shape, view: ViewName, png: Buffer): Promise<ViewFit> {
-  const sil = silhouette(shape, view);
+  const W = across(shape);
+  const sil = silhouette(shape, view, W);
   const { mask, aspect } = await figureMask(png);
   let top = R;
   let bottom = -1;
@@ -118,16 +126,16 @@ export async function fitView(shape: Shape, view: ViewName, png: Buffer): Promis
     for (let kx = 0.8; kx <= 1.2501; kx += 0.015) {
       const a = (vb - vt) * ks * aspect * kx;
       for (let db = -0.04; db <= 0.0401; db += 0.005) {
-        const score = iou(sil, mask, a, uc + db, c, d);
+        const score = iou(sil, mask, a, uc + db, c, d, [0, R], 1, W);
         if (score > best.iou) best = { u: [a, uc + db], v: [c, d], iou: score };
       }
     }
   }
-  return { ...best, iou: Math.round(best.iou * 1000) / 1000, bands: fitBands(sil, mask, best) };
+  return { ...best, iou: Math.round(best.iou * 1000) / 1000, bands: fitBands(sil, mask, best, W) };
 }
 
 /** Each slice's own scale and offset across, near the whole fit, then smoothed with its neighbours. */
-function fitBands(sil: Uint8Array, mask: Uint8Array, whole: ViewFit): [number, number][] {
+function fitBands(sil: Uint8Array, mask: Uint8Array, whole: ViewFit, W: number): [number, number][] {
   const [a0, b0] = whole.u;
   const [c, d] = whole.v;
   const raw = [...Array(BANDS).keys()].map((k): [number, number] => {
@@ -141,7 +149,7 @@ function fitBands(sil: Uint8Array, mask: Uint8Array, whole: ViewFit): [number, n
     for (let ka = 0.85; ka <= 1.1501; ka += 0.015) {
       for (let db = -0.08; db <= 0.0801; db += 0.004) {
         // A slight pull to the whole fit, so a slice with little to go on stays with its neighbours.
-        const score = iou(sil, mask, a0 * ka, b0 + db, c, d, rows, 2) - 0.05 * (Math.abs(ka - 1) + 4 * Math.abs(db));
+        const score = iou(sil, mask, a0 * ka, b0 + db, c, d, rows, 2, W) - 0.05 * (Math.abs(ka - 1) + 4 * Math.abs(db));
         if (score > top) [top, best] = [score, [a0 * ka, b0 + db]];
       }
     }

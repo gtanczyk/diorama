@@ -8,7 +8,8 @@ import { badModel, lean, readShape, standUp } from '../model/glb.ts';
 import { paintViews } from '../model/views.ts';
 import { planSprites } from '../model/plan.ts';
 import { Story } from '../story/schema.ts';
-import { fixedLooks } from '../scene/cast-fixes.ts';
+import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
+import { readBodies } from '../scene/cast.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
@@ -32,7 +33,9 @@ defineCommand({
     if (given && !keyArg) throw new Error('--glb needs the key of the character it is');
     const files = new WorldFiles(slug);
     const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : undefined;
-    const keys = keyArg ? [keyArg] : (await planSprites(files, story)).map((p) => p.key);
+    // Everyone the sprites plan needs, and whoever the person asked to animate (cast_animate, cast/fixes.json).
+    const asked = Object.entries(readCastFixes(files)).filter(([, f]) => f.animate).map(([k]) => k);
+    const keys = keyArg ? [keyArg] : [...new Set([...(await planSprites(files, story)).map((p) => p.key), ...asked])];
     for (const key of keys) await buildModel(files, key, take, given);
     console.log(`calls sent: muse ${files.memo.sent.muse}, space ${files.memo.sent.space}`);
   },
@@ -46,7 +49,9 @@ async function buildModel(files: WorldFiles, key: string, take: number, given: s
   const painting = fs.readFileSync(files.path('cast', `${key}-painting.png`));
   const out = (name: string) => files.path('cast', key, 'model', name);
 
-  const views = await paintViews(files.memo, key, who.looks ?? '', painting, take);
+  // Not a person on two legs (cast/figures.json): painted as it is, no skeleton; it hops and squashes as one body.
+  const creature = readBodies(files, fs.existsSync)[key]?.upright === false;
+  const views = await paintViews(files.memo, key, who.looks ?? '', painting, take, creature);
   for (const [name, png] of Object.entries(views)) files.write(out(`${name}.png`), png);
   // TRELLIS sometimes makes a flat card of a flat drawing: other seeds, then the front alone (depth guessed),
   // and with none of them a body, no model: the character walks with its 2D rig.
@@ -64,7 +69,17 @@ async function buildModel(files: WorldFiles, key: string, take: number, given: s
   if (!given && !shell) {
     // An older model of this character (a flat one, kept before this gate) must not stay in the game.
     if (fs.existsSync(rejected)) fs.renameSync(rejected, out('model-rejected.json'));
-    console.log(`${key}: no 3D model: every try was flat; the game walks the 2D rig`);
+    console.log(`${key}: no 3D model: every try was flat; ${creature ? 'the painted figure hops as it is' : 'the game walks the 2D rig'}`);
+    return;
+  }
+  if (creature) {
+    // Make-It-Animatable rigs a person's skeleton only; a creature keeps TRELLIS's mesh as it came (no standing up:
+    // a cat or a frog is not meant to be straight up and down).
+    const mesh = given ? fs.readFileSync(given) : shell!;
+    files.write(out('model.glb'), mesh);
+    const fits = await fitViews(mesh, views);
+    files.write(out('model.json'), { glb: 'model.glb', creature: true, views: fits });
+    console.log(`${key}: ${out('model.glb')} · a creature, no skeleton: hops, squashes and blinks as one body · views ${Object.entries(fits).map(([v, f]) => `${v} ${f.iou}`).join(', ')}`);
     return;
   }
   const built = given ? fs.readFileSync(given) : await autoRig(files.memo, key, shell!);

@@ -8,6 +8,7 @@ import { DESIGNED, designDescriptions, needsDesign, stockVoices, voiceCandidates
 import { agentBlocked } from '../studio/locks.ts';
 import { players } from '../world/drawings.ts';
 import { modelProblem } from '../model/glb.ts';
+import { readBodies } from '../scene/cast.ts';
 import { WorldFiles } from '../world/files.ts';
 import { Slug } from '../world/schema.ts';
 import { ActionError, defineAction, type ActionContext } from './registry.ts';
@@ -49,6 +50,7 @@ defineAction({
     const fixes = readCastFixes(files);
     const voices = fs.existsSync(files.path('voices.json')) ? Voices.safeParse(files.readJson(files.path('voices.json'))) : null;
     const pic = (f: string) => (fs.existsSync(files.path(f)) ? { file: f, v: stamp(files.path(f)) } : null);
+    const bodies = readBodies(files, fs.existsSync);
     const narrator = voices?.success && voices.data.cast.narrator ? [{ key: 'narrator', looks: 'reads the intro and the endings', role: 'narrator' as const, place: null }] : [];
     return [...characters(files), ...narrator].map((c) => {
       const lines = voices?.success ? voices.data.lines.filter((l) => l.speaker === c.key) : [];
@@ -59,6 +61,8 @@ defineAction({
         figure: pic(`cast/${c.key}.png`),
         painting: pic(`cast/${c.key}-painting.png`),
         rig: fs.existsSync(files.path('cast', c.key, 'rig.json')),
+        // Metres tall and whether upright on two legs; not upright (a creature) moves as one body, no 2D rig or sheets.
+        body: bodies[c.key] ?? null,
         ...(() => {
           // A flat model (and the sheets painted over it) is not used by the game; say why instead.
           const has = fs.existsSync(files.path('cast', c.key, 'model', 'model.json'));
@@ -92,6 +96,19 @@ defineAction({
       if (anotherTake) f.take = (f.take ?? 0) + 1;
     });
     return ctx.jobs.start(slug, ['cast', slug, key], `cast ${key}`, ctx.by);
+  },
+});
+
+defineAction({
+  name: 'cast_animate',
+  description: 'Give a character a 3D model now, also one the build skips (an NPC with no lines, a creature or an animated object): '
+    + 'Muse paints it from 4 sides, TRELLIS builds the model (HF, only where the HF token works). A creature (not upright, cast_status body) gets no skeleton: '
+    + 'in the game it hops, squashes as it lands, leans, breathes and blinks as one body. Kept across rebuilds (the model step builds it every time). 4 Muse Image calls + TRELLIS. Runs as a job.',
+  input: z.object({ slug: Slug, key: z.string().min(1) }),
+  job: true,
+  async run({ slug, key }, ctx) {
+    writeFix(ctx, slug, key, (f) => void (f.animate = true));
+    return ctx.jobs.start(slug, ['model', slug, key], `animate ${key}`, ctx.by);
   },
 });
 

@@ -7,6 +7,8 @@ import type { WorldFiles } from '../world/files.ts';
 export const CastFixes = z.record(z.string(), z.object({
   looks: z.string().min(10).optional(),
   take: z.number().int().min(0).optional(),
+  /** The person asked for a 3D model (cast_animate) though the story would not build one: the model step builds it every time. */
+  animate: z.boolean().optional(),
   voice: z.object({ voice: z.string().min(1), design: z.string().min(10).optional(), why: z.string().default('chosen by the person'), stability: z.number().min(0).max(1).optional(), style: z.number().min(0).max(1).optional() }).optional(),
 }));
 export type CastFixes = z.infer<typeof CastFixes>;

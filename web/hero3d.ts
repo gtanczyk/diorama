@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GESTURES, type Pose as GesturePose } from '../src/play/gestures.ts';
 import { CYCLE } from '../src/play/rig.ts';
+import { creatureMotion } from '../src/play/creature.ts';
 
 const STANCE = 0.6;
 
@@ -14,6 +15,8 @@ const smooth = (u: number) => u * u * (3 - 2 * u);
 /** model.json, written by `diorama model`. */
 export type ModelInfo = {
   glb: string;
+  /** Not a person on two legs (a round eye, a frog): the model has no skeleton and moves as a whole body (src/play/creature.ts). */
+  creature?: boolean;
   /** bands: the across fit per slice of the height (src/model/fit.ts BANDS), feet first; without them, u everywhere. */
   views: Record<'front' | 'back' | 'left' | 'right', { image: string; u: [number, number]; v: [number, number]; iou: number; bands?: [number, number][] }>;
 };
@@ -159,6 +162,13 @@ export class Figure3D {
   private legs!: Record<'Left' | 'Right', Leg>;
   private arms!: Record<'Left' | 'Right', THREE.Vector3>;
   private hipsRest!: THREE.Vector3;
+  /** A creature: no bones, the whole body hops, squashes and leans; reach is how far it spreads from its centre, in heights. */
+  private creature = false;
+  private reach = 0.45;
+  private seed = Math.random() * 10;
+  get creatureBody() {
+    return this.creature;
+  }
   /** Where the camera is, seen from the figure in its rest pose (it faces +z): picks the painted view to wear. */
   private camDir = { value: new THREE.Vector3(0, 0, 1) };
 
@@ -200,10 +210,12 @@ export class Figure3D {
     const gltf = await new GLTFLoader().loadAsync(url(info.glb));
     const root = gltf.scene;
     let skinned: THREE.SkinnedMesh | undefined;
+    let first: THREE.Mesh | undefined;
     root.traverse((o) => {
       if ((o as THREE.SkinnedMesh).isSkinnedMesh) skinned = o as THREE.SkinnedMesh;
       if ((o as THREE.Mesh).isMesh) {
         const mesh = o as THREE.Mesh;
+        first ??= mesh;
         mesh.frustumCulled = false;
         const map = (mesh.material as THREE.MeshStandardMaterial).map;
         if (map) map.colorSpace = THREE.SRGBColorSpace;
@@ -211,17 +223,22 @@ export class Figure3D {
         mesh.material = new THREE.MeshStandardMaterial({ map, metalness: 0, roughness: 1 });
       }
     });
-    if (!skinned) throw new Error(`${info.glb}: no skinned mesh`);
-    for (const b of skinned.skeleton.bones) this.bones[b.name.replace(/^mixamorig:?/, '')] = b;
-    toBindPose(root, skinned);
+    // A creature's model is TRELLIS's mesh as it came, with no skeleton: it moves as one body.
+    this.creature = !skinned;
+    if (!skinned && !(info.creature && first)) throw new Error(`${info.glb}: no skinned mesh`);
+    const body = (skinned ?? first)!;
+    if (skinned) {
+      for (const b of skinned.skeleton.bones) this.bones[b.name.replace(/^mixamorig:?/, '')] = b;
+      toBindPose(root, skinned);
+    }
     // Feet at 0, height 1, centred: measured on the mesh as posed now.
     this.holder.add(root);
     this.holder.updateMatrixWorld(true);
-    skinned.skeleton.update();
+    skinned?.skeleton.update();
     const box = new THREE.Box3();
     const v = new THREE.Vector3();
-    const pos = skinned.geometry.attributes.position;
-    for (let i = 0; i < pos.count; i++) box.expandByPoint(skinned.getVertexPosition(i, v).applyMatrix4(skinned.matrixWorld));
+    const pos = body.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) box.expandByPoint(body.getVertexPosition(i, v).applyMatrix4(body.matrixWorld));
     const h = box.max.y - box.min.y;
     const inner = new THREE.Group();
     this.holder.add(inner);
@@ -229,7 +246,16 @@ export class Figure3D {
     inner.scale.setScalar(1 / h);
     inner.position.set(-(box.min.x + box.max.x) / 2 / h, -box.min.y / h, -(box.min.z + box.max.z) / 2 / h);
     this.holder.updateMatrixWorld(true);
-    await this.paintViews(skinned, info, url);
+    await this.paintViews(body, info, url);
+    if (!skinned) {
+      // How far it spreads round its feet whichever way it turns (a cat is longer than it is tall): the frame fits it.
+      const [cx, cz] = [(box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2];
+      for (let i = 0; i < pos.count; i++) {
+        body.getVertexPosition(i, v).applyMatrix4(body.matrixWorld);
+        this.reach = Math.max(this.reach, Math.hypot(v.x - cx, v.z - cz) / h + 0.06);
+      }
+      return;
+    }
     for (const [k, b] of Object.entries(this.bones)) this.rest[k] = { q: b.quaternion.clone(), parentWorld: b.parent!.getWorldQuaternion(new THREE.Quaternion()) };
     const at = (k: string) => this.bones[k].getWorldPosition(new THREE.Vector3());
     const leg = (s: string): Leg => {
@@ -243,7 +269,7 @@ export class Figure3D {
   }
 
   /** Muse's views, projected in the bind pose, so the paint rides on the surface while it moves. */
-  private async paintViews(skinned: THREE.SkinnedMesh, info: ModelInfo, url: (file: string) => string) {
+  private async paintViews(skinned: THREE.Mesh, info: ModelInfo, url: (file: string) => string) {
     const g = skinned.geometry;
     const pos = g.attributes.position;
     const nrm = g.attributes.normal;
@@ -435,24 +461,36 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
    * One frame, `px` pixels tall. yaw: 0 faces the viewer, PI/2 faces screen right. elevation: how far
    * the camera looks down (radians). Returns the canvas, feet at (width / 2, height * feetAt).
    */
-  draw({ phase = 0, walking = false, yaw = 0, elevation = 0.18, px = 300, light, armSwing = 0.12, gesture }: {
+  draw({ phase = 0, walking = false, yaw = 0, elevation = 0.18, px = 300, light, armSwing = 0.12, gesture, time = performance.now() / 1000, talk }: {
     phase?: number; walking?: boolean; yaw?: number; elevation?: number; px?: number; light?: FigureLight; armSwing?: number;
-    /** A talking pose (index into src/play/gestures.ts GESTURES), standing. */
+    /** A talking pose (index into src/play/gestures.ts GESTURES), standing. A creature only bounces on its words. */
     gesture?: number;
+    /** Seconds, and whether it speaks or listens: a creature breathes, blinks and bounces with them. */
+    time?: number; talk?: 'speak' | 'listen';
   }): HTMLCanvasElement {
-    this.pose(phase, walking && gesture === undefined, armSwing, gesture);
+    // Feet at 0: how much of the frame is above and below them, and how wide it is either side, in heights.
+    let [top, bottom, half] = [1.06, -0.06, 0.45];
+    if (this.creature) {
+      const m = creatureMotion({ phase, walking: walking && gesture === undefined, time, talk: gesture !== undefined ? 'speak' : talk, seed: this.seed });
+      this.holder.rotation.order = 'YXZ';
+      this.holder.rotation.x = m.lean;
+      this.holder.position.y = m.lift;
+      this.holder.scale.set(1 / Math.sqrt(m.stretch), m.stretch, 1 / Math.sqrt(m.stretch));
+      // Room for the highest hop and a stretched take-off, and for a long body turned side on.
+      [top, bottom, half] = [1.55, -0.06, this.reach];
+    } else this.pose(phase, walking && gesture === undefined, armSwing, gesture);
     this.holder.rotation.y = yaw;
     this.camDir.value.set(-Math.sin(yaw), 0, Math.cos(yaw));
     this.holder.updateMatrixWorld(true);
-    const [w, h] = [Math.ceil(px * 0.9), Math.ceil(px * 1.12)];
+    const [w, h] = [Math.ceil(px * 2 * half), Math.ceil(px * (top - bottom))];
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.renderer.setSize(w, h, false);
       this.rt.setSize(w, h);
       (this.post.uniforms.texel.value as THREE.Vector2).set(1 / w, 1 / h);
     }
-    this.feetAt = 1 - 0.06 / 1.12;
+    this.feetAt = top / (top - bottom);
     const cam = this.camera;
-    Object.assign(cam, { left: -0.45, right: 0.45, top: 1.06 * Math.cos(elevation), bottom: -0.06 });
+    Object.assign(cam, { left: -half, right: half, top: top * Math.cos(elevation), bottom });
     cam.position.set(0, Math.sin(elevation) * 5, Math.cos(elevation) * 5);
     cam.lookAt(0, 0, 0);
     cam.updateProjectionMatrix();

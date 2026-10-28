@@ -79,7 +79,9 @@ export function worldData(files: WorldFiles) {
       const sprites = modelOk && fs.existsSync(files.path('cast', key, 'sprites', 'sprites.json')) ? { dir: `cast/${key}/sprites`, info: files.readJson(files.path('cast', key, 'sprites', 'sprites.json')) as SpriteInfo } : undefined;
       const body = bodies[key];
       const walks = body?.upright !== false;
-      return [key, { image: `cast/${f}`, ...(body && { height: body.height }), ...(!walks && { upright: false }), ...(walks && rig ? { rig, parts: `cast/${key}` } : {}), ...(walks && model && { model }), ...(walks && sprites && { sprites }) }];
+      // A creature has no legs for a 2D rig, but its own 3D model (no skeleton, model.json creature) hops and squashes.
+      const creatureModel = model?.info.creature ? model : undefined;
+      return [key, { image: `cast/${f}`, ...(body && { height: body.height }), ...(!walks && { upright: false }), ...(walks && rig ? { rig, parts: `cast/${key}` } : {}), ...(walks ? model && { model } : creatureModel && { model: creatureModel }), ...(walks && sprites && { sprites }) }];
     }));
   const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
   // changes/<i>.png per place: how story.changes[i] looks once it holds.
