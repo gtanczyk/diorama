@@ -460,6 +460,9 @@ section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-er
   main.workshop.fit .strip .name { font-size: 12px; }
   main.workshop.fit .tale { min-height: 0; }
   main.workshop.fit > .right { min-height: 0; }
+  main.workshop.fit > .left > .play { flex: 1 1 0; min-height: 0; }
+  main.workshop.fit .play .screen { flex: 1 1 0; min-height: 0; container-type: size; display: grid; place-items: center; }
+  main.workshop.fit .play iframe { width: min(100cqw, calc(100cqh * 1200 / 896)); }
   main.workshop.fit > .right .dock-body { flex: 1 1 0; min-height: 0; overflow: hidden; }
 }
 

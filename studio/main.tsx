@@ -553,8 +553,8 @@ function Workshop({ slug }: { slug: string }) {
       {shown && status && <KidsWait slug={slug} places={status.placeDetail} progress={total ? 1 - left / total : 0} left={shown.state === 'running' ? left : null} doing={plan.find((s) => running[s] === 'run')}
         ready={shown.state === 'done' && playable} failed={shown.state === 'failed' || shown.state === 'cancelled'}
         onPlay={() => (setHidden(shown.id), setPlaying({ full: true }))} onHide={() => setHidden(shown.id)} />}
-      {/* Places fits the window: the build is watched, not scrolled. Fixing a place or playing gives the page its length back. */}
-      <main class={`workshop${view === 'places' && !playing && !placeFocus ? ' fit' : ''} dock-${dock.folded && dock.side !== 'float' ? `${dock.side}-folded` : dock.side}`} style={{ '--dock-w': `${dock.width}px` }}>
+      {/* Places and Play fit the window: the build is watched and the game played, not scrolled. Fixing a place gives the page its length back. */}
+      <main class={`workshop${playing ? ' fit playing' : view === 'places' && !placeFocus ? ' fit' : ''} dock-${dock.folded && dock.side !== 'float' ? `${dock.side}-folded` : dock.side}`} style={{ '--dock-w': `${dock.width}px` }}>
         <div class="left">
           <div class="row">
             <h1>{status?.title ?? slug}</h1>
@@ -572,26 +572,27 @@ function Workshop({ slug }: { slug: string }) {
           {error && <p class="error">{error}</p>}
           {movedFrom.value && movedFrom.value !== slug && <p class="banner">The agent moved the view here from {movedFrom.value}. <button type="button" class="ghost" onClick={() => { const back = movedFrom.value!; movedFrom.value = null; go(`/w/${back}`); }}>Back to {movedFrom.value}</button> <button type="button" class="ghost" onClick={() => (movedFrom.value = null)}>Stay</button></p>}
           {undone && !job && <p class="banner">{undone}{canRedo ? ' · Redo puts it back.' : ''}</p>}
-          {status && <Pipeline job={job} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} />}
+          {/* Playing, the game is the view: the build bar and the tabs step aside until it closes. */}
+          {status && !playing && <Pipeline job={job} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} />}
           {failed && !job && <Failed slug={slug} job={failed} noAgent={noAgent} onError={setError} onPlace={setFocus} />}
           {budget?.over && <p class="banner">Budget: ${budget.total.usd} spent of the ${budget.limitUsd} limit. Check Setup before the next big build.</p>}
           {playing && <Play slug={slug} place={playing.place} round={playing.round ?? 0} full={playing.full} onRestart={() => setPlaying({ ...playing, round: (playing.round ?? 0) + 1 })} version={tick} onLine={playLine} onError={setError} />}
-          <div class="seg" role="tablist" aria-label="Show">
+          {!playing && <div class="seg" role="tablist" aria-label="Show">
             <button type="button" role="tab" aria-selected={view === 'places'} class={view === 'places' ? 'on' : ''} onClick={() => setView('places')}>Places</button>
             <button type="button" role="tab" aria-selected={view === 'story'} class={view === 'story' ? 'on' : ''} onClick={() => setView('story')}>Story</button>
             <button type="button" role="tab" aria-selected={view === 'cast'} class={view === 'cast' ? 'on' : ''} onClick={() => setView('cast')}>Cast</button>
             <button type="button" role="tab" aria-selected={view === 'notes'} class={view === 'notes' ? 'on' : ''} onClick={() => setView('notes')}>Notes{notes.some((n) => n.state === 'open') ? ` · ${notes.filter((n) => n.state === 'open').length}` : ''}</button>
-          </div>
-          {view === 'story' && <StoryView slug={slug} version={tick} onError={setError} />}
-          {view === 'cast' && <CastView slug={slug} version={tick} onError={setError} />}
-          {view === 'places' && status && (
+          </div>}
+          {!playing && view === 'story' && <StoryView slug={slug} version={tick} onError={setError} />}
+          {!playing && view === 'cast' && <CastView slug={slug} version={tick} onError={setError} />}
+          {!playing && view === 'places' && status && (
             <div class="build-stage"><div class="build-grid">
               {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? 'Muse Spark is dreaming up the places…'}</span></div></div></figure>}
               <Tale slug={slug} version={tick} pitch={status.pitch} places={status.placeDetail} />
               <Strip slug={slug} places={status.placeDetail} focus={stageKey ?? null} live={liveBuild} building={!!building} repairing={repairing} onPick={(k) => setFocus(focus === k ? null : k)} />
             </div></div>
           )}
-          {view === 'places' && placeFocus && (
+          {!playing && view === 'places' && placeFocus && (
             <section class="inspect">
               <p class="detail">{placeFocus.shows}</p>
               {placeFocus.verdict && [...placeFocus.verdict.errors.map((f) => ['error', f] as const), ...placeFocus.verdict.flags.map((f) => ['flag', f] as const)].map(([kind, f]) => (
@@ -612,7 +613,7 @@ function Workshop({ slug }: { slug: string }) {
               {placeFocus.stages.painting ? <PlaceEditor slug={slug} place={placeFocus.key} version={tick} onError={setError} /> : <p class="detail">Fixing opens once the place is painted.</p>}
             </section>
           )}
-          {view === 'notes' && <Notes slug={slug} notes={notes} onPlace={(p) => (setView('places'), setFocus(p))} onError={setError} />}
+          {!playing && view === 'notes' && <Notes slug={slug} notes={notes} onPlace={(p) => (setView('places'), setFocus(p))} onError={setError} />}
         </div>
         <Dock dock={dock} onChange={setDock} title="Agent">
           <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} />
@@ -699,7 +700,10 @@ function Play({ slug, place, round, full, onRestart, version, onLine, onError }:
           <button type="button" class="primary small" onClick={onRestart}>Reload the game</button>
         </div>
       )}
-      <iframe ref={frame} key={`${src}#${round}`} src={src} title={`${slug}, playable`} onLoad={hook} allow="autoplay; fullscreen; gamepad" allowFullScreen />
+      {/* The game letterboxes to the room it is given, never wider or taller: no page scroll while playing. */}
+      <div class="screen">
+        <iframe ref={frame} key={`${src}#${round}`} src={src} title={`${slug}, playable`} onLoad={hook} allow="autoplay; fullscreen; gamepad" allowFullScreen />
+      </div>
     </section>
   );
 }
