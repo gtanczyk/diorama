@@ -4,6 +4,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { Events } from './events.ts';
+import type { Job } from './jobs.ts';
 
 export type Snapshot = { id: string; at: string; label: string; by: string; files: Record<string, string> };
 type Index = Record<string, { size: number; mtimeMs: number; hash: string }>;
@@ -111,4 +113,12 @@ export class History {
       removed: Object.keys(a).filter((f) => !(f in b)),
     };
   }
+}
+
+/** All action entry points snapshot at the same job boundary, including CLI and standalone MCP. */
+export function snapshotBeforeJob(root: string, events: Events): (job: Job) => void {
+  return (job) => {
+    const dir = path.join(root, job.world);
+    if (fs.existsSync(dir)) events.publish('history.snapshot', { world: job.world, id: new History(dir).snapshot(job.label, job.by).id });
+  };
 }

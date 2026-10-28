@@ -7,6 +7,7 @@ import { storyLines, Voices } from '../sound/voices.ts';
 import { brevityIssues, checkStory, paintingIssues, questionIssues } from '../story/check.ts';
 import { applyTexts, readStoryFixes, StoryFixes, storyFixesFile, textAt } from '../story/fixes.ts';
 import { Story } from '../story/schema.ts';
+import { History } from '../studio/history.ts';
 import { agentBlocked } from '../studio/locks.ts';
 import { WorldFiles } from '../world/files.ts';
 import { Slug } from '../world/schema.ts';
@@ -67,6 +68,9 @@ defineAction({
     if (!story) throw new ActionError(409, `${slug} has no story yet: run_step story first`);
     const before = textAt(story, path);
     if (before === null) throw new ActionError(400, `"${path}" is not a line of the story; story_status lists them`);
+    const busy = ctx.jobs.busy(slug);
+    if (busy) throw new ActionError(409, `${busy.label} is ${busy.state}; wait before editing story text`);
+    new History(files.dir).snapshot(`story text ${path}`, ctx.by);
     const fixes = readStoryFixes(files);
     fixes.texts[path] = { text, at: new Date().toISOString() };
     files.write(storyFixesFile(files), StoryFixes.parse(fixes));
@@ -89,7 +93,8 @@ defineAction({
     const files = open(slug, ctx);
     const blocked = agentBlocked(files.dir, ctx.by);
     if (blocked) throw new ActionError(423, blocked);
-    files.write(storyFixesFile(files), StoryFixes.parse({ ...(wish && { wish }), texts: {} }));
-    return ctx.jobs.start(slug, ['story', slug], wish ? 'rewrite story' : 'first story', ctx.by);
+    return ctx.jobs.start(slug, ['story', slug], wish ? 'rewrite story' : 'first story', ctx.by, () => {
+      files.write(storyFixesFile(files), StoryFixes.parse({ ...(wish && { wish }), texts: {} }));
+    });
   },
 });

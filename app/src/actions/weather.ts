@@ -29,9 +29,10 @@ defineAction({
     const placeDir = path.join(dir, 'places', place);
     if (!fs.existsSync(path.join(placeDir, 'geometry.json'))) throw new ActionError(404, `${slug}/${place} has no geometry yet: build it first`);
     const file = path.join(placeDir, 'weather-wish.json');
-    const was = fs.existsSync(file) ? WeatherWish.parse(JSON.parse(fs.readFileSync(file, 'utf8'))) : WeatherWish.parse({});
-    const wish: WeatherWish = { ...was, fall, ...(strength !== undefined && { strength }), ...(fog !== undefined && { fog }), ...(hint !== undefined && { hint }) };
-    fs.writeFileSync(file, `${JSON.stringify(wish, null, 2)}\n`);
-    return ctx.jobs.start(slug, ['weather', slug, place], `weather ${place}: ${fall}`, ctx.by);
+    return ctx.jobs.start(slug, ['weather', slug, place], `weather ${place}: ${fall}`, ctx.by, () => {
+      const was = fs.existsSync(file) ? WeatherWish.parse(JSON.parse(fs.readFileSync(file, 'utf8'))) : WeatherWish.parse({});
+      const wish: WeatherWish = { ...was, fall, ...(strength !== undefined && { strength }), ...(fog !== undefined && { fog }), ...(hint !== undefined && { hint }) };
+      fs.writeFileSync(file, `${JSON.stringify(wish, null, 2)}\n`);
+    });
   },
 });

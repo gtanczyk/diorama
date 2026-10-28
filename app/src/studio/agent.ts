@@ -177,16 +177,26 @@ class Talk {
    */
   private film(state: SessionState) {
     this.filmLatest = state;
-    this.filmTimer ??= setTimeout(() => {
-      this.filmTimer = undefined;
-      const s = this.filmLatest!;
-      // Every turn that changed since the last line: a turn can end and the next begin within one beat.
-      for (const turn of s.turns) {
-        if (this.filmed.get(turn.id) === turn) continue;
-        this.filmed.set(turn.id, turn);
-        this.record({ type: 'state', agent: s.agent, status: turn === s.turns.at(-1) ? s.status : 'idle', turn });
-      }
-    }, 250);
+    // Persist completed turns immediately: a restart can follow the answer before the throttle fires.
+    if (state.turns.at(-1)?.result) this.flushFilm();
+    else this.filmTimer ??= setTimeout(() => this.flushFilm(), 250);
+  }
+
+  private flushFilm() {
+    clearTimeout(this.filmTimer);
+    this.filmTimer = undefined;
+    const s = this.filmLatest;
+    if (!s) return;
+    for (const turn of s.turns) {
+      if (this.filmed.get(turn.id) === turn) continue;
+      this.filmed.set(turn.id, turn);
+      this.record({ type: 'state', agent: turn.agent ?? s.agent, status: turn === s.turns.at(-1) ? s.status : 'idle', turn });
+    }
+  }
+
+  close() {
+    this.session.close();
+    this.flushFilm();
   }
 
   /** The feed (Activity, the terminal) gets the gist: what was said, each tool, refusals, how a turn ended. */
@@ -309,7 +319,7 @@ export function pastTurns(dir: string, limit = 60): SessionTurn[] {
     }
     turns.push(...[...last.values()].sort((a, b) => a.id - b.id));
   }
-  const kept = turns.slice(-limit);
+  const kept = turns.sort((a, b) => a.startedAt - b.startedAt).slice(-limit);
   return kept.map((turn, i) => ({
     ...turn,
     id: i - kept.length,
@@ -460,7 +470,7 @@ export class AgentHub {
   }
 
   stopAll() {
-    for (const t of this.talks.values()) t.session.close();
+    for (const t of this.talks.values()) t.close();
   }
 }
 

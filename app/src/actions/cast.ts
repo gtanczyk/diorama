@@ -26,17 +26,18 @@ function characters(files: WorldFiles) {
   ];
 }
 
-function writeFix(ctx: ActionContext, slug: string, key: string, change: (f: CastFixes[string]) => void) {
+function prepareFix(ctx: ActionContext, slug: string, key: string, change: (f: CastFixes[string]) => void) {
   const files = new WorldFiles(slug, ctx.root);
   if (key !== 'narrator' && !characters(files).some((c) => c.key === key)) throw new ActionError(404, `${slug} has no hero or NPC called ${key}`);
   const blocked = agentBlocked(files.dir, ctx.by);
   if (blocked) throw new ActionError(423, blocked);
-  const fixes = readCastFixes(files);
-  const fix = (fixes[key] ??= {});
-  change(fix);
-  fs.mkdirSync(path.dirname(castFixesFile(files)), { recursive: true });
-  files.write(castFixesFile(files), CastFixes.parse(fixes));
-  return files;
+  return () => {
+    const fixes = readCastFixes(files);
+    const fix = (fixes[key] ??= {});
+    change(fix);
+    fs.mkdirSync(path.dirname(castFixesFile(files)), { recursive: true });
+    files.write(castFixesFile(files), CastFixes.parse(fixes));
+  };
 }
 
 defineAction({
@@ -91,11 +92,11 @@ defineAction({
   job: true,
   async run({ slug, key, looks, anotherTake }, ctx) {
     if (!looks && !anotherTake) throw new ActionError(400, 'give new looks, or anotherTake: true');
-    writeFix(ctx, slug, key, (f) => {
+    const prepare = prepareFix(ctx, slug, key, (f) => {
       if (looks) f.looks = looks;
       if (anotherTake) f.take = (f.take ?? 0) + 1;
     });
-    return ctx.jobs.start(slug, ['cast', slug, key], `cast ${key}`, ctx.by);
+    return ctx.jobs.start(slug, ['cast', slug, key], `cast ${key}`, ctx.by, prepare);
   },
 });
 
@@ -107,8 +108,8 @@ defineAction({
   input: z.object({ slug: Slug, key: z.string().min(1) }),
   job: true,
   async run({ slug, key }, ctx) {
-    writeFix(ctx, slug, key, (f) => void (f.animate = true));
-    return ctx.jobs.start(slug, ['model', slug, key], `animate ${key}`, ctx.by);
+    const prepare = prepareFix(ctx, slug, key, (f) => void (f.animate = true));
+    return ctx.jobs.start(slug, ['model', slug, key], `animate ${key}`, ctx.by, prepare);
   },
 });
 
@@ -146,7 +147,7 @@ defineAction({
   job: true,
   async run({ slug, key, voice, design, stability, style }, ctx) {
     if (design && voice !== DESIGNED) throw new ActionError(400, `design goes with voice "${DESIGNED}"`);
-    writeFix(ctx, slug, key, (f) => void (f.voice = { voice, why: 'chosen by the person', ...(design && { design }), ...(stability !== undefined && { stability }), ...(style !== undefined && { style }) }));
-    return ctx.jobs.start(slug, ['voices', slug], `voice ${key}`, ctx.by);
+    const prepare = prepareFix(ctx, slug, key, (f) => void (f.voice = { voice, why: 'chosen by the person', ...(design && { design }), ...(stability !== undefined && { stability }), ...(style !== undefined && { style }) }));
+    return ctx.jobs.start(slug, ['voices', slug], `voice ${key}`, ctx.by, prepare);
   },
 });

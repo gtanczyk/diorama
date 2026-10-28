@@ -21,7 +21,7 @@ import { readBudget } from '../actions/budget.ts';
 import { AgentHub, isAgentName } from './agent.ts';
 import { bundle, WEB, worldData } from '../commands/play.ts';
 import { WorldFiles } from '../world/files.ts';
-import { History } from './history.ts';
+import { snapshotBeforeJob } from './history.ts';
 import { handleMcp } from './mcp.ts';
 
 export const STUDIO_WEB = fileURLToPath(new URL('../../studio/', import.meta.url));
@@ -136,10 +136,7 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
     // Commands find worlds in ./worlds, so a Studio on another worlds folder runs them beside it.
     cwd: opts.cwd ?? (path.basename(root) === 'worlds' ? path.dirname(root) : undefined),
     bin: opts.bin,
-    beforeStart: (job) => {
-      const dir = path.join(root, job.world);
-      if (fs.existsSync(dir)) events.publish('history.snapshot', { world: job.world, id: new History(dir).snapshot(job.label, job.by).id });
-    },
+    beforeStart: snapshotBeforeJob(root, events),
   });
   const watches = new Map<string, WorldWatch>();
   let app: Promise<string> | null = null;

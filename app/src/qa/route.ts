@@ -48,6 +48,26 @@ export async function playRoute(page: Page, steps: Step[]): Promise<{ ending: st
         };
         const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
         if (hits(cx, cy)) return { x: cx, y: cy };
+        // Aim inside the largest exposed patch, not at its first edge pixel. An animated NPC can
+        // move between measuring and the actual pointer event, especially beside the inventory.
+        const left = Math.max(0, rect.left, box.left), top = Math.max(0, rect.top, box.top);
+        const right = Math.min(innerWidth, rect.right, box.right), bottom = Math.min(innerHeight, rect.bottom, box.bottom);
+        const stride = 4, cols = Math.ceil((right - left) / stride);
+        let previous = new Uint32Array(Math.max(0, cols) + 1), best = 0, aim = null;
+        for (let y = top + 0.5; y < bottom; y += stride) {
+          const row = new Uint32Array(previous.length);
+          for (let c = 1, x = left + 0.5; x < right; c++, x += stride) {
+            if (!hits(x, y)) continue;
+            row[c] = 1 + Math.min(row[c - 1], previous[c], previous[c - 1]);
+            if (row[c] > best) {
+              best = row[c];
+              aim = { x: x - (best - 1) * stride / 2, y: y - (best - 1) * stride / 2 };
+            }
+          }
+          previous = row;
+        }
+        if (aim && hits(aim.x, aim.y)) return aim;
+        // Preserve pixel-sized targets that the coarse search might step over.
         for (let y = Math.max(0, rect.top, box.top) + 0.5; y < Math.min(innerHeight, rect.bottom, box.bottom); y++) {
           for (let x = Math.max(0, rect.left, box.left) + 0.5; x < Math.min(innerWidth, rect.right, box.right); x++) {
             if (hits(x, y)) return { x, y };

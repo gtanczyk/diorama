@@ -52,3 +52,30 @@ test('pointer routes select inventory items and the original index of a visible 
     expect((await playRoute(page, report.routes[0].actions.map(toStep))).ending).toBe('won');
   } finally { await page.close(); await new Promise<void>((r) => server.close(() => r())); fs.rmSync(root, { recursive: true, force: true }); }
 }, 60_000);
+
+test('a target beside an overlay is clicked inside its exposed area, away from the moving edge', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'diorama-pointer-edge-'));
+  const { world } = await scene(root);
+  const files = new WorldFiles('w', root);
+  const route = checkStory(world, files.readJson(files.path('story.json'))).routes[0];
+  const server = await serveWorld(files, 0);
+  const page = await browser.newPage({ viewport: { width: 1200, height: 960 } });
+  try {
+    await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/?capture=1&sound=0`);
+    await page.waitForFunction('window.diorama?.place && !window.diorama.speech && window.diorama.dark === 0');
+    const box = await page.evaluate(`(() => {
+      const box = window.diorama.pageRect('token');
+      const cover = document.createElement('div');
+      Object.assign(cover.style, { position: 'fixed', zIndex: '100', left: (box.left + box.width / 2) + 'px', top: box.top + 'px', width: box.width + 'px', height: box.height + 'px' });
+      document.body.appendChild(cover);
+      document.querySelector('canvas').addEventListener('click', e => window.testClick = { x: e.clientX, y: e.clientY }, { once: true });
+      return box.toJSON();
+    })()`) as { left: number; top: number; width: number; bottom: number };
+    expect((await playRoute(page, route.actions.map(toStep))).ending).toBe('won');
+    const click = await page.evaluate('window.testClick') as { x: number; y: number };
+    expect(click.x).toBeGreaterThan(box.left + 2);
+    expect(click.x).toBeLessThan(box.left + box.width / 2 - 1);
+    expect(click.y).toBeGreaterThan(box.top + 2);
+    expect(click.y).toBeLessThan(box.bottom - 2);
+  } finally { await page.close(); await new Promise<void>((r) => server.close(() => r())); fs.rmSync(root, { recursive: true, force: true }); }
+}, 30_000);

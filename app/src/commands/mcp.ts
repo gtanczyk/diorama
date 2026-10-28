@@ -6,6 +6,7 @@ import readline from 'node:readline';
 import '../actions/index.ts';
 import { defineCommand } from '../registry.ts';
 import { Events } from '../studio/events.ts';
+import { snapshotBeforeJob } from '../studio/history.ts';
 import { Jobs } from '../studio/jobs.ts';
 import { handleMcp, type Reply } from '../studio/mcp.ts';
 import { readStudioFile } from '../studio/discovery.ts';
@@ -16,7 +17,8 @@ defineCommand({
   async run() {
     const studio = readStudioFile(process.cwd());
     const events = new Events();
-    const ctx = { by: 'agent' as const, root: path.resolve('worlds'), events, jobs: new Jobs(events) };
+    const root = path.resolve('worlds');
+    const ctx = { by: 'agent' as const, root, events, jobs: new Jobs(events, { beforeStart: snapshotBeforeJob(root, events) }) };
     const out = (reply: Reply | Reply[] | null) => reply && process.stdout.write(`${JSON.stringify(reply)}\n`);
     // Logs go to stderr: stdout carries only protocol messages.
     console.error(studio ? `diorama mcp: forwarding to the Studio at ${studio.url}` : 'diorama mcp: no Studio running here, running actions in this process');

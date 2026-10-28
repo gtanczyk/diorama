@@ -26,10 +26,11 @@ defineAction({
     const placeDir = path.join(dir, 'places', place);
     if (!fs.existsSync(path.join(placeDir, 'geometry.json'))) throw new ActionError(404, `${slug}/${place} has no geometry yet: build it first`);
     const file = path.join(placeDir, 'depth.json');
-    const was = fs.existsSync(file) ? Depth.parse(JSON.parse(fs.readFileSync(file, 'utf8'))) : Depth.parse({});
-    const depth: Depth = { ...was, flow, ...(hint !== undefined && { flowHint: hint }) };
-    fs.writeFileSync(file, `${JSON.stringify(depth, null, 2)}\n`);
-    return ctx.jobs.start(slug, ['backdrop', slug, place], `water ${place}: ${flow}`, ctx.by);
+    return ctx.jobs.start(slug, ['backdrop', slug, place], `water ${place}: ${flow}`, ctx.by, () => {
+      const was = fs.existsSync(file) ? Depth.parse(JSON.parse(fs.readFileSync(file, 'utf8'))) : Depth.parse({});
+      const depth: Depth = { ...was, flow, ...(hint !== undefined && { flowHint: hint }) };
+      fs.writeFileSync(file, `${JSON.stringify(depth, null, 2)}\n`);
+    });
   },
 });
 
@@ -53,9 +54,10 @@ defineAction({
     const placeDir = path.join(dir, 'places', place);
     if (!fs.existsSync(path.join(placeDir, 'geometry.json'))) throw new ActionError(404, `${slug}/${place} has no geometry yet: build it first`);
     const file = path.join(placeDir, 'depth.json');
-    const was = fs.existsSync(file) ? Depth.parse(JSON.parse(fs.readFileSync(file, 'utf8'))) : Depth.parse({});
-    const depth: Depth = { ...was, fog: drift, ...(speed !== undefined && { fogSpeed: speed }) };
-    fs.writeFileSync(file, `${JSON.stringify(depth, null, 2)}\n`);
-    return ctx.jobs.start(slug, ['backdrop', slug, place], `fog ${place}: ${drift}${speed !== undefined ? ` x${speed}` : ''}`, ctx.by);
+    return ctx.jobs.start(slug, ['backdrop', slug, place], `fog ${place}: ${drift}${speed !== undefined ? ` x${speed}` : ''}`, ctx.by, () => {
+      const was = fs.existsSync(file) ? Depth.parse(JSON.parse(fs.readFileSync(file, 'utf8'))) : Depth.parse({});
+      const depth: Depth = { ...was, fog: drift, ...(speed !== undefined && { fogSpeed: speed }) };
+      fs.writeFileSync(file, `${JSON.stringify(depth, null, 2)}\n`);
+    });
   },
 });

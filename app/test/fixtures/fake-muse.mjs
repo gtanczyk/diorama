@@ -22,7 +22,7 @@ async function turn(sessionId, turnId, text) {
   const worlds = body.result?.structuredContent?.result?.length ?? 'error';
   notify('item/completed', { sessionId, item: { kind: 'mcpToolCall', itemId: 'i1', tool: 'mcp__diorama__world_list', status: 'completed' } });
   const keys = process.env.META_API_KEY ? 'has-key' : 'no-key';
-  notify('item/completed', { sessionId, item: { kind: 'agentMessage', itemId: 'm1', text: `worlds:${worlds} ${keys} heard:${text.split('Person: ').pop()}${resumed}` } });
+  notify('item/completed', { sessionId, item: { kind: 'agentMessage', itemId: 'm1', text: `worlds:${worlds} ${keys} heard:${text.split('Person: ').pop()}${resumed}${text.includes('studio/conversation.md') ? ' with-history' : ''}` } });
   notify('turn/completed', { sessionId, turnId, terminal: 'completed' });
 }
 

@@ -5,6 +5,7 @@ import '../actions/index.ts';
 import { actions, describeActions, runAction } from '../actions/registry.ts';
 import { defineCommand } from '../registry.ts';
 import { Events } from '../studio/events.ts';
+import { snapshotBeforeJob } from '../studio/history.ts';
 import { Jobs, type Job } from '../studio/jobs.ts';
 
 defineCommand({
@@ -16,7 +17,8 @@ defineCommand({
       return;
     }
     const events = new Events();
-    const ctx = { by: 'cli' as const, root: path.resolve('worlds'), events, jobs: new Jobs(events, { echo: true }) };
+    const root = path.resolve('worlds');
+    const ctx = { by: 'cli' as const, root, events, jobs: new Jobs(events, { echo: true, beforeStart: snapshotBeforeJob(root, events) }) };
     let input: unknown = {};
     try {
       input = json ? JSON.parse(json) : {};

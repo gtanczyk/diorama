@@ -64,14 +64,15 @@ defineAction({
     if (how === 'cut' && !itemSources(story)[item]) throw new ActionError(400, `${item} is handed over, not picked up anywhere, so there is nothing to cut it from`);
     const blocked = agentBlocked(files.dir, ctx.by);
     if (blocked) throw new ActionError(423, blocked);
-    const fixes = readIconFixes(files);
-    const fix = (fixes[item] ??= {});
-    if (how) fix.how = how;
-    if (hint) fix.hint = hint;
-    if (anotherTake) fix.take = (fix.take ?? 0) + 1;
-    fs.mkdirSync(path.dirname(iconFixesFile(files)), { recursive: true });
-    files.write(iconFixesFile(files), fixes);
-    return ctx.jobs.start(slug, ['icons', slug, item], `icon ${item}`, ctx.by);
+    return ctx.jobs.start(slug, ['icons', slug, item], `icon ${item}`, ctx.by, () => {
+      const fixes = readIconFixes(files);
+      const fix = (fixes[item] ??= {});
+      if (how) fix.how = how;
+      if (hint) fix.hint = hint;
+      if (anotherTake) fix.take = (fix.take ?? 0) + 1;
+      fs.mkdirSync(path.dirname(iconFixesFile(files)), { recursive: true });
+      files.write(iconFixesFile(files), fixes);
+    });
   },
 });
 
@@ -84,9 +85,10 @@ defineAction({
     const files = new WorldFiles(slug, ctx.root);
     const blocked = agentBlocked(files.dir, ctx.by);
     if (blocked) throw new ActionError(423, blocked);
-    const fixes = readIconFixes(files);
-    delete fixes[item];
-    if (fs.existsSync(iconFixesFile(files))) files.write(iconFixesFile(files), fixes);
-    return ctx.jobs.start(slug, ['icons', slug, item], `icon ${item}`, ctx.by);
+    return ctx.jobs.start(slug, ['icons', slug, item], `icon ${item}`, ctx.by, () => {
+      const fixes = readIconFixes(files);
+      delete fixes[item];
+      if (fs.existsSync(iconFixesFile(files))) files.write(iconFixesFile(files), fixes);
+    });
   },
 });
