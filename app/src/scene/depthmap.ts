@@ -35,14 +35,15 @@ async function modelPath(): Promise<string> {
 
 /** Relative inverse depth (bigger = nearer) at the model's resolution. */
 async function disparity(painting: Buffer): Promise<Float32Array> {
-  const ort = await import('onnxruntime-node');
+  // The WASM build runs in Node with nothing to install natively (no CUDA download on Linux).
+  const ort = await import('onnxruntime-web');
   const raw = await sharp(painting).resize(IN_W, IN_H, { fit: 'fill' }).removeAlpha().raw().toBuffer();
   const mean = [0.485, 0.456, 0.406];
   const std = [0.229, 0.224, 0.225];
   const n = IN_W * IN_H;
   const input = new Float32Array(3 * n);
   for (let i = 0; i < n; i++) for (let c = 0; c < 3; c++) input[c * n + i] = (raw[i * 3 + c] / 255 - mean[c]) / std[c];
-  const session = await ort.InferenceSession.create(await modelPath());
+  const session = await ort.InferenceSession.create(new Uint8Array(fs.readFileSync(await modelPath())));
   const out = await session.run({ [session.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, IN_H, IN_W]) });
   return out[session.outputNames[0]].data as Float32Array;
 }
