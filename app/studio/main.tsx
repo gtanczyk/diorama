@@ -665,6 +665,11 @@ function Workshop({ slug }: { slug: string }) {
   ].filter(Boolean) as ChatNotice[];
   // What a turn of the agent changed: the places it touched, to look at, and its undo.
   const afterTurn = (turn: SessionTurn) => {
+    // While the agent works its steps fold into one line; what it last said stays out in the open.
+    if (!turn.endedAt) {
+      const said = turn.entries.findLast((e) => e.kind === 'text');
+      return said && said !== turn.entries.at(-1) && said.kind === 'text' && said.text.trim() ? <p class="agent-says">{said.text}</p> : null;
+    }
     const touched = [...new Set(turn.entries.flatMap((e) => (e.kind === 'tool' && e.name.startsWith('mcp__diorama__') && !quiet.has(e.name.slice(14)) && e.input && typeof (e.input as { place?: unknown }).place === 'string' ? [String((e.input as { place: string }).place)] : [])))];
     if (!touched.length || !turn.endedAt) return null;
     return (
@@ -674,7 +679,8 @@ function Workshop({ slug }: { slug: string }) {
       </Card>
     );
   };
-  const footer = () => (
+  // While the agent works, its progress is the last thing above the prompt: what waits for you comes back after.
+  const footer = (agentBusy: boolean) => (
     <div class="world-footer">
       {movedFrom.value && movedFrom.value !== slug && <Card kind="Moved here" tone="ask"><p>The agent moved the view here from {movedFrom.value}.</p><div class="btns"><button type="button" class="ghost small" onClick={() => { const back = movedFrom.value!; movedFrom.value = null; go(`/w/${back}`); }}>Back to {movedFrom.value}</button><button type="button" class="ghost small" onClick={() => (movedFrom.value = null)}>Stay</button></div></Card>}
       {job && (
@@ -685,14 +691,14 @@ function Workshop({ slug }: { slug: string }) {
           <div class="btns"><button type="button" class="ghost small" title={`Stop ${job.label}`} onClick={(e) => (e.stopPropagation(), call('job_cancel', { id: job.id }))}>Stop</button></div>
         </Card>
       )}
-      {failed && !job && <Card kind="Needs you" tone="ask"><Failed slug={slug} job={failed} noAgent={noAgent} onError={setError} onPlace={(p) => onStage({ kind: 'place', place: p })} /></Card>}
-      {unplayable.length > 0 && !failed && (
+      {failed && !job && !agentBusy && <Card kind="Needs you" tone="ask"><Failed slug={slug} job={failed} noAgent={noAgent} onError={setError} onPlace={(p) => onStage({ kind: 'place', place: p })} /></Card>}
+      {unplayable.length > 0 && !failed && !agentBusy && (
         <Card kind="Needs you" tone="ask">
           {unplayable.map((p) => <p><button type="button" class="link" onClick={() => onStage({ kind: 'place', place: p.key })}>{nice(p.key)}</button>: {p.trouble!.why}</p>)}
           <div class="btns"><button type="button" class="primary small" title="The agent fixes them with the Studio tools and says what it did. It uses model calls as it works" onClick={() => void ask(`${unplayable.map((p) => `${p.key}: ${p.trouble!.why}`).join('; ')}. Fix ${unplayable.length > 1 ? 'these places' : 'this place'} as your playbook says and tell me in one sentence what you did.`)}>Fix it</button></div>
         </Card>
       )}
-      {openNotes.length > 0 && !job && (
+      {openNotes.length > 0 && !job && !agentBusy && (
         <Card kind={`Your notes · ${openNotes.length}`}>
           {openNotes.slice(0, 3).map((n) => <p>{n.place ? `${nice(n.place)}: ` : ''}{n.text}</p>)}
           <div class="btns"><button type="button" class="ghost small" title="The agent fixes each open note and closes it with what it did" onClick={() => void ask(`Go through my ${openNotes.length} open note${openNotes.length > 1 ? 's' : ''} (feedback_pending): fix each one and close it with feedback_done.`)}>Hand to the agent</button></div>
@@ -700,7 +706,7 @@ function Workshop({ slug }: { slug: string }) {
       )}
       {undone && !job && <p class="world-note">{undone}{canRedo ? ' · ' : ''}{canRedo && <button type="button" class="link" onClick={() => call('history_redo', { slug }).catch((e) => setError(e.message))}>Redo</button>}</p>}
       {budget?.over && <p class="world-note">Budget: ${budget.total.usd} spent of the ${budget.limitUsd} limit.</p>}
-      {playable && !job && (
+      {playable && !job && !agentBusy && (
         <div class={`wcard play${shownView.kind === 'play' ? ' on' : ''}`} style={places[0]?.image ? { backgroundImage: `url("${fileUrl(slug, places[0].image.file, places[0].image.v)}")` } : undefined}>
           <div class="in"><div class="grow"><div class="k">Ready</div><h3>Play {status?.title ?? slug}</h3></div><button type="button" class="amber" onClick={() => onStage({ kind: 'play' })}>▶ Play</button></div>
         </div>

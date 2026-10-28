@@ -821,3 +821,4 @@ button:not(.spot, .thumb, .who):active:not(:disabled) { transform: translateY(1p
 .convo .studio-note summary::after { flex: none; white-space: nowrap; }
 .top-menu .mi-confirm .mi.go { background: var(--bad); border-radius: 16px; min-height: 30px; font-weight: 600; }
 .top-menu .mi-confirm .mi.go:hover { background: color-mix(in srgb, var(--bad) 86%, #000); }
+.convo .agent-says { margin: -2px 0 4px 46px; font-size: 14.5px; color: var(--text); }

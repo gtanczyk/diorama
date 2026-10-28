@@ -156,7 +156,7 @@ function steps(args: readonly string[]): string[] {
 const clock = (s: number) => (s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`);
 
 /** In the atelier the panel is the world's conversation: cards before and between turns, and the thing picked on the stage. */
-type Atelier = { notices?: readonly ChatNotice[]; afterTurn?: (turn: SessionTurn, index: number) => ComponentChildren; footer?: () => ComponentChildren; picked?: Picked | null; onUnpick?: () => void; empty?: ComponentChildren };
+type Atelier = { notices?: readonly ChatNotice[]; afterTurn?: (turn: SessionTurn, index: number) => ComponentChildren; footer?: (agentBusy: boolean) => ComponentChildren; picked?: Picked | null; onUnpick?: () => void; empty?: ComponentChildren };
 
 export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterTurn, footer, picked, onUnpick, empty }: { slug: string; replay?: string | null; speed?: number; jobs?: readonly JobInfo[] } & Atelier) {
   const [liveState, live] = useSession(replay ? '' : slug);
@@ -227,7 +227,7 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
         renderPrompt={(text) => shownPrompt(text, slug)}
         notices={notices}
         renderAfterTurn={afterTurn as ((turn: SessionTurn, index: number) => never) | undefined}
-        renderFooter={footer as (() => never) | undefined}
+        renderFooter={footer && (() => footer(running) as never)}
         placeholder={running ? undefined : picked ? `What about the ${picked.name}?` : `Ask for a change, or click something in the picture…`}
         theme="light"
         disabled={!!replay || !live}
