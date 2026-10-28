@@ -3,6 +3,7 @@ import { metaPost } from './http.ts';
 import sharp from 'sharp';
 import { inputHash, type Memo, type Paid } from './memo.ts';
 import { envValue } from '../secrets.ts';
+import { chat } from './openrouter.ts';
 import { sparkUsd, type SparkTier, type Usage } from './prices.ts';
 
 export const SPARK = 'muse-spark-1.3';
@@ -19,12 +20,15 @@ export function sparkTier(personal = false): SparkTier {
 }
 
 /**
- * Development only: DIORAMA_SPARK_VIA=claude sends Spark's text and vision asks to Claude (DIORAMA_ANTHROPIC_API_KEY,
- * model DIORAMA_CLAUDE_MODEL), to test pipeline changes without spending Meta credits. Its answers are kept
- * under their own memo keys, so a world built for real (Meta, the default) never replays a Claude answer.
+ * Which model answers Spark's asks. DIORAMA_SPARK_VIA: "meta" (the default), "claude" (Anthropic's API with
+ * DIORAMA_ANTHROPIC_API_KEY, model DIORAMA_CLAUDE_MODEL, default Sonnet 5.5) or "openrouter:<model id>".
+ * Another model's answers are kept under their own memo keys, so a Meta build never replays them.
  */
-export const sparkViaClaude = () => process.env.DIORAMA_SPARK_VIA === 'claude';
-const claudeModel = () => process.env.DIORAMA_CLAUDE_MODEL || 'claude-sonnet-5-5';
+export function sparkVia(): string | null {
+  const via = process.env.DIORAMA_SPARK_VIA;
+  if (!via || via === 'meta') return null;
+  return via === 'claude' ? `anthropic:${process.env.DIORAMA_CLAUDE_MODEL || 'claude-sonnet-5-5'}` : via;
+}
 
 export function imageDataUrl(image: Buffer): string {
   const jpeg = image[0] === 0xff && image[1] === 0xd8;
@@ -34,7 +38,7 @@ export function imageDataUrl(image: Buffer): string {
 /** personal: the images are the person's own photos or drawings (kept off the contributor tier by default). */
 export type SparkAsk = { label: string; prompt: string; images?: Buffer[]; personal?: boolean };
 
-const sparkHash = ({ prompt, images = [] }: SparkAsk) => (sparkViaClaude() ? inputHash(claudeModel(), prompt, ...images) : inputHash(SPARK, prompt, ...images));
+const sparkHash = ({ prompt, images = [] }: SparkAsk) => inputHash(sparkVia()?.replace(/^anthropic:/, '') ?? SPARK, prompt, ...images);
 
 async function askMeta({ label, prompt, images = [], personal }: SparkAsk): Promise<Paid> {
   const tier = sparkTier(personal);
@@ -55,23 +59,24 @@ async function claudeImage(image: Buffer) {
   return { type: 'base64', media_type: 'image/jpeg', data: (await sharp(image).jpeg({ quality: 88 }).toBuffer()).toString('base64') };
 }
 
-async function askClaude({ label, prompt, images = [] }: SparkAsk): Promise<Paid> {
+async function askClaude(model: string, { label, prompt, images = [] }: SparkAsk): Promise<Paid> {
   const key = envValue('DIORAMA_ANTHROPIC_API_KEY');
-  if (!key) throw new Error('DIORAMA_SPARK_VIA=claude needs DIORAMA_ANTHROPIC_API_KEY (or ANTHROPIC_API_KEY)');
+  if (!key) throw new Error('DIORAMA_SPARK_VIA=claude needs DIORAMA_ANTHROPIC_API_KEY (or ANTHROPIC_API_KEY); openrouter:anthropic/claude-sonnet-5.5 goes without');
   const content = [...(await Promise.all(images.map(async (i) => ({ type: 'image', source: await claudeImage(i) })))), { type: 'text', text: prompt }];
   for (let n = 1; ; n++) {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       signal: AbortSignal.timeout(240_000),
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: claudeModel(), max_tokens: 16000, messages: [{ role: 'user', content }] }),
+      body: JSON.stringify({ model, max_tokens: 16000, messages: [{ role: 'user', content }] }),
     });
     if (res.ok) {
       const body = (await res.json()) as { content?: { type: string; text?: string }[] };
       const text = (body.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
       if (!text.trim()) throw new Error(`spark ${label} (claude): empty answer`);
-      // Paid from Anthropic credits, not Meta's: the Meta budget does not count it.
-      return { data: Buffer.from(text, 'utf8'), usd: 0, via: 'claude' };
+      const usage = (body as { usage?: { input_tokens?: number; output_tokens?: number } }).usage;
+      // Paid from Anthropic credits, not Meta's: the budget counts it apart. Sonnet 5.5 list price.
+      return { data: Buffer.from(text, 'utf8'), usd: ((usage?.input_tokens ?? 0) * 2 + (usage?.output_tokens ?? 0) * 10) / 1e6, via: model };
     }
     if (n === 4 || ![429, 500, 502, 503, 529].includes(res.status)) throw new Error(`spark ${label} (claude): ${res.status} ${(await res.text()).slice(0, 300)}`);
     await new Promise((r) => setTimeout(r, 1000 * 2 ** n));
@@ -79,7 +84,9 @@ async function askClaude({ label, prompt, images = [] }: SparkAsk): Promise<Paid
 }
 
 export async function askSpark(memo: Memo, ask: SparkAsk): Promise<string> {
-  const answer = await memo.remember('spark', ask.label, sparkHash(ask), 'txt', () => (sparkViaClaude() ? askClaude(ask) : askMeta(ask)));
+  const via = sparkVia();
+  const answer = await memo.remember('spark', ask.label, sparkHash(ask), 'txt', () =>
+    !via ? askMeta(ask) : via.startsWith('anthropic:') ? askClaude(via.slice(10), ask) : chat(`spark ${ask.label}`, via.replace(/^openrouter:/, ''), ask.prompt, ask.images));
   return answer.toString('utf8');
 }
 

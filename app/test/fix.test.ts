@@ -164,17 +164,17 @@ test('budget counts only calls sent, prices Meta calls by what they used, and co
   const lines = [
     // An old Spark call without its cost takes the list estimate; a new one says what it cost.
     { at: now, model: 'spark', hit: false }, { at: now, model: 'spark', hit: false, usd: 0.002, via: 'contributor' }, { at: now, model: 'spark', hit: true },
-    // Dev mode: answered by Claude, not on Meta's bill.
-    { at: now, model: 'spark', hit: false, usd: 0, via: 'claude' },
+    // Answered by another model: not on Meta's bill.
+    { at: now, model: 'spark', hit: false, usd: 0.01, via: 'claude-sonnet-5-5' },
     { at: '2020-01-01T00:00:00Z', model: 'muse', hit: false },
     { at: now, model: 'sound', hit: false },
   ];
   fs.writeFileSync(path.join(dir, 'memo', 'calls.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n'));
-  type B = { total: { calls: Record<string, number>; usd: number; priced: boolean }; today: { calls: Record<string, number> }; claudeCalls: number; creditsLeft: number | null; over: boolean };
+  type B = { total: { calls: Record<string, number>; usd: number; priced: boolean }; today: { calls: Record<string, number> }; elsewhere: { calls: number; usd: number }; creditsLeft: number | null; over: boolean };
   const b = (await runAction('budget', {}, ctx('user'))) as B;
   expect(b.total.calls).toEqual({ spark: 2, muse: 1, sound: 1 });
   expect(b.today.calls).toEqual({ spark: 2, sound: 1 });
-  expect(b.claudeCalls).toBe(1);
+  expect(b.elsewhere).toEqual({ calls: 1, usd: 0.01 });
   expect(b.total).toMatchObject({ usd: 0.04, priced: false });
   await runAction('budget_set', { prices: { sound: 0.02 }, limitUsd: 0.05, creditsUsd: 10 }, ctx('user'));
   const priced = (await runAction('budget', {}, ctx('user'))) as B;
