@@ -889,3 +889,19 @@ main.start .more .fields input:focus, main.start .more .fields select:focus { ou
 .mat.lineup .who-acts button { min-height: 30px; padding: 0 12px; }
 .drawer.by-hand .cast-view { display: flex; flex-direction: column; gap: 14px; }
 .drawer.by-hand .cast { scroll-margin-top: 0; }
+
+/* The cast stage: figures on a row, the story's items on a shelf under them. */
+.mat.lineup { flex-direction: column; align-items: center; justify-content: center; gap: 4cqh; padding-bottom: 3cqh; }
+.mat.lineup .figures { display: flex; align-items: flex-end; justify-content: center; gap: clamp(16px, 4cqw, 48px); }
+.mat.lineup .who img { height: 44cqh; }
+.mat.lineup .who-acts { z-index: 2; }
+.mat.lineup .shelf { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; max-width: 92cqw; padding-top: 16px; border-top: 1px solid var(--line); }
+.mat.lineup .item { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 0; width: 92px; padding: 6px 4px; border: 2px solid transparent; border-radius: 12px; background: none; color: var(--muted); font-size: 12px; line-height: 1.25; text-align: center; }
+.mat.lineup .item:hover, .mat.lineup .item.picked { border-color: var(--amber); color: var(--text); }
+.mat.lineup .item img { width: 52px; height: 52px; object-fit: contain; filter: drop-shadow(0 4px 6px rgba(60, 40, 20, 0.2)); }
+.mat.lineup .item .noicon { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 12px; background: var(--raised); color: var(--faint); font-size: 18px; }
+/* Cast details: signs for what a character has, a round play button, and the one opened from the stage. */
+.cast .who .has { display: inline-flex; gap: 4px; }
+.cast .who .sign { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: var(--raised); font-size: 14px; cursor: help; }
+.cast .who button.round { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 0; border-radius: 50%; font-size: 12px; }
+.cast .who.focus { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(194, 122, 44, 0.15); scroll-margin-top: 8px; }

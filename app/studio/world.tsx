@@ -109,16 +109,19 @@ const area = (b: Box) => (b[2] - b[0]) * (b[3] - b[1]);
 /** The cast standing in a row; a click puts them into the next message. */
 export function CastStage({ slug, version, picked, onPick, onOpen }: { slug: string; version: number; picked: Picked | null; onPick: (p: Picked) => void; onOpen?: (key: string) => void }) {
   const cast = useCast(slug, version);
+  const [items, setItems] = useState<Item[]>([]);
+  useEffect(() => void call<Item[]>('icons_status', { slug }).then(setItems).catch(() => setItems([])), [slug, version]);
   if (!cast) return <div class="mat"><p class="detail">Reading the cast…</p></div>;
   const shown = cast.filter((c) => c.figure);
   if (!shown.length) return <div class="mat"><p class="detail">Nobody is cast yet: the build paints them after the places.</p></div>;
   return (
     <div class="mat lineup">
+      <div class="figures">
       {shown.map((c) => {
         const on = !!picked && !picked.place && picked.thing === c.key;
         return (
           <div class={`who-at${on ? ' on' : ''}`}>
-            <button type="button" class={`who${on ? ' picked' : ''}`} title={`${c.looksNow}. Click to talk about ${nice(c.key)} or see their details`} onClick={() => onPick({ thing: c.key, name: nice(c.key) })}>
+            <button type="button" class={`who${on ? ' picked' : ''}`} title={`${c.looksNow}. Click to talk about ${nice(c.key)}, double-click for their details`} onClick={() => onPick({ thing: c.key, name: nice(c.key) })} onDblClick={() => onOpen?.(c.key)}>
               <img src={fileUrl(slug, c.figure!.file, c.figure!.v)} alt="" />
               <span>{nice(c.key)}{c.role === 'hero' ? ' · hero' : ''}</span>
             </button>
@@ -132,9 +135,25 @@ export function CastStage({ slug, version, picked, onPick, onOpen }: { slug: str
           </div>
         );
       })}
+      </div>
+      {/* The story's items on a shelf: what the hero picks up or is handed; a click talks about one. */}
+      {items.length > 0 && (
+        <div class="shelf" aria-label="Items">
+          {items.map((it) => {
+            const on = !!picked && !picked.place && picked.thing === it.key;
+            return (
+              <button type="button" class={`item${on ? ' picked' : ''}`} title={`${it.name}: ${it.from ? `picked up in ${nice(it.from.place)}` : 'handed over'}. Click to talk about it`} onClick={() => onPick({ thing: it.key, name: it.name.toLowerCase() })}>
+                {it.icon ? <img src={fileUrl(slug, it.icon.file, it.icon.v)} alt="" /> : <span class="noicon">?</span>}
+                <span>{it.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
+type Item = { key: string; name: string; from: { place: string; thing: string } | null; icon: Pic };
 
 /** The message prefix a pick adds, and how a sent message with one is shown again. */
 export const pickPrefix = (p: Picked) => `[Looking at: ${p.place ? `${p.place} / ` : ''}${p.thing}]\n`;

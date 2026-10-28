@@ -20,14 +20,19 @@ export function CastView({ slug, version, onError, focus }: { slug: string; vers
   const [cast, setCast] = useState<Character[] | null>(null);
   useEffect(() => void call<Character[]>('cast_status', { slug }).then(setCast).catch((e) => onError(e.message)), [slug, version]);
   // Opened on one character: scroll to their card once it is there.
+  // Pictures above it load late and push it down: scroll again once they have.
   useEffect(() => {
-    if (cast && focus) document.getElementById(`cast-${focus}`)?.scrollIntoView({ block: 'start' });
+    if (!cast || !focus) return;
+    const go = () => document.getElementById(`cast-${focus}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    go();
+    const again = setTimeout(go, 450);
+    return () => clearTimeout(again);
   }, [!!cast, focus]);
   if (!cast) return <p class="detail">Reading the cast…</p>;
   return (
     <div class="cast-view">
       <ul class="cast">
-        {cast.map((c) => <Card key={c.key} slug={slug} c={c} onError={onError} />)}
+        {cast.map((c) => <Card key={c.key} slug={slug} c={c} onError={onError} focused={c.key === focus} />)}
       </ul>
       <Items slug={slug} version={version} onError={onError} />
     </div>
@@ -67,14 +72,15 @@ function Items({ slug, version, onError }: { slug: string; version: number; onEr
   );
 }
 
-function Card({ slug, c, onError }: { slug: string; c: Character; onError: (m: string) => void }) {
+function Card({ slug, c, onError, focused }: { slug: string; c: Character; onError: (m: string) => void; focused?: boolean }) {
   // The voices that fit this character (gender and age seen in the figure) come first; the rest are marked.
   const [voices, setVoices] = useState<Voice[] | null>(null);
   const loadVoices = () => voices ?? call<{ voices: Voice[] } | Voice[]>('voice_list', { slug, key: c.key })
     .then((r) => setVoices(Array.isArray(r) ? r : r.voices)).catch((e) => onError(e.message));
   const [looks, setLooks] = useState(c.looksNow);
   const [busy, setBusy] = useState(false);
-  const [moving, setMoving] = useState(false);
+  // Opened on this character: it moves right away.
+  const [moving, setMoving] = useState(!!focused && !!(c.rig || c.model || c.sprites));
   useEffect(() => setLooks(c.looksNow), [c.looksNow]);
   const act = async (name: string, input: object) => {
     setBusy(true);
@@ -87,19 +93,26 @@ function Card({ slug, c, onError }: { slug: string; c: Character; onError: (m: s
   };
   const changed = looks.trim() !== c.looksNow && looks.trim().length >= 10;
   const creature = c.body?.upright === false;
-  const parts = [creature && 'creature', c.figure && 'figure', c.rig && 'rig', c.model && '3D model', c.sprites && 'sprites'].filter(Boolean);
+  // What the game has of this character, as small signs; each says what it is on hover.
+  const parts = ([
+    creature && ['🐾', 'A creature: moves as one body (hops, squashes, leans), no skeleton'],
+    c.figure && ['🖼', 'Figure: painted by Muse Image and cut out by SAM'],
+    c.rig && ['🦴', '2D rig: the figure cut into parts that walk; used when there is no 3D model or sprites'],
+    c.model && ['🧊', '3D model: built by TRELLIS from four painted sides'],
+    c.sprites && ['🎞', 'Sprites: painted walk and talk frames, what the game draws first'],
+  ].filter(Boolean)) as Array<[string, string]>;
   return (
-    <li id={`cast-${c.key}`} class={`who ${c.role}`}>
+    <li id={`cast-${c.key}`} class={`who ${c.role}${focused ? ' focus' : ''}`}>
       {c.role !== 'narrator' && (c.figure ? <img src={fileUrl(slug, c.figure.file, c.figure.v)} alt={c.key} loading="lazy" /> : <div class="noimg">not painted yet</div>)}
       <div class="body">
         <div class="row">
           <strong>{c.key}</strong>
           <span class="badge">{c.role === 'hero' ? 'hero' : c.role === 'player' ? 'hero for another gamepad' : c.role === 'narrator' ? 'narrator' : `NPC · ${c.place}`}</span>
           <span class="grow" />
-          {parts.length > 0 && <span class="detail">{parts.join(' · ')}</span>}
+          {parts.length > 0 && <span class="has">{parts.map(([sign, what]) => <span class="sign" title={what}>{sign}</span>)}</span>}
           {c.modelIssue && <span class="detail" title={c.modelIssue}>3D model not used ({c.modelIssue.split(':')[0]})</span>}
           {c.role !== 'narrator' && c.figure && !c.model && <button type="button" class="ghost small" disabled={busy} title={`Muse paints ${c.key} from 4 sides and TRELLIS builds a 3D model${creature ? ': no skeleton, in the game it hops, squashes, leans and blinks as one body' : ''}. Kept across rebuilds. 4 Muse Image calls + TRELLIS (needs the HF token)`} onClick={() => act('cast_animate', {})}>Animate in 3D</button>}
-          {(c.rig || c.model || c.sprites) && <button type="button" class={`ghost small${moving ? ' on' : ''}`} title={moving ? 'Close the preview' : 'Watch the figure walk, stand and talk as the game draws it. Free'} onClick={() => setMoving(!moving)}>{moving ? 'Hide' : 'See it move'}</button>}
+          {(c.rig || c.model || c.sprites) && <button type="button" class={`ghost small round${moving ? ' on' : ''}`} aria-label={moving ? 'Close the preview' : 'See it move'} title={moving ? 'Close the preview' : 'See it move: walk, stand and talk as the game draws it. Free'} onClick={() => setMoving(!moving)}>{moving ? '■' : '▶'}</button>}
         </div>
         {c.role !== 'narrator' && (
           <form class="say" onSubmit={(e) => (e.preventDefault(), changed && void act('cast_redo', { looks: looks.trim() }))}>
