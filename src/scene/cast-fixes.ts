@@ -10,6 +10,8 @@ export const CastFixes = z.record(z.string(), z.object({
   /** The person asked for a 3D model (cast_animate) though the story would not build one: the model step builds it every time. */
   animate: z.boolean().optional(),
   voice: z.object({ voice: z.string().min(1), design: z.string().min(10).optional(), why: z.string().default('chosen by the person'), stability: z.number().min(0).max(1).optional(), style: z.number().min(0).max(1).optional() }).optional(),
+  /** This character's own painting style over world.json's (style_set with scope cast). */
+  style: z.string().min(10).optional(),
 }));
 export type CastFixes = z.infer<typeof CastFixes>;
 

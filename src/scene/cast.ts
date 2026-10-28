@@ -7,6 +7,7 @@ import { museEdit, musePaint } from '../meta/muse.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import { samFind } from '../meta/sam.ts';
 import type { World } from '../world/schema.ts';
+import { restyleFigurePrompt } from './restyle.ts';
 
 export const HERO_PX = 600;
 
@@ -54,11 +55,16 @@ Style: ${world.style}
 Plain flat light grey background, no paper, no table, no written name, no floor, no shadow, no other characters, no text.`;
 }
 
-/** `from` is a photo of a real person, or a child's drawing of the character. */
-export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, from?: { photo?: Buffer; drawing?: Buffer }): Promise<{ painting: Buffer; figure: Buffer }> {
+/**
+ * `from` is a photo of a real person, or a child's drawing of the character; `restyle` is the character as painted
+ * before in another style (`was`), repainted in the world's style with the same face, clothes and pose.
+ */
+export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, from?: { photo?: Buffer; drawing?: Buffer; restyle?: { painting: Buffer; was: string } }): Promise<{ painting: Buffer; figure: Buffer }> {
   // A take SAM finds no one in (a drawing painted back as loose scribble) is painted once more before giving up.
   for (const t of [take, take + 1]) {
-    const painting = from?.photo
+    const painting = from?.restyle
+      ? await museEdit(memo, { label: `figure:${who.key}:restyle`, prompt: restyleFigurePrompt(who.looks, from.restyle.was, world.style, !!from.drawing), images: [from.restyle.painting, ...(from.drawing ? [from.drawing] : [])], take: t })
+      : from?.photo
       ? await museEdit(memo, { label: `figure:${who.key}:photo`, prompt: photoPrompt(world), images: [await sharp(from.photo).rotate().png().toBuffer()], take: t })
       : from?.drawing
         ? await museEdit(memo, { label: `figure:${who.key}:drawing`, prompt: drawingPrompt(world, who), images: [from.drawing], take: t })

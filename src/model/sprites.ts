@@ -93,9 +93,10 @@ const SEEN: Record<Facing, string> = {
 
 /**
  * Muse draws the sheet again from scratch over the guide. `refs`: the character (Muse's painted view for
- * that side) and, for consistency across facings, a sheet already painted.
+ * that side) and, for consistency across facings, a sheet already painted. `style`: the world's style, named
+ * once the world was given another one than it was made in (style_set); else the painterly gouache it was made for.
  */
-export function paintSheet(memo: Memo, key: string, facing: Facing, looks: string, guide: Buffer, refs: Buffer[], take = 0, talkFrames = 0): Promise<Buffer> {
+export function paintSheet(memo: Memo, key: string, facing: Facing, looks: string, guide: Buffer, refs: Buffer[], take = 0, talkFrames = 0, style?: string): Promise<Buffer> {
   const talk = talkFrames > 0; // the sheet is always full: Muse redraws a half-empty grid as a few big figures
   const what = talk
     ? `a talking sprite sheet: eight frames of one character standing still and talking, ${SEEN[facing].replace(/^walking/, 'turned')}, gesturing with empty hands (holding nothing) and the head, mouth slightly open in some frames; where the guide's coat bulges around a hand, it is only the hand gesture`
@@ -103,7 +104,7 @@ export function paintSheet(memo: Memo, key: string, facing: Facing, looks: strin
   return museEdit(memo, {
     label: `${key}-${talk ? 'talk' : 'sprites'}-${facing}`, take, size: `${SHEET.width}x${SHEET.height}`, images: [guide, ...refs],
     prompt: `The first image is only a rough 3D pose guide for ${what}. ` +
-      `Draw this sheet again from scratch as a hand-painted 2D game sprite sheet of the character in the other pictures (${looks}): same face, hair, headwear, clothes, patches, boots and colours, in their painterly gouache style. ` +
+      `Draw this sheet again from scratch as a hand-painted 2D game sprite sheet of the character in the other pictures (${looks}): same face, hair, headwear, clothes, patches, boots and colours, ${style ? `in their style: ${style}` : 'in their painterly gouache style'}. ` +
       `Each frame: exactly the same position, size, facing and body pose as the guide (same leg, arm and hand positions), but clean anatomy: one face, natural hands, natural boots that keep their shape, smooth readable clothing folds, no patchy textures, no 3D or CG look. ` +
       'Plain flat light grey background, no ground shadows, nothing else.',
   });

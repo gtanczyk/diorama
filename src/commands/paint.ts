@@ -8,10 +8,12 @@ import { readCorrections, writeCorrections } from '../scene/corrections.ts';
 import { Layout } from '../scene/layout.ts';
 import { paintPlace } from '../scene/paint.ts';
 import { paintPhoto } from '../scene/photo.ts';
+import { restylePlace } from '../scene/restyle.ts';
 import { refusedByFilter, reword, withWords, worded, type Words } from '../scene/words.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { drawingsIn } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
+import { markStyled, placeStyle, readStyled } from '../world/styled.ts';
 
 /** Rewords Spark may try after the image safety filter refuses a painting, before the place is set aside. */
 const REWORDS = 2;
@@ -24,9 +26,12 @@ defineCommand({
     const [slug, ...only] = args;
     if (!slug) throw new Error('usage: diorama paint <slug> [place...] [--take N]');
     const files = new WorldFiles(slug);
-    const world = files.world();
-    const places = world.places.filter((p) => only.length === 0 || only.includes(p.key));
+    const base = files.world();
+    const places = base.places.filter((p) => only.length === 0 || only.includes(p.key));
     await Promise.all(places.map(async (place) => {
+      // The place's own style, when the person gave it one, is the world's style for everything painted here.
+      const style = placeStyle(files, base, place.key);
+      const world = { ...base, style };
       const layout = Layout.parse(files.readJson(files.place(place.key, 'layout.json')));
       const blockin = fs.readFileSync(files.place(place.key, 'blockin.png'));
       // The first painting is kept while its block-in, layout and take stay the same, even without the model
@@ -50,7 +55,19 @@ defineCommand({
       const record = (fs.existsSync(kept) ? files.readJson(kept) : {}) as { inputs?: string; applied?: string[] };
       let first: Buffer;
       let found: Awaited<ReturnType<typeof critique>>;
-      if (reuse) {
+      // The style changed since this place was painted (style_set): Muse repaints the painting as it is, every
+      // fix in it, in the new style, keeping the composition, so masks, stand spots and the person's fixes still fit.
+      const was = readStyled(files).places[place.key];
+      const restyled = reuse && !!was && was !== style && fs.existsSync(files.place(place.key, 'painting.png'));
+      if (restyled) {
+        const brief = files.readJson(files.place(place.key, 'brief.json')) as Awaited<ReturnType<typeof writeBrief>>;
+        const told = worded(place, words);
+        first = await restylePlace(files.memo, told, fs.readFileSync(files.place(place.key, 'painting.png')), was, style, brief, take, drawingsIn(files, place));
+        console.log(`  ${place.key}: repainted in the new style, composition kept`);
+        files.write(files.place(place.key, 'painting-first.png'), first);
+        found = await critique(files.memo, told, brief, first);
+        files.write(files.place(place.key, 'critique.json'), found);
+      } else if (reuse) {
         first = fs.readFileSync(files.place(place.key, 'painting-first.png'));
         found = files.readJson(files.place(place.key, 'critique.json')) as typeof found;
       } else {
@@ -92,24 +109,26 @@ defineCommand({
       const asked = readCorrections(files.place(place.key)).repaint.map((r) => ({ key: 'person', problem: 'wrong' as const, region: r.region, fix: r.fix }));
       const fixes = { issues: [...found.issues, ...asked] };
       const id = (i: (typeof fixes.issues)[number]) => JSON.stringify([i.region, i.fix]);
-      const done = reuse && fs.existsSync(files.place(place.key, 'painting.png')) ? record.applied ?? (have && !fs.existsSync(kept) ? found.issues.map(id) : null) : null;
+      // After a restyle the person's repaints are in the picture already; only the critic's new findings are painted.
+      const done = restyled ? asked.map(id) : reuse && fs.existsSync(files.place(place.key, 'painting.png')) ? record.applied ?? (have && !fs.existsSync(kept) ? found.issues.map(id) : null) : null;
       const onTop = done && done.every((d) => fixes.issues.some((i) => id(i) === d));
       const fresh = onTop ? fixes.issues.filter((i) => !done.includes(id(i))) : fixes.issues;
-      const base = onTop ? fs.readFileSync(files.place(place.key, 'painting.png')) : first;
+      const from = onTop && !restyled ? fs.readFileSync(files.place(place.key, 'painting.png')) : first;
       // A place built before the steps kept their painting (.ran/) gets it now, so this first repaint carries too.
       const seeded = seedRan(files.place(place.key));
       if (seeded.length) console.log(`  ${place.key}: ${seeded.join(', ')} take the painting before this repaint as the one they ran on`);
       let painting: Buffer;
       try {
-        painting = await repaint(files.memo, place, base, { issues: fresh });
+        painting = await repaint(files.memo, place, from, { issues: fresh });
       } catch (error) {
         // The critic's own fixes are nice to have: a refused repaint leaves the painting as it is. The person's are not.
         if (!refusedByFilter(error) || asked.length) throw error;
         console.log(`  ${place.key}: the image safety filter refused the critic's repaint; the painting is kept without it`);
-        painting = base;
+        painting = from;
       }
       files.write(files.place(place.key, 'painting.png'), painting);
       files.write(kept, { inputs, applied: fixes.issues.map(id) });
+      markStyled(files, 'places', place.key, style);
       console.log(`${place.key}: painted, ${fresh.length} fix(es)${onTop ? ' over the last painting' : ''}${fresh.map((i) => ` · ${i.key} ${i.problem}`).join('')}`);
     }));
     console.log(`calls sent: spark ${files.memo.sent.spark}, muse ${files.memo.sent.muse}`);

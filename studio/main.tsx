@@ -8,6 +8,7 @@ import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
 import { base64, KidsStart, KidsWait, polish, setPolish, shrink, t } from './kids.tsx';
 import { StoryView } from './story.tsx';
+import { StyleMenu } from './style-menu.tsx';
 import { PlaceEditor } from './place.tsx';
 import { clampWidth, Dock, useDock } from './dock.tsx';
 import { Crew, MODEL_NAME, Pipeline, Stage, Strip, Tale, working, type FeedItem, type Live, type StagePlace } from './build.tsx';
@@ -712,6 +713,7 @@ function Workshop({ slug }: { slug: string }) {
             <h1>{status?.title ?? slug}</h1>
             <span class="grow" />
             {playable && <button type="button" class={playing ? 'primary' : 'ghost'} title={playing ? 'Close the game and go back to the build' : 'Play the game here. Free'} onClick={() => setPlaying(playing ? null : {})}>{playing ? 'Close game' : 'Play'}</button>}
+            {!job && status && !status.issue && <StyleMenu slug={slug} places={status.placeDetail.map((p) => p.key)} version={tick} onError={setError} />}
             {!job && status && status.steps.length > 0 && <HistoryMenu slug={slug} version={tick} onError={setError} />}
             {!job && canRedo && <button type="button" class="ghost" title="Take back the undo. Free" onClick={() => call('history_redo', { slug }).catch((e) => setError(e.message))}>Redo</button>}
             {/* Stop sits beside the build button, never in its place: a double click must not start a build and stop it again. */}

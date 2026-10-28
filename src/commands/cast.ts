@@ -6,6 +6,7 @@ import { rigFigure } from '../scene/rig.ts';
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
 import { drawingFor, players, readDrawn } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
+import { castStyle, markStyled, readStyled } from '../world/styled.ts';
 
 defineCommand({
   name: 'cast',
@@ -17,6 +18,7 @@ defineCommand({
     if (!slug) throw new Error('usage: diorama cast <slug> [key...] [--take N]');
     const files = new WorldFiles(slug);
     const world = files.world();
+    const styled = readStyled(files);
     // world --hero-photo keeps the photo next to the cast, so a plain `cast` uses it too.
     const kept = files.path('cast', `${world.hero.key}-photo.png`);
     const photo = photoPath ? fs.readFileSync(photoPath) : fs.existsSync(kept) ? fs.readFileSync(kept) : undefined;
@@ -36,7 +38,14 @@ defineCommand({
     await Promise.all(cast.map(async (who) => {
       // The person's description and chosen take (cast/fixes.json) win over the world's.
       // An NPC that cannot be cut out is set aside (the game draws a stand-in) so the rest of the cast is made.
-      const made = await paintFigure(files.memo, world, who, fixes[who.key]?.take ?? take, { photo: who.key === world.hero.key ? photo : undefined, drawing: drawingFor(files, who.key) }).catch((error: Error) => {
+      // A character painted before in another style (style_set) is repainted from that painting, so they stay who
+      // they were; the hero from a photo is painted from the photo again, in the new style.
+      const style = castStyle(files, world, who.key);
+      const was = styled.cast[who.key];
+      const before = files.path('cast', `${who.key}-painting.png`);
+      const heroPhoto = who.key === world.hero.key ? photo : undefined;
+      const restyle = was && was !== style && !heroPhoto && fs.existsSync(before) ? { painting: fs.readFileSync(before), was } : undefined;
+      const made = await paintFigure(files.memo, { ...world, style }, who, fixes[who.key]?.take ?? take, { photo: heroPhoto, drawing: drawingFor(files, who.key), restyle }).catch((error: Error) => {
         if (who.key === world.hero.key) throw error;
         missing.push(`${who.key}: ${error.message}`);
         return null;
@@ -45,6 +54,7 @@ defineCommand({
       const { painting, figure } = made;
       files.write(files.path('cast', `${who.key}-painting.png`), painting);
       files.write(files.path('cast', `${who.key}.png`), figure);
+      markStyled(files, 'cast', who.key, style);
       // The same painting cut into parts, so the runtime can walk the figure.
       if (bodies[who.key]?.upright === false) return console.log(`${who.key}: ${files.path('cast', `${who.key}.png`)} · not upright: drawn as painted`);
       try {

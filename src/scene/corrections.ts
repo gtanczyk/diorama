@@ -57,6 +57,8 @@ export const Corrections = z.object({
     /** Spark's rewords so far: each asks anew, so a rebuild after refused rewords does not get the same words back. */
     tries: z.number().int().min(0).optional(),
   }).optional(),
+  /** This place's own painting style over world.json's (style_set with scope place). */
+  style: z.string().min(10).optional(),
 });
 export type Corrections = z.infer<typeof Corrections>;
 

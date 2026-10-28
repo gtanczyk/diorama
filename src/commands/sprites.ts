@@ -9,6 +9,7 @@ import { Story } from '../story/schema.ts';
 import { fixedLooks } from '../scene/cast-fixes.ts';
 import { refitIfOld } from '../model/fit.ts';
 import { modelProblem } from '../model/glb.ts';
+import { castStyle, readStyled } from '../world/styled.ts';
 import { WorldFiles } from '../world/files.ts';
 
 const LEGS_OK = 0.6;
@@ -63,6 +64,8 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
   const world = files.world();
   const who = [world.hero, ...world.places.flatMap((p) => p.things)].find((w) => w.key === key);
   const looks = who ? fixedLooks(files, who).looks : '';
+  // A world given another style names it, so the sheets follow the restyled character, not the gouache they were made for.
+  const style = readStyled(files).from ? castStyle(files, world, key) : undefined;
   const modelDir = files.path('cast', key, 'model');
   // An older model's views were fitted on the whole silhouette only: the guides would show the profile's face twice.
   if (await refitIfOld(modelDir)) console.log(`${key}: views fitted again, slice by slice`);
@@ -97,7 +100,7 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
       const takes: Take[] = [];
       let n = take;
       const another = async () => {
-        const p = await paintSheet(files.memo, key, f, looks, shown[f][(n - take) % shown[f].length], refs, n);
+        const p = await paintSheet(files.memo, key, f, looks, shown[f][(n - take) % shown[f].length], refs, n, 0, style);
         // Always measured against the textured guide: that is the look a traced sheet keeps.
         takes.push({ ...(await cutSheet(guides[f], p)), painted: p, n: n++ });
       };
@@ -136,12 +139,12 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
     const g = await onGrey(guide);
     files.write(out(`talk-guide-${f}.png`), g);
     const refs = [view('front'), view('right')];
-    let p = await paintSheet(files.memo, key, f, looks, g, refs, take, used.length);
+    let p = await paintSheet(files.memo, key, f, looks, g, refs, take, used.length, style);
     let cut = await cutSheet(guide, p);
     const score = () => mean(cut.same.slice(0, used.length));
     // From some angles the hands hide in front of the body and Muse hands the guide back unchanged.
     for (let t = 1; t <= 2 && score() > TRACED; t++) {
-      p = await paintSheet(files.memo, key, f, looks, g, refs, take + t, used.length);
+      p = await paintSheet(files.memo, key, f, looks, g, refs, take + t, used.length, style);
       cut = await cutSheet(guide, p);
     }
     files.write(out(`talk-painted-${f}.png`), p);
