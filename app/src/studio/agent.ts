@@ -301,7 +301,7 @@ export function pastTurns(dir: string, limit = 60): SessionTurn[] {
   for (const file of files) {
     const last = new Map<number, SessionTurn>();
     for (const line of fs.readFileSync(path.join(logs, file), 'utf8').split('\n')) {
-      if (!line.includes('"type":"state"')) continue;
+      if (!/"type":\s*"state"/.test(line)) continue;
       try {
         const turn = (JSON.parse(line) as { turn?: SessionTurn }).turn;
         if (turn && typeof turn.id === 'number' && Array.isArray(turn.entries)) last.set(turn.id, turn);
@@ -314,6 +314,8 @@ export function pastTurns(dir: string, limit = 60): SessionTurn[] {
     ...turn,
     id: i - kept.length,
     endedAt: turn.endedAt ?? turn.startedAt,
+    // A turn the restart cut off ended there: without a result the chat would show it still working.
+    result: turn.result ?? { status: 'aborted' as const, ok: false, exitCode: null, signal: null },
     entries: turn.entries.map((e) => (e.kind === 'text' ? { ...e, streaming: false } : e.kind === 'tool' ? { ...e, done: true } : e.kind === 'approval' && !e.decision ? { ...e, decision: 'deny' as const } : e)),
   }));
 }

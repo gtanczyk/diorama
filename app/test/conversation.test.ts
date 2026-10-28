@@ -32,6 +32,7 @@ test('after a restart the page gets the earlier turns back from the session logs
     expect(past.map((t) => t.id)).toEqual([-2, -1]);
     expect(past[0].entries[0]).toMatchObject({ text: 'the end', streaming: false });
     expect(past[1].endedAt).toBe(1);
+    expect(past[1].result?.status).toBe('aborted');
     expect(past[1].entries[1]).toMatchObject({ done: true });
     expect(pastTurns(dir, 1).map((t) => (t.entries[0] as { text: string }).text)).toEqual(['cut off']);
   } finally {

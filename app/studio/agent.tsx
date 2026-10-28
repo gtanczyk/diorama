@@ -327,6 +327,9 @@ const dataUrl = (f: Blob) => new Promise<string>((resolve, reject) => {
 
 /** A sent prompt as the person sees it: the pictures it carried as thumbnails, then their words. */
 function shownPrompt(text: string, slug: string) {
+  // A Studio button's ask (Fix it, Ask the agent): its gist, and the whole wording folded under it.
+  const asked = /^\[Ask: ([^\]\n]+)\]\n/.exec(text);
+  if (asked) return <details class="ask-note"><summary>{asked[1]}</summary><p>{text.slice(asked[0].length)}</p></details>;
   const m = /^\[Pictures: ([^\]]+)\]\n?/.exec(text);
   const { pick, rest } = shownPick(m ? text.slice(m[0].length) : text);
   if (!m && !pick) return studioNote(text);

@@ -312,6 +312,17 @@ const EXAMPLES = [
 ];
 
 type Photo = { name: string; data: string };
+
+/** A job's error in a few plain words, for the chat; the whole error still goes to the agent. */
+export function plainError(error: string | undefined): string {
+  const e = error ?? '';
+  if (/content_policy_violation|safety|moderat/i.test(e)) return 'the image safety filter refused a picture';
+  if (/invalid_api_key|401|unauthori[sz]ed/i.test(e)) return 'the Meta key was refused';
+  if (/\b429\b|rate.?limit|quota/i.test(e)) return 'too many model calls at once';
+  if (/timed? ?out|ETIMEDOUT|ECONNRESET|ENOTFOUND|fetch failed|socket hang up|\b50[234]\b/i.test(e)) return 'a model did not answer';
+  const first = e.replace(/^diorama \w+: /, '').replace(/\{.*$/s, '').split(/[.\n]/)[0].trim();
+  return first ? (first.length > 70 ? `${first.slice(0, 68)}…` : first) : 'see its output';
+}
 /** As many photos as a world_new takes: a class's drawings, a room, a person. */
 const MAX_PHOTOS = 16;
 /** The languages the game's voices speak (ElevenLabs multilingual); Spark writes in all of them. */
@@ -702,7 +713,7 @@ function Workshop({ slug }: { slug: string }) {
   const stagedPlace = shownView.kind === 'place' ? places.find((p) => p.key === shownView.place) ?? places[0] : undefined;
   const unplayable = !job ? places.filter((p) => p.trouble) : [];
   const openNotes = notes.filter((n) => n.state === 'open');
-  const ask = (text: string) => askAgent(slug, text).catch((e) => setError(e.message));
+  const ask = (text: string, gist?: string) => askAgent(slug, text, gist).catch((e) => setError(e.message));
   const castDone = !!status?.steps.includes('cast');
   // What the conversation opens with: the idea, then the world as the build made it, card by card.
   const opening = [
@@ -760,13 +771,13 @@ function Workshop({ slug }: { slug: string }) {
       {unplayable.length > 0 && !failed && !agentBusy && (
         <Card kind="Needs you" tone="ask">
           {unplayable.map((p) => <p><button type="button" class="link" onClick={() => onStage({ kind: 'place', place: p.key })}>{nice(p.key)}</button>: {p.trouble!.why}</p>)}
-          <div class="btns"><button type="button" class="primary small" title="The agent fixes them with the Studio tools and says what it did. It uses model calls as it works" onClick={() => void ask(`${unplayable.map((p) => `${p.key}: ${p.trouble!.why}`).join('; ')}. Fix ${unplayable.length > 1 ? 'these places' : 'this place'} as your playbook says and tell me in one sentence what you did.`)}>Fix it</button></div>
+          <div class="btns"><button type="button" class="primary small" title="The agent fixes them with the Studio tools and says what it did. It uses model calls as it works" onClick={() => void ask(`${unplayable.map((p) => `${p.key}: ${p.trouble!.why}`).join('; ')}. Fix ${unplayable.length > 1 ? 'these places' : 'this place'} as your playbook says and tell me in one sentence what you did.`, `Fix ${unplayable.length > 1 ? `${unplayable.length} places that cannot be played` : `${nice(unplayable[0].key)}: it cannot be played`}`)}>Fix it</button></div>
         </Card>
       )}
       {openNotes.length > 0 && !job && !agentBusy && (
         <Card kind={`${openNotes.every((n) => n.by === 'agent') ? 'The agent noted' : openNotes.some((n) => n.by === 'agent') ? 'Open notes' : 'Your notes'} · ${openNotes.length}`}>
           {openNotes.slice(0, 3).map((n) => <p>{n.by === 'agent' && openNotes.some((x) => x.by !== 'agent') ? <em>the agent: </em> : ''}{n.place ? `${nice(n.place)}: ` : ''}{n.text}</p>)}
-          <div class="btns"><button type="button" class="ghost small" onClick={() => setNotesOpen(true)}>All notes</button><button type="button" class="ghost small" title="The agent fixes each open note and closes it with what it did" onClick={() => void ask(`Go through my ${openNotes.length} open note${openNotes.length > 1 ? 's' : ''} (feedback_pending): fix each one and close it with feedback_done.`)}>Hand to the agent</button></div>
+          <div class="btns"><button type="button" class="ghost small" onClick={() => setNotesOpen(true)}>All notes</button><button type="button" class="ghost small" title="The agent fixes each open note and closes it with what it did" onClick={() => void ask(`Go through my ${openNotes.length} open note${openNotes.length > 1 ? 's' : ''} (feedback_pending): fix each one and close it with feedback_done.`, `Fix my ${openNotes.length} open note${openNotes.length > 1 ? 's' : ''}`)}>Hand to the agent</button></div>
         </Card>
       )}
       {undone && !job && <p class="world-note">{undone}{canRedo ? ' · ' : ''}{canRedo && <button type="button" class="link" onClick={() => call('history_redo', { slug }).catch((e) => setError(e.message))}>Redo</button>}</p>}
@@ -958,7 +969,7 @@ function Failed({ slug, job, noAgent, onError, onPlace }: { slug: string; job: J
   const listed = !!job.unplayable?.length;
   const step = job.step;
   const retry = () => call('job_retry', { id: job.id }).catch((e) => onError(e.message));
-  const ask = () => askAgent(slug, `The job "${job.label}" failed${step ? ` at the ${step} step` : ''}: ${job.error ?? 'see its output'}. Find out why with world_status and place_status, fix it only with the Studio fix tools (never by editing files), and tell me what you did.`).catch((e) => onError(e.message));
+  const ask = () => askAgent(slug, `The job "${job.label}" failed${step ? ` at the ${step} step` : ''}: ${job.error ?? 'see its output'}. Find out why with world_status and place_status, fix it only with the Studio fix tools (never by editing files), and tell me what you did.`, `Fix the failed ${job.label.split(' ')[0] === 'build' ? 'build' : `“${job.label}”`}${step ? ` at ${step}` : ''}: ${plainError(job.error)}`).catch((e) => onError(e.message));
   return (
     <section class="failed" role="alert">
       <div class="row"><strong>{job.label} failed{step ? ` at ${step}` : ''}</strong><span class="detail">by {job.by}</span></div>
@@ -992,7 +1003,7 @@ function Notes({ slug, notes, onPlace, onError }: { slug: string; notes: Note[];
       <div class="row">
         <h2>Notes{open.length ? ` · ${open.length} open` : ''}</h2>
         <span class="grow" />
-        {open.length > 0 && <button type="button" class="primary small" title="The agent fixes each open note and closes it with what it did. It uses model calls as it works" onClick={() => askAgent(slug, `Go through my ${open.length} open note${open.length > 1 ? 's' : ''} (feedback_pending): fix each one and close it with feedback_done.`).catch((e) => onError(e.message))}>Hand {open.length > 1 ? 'them' : 'it'} to the agent</button>}
+        {open.length > 0 && <button type="button" class="primary small" title="The agent fixes each open note and closes it with what it did. It uses model calls as it works" onClick={() => askAgent(slug, `Go through my ${open.length} open note${open.length > 1 ? 's' : ''} (feedback_pending): fix each one and close it with feedback_done.`, `Fix my ${open.length} open note${open.length > 1 ? 's' : ''}`).catch((e) => onError(e.message))}>Hand {open.length > 1 ? 'them' : 'it'} to the agent</button>}
       </div>
       <ul>
         {open.map((n) => (
