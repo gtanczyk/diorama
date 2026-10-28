@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { askAgent, call, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
 import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
-import { KidsStart, KidsWait, polish, setPolish, t } from './kids.tsx';
+import { base64, KidsStart, KidsWait, polish, setPolish, shrink, t } from './kids.tsx';
 import { StoryView } from './story.tsx';
 import { PlaceEditor } from './place.tsx';
 import { clampWidth, Dock, useDock } from './dock.tsx';
@@ -14,7 +14,7 @@ import { Crew, MODEL_NAME, Pipeline, Stage, Strip, Tale, working, type FeedItem,
 import { Tips } from './tip.tsx';
 
 type Check = { id: string; label: string; state: 'ok' | 'missing' | 'optional' | 'fail'; detail: string; fix?: string[] };
-type Summary = { slug: string; title: string; pitch: string | null; issue: string | null; places: number; playable: number; verified: number; steps: string[]; cover: { file: string; v: number | null } | null };
+type Summary = { slug: string; title: string; pitch: string | null; issue: string | null; places: number; playable: number; verified: number; steps: string[]; cover: { file: string; v: number | null } | null; workshop?: boolean };
 type Finding = { code: string; key?: string; detail: string };
 type PlaceDetail = {
   key: string;
@@ -44,8 +44,6 @@ function go(path: string) {
   route.value = path;
 }
 addEventListener('popstate', () => (route.value = location.pathname));
-
-const slugify = (text: string) => text.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').split('-').slice(0, 4).join('-').replace(/^(\d)/, 'w-$1') || 'world';
 
 function Mark({ state }: { state: Check['state'] | 'run' | 'todo' }) {
   const glyph = { ok: '✓', missing: '!', optional: '·', fail: '✕', run: '◌', todo: '' }[state];
@@ -159,6 +157,7 @@ function Header({ world, live, pl, onActivity, more }: { world?: string; live?: 
           <div class="share-menu top-menu" role="menu" onClick={(e) => (e.target as HTMLElement).closest('a') && setMenu(false)}>
             <label class="follow" title={pl ? 'Gdy agent otwiera miejsce, zakładkę albo grę, strona idzie za nim' : 'When the agent opens a place, a tab or the game, the page goes there too'}><input type="checkbox" checked={followAgent.value} onChange={(e) => (followAgent.value = e.currentTarget.checked)} /> {pl ? 'Śledź agenta' : 'Follow agent'}</label>
             <a href="/setup" class="navlink" title={pl ? 'Klucze, programy i budżet na tym komputerze' : 'Keys, tools and the budget on this computer'} onClick={(e) => (e.preventDefault(), go('/setup'))}>{pl ? 'Ustawienia' : 'Setup'}</a>
+            <a href="/workshop" class="navlink" title={pl ? 'Dzieci rysują i opowiadają, a z tego powstaje gra' : 'Children draw and tell a story; the game is built from their drawings and voices'} onClick={(e) => (e.preventDefault(), go('/workshop'))}>{pl ? 'Warsztat: rysunki i głosy' : 'Workshop: drawings and voices'}</a>
             {more}
           </div>
         )}
@@ -272,99 +271,239 @@ const today = (worlds: Summary[] | null) => {
   return n === 1 ? day : `${day}-${n}`;
 };
 
-function Start() {
+/** Ideas to start from: a click puts one in the box. */
+const EXAMPLES = [
+  'A night market where paper lanterns hold lost memories, and one lantern has gone dark',
+  "My grandmother's kitchen in 1989, the evening before the house is sold",
+  'A foggy harbour where a cat has stolen the last ferry ticket',
+  'Ostatni tramwaj przez zamglony Kraków i pasażer, który nie pamięta, dokąd jedzie',
+];
+
+type Photo = { name: string; data: string };
+
+/** The mic beside the idea: press to speak, press again; what was said joins the text. */
+function SayIt({ onText, onError }: { onText: (text: string) => void; onError: (m: string) => void }) {
+  const [rec, setRec] = useState<MediaRecorder | null>(null);
+  const [hearing, setHearing] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    if (!rec) return;
+    const started = Date.now();
+    const timer = setInterval(() => setSeconds(Math.round((Date.now() - started) / 1000)), 250);
+    return () => clearInterval(timer);
+  }, [rec]);
+  const start = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      const type = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
+      const r = new MediaRecorder(stream, type ? { mimeType: type } : {});
+      const chunks: Blob[] = [];
+      r.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+      r.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setHearing(true);
+        try {
+          const said = await call<{ text: string }>('idea_hear', { name: `idea.${r.mimeType.includes('mp4') ? 'm4a' : 'webm'}`, data: await base64(new Blob(chunks, { type: r.mimeType })) });
+          if (said.text) onText(said.text);
+        } catch (e) {
+          onError((e as Error).message);
+        } finally {
+          setHearing(false);
+        }
+      };
+      r.start(1000);
+      setSeconds(0);
+      setRec(r);
+    } catch (e) {
+      onError(`No microphone: ${(e as Error).message}`);
+    }
+  };
+  return (
+    <button type="button" class={`ghost bare${rec ? ' rec' : ''}`} disabled={hearing} title={rec ? 'Stop: what you said is written into the idea' : 'Say the idea instead of typing it. Muse Voice Transcribe writes it here: 1 call'} onClick={rec ? () => (rec.stop(), setRec(null)) : start}>
+      {hearing ? 'Hearing…' : rec ? `■ Stop · ${seconds} s` : '🎙 Say it'}
+    </button>
+  );
+}
+
+function WorldList({ worlds, pl, onWorkshop }: { worlds: Summary[] | null; pl: boolean; onWorkshop: (slug: string) => void }) {
+  const [query, setQuery] = useState('');
+  const say = (inPolish: string, english: string) => (pl ? inPolish : english);
+  const shown = (worlds ?? []).filter((w) => !query || `${w.title} ${w.slug} ${w.pitch ?? ''}`.toLowerCase().includes(query.toLowerCase()));
+  return (
+    <section class="start-worlds">
+      <div class="row">
+        <h2>{say('Światy', 'Worlds')}{worlds ? ` · ${worlds.length}` : ''}</h2>
+        <span class="grow" />
+        {(worlds?.length ?? 0) > 6 && <input type="search" placeholder={say('Znajdź świat', 'Find a world')} value={query} onInput={(e) => setQuery(e.currentTarget.value)} />}
+      </div>
+      {worlds && worlds.length === 0 && <p class="note">{say('Nie ma jeszcze światów.', 'No worlds yet. Describe one above.')}</p>}
+      <ul class="worlds">
+        {shown.map((w) => (
+          <li>
+            <a href={`/w/${w.slug}`} onClick={(e) => {
+              e.preventDefault();
+              // A workshop world not built yet opens on its drawings and recordings.
+              if (w.issue === 'no world.json yet' && w.workshop) onWorkshop(w.slug);
+              else go(`/w/${w.slug}`);
+            }}>
+              {w.cover ? <img src={fileUrl(w.slug, w.cover.file, w.cover.v)} alt="" loading="lazy" /> : <div class="noimg" />}
+              <strong>{w.title}</strong>
+              <span class="detail">{w.issue === 'no world.json yet' ? (w.workshop ? say('jeszcze niezbudowany', 'workshop, not built yet') : 'being made…') : w.issue ?? say(`miejsca: ${w.places} · grywalne: ${w.playable}`, `${w.places} places · ${w.playable} playable`)}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function useStart() {
   const [worlds, setWorlds] = useState<Summary[] | null>(null);
   const [needs, setNeeds] = useState<Check[]>([]);
-  // Without the Meta key a build fails in its first step; say so before anyone waits for it.
-  const noKey = needs.some((n) => n.id === 'META_API_KEY');
-  const [idea, setIdea] = useState('');
-  // ?kids=<slug> opens a workshop world that is not built yet: its drawings and recordings.
-  const [kids, setKids] = useState(new URLSearchParams(location.search).has('kids'));
-  const [slug, setSlug] = useState(new URLSearchParams(location.search).get('kids') ?? '');
-  const [places, setPlaces] = useState(kids ? 3 : 4);
   const [error, setError] = useState('');
-  const [query, setQuery] = useState('');
   useEffect(() => {
     call<Summary[]>('world_list').then(setWorlds).catch((e) => setError(e.message));
     call<Check[]>('setup_status').then((c) => setNeeds(c.filter((x) => x.state === 'missing' || x.state === 'fail'))).catch(() => {});
   }, []);
-  const name = slug || (kids ? today(worlds) : slugify(idea));
-  const taken = worlds?.some((w) => w.slug === name && !(kids && w.issue === 'no world.json yet'));
-  const build = async (e?: Event, told?: string) => {
+  return { worlds, needs, error, setError };
+}
+
+function SetupBanner({ needs, pl }: { needs: Check[]; pl?: boolean }) {
+  if (!needs.length) return null;
+  return (
+    <a class="banner" href="/setup" onClick={(e) => (e.preventDefault(), go('/setup'))}>
+      {pl ? `Ustawienia: brakuje ${needs.map((n) => n.label).join(', ')}. Otwórz ustawienia →` : `Setup: ${needs.map((n) => n.label).join(', ')} ${needs.length > 1 ? 'are' : 'is'} missing. Open Setup →`}
+    </a>
+  );
+}
+
+/** The front door: one idea, in words, a voice or a photo; Spark picks the name, the places and the language. */
+function Start() {
+  const { worlds, needs, error, setError } = useStart();
+  const noKey = needs.some((n) => n.id === 'META_API_KEY');
+  const [idea, setIdea] = useState('');
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [slug, setSlug] = useState('');
+  const [places, setPlaces] = useState(0);
+  const [language, setLanguage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [drop, setDrop] = useState(false);
+  const box = useRef<HTMLTextAreaElement>(null);
+  const taken = !!slug && worlds?.some((w) => w.slug === slug);
+  const ready = idea.trim().length >= 10 && !taken && !noKey && !busy;
+  const addPhotos = async (files: Iterable<File>) => {
+    const pics = [...files].filter((f) => f.type.startsWith('image/'));
+    const kept = await Promise.all(pics.map(async (f) => ({ name: (f.name || 'pasted.png').replace(/\.[^.]+$/, '') + '.jpg', data: await shrink(f) })));
+    setPhotos((p) => [...p, ...kept].slice(0, 2));
+  };
+  const build = async (e?: Event) => {
     e?.preventDefault();
-    if (kids && told === undefined) return;
+    if (!ready) return;
+    setError('');
+    setBusy(true);
+    try {
+      const made = await call<{ slug: string }>('world_new', { idea: idea.trim(), ...(slug && { slug }), ...(places && { places }), ...(language && { language }), ...(photos.length && { photos }) });
+      go(`/w/${made.slug}`);
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <Header />
+      <main class="start">
+        <SetupBanner needs={needs} />
+        <form class="hero" onSubmit={build}>
+          <h1>Describe a place. <em>Walk into it.</em></h1>
+          <p class="lead">One sentence is enough. Muse Spark writes the story, Muse Image paints the places, SAM cuts out everything you can touch.</p>
+          <div class={`prompt${drop ? ' drop' : ''}`}
+            onDragOver={(e) => (e.preventDefault(), setDrop(true))}
+            onDragLeave={() => setDrop(false)}
+            onDrop={(e) => (e.preventDefault(), setDrop(false), void addPhotos(e.dataTransfer?.files ?? []))}>
+            <textarea ref={box} rows={4} aria-label="Your idea" placeholder="A lighthouse keeper's last night before the foghorn is switched off for good…" value={idea}
+              onInput={(e) => setIdea(e.currentTarget.value)}
+              onPaste={(e) => { const files = [...(e.clipboardData?.files ?? [])]; if (files.length) (e.preventDefault(), void addPhotos(files)); }}
+              onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && void build()} />
+            {photos.length > 0 && (
+              <div class="attached">
+                {photos.map((p, i) => (
+                  <span class="att" title="Spark decides: a real room becomes the first place, a person becomes the hero">
+                    <img src={p.data} alt="" />{p.name}
+                    <button type="button" class="ghost bare" aria-label="Remove the photo" onClick={() => setPhotos(photos.filter((_, j) => j !== i))}>×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div class="row">
+              <label class="button ghost bare" title="A photo of a real room becomes the first place; a photo of a person becomes the hero. Dropping or pasting a picture works too. Spark reads it: no extra call">
+                <input type="file" accept="image/*" multiple onChange={(e) => (void addPhotos(e.currentTarget.files ?? []), (e.currentTarget.value = ''))} />＋ Photo
+              </label>
+              <SayIt onText={(text) => (setIdea((old) => `${old.trim()} ${text}`.trim()), box.current?.focus())} onError={setError} />
+              <span class="grow" />
+              <button type="submit" class="primary" disabled={!ready}
+                title={taken ? 'A world has this name already: change it under More' : noKey ? 'Add the Meta key in Setup first' : idea.trim().length < 10 ? 'Write the idea first (at least 10 letters)' : 'Spark names the world and picks how many places it needs, then the whole game is built: story, paintings, cut-outs, depth, cast, sound, play test. A few minutes; per place about 1 Muse Image + several SAM and Spark calls'}>
+                {busy ? 'Spark reads the idea…' : taken ? 'Name taken' : noKey ? 'Needs the Meta key' : 'Build it'}
+              </button>
+            </div>
+          </div>
+          <div class="row ideas">
+            {EXAMPLES.map((x) => <button type="button" class="chip" title="Start from this idea" onClick={() => (setIdea(x), box.current?.focus())}>{x}</button>)}
+          </div>
+          <details class="more">
+            <summary title="The world's name, how many places and the language: Spark picks them from the idea when left on Auto">More</summary>
+            <div class="row">
+              <label title="The world's name in links and folders: small letters, digits and dashes">Name <input value={slug} placeholder="auto" onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
+              <label title="How many places the game has. Each is about one Muse Image painting plus SAM cut-outs. Auto: as many as the story needs (2 to 5)">Places <select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}><option value={0}>Auto</option>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
+              <label title="The language of the game's text and voices. Auto: the language the idea is written in">Language <select value={language} onChange={(e) => setLanguage(e.currentTarget.value)}><option value="">Auto</option>{['English', 'Polish', 'German', 'French', 'Spanish', 'Italian'].map((l) => <option value={l}>{l}</option>)}</select></label>
+            </div>
+          </details>
+          {error && <p class="error">{error}</p>}
+        </form>
+        <WorldList worlds={worlds} pl={false} onWorkshop={(s) => go(`/workshop?kids=${s}`)} />
+      </main>
+    </>
+  );
+}
+
+/** The kids workshop: drawings and voices become the game. Reached from the menu (/workshop) and from an unbuilt workshop world. */
+function WorkshopStart() {
+  const { worlds, needs, error, setError } = useStart();
+  const [slug, setSlug] = useState(new URLSearchParams(location.search).get('kids') ?? '');
+  const [places, setPlaces] = useState(3);
+  const name = slug || today(worlds);
+  const taken = worlds?.some((w) => w.slug === name && w.issue !== 'no world.json yet');
+  const build = async (told: string) => {
     setError('');
     try {
-      await call('world_build', { slug: name, idea: (told ?? idea).trim(), places });
+      await call('world_build', { slug: name, idea: told.trim(), places });
       go(`/w/${name}`);
     } catch (err) {
       setError((err as Error).message);
     }
   };
   // A workshop run in Polish shows no English: the children may be looking.
-  const pl = kids && polish.value;
+  const pl = polish.value;
   const say = (inPolish: string, english: string) => (pl ? inPolish : english);
-  const shown = (worlds ?? []).filter((w) => !query || `${w.title} ${w.slug} ${w.pitch ?? ''}`.toLowerCase().includes(query.toLowerCase()));
+  const settings = (
+    <div class="row">
+      <label title={say('Nazwa świata w adresie: małe litery, cyfry i myślniki', 'The world\'s name in links and folders: small letters, digits and dashes')}>{say('Nazwa', 'Name')} <input value={name} onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
+      <label title={say('Ile miejsc ma gra. Każde to jeden obraz Muse i kilka wywołań SAM', 'How many places the game has. Each is about one Muse Image painting plus SAM cut-outs')}>{say('Miejsca', 'Places')} <select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
+      <label title={say('Język warsztatu: wszystko na ekranie, historia i głosy', 'The workshop\'s language: everything on screen, the story and the voices')}>{say('Język', 'Language')} <select value={pl ? 'pl' : 'en'} onChange={(e) => setPolish(e.currentTarget.value === 'pl')}><option value="pl">Polski</option><option value="en">English</option></select></label>
+    </div>
+  );
   return (
     <>
       <Header pl={pl} />
-      <main class="wide">
-        {needs.length > 0 && (
-          <a class="banner" href="/setup" onClick={(e) => (e.preventDefault(), go('/setup'))}>
-            {say(`Ustawienia: brakuje ${needs.map((n) => n.label).join(', ')}. Otwórz ustawienia →`, `Setup: ${needs.map((n) => n.label).join(', ')} ${needs.length > 1 ? 'are' : 'is'} missing. Open Setup →`)}
-          </a>
-        )}
-        <form class="idea" onSubmit={build}>
-          <div class="row">
-            <h1 class="grow">{kids ? say('Gra z dziecięcych rysunków', 'A game from children\'s drawings') : 'What should the world be?'}</h1>
-            <div class="tabs">
-              <button type="button" class={`ghost small${kids ? '' : ' on'}`} title={say('Opisz świat słowami, Muse Spark wymyśla resztę', 'Describe a world in words, Muse Spark makes up the rest')} onClick={() => (setKids(false), setPlaces(4))}>{say('Opisz', 'Describe it')}</button>
-              <button type="button" class={`ghost small${kids ? ' on' : ''}`} title={say('Warsztat: zdjęcia dziecięcych rysunków i nagrania ich historii stają się grą', 'Workshop: photos of children\'s drawings and recordings of their story become the game')} onClick={() => (setKids(true), setPlaces(3))}>{say('Rysunki i głosy', 'Drawings and voices')}</button>
-              {kids && <button type="button" class="ghost small" title={say('Warsztat po angielsku', 'Run the workshop in Polish')} onClick={() => setPolish(!polish.value)}>{polish.value ? 'EN' : 'PL'}</button>}
-            </div>
-          </div>
-          {!kids && <textarea rows={3} placeholder="A lighthouse keeper's last night before the foghorn is switched off for good…" value={idea} onInput={(e) => setIdea(e.currentTarget.value)} />}
-          {(() => {
-            const settings = (
-              <div class="row">
-                <label title={say('Nazwa świata w adresie: małe litery, cyfry i myślniki', 'The world\'s name in links and folders: small letters, digits and dashes')}>{say('Nazwa', 'Name')} <input value={name} onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
-                <label title={say('Ile miejsc ma gra. Każde to jeden obraz Muse i kilka wywołań SAM', 'How many places the game has. Each is about one Muse Image painting plus SAM cut-outs')}>{say('Miejsca', 'Places')} <select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
-                <span class="grow" />
-                {!kids && <button type="submit" class="primary" disabled={idea.trim().length < 10 || !!taken || noKey} title={taken ? 'A world has this name already: change Name' : noKey ? 'Add the Meta key in Setup first' : idea.trim().length < 10 ? 'Write the idea first (at least 10 letters)' : 'Build the whole game: story, paintings, cut-outs, depth, cast, sound, play test. A few minutes; per place about 1 Muse Image + several SAM and Spark calls'}>{taken ? 'Name taken' : noKey ? 'Needs the Meta key' : 'Build it'}</button>}
-              </div>
-            );
-            // In a workshop the name and the number of places wait under More: the children's steps come first.
-            if (!kids) return settings;
-            return /^[a-z][a-z0-9-]*$/.test(name)
-              ? <KidsStart slug={name} taken={!!taken} onBuild={(told) => void build(undefined, told)} onError={setError}>{settings}</KidsStart>
-              : settings;
-          })()}
-          {error && <p class="error">{error}</p>}
-        </form>
-        <section>
-          <div class="row">
-            <h2>{say('Światy', 'Worlds')}{worlds ? ` · ${worlds.length}` : ''}</h2>
-            <span class="grow" />
-            {(worlds?.length ?? 0) > 6 && <input type="search" placeholder={say('Znajdź świat', 'Find a world')} value={query} onInput={(e) => setQuery(e.currentTarget.value)} />}
-          </div>
-          {worlds && worlds.length === 0 && <p class="note">{say('Nie ma jeszcze światów.', 'No worlds yet. Describe one above.')}</p>}
-          <ul class="worlds">
-            {shown.map((w) => (
-              <li>
-                <a href={`/w/${w.slug}`} onClick={(e) => {
-                  e.preventDefault();
-                  // A workshop world not built yet opens on its drawings and recordings.
-                  if (w.issue === 'no world.json yet') (setKids(true), setSlug(w.slug), setPlaces(3), scrollTo(0, 0));
-                  else go(`/w/${w.slug}`);
-                }}>
-                  {w.cover ? <img src={fileUrl(w.slug, w.cover.file, w.cover.v)} alt="" loading="lazy" /> : <div class="noimg" />}
-                  <strong>{w.title}</strong>
-                  <span class="detail">{w.issue === 'no world.json yet' && pl ? 'jeszcze niezbudowany' : w.issue ?? say(`miejsca: ${w.places} · grywalne: ${w.playable}`, `${w.places} places · ${w.playable} playable`)}</span>
-                </a>
-              </li>
-            ))}
-          </ul>
-        </section>
+      <main class="start workshop-start">
+        <SetupBanner needs={needs} pl={pl} />
+        <div class="row">
+          <h1 class="grow">{say('Gra z dziecięcych rysunków', 'A game from children\'s drawings')}</h1>
+          <a href="/" class="navlink" title={say('Zwykły start: opisz świat słowami', 'The usual start: describe a world in words')} onClick={(e) => (e.preventDefault(), go('/'))}>{say('← Opisz słowami', '← Describe in words')}</a>
+        </div>
+        {/^[a-z][a-z0-9-]*$/.test(name) ? <KidsStart slug={name} taken={!!taken} onBuild={(told) => void build(told)} onError={setError}>{settings}</KidsStart> : settings}
+        {error && <p class="error">{error}</p>}
+        <WorldList worlds={worlds?.filter((w) => w.workshop) ?? null} pl={pl} onWorkshop={(s) => (setSlug(s), setPlaces(3))} />
       </main>
     </>
   );
@@ -828,6 +967,9 @@ function App() {
   if (path === '/setup') return <Setup />;
   const world = /^\/w\/([a-z][a-z0-9-]*)/.exec(path)?.[1];
   if (world) return <Workshop key={world} slug={world} />;
+  // The kids workshop: /workshop, and the older ?kids=<slug> and ?workshop links.
+  const q = new URLSearchParams(location.search);
+  if (path === '/workshop' || q.has('kids') || q.has('workshop')) return <WorkshopStart key={location.search} />;
   return <Start />;
 }
 

@@ -566,3 +566,33 @@ body.dragging iframe { pointer-events: none; }
 .things td.remove { white-space: nowrap; text-align: right; }
 .things .add-thing input { width: 100%; }
 button.danger { color: var(--bad); }
+/* Start: one idea box up top, the worlds below scroll inside, the page itself never scrolls. */
+main.start { max-width: 1100px; margin: 0 auto; padding: 32px 20px 0; height: calc(100dvh - var(--top-h, 55px)); display: flex; flex-direction: column; gap: 22px; overflow: hidden; }
+main.start .hero { display: flex; flex-direction: column; gap: 14px; flex: none; }
+main.start .hero h1 { font-size: clamp(30px, 4vw, 44px); letter-spacing: -0.01em; text-wrap: balance; }
+main.start .hero h1 em { color: var(--accent); }
+main.start .lead { margin: 0; }
+.prompt { display: flex; flex-direction: column; gap: 10px; padding: 18px 18px 12px; border: 1px solid var(--line-strong); border-radius: 22px; background: var(--panel); transition: border-color .2s, box-shadow .2s; }
+.prompt:focus-within, .prompt.drop { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(232, 168, 92, 0.13), 0 20px 60px rgba(232, 168, 92, 0.06); }
+.prompt textarea { border: 0; background: transparent; padding: 0; resize: none; font: 21px/1.45 Georgia, "Iowan Old Style", serif; min-height: 96px; }
+.prompt textarea:focus { outline: none; }
+.prompt .attached { display: flex; gap: 8px; flex-wrap: wrap; }
+.prompt .att { display: inline-flex; align-items: center; gap: 8px; padding: 4px 4px 4px 4px; border-radius: 12px; background: var(--raised); font-size: 13px; color: var(--muted); }
+.prompt .att img { width: 36px; height: 36px; object-fit: cover; border-radius: 8px; }
+.prompt .row > .primary { min-height: 44px; padding: 0 24px; border-radius: 22px; }
+.prompt label.button { display: inline-flex; align-items: center; cursor: pointer; }
+.prompt label.button input { display: none; }
+button.bare, label.bare { border-color: transparent; color: var(--muted); min-height: 36px; padding: 0 12px; border-radius: 18px; }
+button.bare:hover, label.bare:hover { background: var(--raised); color: var(--text); }
+button.bare.rec { color: var(--bad); }
+.ideas { gap: 8px; }
+.chip { min-height: 32px; padding: 0 14px; border-radius: 999px; font-size: 13px; color: var(--muted); border-color: var(--line); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip:hover { color: var(--text); border-color: var(--accent); }
+main.start .more summary { cursor: pointer; color: var(--faint); font-size: 14px; }
+main.start .more .row { margin-top: 10px; }
+main.start .more label, .workshop-start label { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 14px; }
+.start-worlds { flex: 1; min-height: 0; overflow: auto; padding-bottom: 24px; }
+.start-worlds .worlds { margin-top: 10px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+main.workshop-start { overflow: auto; }
+main.workshop-start > * { flex: none; }
+main.workshop-start .start-worlds { flex: none; overflow: visible; }

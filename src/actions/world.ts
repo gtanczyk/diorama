@@ -93,6 +93,8 @@ export function worldSummary(root: string, slug: string) {
     steps: Object.keys(build?.steps ?? {}),
     cover: cover ? { file: cover, v: stamp(path.join(dir, cover)) } : null,
     changed: stamp(dir),
+    // Children's drawings or recordings kept with it: a workshop world, which opens on them until it is built.
+    workshop: fs.existsSync(path.join(dir, 'drawings')) || fs.existsSync(path.join(dir, 'told')),
   };
 }
 

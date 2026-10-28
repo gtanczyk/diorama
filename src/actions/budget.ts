@@ -75,7 +75,8 @@ defineAction({
   async run({ slug }, ctx) {
     const config = readBudget();
     const today = `${new Date().toISOString().slice(0, 10)}T00:00:00`;
-    const slugs = slug ? [slug] : fs.existsSync(ctx.root) ? fs.readdirSync(ctx.root, { withFileTypes: true }).filter((d) => d.isDirectory() && Slug.safeParse(d.name).success).map((d) => d.name) : [];
+    // Calls made before a world had a folder (world_new reading the idea) are in .start/ and count too.
+    const slugs = slug ? [slug] : fs.existsSync(ctx.root) ? fs.readdirSync(ctx.root, { withFileTypes: true }).filter((d) => d.isDirectory() && (Slug.safeParse(d.name).success || d.name === '.start')).map((d) => d.name) : [];
     const total: Tally = {};
     const day: Tally = {};
     const worlds = slugs.map((s) => {

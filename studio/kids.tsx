@@ -39,7 +39,7 @@ const KIND = (): Record<string, string> => polish.value
   : { hero: 'Hero', player: 'Another hero (one per gamepad)', npc: 'Character', item: 'Item to pick up', prop: 'Thing in a place', place: 'Place' };
 
 /** A photo shrunk to 1600 px as JPEG, so a phone picture travels light; what the browser cannot read goes as it is. */
-async function shrink(file: Blob): Promise<string> {
+export async function shrink(file: Blob): Promise<string> {
   try {
     const bitmap = await createImageBitmap(file);
     const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
@@ -53,7 +53,7 @@ async function shrink(file: Blob): Promise<string> {
   }
 }
 
-function base64(blob: Blob): Promise<string> {
+export function base64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
