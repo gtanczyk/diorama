@@ -861,3 +861,12 @@ main.start .more .fields input, main.start .more .fields select { min-width: 0; 
 main.start .more .fields select { appearance: none; padding-right: 30px; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: right 15px top 17px, right 10px top 17px; background-size: 5px 5px; background-repeat: no-repeat; cursor: pointer; }
 main.start .more .fields input:focus, main.start .more .fields select:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3px rgba(194, 122, 44, 0.15); }
 @media (max-width: 640px) { main.start .more .fields { grid-template-columns: 1fr; } }
+
+/* The build bar is clickable: a phase's name puts what it made on the stage, a segment what that step made. */
+.pipeline .phases li .label { min-height: 0; padding: 0; border: 0; border-radius: 6px; background: none; font: inherit; color: inherit; text-align: left; }
+.pipeline .phases li.open .label { cursor: pointer; }
+.pipeline .phases li.open .label:hover .name { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.pipeline .phases li.open .bar { transition: height 0.15s, margin 0.15s; }
+.pipeline .phases li.open:hover .bar { height: 12px; margin: -2px 0; }
+.pipeline .seg { position: absolute; top: 0; bottom: 0; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; cursor: pointer; }
+.pipeline .seg:hover, .pipeline .seg:focus-visible { background: rgba(255, 255, 255, 0.35); box-shadow: inset 0 0 0 1.5px var(--ink); outline: none; }

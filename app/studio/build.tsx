@@ -65,7 +65,10 @@ type JobLike = { label: string; by: string; state: string; startedAt?: string };
  * Idle, it shows which steps the world has; running, the time and what is left, from the last build's step
  * times (world_status.typical), never a made-up countdown.
  */
-export function Pipeline({ job, all, live, build, typical }: { job?: JobLike; all: string[]; live: Live; build: Record<string, { seconds: number }>; typical: Record<string, number> }) {
+/** What each step leaves on the stage, for a click on its segment: the place layer it makes. */
+export const STEP_SHOWS: Record<string, LayerName> = { layout: 'blockin', paint: 'painting', masks: 'masks', plates: 'masks', derive: 'walk', backdrop: 'depth', weather: 'painting' };
+
+export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: JobLike; all: string[]; live: Live; build: Record<string, { seconds: number }>; typical: Record<string, number>; onOpen?: (phase: string, step?: string) => void }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!job) return;
@@ -109,12 +112,25 @@ export function Pipeline({ job, all, live, build, typical }: { job?: JobLike; al
           // Filled by the steps done and by the running one's share of its usual time.
           const filled = p.steps.reduce((sum, s, i) => sum + (states[i] === 'ok' ? took(s) : states[i] === 'run' ? Math.min(took(s) * 0.95, runFor / 1000) : 0), 0);
           const phase = states.includes('fail') ? 'fail' : states.includes('run') ? 'run' : states.every((x) => x === 'ok') ? 'ok' : states.every((x) => x === 'skip') ? 'skip' : 'todo';
+          // Something to show once a step has run (or runs now); a click puts it on the stage.
+          const open = onOpen && phase !== 'todo' && phase !== 'skip';
+          const tip = `${p.title} · ${p.by.join(', ')}\n` + p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : '·'} ${s}${done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}`).join('\n');
+          let at = 0;
           return (
-            <li class={phase} style={{ flexGrow: Math.max(1, all) }} title={`${p.title} · ${p.by.join(', ')}\n` + p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : '·'} ${s}${done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}`).join('\n')}>
+            <li class={`${phase}${open ? ' open' : ''}`} style={{ flexGrow: Math.max(1, all) }}>
               <span class="bar"><span class="fill" style={{ width: `${Math.round((100 * filled) / Math.max(1, all))}%` }} />
                 {p.steps.slice(1).map((s) => <span class="tick" style={{ left: `${(100 * p.steps.slice(0, p.steps.indexOf(s)).reduce((a, x) => a + took(x), 0)) / Math.max(1, all)}%` }} />)}
+                {open && p.steps.map((s, i) => {
+                  const from = at;
+                  at += took(s);
+                  const ready = states[i] === 'ok' || states[i] === 'run';
+                  return ready && <button type="button" class="seg" style={{ left: `${(100 * from) / Math.max(1, all)}%`, width: `${(100 * took(s)) / Math.max(1, all)}%` }}
+                    title={`${s}${states[i] === 'run' ? ', running' : done[s] !== undefined ? `, ${Math.round(done[s])} s` : ''}. Click to see what it made`} onClick={() => onOpen!(p.key, s)} />;
+                })}
               </span>
-              <span class="label"><span class="name">{p.title}</span>{p.by[0] !== 'code' && <ModelTag by={p.by[0]} />}</span>
+              {open
+                ? <button type="button" class="label" title={`${tip}\nClick to see what it made`} onClick={() => onOpen!(p.key)}><span class="name">{p.title}</span>{p.by[0] !== 'code' && <ModelTag by={p.by[0]} />}</button>
+                : <span class="label" title={tip}><span class="name">{p.title}</span>{p.by[0] !== 'code' && <ModelTag by={p.by[0]} />}</span>}
             </li>
           );
         })}
@@ -190,7 +206,7 @@ function DepthLayer({ src, class: cls }: { src: string; class: string }) {
  * The big picture: one place, its pictures stacked in build order, the newest sliding in over the last.
  * While a step works on it, a scan line and the model's name; once built, it turns through its layers.
  */
-export function Stage({ slug, place, live, building }: { slug: string; place: StagePlace; live: Live; building: boolean }) {
+export function Stage({ slug, place, live, building, hold }: { slug: string; place: StagePlace; live: Live; building: boolean; hold?: { layer: LayerName; at: number } | null }) {
   const shown = SHOWN.filter((s) => has(place, s.layer));
   const newest = shown.at(-1)?.layer ?? null;
   const [pick, setPick] = useState<LayerName | null>(null);
@@ -202,7 +218,10 @@ export function Stage({ slug, place, live, building }: { slug: string; place: St
     const timer = setTimeout(() => setTurn((t) => t + 1), turn % shown.length === 0 ? 5000 : 2600);
     return () => clearTimeout(timer);
   }, [building, pick, hover, shown.length, turn]);
-  useEffect(() => (setPick(null), setTurn(0)), [place.key]);
+  // A click on the build bar holds the layer its step made, on this place and the next the stage moves to.
+  const held = useRef<LayerName | null>(null);
+  useEffect(() => void (hold && (held.current = hold.layer, setPick(has(place, hold.layer) ? hold.layer : newest))), [hold?.at]);
+  useEffect(() => (setPick(held.current && has(place, held.current) ? held.current : null), setTurn(0)), [place.key]);
   const cycle = ['painting', ...shown.map((s) => s.layer).filter((l) => l !== 'painting' && l !== 'blockin')] as LayerName[];
   const top: LayerName | null = pick ?? (building || shown.length < 3 ? newest : cycle[turn % cycle.length]);
   const upTo = shown.findIndex((s) => s.layer === top);
@@ -234,7 +253,7 @@ export function Stage({ slug, place, live, building }: { slug: string; place: St
         {shown.length > 1 && (
           <div class="layers" role="tablist" aria-label="Layers">
             {shown.map((s) => (
-              <button type="button" role="tab" aria-selected={top === s.layer} class={`ghost small${top === s.layer ? ' on' : ''}`} title={`${LAYER_TIPS[s.layer] ?? s.title}, by ${s.by}. Click to hold it, again to let the stage cycle`} onClick={() => setPick(pick === s.layer ? null : s.layer)}>{s.title}</button>
+              <button type="button" role="tab" aria-selected={top === s.layer} class={`ghost small${top === s.layer ? ' on' : ''}`} title={`${LAYER_TIPS[s.layer] ?? s.title}, by ${s.by}. Click to hold it, again to let the stage cycle`} onClick={() => ((held.current = null), setPick(pick === s.layer ? null : s.layer))}>{s.title}</button>
             ))}
           </div>
         )}

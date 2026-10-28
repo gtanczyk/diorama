@@ -10,7 +10,7 @@ import { base64, Camera, shrink } from './camera.tsx';
 import { StoryView } from './story.tsx';
 import { StyleMenu } from './style-menu.tsx';
 import { PlaceEditor } from './place.tsx';
-import { MODEL_NAME, Pipeline, Stage, working, type Live, type StagePlace } from './build.tsx';
+import { MODEL_NAME, Pipeline, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
 import { Bell, Logo, Rail, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
 import { Card, CastCard, CastStage, nice, PlacesCard, PlaceStage, type Picked, type StageView } from './world.tsx';
 import { Tips } from './tip.tsx';
@@ -679,6 +679,16 @@ function Workshop({ slug }: { slug: string }) {
   const fresh = livePlace && Date.now() - livePlace.at < 4000 ? livePlace.key : null;
   const stageKey = fresh ?? (busy.length ? busy[spin % busy.length] : null) ?? livePlace?.key ?? status?.placeDetail[0]?.key;
   const stagePlace = status?.placeDetail.find((p) => p.key === stageKey);
+  // A click on the build bar: the story, the cast or the game, or the place layer the step made.
+  const [hold, setHold] = useState<{ layer: LayerName; at: number } | null>(null);
+  const openPhase = (phase: string, step?: string) => {
+    if (phase === 'story') return onStage({ kind: 'story' });
+    if (phase === 'cast') return onStage({ kind: 'cast' });
+    if (phase === 'sound') return setByHand('#cast');
+    if (phase === 'verify') return playable ? onStage({ kind: 'play' }) : setLogOpen(true);
+    const layer = (step && STEP_SHOWS[step]) ?? ({ paint: 'painting', cut: 'masks', space: 'walk' } as Record<string, LayerName>)[phase];
+    if (layer) setHold({ layer, at: Date.now() });
+  };
   const playLine = (text: string) => setLines((l) => [...l.slice(-400), { seq: -Date.now() - Math.random(), text, kind: 'play' }]);
 
   const places = status?.placeDetail ?? [];
@@ -810,8 +820,8 @@ function Workshop({ slug }: { slug: string }) {
             {shownView.kind === 'play' && <Play slug={slug} place={playing?.place} round={playing?.round ?? 0} full={playing?.full} onRestart={() => setPlaying({ ...playing, round: (playing?.round ?? 0) + 1 })} version={tick} onLine={playLine} onError={setError} />}
             {shownView.kind === 'build' && status && (
               <div class="build-on-stage">
-                <Pipeline job={job} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} />
-                {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? 'Muse Spark is dreaming up the places…'}</span></div></div></figure>}
+                <Pipeline job={job} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
+                {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} hold={hold} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? 'Muse Spark is dreaming up the places…'}</span></div></div></figure>}
               </div>
             )}
             {shownView.kind === 'place' && stagedPlace && <PlaceStage slug={slug} place={stagedPlace} version={tick} picked={picked} onPick={setPicked} />}
