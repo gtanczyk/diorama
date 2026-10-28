@@ -823,3 +823,11 @@ button:not(.spot, .thumb, .who):active:not(:disabled) { transform: translateY(1p
 .top-menu .mi-confirm .mi.go { background: var(--bad); border-radius: 16px; min-height: 30px; font-weight: 600; }
 .top-menu .mi-confirm .mi.go:hover { background: color-mix(in srgb, var(--bad) 86%, #000); }
 .convo .agent-says { margin: -2px 0 4px 46px; font-size: 14.5px; color: var(--text); }
+
+/* Pictures in the conversation open over the Studio. */
+.agent .pic-open { min-height: 0; padding: 0; border: 0; border-radius: 6px; background: none; cursor: zoom-in; }
+.agent .gc-tool summary .tool-pic { flex: none; margin-left: auto; min-height: 0; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: none; overflow: hidden; cursor: zoom-in; }
+.agent .gc-tool summary .tool-pic img { display: block; height: 34px; width: auto; max-width: 64px; object-fit: cover; }
+.lightbox { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 32px; background: rgba(28, 24, 20, 0.78); animation: enter-fade .15s ease-out; cursor: zoom-out; }
+.lightbox img { max-width: calc(100vw - 64px); max-height: calc(100vh - 64px); object-fit: contain; border-radius: 6px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); cursor: default; }
+.lightbox .close { position: absolute; top: 16px; right: 16px; width: 40px; padding: 0; border-radius: 50%; background: var(--panel); border-color: var(--line); }

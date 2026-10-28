@@ -76,8 +76,9 @@ export function summarize(result: unknown): string {
     const tail = Array.isArray(r.tail) ? (r.tail as unknown[]).filter((x) => typeof x === 'string').slice(-3).join('\n') : '';
     return `${r.label}: ${r.state}${typeof r.step === 'string' ? `, at ${r.step}` : ''}${typeof r.error === 'string' ? ` (${r.error})` : ''}${tail ? `\n${tail}` : ''}`;
   }
-  const { images: _images, ...rest } = r;
-  const text = JSON.stringify(rest);
+  // The picture a view tool showed goes first, so it survives the cut and the panel can show it.
+  const { images: _images, picture, ...rest } = r;
+  const text = JSON.stringify(typeof picture === 'string' ? { picture, ...rest } : rest);
   return text.length > 400 ? `${text.slice(0, 400)}…` : text;
 }
 

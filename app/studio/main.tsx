@@ -14,6 +14,7 @@ import { MODEL_NAME, Pipeline, Stage, working, type Live, type StagePlace } from
 import { Bell, Logo, Rail, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
 import { Card, CastCard, CastStage, nice, PlacesCard, PlaceStage, type Picked, type StageView } from './world.tsx';
 import { Tips } from './tip.tsx';
+import { Lightbox } from './lightbox.tsx';
 import { followAgent, go, movedFrom, route } from './nav.ts';
 
 type Check = { id: string; label: string; state: 'ok' | 'missing' | 'optional' | 'fail'; detail: string; fix?: string[] };
@@ -1033,4 +1034,4 @@ function Shell() {
   );
 }
 
-render(<><App /><Tips /></>, document.getElementById('app')!);
+render(<><App /><Tips /><Lightbox /></>, document.getElementById('app')!);

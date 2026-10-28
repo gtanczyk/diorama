@@ -204,8 +204,35 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
   const choose = async (name: string) => {
     if (await post('use', { name })) void loadOffers();
   };
+  // A view tool's step shows the picture it looked at, as a thumbnail that opens big. genaicode renders the steps,
+  // so the thumbnails are laid on after each render: a step whose output names a picture gets one in its line.
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const root = panel.current;
+    if (!root) return;
+    const lay = () => {
+      for (const pre of root.querySelectorAll<HTMLElement>('details.gc-tool > pre')) {
+        const file = /^\{"picture":"([^"]+)"/.exec(pre.textContent ?? '')?.[1];
+        const summary = pre.parentElement?.querySelector('summary');
+        if (!file || !summary || summary.querySelector('.tool-pic')) continue;
+        const url = fileUrl(slug, file, Date.now());
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'tool-pic';
+        b.dataset.lightbox = url;
+        b.title = 'What the agent looked at. Click to see it big';
+        b.innerHTML = `<img alt="" src="${url}">`;
+        summary.appendChild(b);
+      }
+    };
+    lay();
+    const watch = new MutationObserver(lay);
+    watch.observe(root, { childList: true, subtree: true, characterData: true });
+    return () => watch.disconnect();
+  }, [slug]);
   return (
     <section
+      ref={panel}
       class="agent"
       onPaste={(e) => {
         const found = images(e.clipboardData);
@@ -290,7 +317,7 @@ function shownPrompt(text: string, slug: string) {
   if (!m && !pick) return studioNote(text);
   return (
     <>
-      {m && <span class="pics sent">{m[1].split(', ').map((f) => <a href={fileUrl(slug, f)} target="_blank" rel="noreferrer"><img src={fileUrl(slug, f)} alt="" /></a>)}</span>}
+      {m && <span class="pics sent">{m[1].split(', ').map((f) => <button type="button" class="pic-open" data-lightbox={fileUrl(slug, f)} title="See it big"><img src={fileUrl(slug, f)} alt="" /></button>)}</span>}
       {pick && <span class="pick-chip sent">📍 {pick}</span>}
       {rest}
     </>
