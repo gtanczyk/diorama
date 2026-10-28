@@ -191,11 +191,19 @@ function Setup() {
   return (
     <>
       <Header />
-      <main class="narrow">
+      {/* What to do on the left, the checks on the right, each scrolling on its own: the page itself never does. */}
+      <main class="setup">
+        <div class="side">
         <h1>Setup</h1>
         <p class="lead">{!checks ? 'Checking this machine…' : blocking.length ? `${blocking.map((c) => c.label).join(' and ')} still ${blocking.length > 1 ? 'need' : 'needs'} you. Everything else is ready or optional.` : `Everything diorama needs is here.${ok < checks.length ? ' The unticked ones are optional.' : ''}`}</p>
         <p class="note">Keys are typed only in your terminal with <code>diorama setup</code>, hidden, and kept in your system keychain. This page never sees them.</p>
         {error && <p class="error">{error}</p>}
+        <div class="row">
+          <button type="button" class="primary" disabled={!!busy} title="Look at this computer again: keys, tools, the agent. Free" onClick={() => run('setup_status')}>{busy === 'setup_status' ? 'Checking…' : 'Check again'}</button>
+          <button type="button" class="ghost" disabled={!!busy || checks?.find((c) => c.id === 'META_API_KEY')?.state === 'missing'} title="Send one tiny request to Meta to see the key works. 1 small Meta call" onClick={() => run('setup_check')}>{busy === 'setup_check' ? 'Calling Meta…' : 'Test the Meta key live'}</button>
+        </div>
+        <BudgetBox />
+        </div>
         <ol class="checks">
           {checks?.map((c) => (
             <li class={c.state}>
@@ -213,11 +221,6 @@ function Setup() {
             </li>
           ))}
         </ol>
-        <div class="row">
-          <button type="button" class="primary" disabled={!!busy} title="Look at this computer again: keys, tools, the agent. Free" onClick={() => run('setup_status')}>{busy === 'setup_status' ? 'Checking…' : 'Check again'}</button>
-          <button type="button" class="ghost" disabled={!!busy || checks?.find((c) => c.id === 'META_API_KEY')?.state === 'missing'} title="Send one tiny request to Meta to see the key works. 1 small Meta call" onClick={() => run('setup_check')}>{busy === 'setup_check' ? 'Calling Meta…' : 'Test the Meta key live'}</button>
-        </div>
-        <BudgetBox />
       </main>
     </>
   );
