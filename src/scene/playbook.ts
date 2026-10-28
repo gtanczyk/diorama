@@ -21,7 +21,7 @@ const FLOOR_GAP: Play = {
     'mask_fix kind: a thing drawn over the join that people walk on becomes walk-on',
     'mask_fix phrase: name the floor better for SAM ("wooden jetty planks")',
   ],
-  last: 'repaint_region: paint steps or a plank across the gap (one Muse edit); when water or a drop parts the floors, the layout needs a floor that joins them (relayout: ask first)',
+  last: 'repaint_region: paint steps or a plank across the gap (one Muse edit); when water or a drop parts the floors, or a standing thing is laid across the only way, the layout needs a floor that joins them or the thing moved (relayout and repaint: ask first)',
 };
 
 /** The camera stands too close: the hero would be taller than the frame at the front. */
