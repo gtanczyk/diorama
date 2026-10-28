@@ -1,18 +1,20 @@
 // Diorama Studio: Start (worlds and a new idea), Setup (what this machine needs) and the Workshop (a world
 // building live). Everything here goes through actions, the same ones `diorama action` and the agent use.
 import { render, type ComponentChildren } from 'preact';
-import { signal } from '@preact/signals';
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import type { ChatNotice, SessionTurn } from 'genaicode/react';
 import { askAgent, call, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
 import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
-import { base64, KidsStart, KidsWait, polish, setPolish, shrink, t } from './kids.tsx';
+import { base64, shrink } from './camera.tsx';
 import { StoryView } from './story.tsx';
 import { StyleMenu } from './style-menu.tsx';
 import { PlaceEditor } from './place.tsx';
-import { clampWidth, Dock, useDock } from './dock.tsx';
-import { Crew, MODEL_NAME, Pipeline, Stage, Strip, Tale, working, type FeedItem, type Live, type StagePlace } from './build.tsx';
+import { MODEL_NAME, Pipeline, Stage, working, type Live, type StagePlace } from './build.tsx';
+import { Bell, Logo, Rail, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
+import { Card, CastCard, CastStage, nice, PlacesCard, PlaceStage, type Picked, type StageView } from './world.tsx';
 import { Tips } from './tip.tsx';
+import { followAgent, go, movedFrom, route } from './nav.ts';
 
 type Check = { id: string; label: string; state: 'ok' | 'missing' | 'optional' | 'fail'; detail: string; fix?: string[] };
 type Summary = { slug: string; title: string; pitch: string | null; issue: string | null; places: number; playable: number; verified: number; steps: string[]; cover: { file: string; v: number | null } | null; workshop?: boolean };
@@ -25,6 +27,7 @@ type PlaceDetail = {
   image: { file: string; v: number | null } | null;
   layers?: StagePlace['layers'];
   verdict: { ok: boolean; errors: Array<Finding & { play?: { look: string; tools: string[]; last?: string } }>; flags: Finding[] } | null;
+  trouble?: { why: string; from: string | null } | null;
 };
 type Job = { id: string; label: string; args: string[]; unplayable?: Array<{ place: string; errors: string[] }>; state: string; by: string; step?: string; error?: string; startedAt?: string; endedAt?: string; tail: string[] };
 type Note = { id: string; at: string; by: string; place?: string; point?: [number, number]; text: string; state: 'open' | 'done'; reply?: string };
@@ -32,19 +35,8 @@ type Spend = { usd: number; priced: boolean; calls: Record<string, number> };
 type Budget = { total: Spend; today: Spend; limitUsd: number | null; over: boolean; prices: Record<string, number> };
 type Status = Summary & { placeDetail: PlaceDetail[]; build: Record<string, { seconds: number }>; typical?: Record<string, number>; calls: Record<string, number>; jobs: Job[] };
 
-const route = signal(location.pathname);
-const followAgent = signal(true);
-/** The world the agent moved the view away from, so the person can go back. */
-const movedFrom = signal<string | null>(null);
 let steps: string[] = [];
 let quiet = new Set<string>();
-
-function go(path: string) {
-  if (path === route.value) return;
-  history.pushState(null, '', path);
-  route.value = path;
-}
-addEventListener('popstate', () => (route.value = location.pathname));
 
 function Mark({ state }: { state: Check['state'] | 'run' | 'todo' }) {
   const glyph = { ok: '✓', missing: '!', optional: '·', fail: '✕', run: '◌', todo: '' }[state];
@@ -129,43 +121,55 @@ function Share({ slug, jobs, onError }: { slug: string; jobs: Job[]; onError: (m
   );
 }
 
-/** In a workshop run in Polish (pl), the header says nothing in English. */
-function Header({ world, live, pl, onActivity, more }: { world?: string; live?: boolean; pl?: boolean; onActivity?: () => void; more?: ComponentChildren }) {
-  const [menu, setMenu] = useState(false);
-  // The Workshop fits under it, so its height is the page's to know.
-  const top = useRef<HTMLElement>(null);
+/** What is seldom needed waits behind one button: following the agent, Setup, and whatever the page adds. */
+function Menu({ children }: { children?: ComponentChildren }) {
+  const [open, setOpen] = useState(false);
   useEffect(() => {
-    const el = top.current;
-    if (!el) return;
-    const size = new ResizeObserver(() => document.documentElement.style.setProperty('--top-h', `${el.offsetHeight}px`));
-    size.observe(el);
-    return () => size.disconnect();
-  }, []);
+    if (!open) return;
+    const close = (e: Event) => !(e.target as HTMLElement).closest?.('.menu-wrap, .share-menu') && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    addEventListener('pointerdown', close);
+    addEventListener('keydown', esc);
+    return () => (removeEventListener('pointerdown', close), removeEventListener('keydown', esc));
+  }, [open]);
   return (
-    <header class="top" ref={top}>
-      <a href="/" class="brand" title="All worlds and a new idea" onClick={(e) => (e.preventDefault(), go('/'))}>
-        <svg width="22" height="22" viewBox="0 0 28 28" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 21 L14 6 L25 21 Z" /><path d="M3 21 H25" /><path d="M9 21 L14 14 L19 21" /></svg>
-        Diorama Studio
-      </a>
-      {world && <><span class="sep">/</span><span class="crumb">{world}</span></>}
-      <span class="grow" />
-      {live !== undefined && <span class={`live-dot ${live ? 'on' : ''}`} title={live ? 'Live: changes show as they happen' : 'Reconnecting to the studio…'} aria-label={live ? 'live' : 'reconnecting'} />}
-      {onActivity && <button type="button" class="ghost small" title="What the build, the agent and the game did, line by line, and the model calls so far" onClick={onActivity}>Activity</button>}
-      {/* What is seldom needed waits behind one button. */}
-      <div class="share">
-        <button type="button" class="ghost tiny menu-button" aria-label={pl ? 'Więcej' : 'More'} title={pl ? 'Więcej: śledzenie agenta, ustawienia' : 'More: follow the agent, Setup, share the game'} aria-expanded={menu} onClick={() => setMenu(!menu)}>☰</button>
-        {menu && (
-          <div class="share-menu top-menu" role="menu" onClick={(e) => (e.target as HTMLElement).closest('a') && setMenu(false)}>
-            <label class="follow" title={pl ? 'Gdy agent otwiera miejsce, zakładkę albo grę, strona idzie za nim' : 'When the agent opens a place, a tab or the game, the page goes there too'}><input type="checkbox" checked={followAgent.value} onChange={(e) => (followAgent.value = e.currentTarget.checked)} /> {pl ? 'Śledź agenta' : 'Follow agent'}</label>
-            <a href="/setup" class="navlink" title={pl ? 'Klucze, programy i budżet na tym komputerze' : 'Keys, tools and the budget on this computer'} onClick={(e) => (e.preventDefault(), go('/setup'))}>{pl ? 'Ustawienia' : 'Setup'}</a>
-            <a href="/workshop" class="navlink" title={pl ? 'Dzieci rysują i opowiadają, a z tego powstaje gra' : 'Children draw and tell a story; the game is built from their drawings and voices'} onClick={(e) => (e.preventDefault(), go('/workshop'))}>{pl ? 'Warsztat: rysunki i głosy' : 'Workshop: drawings and voices'}</a>
-            {more}
-          </div>
-        )}
-      </div>
-    </header>
+    <div class="share menu-wrap">
+      <button type="button" class="ghost menu-button" aria-label="More" title="More: follow the agent, history, style, Setup" aria-expanded={open} onClick={() => setOpen(!open)}>☰</button>
+      {open && (
+        <div class="share-menu top-menu" role="menu" onClick={(e) => (e.target as HTMLElement).closest('a') && setOpen(false)}>
+          <label class="follow" title="When the agent opens a place, the cast or the game, the stage goes there too"><input type="checkbox" checked={followAgent.value} onChange={(e) => (followAgent.value = e.currentTarget.checked)} /> Follow the agent</label>
+          {children}
+          <a href="/setup" class="navlink" title="Keys, tools and the budget on this computer" onClick={(e) => (e.preventDefault(), go('/setup'))}>Setup</a>
+        </div>
+      )}
+    </div>
   );
 }
+
+/** The bell and the menu, top right of a page with no stage of its own. */
+function Corner() {
+  return <div class="corner"><Bell /><Menu /></div>;
+}
+
+/** Share as one button: the zip and the public link behind it. */
+function ShareButton({ slug, jobs, onError }: { slug: string; jobs: Job[]; onError: (m: string) => void }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: Event) => !(e.target as HTMLElement).closest?.('.share-wrap') && setOpen(false);
+    addEventListener('pointerdown', close);
+    return () => removeEventListener('pointerdown', close);
+  }, [open]);
+  return (
+    <div class="share share-wrap">
+      <button type="button" class="ghost" aria-expanded={open} title="A zip for itch.io, or a link anyone can play" onClick={() => setOpen(!open)}>Share</button>
+      {open && <div class="share-menu" role="menu"><Share slug={slug} jobs={jobs} onError={onError} /></div>}
+    </div>
+  );
+}
+
+/** Which model does the running step, for the build card. */
+const MODEL_FOR: Record<string, string> = { world: 'Muse Spark', story: 'Muse Spark', layout: 'Muse Spark', paint: 'Muse Image', masks: 'SAM 3.1', plates: 'Muse Image', icons: 'Muse Image', derive: 'Depth', backdrop: 'Muse Image', cast: 'Muse Image', model: '3D', sprites: 'Muse Image', sound: 'ElevenLabs', voices: 'ElevenLabs', verify: 'play test' };
 
 function Copy({ text }: { text: string }) {
   const [done, setDone] = useState(false);
@@ -191,7 +195,7 @@ function Setup() {
   const blocking = checks?.filter((c) => c.state === 'missing' || c.state === 'fail') ?? [];
   return (
     <>
-      <Header />
+      <Corner />
       {/* What to do on the left, the checks on the right, each scrolling on its own: the page itself never does. */}
       <main class="setup">
         <div class="side">
@@ -265,16 +269,6 @@ function BudgetBox() {
   );
 }
 
-/** A workshop world's default name: the day it was made. */
-/** A workshop world's default name: the day it was made, numbered when a game of that day is already built. */
-const today = (worlds: Summary[] | null) => {
-  const day = `workshop-${new Date().toISOString().slice(5, 10)}`;
-  const built = (slug: string) => worlds?.some((w) => w.slug === slug && w.issue !== 'no world.json yet');
-  let n = 1;
-  while (built(n === 1 ? day : `${day}-${n}`)) n++;
-  return n === 1 ? day : `${day}-${n}`;
-};
-
 /** Ideas to start from: a click puts one in the box. */
 const EXAMPLES = [
   'A night market where paper lanterns hold lost memories, and one lantern has gone dark',
@@ -329,38 +323,6 @@ function SayIt({ onText, onError }: { onText: (text: string) => void; onError: (
   );
 }
 
-function WorldList({ worlds, pl, onWorkshop }: { worlds: Summary[] | null; pl: boolean; onWorkshop: (slug: string) => void }) {
-  const [query, setQuery] = useState('');
-  const say = (inPolish: string, english: string) => (pl ? inPolish : english);
-  const shown = (worlds ?? []).filter((w) => !query || `${w.title} ${w.slug} ${w.pitch ?? ''}`.toLowerCase().includes(query.toLowerCase()));
-  return (
-    <section class="start-worlds">
-      <div class="row">
-        <h2>{say('Światy', 'Worlds')}{worlds ? ` · ${worlds.length}` : ''}</h2>
-        <span class="grow" />
-        {(worlds?.length ?? 0) > 6 && <input type="search" placeholder={say('Znajdź świat', 'Find a world')} value={query} onInput={(e) => setQuery(e.currentTarget.value)} />}
-      </div>
-      {worlds && worlds.length === 0 && <p class="note">{say('Nie ma jeszcze światów.', 'No worlds yet. Describe one above.')}</p>}
-      <ul class="worlds">
-        {shown.map((w) => (
-          <li>
-            <a href={`/w/${w.slug}`} onClick={(e) => {
-              e.preventDefault();
-              // A workshop world not built yet opens on its drawings and recordings.
-              if (w.issue === 'no world.json yet' && w.workshop) onWorkshop(w.slug);
-              else go(`/w/${w.slug}`);
-            }}>
-              {w.cover ? <img src={fileUrl(w.slug, w.cover.file, w.cover.v)} alt="" loading="lazy" /> : <div class="noimg" />}
-              <strong>{w.title}</strong>
-              <span class="detail">{w.issue === 'no world.json yet' ? (w.workshop ? say('jeszcze niezbudowany', 'workshop, not built yet') : 'being made…') : w.issue ?? say(`miejsca: ${w.places} · grywalne: ${w.playable}`, `${w.places} places · ${w.playable} playable`)}</span>
-            </a>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
 function useStart() {
   const [worlds, setWorlds] = useState<Summary[] | null>(null);
   const [needs, setNeeds] = useState<Check[]>([]);
@@ -407,6 +369,7 @@ function Start() {
     setBusy(true);
     try {
       const made = await call<{ slug: string }>('world_new', { idea: idea.trim(), ...(slug && { slug }), ...(places && { places }), ...(language && { language }), ...(photos.length && { photos }) });
+      void call('world_list').then((w) => (allWorlds.value = w as typeof allWorlds.value)).catch(() => {});
       go(`/w/${made.slug}`);
     } catch (err) {
       setError((err as Error).message);
@@ -415,12 +378,13 @@ function Start() {
   };
   return (
     <>
-      <Header />
       <main class="start">
+        <Corner />
         <SetupBanner needs={needs} />
         <form class="hero" onSubmit={build}>
-          <h1>Describe a place. <em>Walk into it.</em></h1>
-          <p class="lead">One sentence is enough. Muse Spark writes the story, Muse Image paints the places, SAM cuts out everything you can touch.</p>
+          <Logo size={44} />
+          <h1>What should the <em>world</em> be?</h1>
+          <p class="lead">Say it in a sentence. Muse Spark writes the story, Muse Image paints the places, SAM 3.1 cuts out everything you can touch, and the agent looks after it with you.</p>
           <div class={`prompt${drop ? ' drop' : ''}`}
             onDragOver={(e) => (e.preventDefault(), setDrop(true))}
             onDragLeave={() => setDrop(false)}
@@ -464,50 +428,6 @@ function Start() {
           </details>
           {error && <p class="error">{error}</p>}
         </form>
-        <WorldList worlds={worlds} pl={false} onWorkshop={(s) => go(`/workshop?kids=${s}`)} />
-      </main>
-    </>
-  );
-}
-
-/** The kids workshop: drawings and voices become the game. Reached from the menu (/workshop) and from an unbuilt workshop world. */
-function WorkshopStart() {
-  const { worlds, needs, error, setError } = useStart();
-  const [slug, setSlug] = useState(new URLSearchParams(location.search).get('kids') ?? '');
-  const [places, setPlaces] = useState(3);
-  const name = slug || today(worlds);
-  const taken = worlds?.some((w) => w.slug === name && w.issue !== 'no world.json yet');
-  const build = async (told: string) => {
-    setError('');
-    try {
-      await call('world_build', { slug: name, idea: told.trim(), places });
-      go(`/w/${name}`);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  };
-  // A workshop run in Polish shows no English: the children may be looking.
-  const pl = polish.value;
-  const say = (inPolish: string, english: string) => (pl ? inPolish : english);
-  const settings = (
-    <div class="row">
-      <label title={say('Nazwa świata w adresie: małe litery, cyfry i myślniki', 'The world\'s name in links and folders: small letters, digits and dashes')}>{say('Nazwa', 'Name')} <input value={name} onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
-      <label title={say('Ile miejsc ma gra. Każde to jeden obraz Muse i kilka wywołań SAM', 'How many places the game has. Each is about one Muse Image painting plus SAM cut-outs')}>{say('Miejsca', 'Places')} <select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
-      <label title={say('Język warsztatu: wszystko na ekranie, historia i głosy', 'The workshop\'s language: everything on screen, the story and the voices')}>{say('Język', 'Language')} <select value={pl ? 'pl' : 'en'} onChange={(e) => setPolish(e.currentTarget.value === 'pl')}><option value="pl">Polski</option><option value="en">English</option></select></label>
-    </div>
-  );
-  return (
-    <>
-      <Header pl={pl} />
-      <main class="start workshop-start">
-        <SetupBanner needs={needs} pl={pl} />
-        <div class="row">
-          <h1 class="grow">{say('Gra z dziecięcych rysunków', 'A game from children\'s drawings')}</h1>
-          <a href="/" class="navlink" title={say('Zwykły start: opisz świat słowami', 'The usual start: describe a world in words')} onClick={(e) => (e.preventDefault(), go('/'))}>{say('← Opisz słowami', '← Describe in words')}</a>
-        </div>
-        {/^[a-z][a-z0-9-]*$/.test(name) ? <KidsStart slug={name} taken={!!taken} onBuild={(told) => void build(told)} onError={setError}>{settings}</KidsStart> : settings}
-        {error && <p class="error">{error}</p>}
-        <WorldList worlds={worlds?.filter((w) => w.workshop) ?? null} pl={pl} onWorkshop={(s) => (setSlug(s), setPlaces(3))} />
       </main>
     </>
   );
@@ -535,7 +455,19 @@ function Workshop({ slug }: { slug: string }) {
   const undoneJob = useRef<string | null>(null);
   /** Activity shows what happened; what each step prints is there too, on request (the job card shows its last line). */
   const [allLines, setAllLines] = useState(false);
-  const [dock, setDock] = useDock();
+  const [stage, setStage] = useState<StageView | null>(null);
+  const [picked, setPicked] = useState<Picked | null>(null);
+  const [byHand, setByHand] = useState<string | null>(null);
+  const [idea, setIdea] = useState('');
+  const worldRef = useRef<HTMLElement>(null);
+  const stageRef = useRef<HTMLElement>(null);
+  useEffect(() => void fetch(fileUrl(slug, 'idea.txt', Date.now()), { cache: 'no-store' }).then((r) => (r.ok ? r.text() : '')).then((t) => setIdea(t.trim())).catch(() => {}), [slug]);
+  useEffect(() => {
+    if (!byHand) return;
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setByHand(null);
+    addEventListener('keydown', esc);
+    return () => removeEventListener('keydown', esc);
+  }, [byHand]);
   /** Activity, the raw record of what ran, opens as a drawer from the top bar. */
   const [logOpen, setLogOpen] = useState(false);
   useEffect(() => {
@@ -553,24 +485,16 @@ function Workshop({ slug }: { slug: string }) {
   const [since, setSince] = useState<Record<string, number>>({});
   const [jobCalls, setJobCalls] = useState<Record<string, number>>({});
   const [lastCall, setLastCall] = useState<Live['lastCall']>(null);
-  const [feed, setFeed] = useState<FeedItem[]>([]);
   const [cut, setCut] = useState<Record<string, string[]>>({});
-  const [crewOff, setCrewOff] = useState(false);
-  const feedId = useRef(0);
-  const toFeed = (by: string | null, text: string) => setFeed((f) => [{ id: ++feedId.current, by, text, at: Date.now() }, ...f].slice(0, 30));
   const [livePlace, setLivePlace] = useState<{ key: string; at: number } | null>(null);
   const [spin, setSpin] = useState(0);
-  const [focus, setFocus] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   /** Right after an undo the person can take it back. */
   const [canRedo, setCanRedo] = useState(false);
   const [playing, setPlaying] = useState<{ place?: string; round?: number; full?: boolean } | null>(null);
-  const [view, setView] = useState<'places' | 'story' | 'cast' | 'notes'>('places');
   const [notes, setNotes] = useState<Note[]>([]);
   const [budget, setBudget] = useState<Budget | null>(null);
   /** The build a workshop world's children are watching, until the game starts or the grown-up hides the show. */
-  const [watched, setWatched] = useState<string | null>(null);
-  const [hidden, setHidden] = useState<string | null>(null);
 
   const refresh = () => {
     setTick((t) => t + 1);
@@ -598,7 +522,7 @@ function Workshop({ slug }: { slug: string }) {
         }
         case 'build.start': return setJobPlan(e.steps as string[]);
         case 'step.start': setSince((t) => ({ ...t, [String(e.step)]: Date.parse(e.at) })); setRunning((r) => ({ ...r, [String(e.step)]: 'run' })); return;
-        case 'step.end': toFeed(null, `${e.step} done`); setJobDone((d) => ({ ...d, [String(e.step)]: Number(e.seconds) })); setRunning((r) => { const n = { ...r }; delete n[String(e.step)]; return n; }); soon(); return add(e, `✓ ${e.step} · ${e.seconds}s`, 'step');
+        case 'step.end': setJobDone((d) => ({ ...d, [String(e.step)]: Number(e.seconds) })); setRunning((r) => { const n = { ...r }; delete n[String(e.step)]; return n; }); soon(); return add(e, `✓ ${e.step} · ${e.seconds}s`, 'step');
         case 'step.fail': setRunning((r) => ({ ...r, [String(e.step)]: 'fail' })); return add(e, `✕ ${e.step}: ${e.error}`, 'err');
         case 'call': {
           // A mask from the memo is still a thing cut out: the stage fills its box either way.
@@ -608,7 +532,6 @@ function Workshop({ slug }: { slug: string }) {
           setCalls((c) => c + 1);
           const by = MODEL_NAME[String(e.model)] ?? String(e.model);
           setJobCalls((c) => ({ ...c, [by]: (c[by] ?? 0) + 1 }));
-          toFeed(by, String(e.label ?? '').replace(/#\d+$/, ''));
           return setLastCall({ by, label: String(e.label ?? '').replace(/#\d+$/, ''), at: Date.now() });
         }
         case 'file.changed': {
@@ -619,7 +542,7 @@ function Workshop({ slug }: { slug: string }) {
         }
         case 'feedback.changed': return soon();
         case 'job.start': case 'job.end': case 'job.queued': {
-          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setFeed([]), setCrewOff(false), setCut({}));
+          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setCut({}));
           const job = e.job as Job;
           soon();
           // What the agent changed shows in an open game at once; after the person's own builds the banner offers it.
@@ -652,9 +575,9 @@ function Workshop({ slug }: { slug: string }) {
           if (e.view === 'play' && e.reload) setPlaying((p) => (p ? { ...p, round: (p.round ?? 0) + 1 } : followAgent.value ? { place: e.place as string | undefined } : p));
           if (!followAgent.value) return;
           if (e.view === 'play' && !e.reload) setPlaying((p) => ({ place: e.place as string | undefined, round: (p?.round ?? 0) + 1 }));
-          if (e.view === 'story' || e.view === 'cast') setView(e.view);
-          if (e.view === 'workshop') setView('places');
-          if (e.place && e.view !== 'play') setFocus(String(e.place));
+          if (e.view === 'story' || e.view === 'cast') (setPlaying(null), setStage({ kind: e.view }));
+          if (e.view === 'workshop') (setPlaying(null), setStage(null));
+          if (e.place && e.view !== 'play') (setPlaying(null), setStage({ kind: 'place', place: String(e.place) }));
           if (e.view === 'setup') go('/setup');
           if (e.view === 'start') go('/');
           return;
@@ -666,12 +589,10 @@ function Workshop({ slug }: { slug: string }) {
   const job = status?.jobs.findLast((j) => j.state === 'running' || j.state === 'queued');
   const last = status?.jobs.at(-1);
   const failed = last && last.state === 'failed' ? last : null;
-  const placeFocus = useMemo(() => status?.placeDetail.find((p) => p.key === focus), [status, focus]);
   
   const playable = !!status?.placeDetail.some((p) => p.stages.layout);
   const building = job?.args[0] === 'build' ? job : null;
-  useEffect(() => void (building && setWatched(building.id)), [building?.id]);
-  const shown = watched && hidden !== watched ? status?.jobs.find((j) => j.id === watched) : undefined;
+  const shown = job;
   // How far the watched build is, weighed by how long each step took last time.
   const plan = jobPlan ?? steps;
   const took = (s: string) => status?.build[s]?.seconds ?? status?.typical?.[s] ?? 30;
@@ -696,85 +617,136 @@ function Workshop({ slug }: { slug: string }) {
     return () => clearInterval(timer);
   }, [!!building]);
   const fresh = livePlace && Date.now() - livePlace.at < 4000 ? livePlace.key : null;
-  const stageKey = focus ?? fresh ?? (busy.length ? busy[spin % busy.length] : null) ?? livePlace?.key ?? status?.placeDetail[0]?.key;
+  const stageKey = fresh ?? (busy.length ? busy[spin % busy.length] : null) ?? livePlace?.key ?? status?.placeDetail[0]?.key;
   const stagePlace = status?.placeDetail.find((p) => p.key === stageKey);
   const playLine = (text: string) => setLines((l) => [...l.slice(-400), { seq: -Date.now() - Math.random(), text, kind: 'play' }]);
 
+  const places = status?.placeDetail ?? [];
+  const shownView: StageView = playing ? { kind: 'play' } : stage ?? (building ? { kind: 'build' } : { kind: 'place', place: places[0]?.key });
+  const onStage = (s: StageView) => {
+    setStage(s.kind === 'play' ? null : s);
+    if (s.kind === 'play') setPlaying((p) => p ?? { place: undefined });
+    else setPlaying(null);
+    if (s.kind !== 'place') setPicked((p) => (p && !p.place ? p : null));
+  };
+  const stagedPlace = shownView.kind === 'place' ? places.find((p) => p.key === shownView.place) ?? places[0] : undefined;
+  const unplayable = !job ? places.filter((p) => p.trouble) : [];
+  const openNotes = notes.filter((n) => n.state === 'open');
+  const ask = (text: string) => askAgent(slug, text).catch((e) => setError(e.message));
+  const castDone = !!status?.steps.includes('cast');
+  // What the conversation opens with: the idea, then the world as the build made it, card by card.
+  const opening = [
+    idea && { id: 'idea', afterTurn: 0, text: <div class="idea-bubble">{idea}</div> },
+    status?.title && status.steps.includes('story') && { id: 'story', afterTurn: 0, text: (
+      <Card kind="Story" by="Muse Spark" on={shownView.kind === 'story'} onClick={() => onStage({ kind: 'story' })}>
+        <h3>{status.title}</h3>
+        {status.pitch && <p>{status.pitch}</p>}
+      </Card>
+    ) },
+    places.length > 0 && { id: 'places', afterTurn: 0, text: <PlacesCard slug={slug} places={places} stage={shownView} onStage={onStage} /> },
+    castDone && { id: 'cast', afterTurn: 0, text: <CastCard slug={slug} version={tick} stage={shownView} onStage={onStage} /> },
+  ].filter(Boolean) as ChatNotice[];
+  // What a turn of the agent changed: the places it touched, to look at, and its undo.
+  const afterTurn = (turn: SessionTurn) => {
+    const touched = [...new Set(turn.entries.flatMap((e) => (e.kind === 'tool' && e.name.startsWith('mcp__diorama__') && !quiet.has(e.name.slice(14)) && e.input && typeof (e.input as { place?: unknown }).place === 'string' ? [String((e.input as { place: string }).place)] : [])))];
+    if (!touched.length || !turn.endedAt) return null;
+    return (
+      <Card kind="Changed" on={shownView.kind === 'place' && touched.includes(shownView.place ?? '')}>
+        <div class="thumbs">{touched.map((k) => { const p = places.find((x) => x.key === k); return <button type="button" class="thumb" title={`Show ${nice(k)}`} onClick={() => onStage({ kind: 'place', place: k })} style={p?.image ? { backgroundImage: `url("${fileUrl(slug, p.image.file, p.image.v)}")` } : undefined}>{!p?.image && <span>{nice(k)}</span>}</button>; })}</div>
+        <div class="btns"><button type="button" class="ghost small" title="Play the game to see it. Free" onClick={() => onStage({ kind: 'play' })}>▶ Try it</button><button type="button" class="ghost small" title="Take back the last job. Free" onClick={() => call('history_undo', { slug }).catch((e) => setError(e.message))}>↶ Undo</button></div>
+      </Card>
+    );
+  };
+  const footer = () => (
+    <div class="world-footer">
+      {movedFrom.value && movedFrom.value !== slug && <Card kind="Moved here" tone="ask"><p>The agent moved the view here from {movedFrom.value}.</p><div class="btns"><button type="button" class="ghost small" onClick={() => { const back = movedFrom.value!; movedFrom.value = null; go(`/w/${back}`); }}>Back to {movedFrom.value}</button><button type="button" class="ghost small" onClick={() => (movedFrom.value = null)}>Stay</button></div></Card>}
+      {job && (
+        <Card kind={job.by === 'agent' ? 'The agent is building' : 'Building'} by={MODEL_FOR[liveBuild.plan.find((s) => running[s] === 'run') ?? ''] } on={shownView.kind === 'build'} onClick={() => onStage({ kind: 'build' })}>
+          <p>{job.label}{job.step ? `: ${job.step}` : ''}{total ? ` · about ${Math.max(1, Math.round(left / 60))} min left` : ''}</p>
+          <div class="bar"><i style={{ width: `${Math.round((total ? 1 - left / total : 0.05) * 100)}%` }} /></div>
+          {jobTail && <p class="detail">{jobTail}</p>}
+          <div class="btns"><button type="button" class="ghost small" title={`Stop ${job.label}`} onClick={(e) => (e.stopPropagation(), call('job_cancel', { id: job.id }))}>Stop</button></div>
+        </Card>
+      )}
+      {failed && !job && <Card kind="Needs you" tone="ask"><Failed slug={slug} job={failed} noAgent={noAgent} onError={setError} onPlace={(p) => onStage({ kind: 'place', place: p })} /></Card>}
+      {unplayable.length > 0 && !failed && (
+        <Card kind="Needs you" tone="ask">
+          {unplayable.map((p) => <p><button type="button" class="link" onClick={() => onStage({ kind: 'place', place: p.key })}>{nice(p.key)}</button>: {p.trouble!.why}</p>)}
+          <div class="btns"><button type="button" class="primary small" title="The agent fixes them with the Studio tools and says what it did. It uses model calls as it works" onClick={() => void ask(`${unplayable.map((p) => `${p.key}: ${p.trouble!.why}`).join('; ')}. Fix ${unplayable.length > 1 ? 'these places' : 'this place'} as your playbook says and tell me in one sentence what you did.`)}>Fix it</button></div>
+        </Card>
+      )}
+      {openNotes.length > 0 && !job && (
+        <Card kind={`Your notes · ${openNotes.length}`}>
+          {openNotes.slice(0, 3).map((n) => <p>{n.place ? `${nice(n.place)}: ` : ''}{n.text}</p>)}
+          <div class="btns"><button type="button" class="ghost small" title="The agent fixes each open note and closes it with what it did" onClick={() => void ask(`Go through my ${openNotes.length} open note${openNotes.length > 1 ? 's' : ''} (feedback_pending): fix each one and close it with feedback_done.`)}>Hand to the agent</button></div>
+        </Card>
+      )}
+      {undone && !job && <p class="world-note">{undone}{canRedo ? ' · ' : ''}{canRedo && <button type="button" class="link" onClick={() => call('history_redo', { slug }).catch((e) => setError(e.message))}>Redo</button>}</p>}
+      {budget?.over && <p class="world-note">Budget: ${budget.total.usd} spent of the ${budget.limitUsd} limit.</p>}
+      {playable && !job && (
+        <div class={`wcard play${shownView.kind === 'play' ? ' on' : ''}`} style={places[0]?.image ? { backgroundImage: `url("${fileUrl(slug, places[0].image.file, places[0].image.v)}")` } : undefined}>
+          <div class="in"><div class="grow"><div class="k">Ready</div><h3>Play {status?.title ?? slug}</h3></div><button type="button" class="amber" onClick={() => onStage({ kind: 'play' })}>▶ Play</button></div>
+        </div>
+      )}
+      {error && <p class="error">{error}</p>}
+    </div>
+  );
+  const stageTitle = shownView.kind === 'place' ? nice(stagedPlace?.key ?? '') : shownView.kind === 'cast' ? 'Cast' : shownView.kind === 'story' ? 'Story' : shownView.kind === 'build' ? (stagePlace ? nice(stagePlace.key) : 'Building') : status?.title ?? slug;
+  const stageHint = shownView.kind === 'place' ? 'Click a thing to talk about it' : shownView.kind === 'cast' ? 'Click someone to talk about them' : shownView.kind === 'play' ? 'Click to walk, right click to look, or a gamepad' : '';
+
   return (
     <>
-      <Header world={slug} live={live} onActivity={() => setLogOpen(true)} more={playable && !job && <Share slug={slug} jobs={status?.jobs ?? []} onError={setError} />} />
-      {shown && status && <KidsWait slug={slug} places={status.placeDetail} progress={total ? 1 - left / total : 0} left={shown.state === 'running' ? left : null} doing={plan.find((s) => running[s] === 'run')}
-        ready={shown.state === 'done' && playable} failed={shown.state === 'failed' || shown.state === 'cancelled'}
-        onPlay={() => (setHidden(shown.id), setPlaying({ full: true }))} onHide={() => setHidden(shown.id)} />}
-      {/* The Workshop never scrolls as a page: Places and Play shrink to the window; a picked place, Story, Cast and Notes scroll inside. */}
-      <main class={`workshop${playing ? ' fit playing' : ' fit'} dock-${dock.folded && dock.side !== 'float' ? `${dock.side}-folded` : dock.side}`} style={{ '--dock-w': `${clampWidth(dock.width)}px` }}>
-        <div class="left">
-          <div class="row">
-            <h1>{status?.title ?? slug}</h1>
+      <main class="world" ref={worldRef}>
+        <section class="convo">
+          <header>
+            <h1 title={status?.pitch ?? undefined}>{status?.title ?? slug}</h1>
+            <small>{places.length ? `${places.length} places` : 'being made'}{status && status.playable ? ` · ${status.playable} playable` : ''}{job ? ' · building' : playable ? ' · ready to play' : ''}{live ? '' : ' · reconnecting…'}</small>
+          </header>
+          <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} notices={opening} afterTurn={afterTurn} footer={footer} picked={picked} onUnpick={() => setPicked(null)}
+            empty={<span />} />
+        </section>
+        <section class="theatre" ref={stageRef}>
+          <div class="stage-top">
+            <h2>{stageTitle}</h2>
+            {stageHint && <small>{stageHint}</small>}
             <span class="grow" />
-            {playable && <button type="button" class={playing ? 'primary' : 'ghost'} title={playing ? 'Close the game and go back to the build' : 'Play the game here. Free'} onClick={() => setPlaying(playing ? null : {})}>{playing ? 'Close game' : 'Play'}</button>}
-            {!job && status && !status.issue && <StyleMenu slug={slug} places={status.placeDetail.map((p) => p.key)} version={tick} onError={setError} />}
-            {!job && status && status.steps.length > 0 && <HistoryMenu slug={slug} version={tick} onError={setError} />}
-            {!job && canRedo && <button type="button" class="ghost" title="Take back the undo. Free" onClick={() => call('history_redo', { slug }).catch((e) => setError(e.message))}>Redo</button>}
-            {/* Stop sits beside the build button, never in its place: a double click must not start a build and stop it again. */}
-            {job && <button type="button" class="ghost" title={`Stop ${job.label} (started by ${job.by === 'agent' ? 'the agent' : 'you'})`} onClick={() => call('job_cancel', { id: job.id })}>Stop</button>}
-            <button type="button" class="primary" disabled={!status || !!status.issue || !!job} title={job ? `${job.label} is running${job.step ? `: ${job.step}` : ''}` : status?.issue ? status.issue : status && status.steps.length >= steps.length - 1 ? 'Run every step again and check the game. Answers already asked are reused for free; only what changed calls the models' : 'Go on from the step the build stopped at. Done steps are free; new ones call the models'} onClick={() => call('world_build', { slug }).catch((e) => setError(e.message))}>
-              {job ? `${job.by === 'agent' ? 'Agent: ' : ''}${job.label}…` : status && status.steps.length >= steps.length - 1 ? 'Rebuild verify' : 'Continue build'}
-            </button>
+            {playable && <button type="button" class={shownView.kind === 'play' ? 'ghost' : 'amber'} title={shownView.kind === 'play' ? 'Close the game' : 'Play the game here. Free'} onClick={() => onStage(shownView.kind === 'play' ? { kind: 'place', place: places[0]?.key } : { kind: 'play' })}>{shownView.kind === 'play' ? 'Close game' : '▶ Play'}</button>}
+            {!job && status && status.steps.length > 0 && <button type="button" class="ghost" title="Take back the last job (yours or the agent's). History in ☰ goes further back. Free" onClick={() => call('history_undo', { slug }).catch((e) => setError(e.message))}>↶ Undo</button>}
+            {playable && !job && <ShareButton slug={slug} jobs={status?.jobs ?? []} onError={setError} />}
+            <button type="button" class="ghost wide" title="The stage alone on the whole screen, for recording. Esc comes back" onClick={() => stageRef.current?.querySelector<HTMLElement>('.stage-body')?.requestFullscreen().catch((e) => setError(e.message))}>Film</button>
+            <Bell />
+            <Menu>
+              {!job && status && status.steps.length > 0 && <HistoryMenu slug={slug} version={tick} onError={setError} />}
+              {!job && status && !status.issue && <StyleMenu slug={slug} places={places.map((p) => p.key)} version={tick} onError={setError} />}
+              {!job && <button type="button" class="ghost small" disabled={!status || !!status.issue} title="Run every step again, or go on from where the build stopped. Answers already asked are reused for free" onClick={() => call('world_build', { slug }).catch((e) => setError(e.message))}>{status && status.steps.length >= steps.length - 1 ? 'Build again' : 'Continue the build'}</button>}
+              <button type="button" class="ghost small" title="What the build, the agent and the game did, line by line" onClick={() => setLogOpen(true)}>Activity</button>
+              {stagedPlace?.stages.painting && <button type="button" class="ghost small" title="Masks, floors, stand spots and repaints for this place, by hand" onClick={() => setByHand(stagedPlace.key)}>Fix {nice(stagedPlace.key)} by hand</button>}
+              {castDone && <button type="button" class="ghost small" title="Looks, moves, voices and inventory icons, by hand" onClick={() => setByHand('#cast')}>Cast details</button>}
+            </Menu>
           </div>
-          {status?.pitch && <p class="lead" title={status.pitch}>{status.pitch}</p>}
-          {error && <p class="error">{error}</p>}
-          {movedFrom.value && movedFrom.value !== slug && <p class="banner">The agent moved the view here from {movedFrom.value}. <button type="button" class="ghost" title="Go back to the world you were on" onClick={() => { const back = movedFrom.value!; movedFrom.value = null; go(`/w/${back}`); }}>Back to {movedFrom.value}</button> <button type="button" class="ghost" title="Stay here with the agent" onClick={() => (movedFrom.value = null)}>Stay</button></p>}
-          {undone && !job && <p class="banner">{undone}{canRedo ? ' · Redo puts it back.' : ''}</p>}
-          {/* Playing, the game is the view: the build bar and the tabs step aside until it closes. */}
-          {status && !playing && <Pipeline job={job} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} />}
-          {failed && !job && <Failed slug={slug} job={failed} noAgent={noAgent} onError={setError} onPlace={setFocus} />}
-          {budget?.over && <p class="banner">Budget: ${budget.total.usd} spent of the ${budget.limitUsd} limit. Check Setup before the next big build.</p>}
-          {playing && <Play slug={slug} place={playing.place} round={playing.round ?? 0} full={playing.full} onRestart={() => setPlaying({ ...playing, round: (playing.round ?? 0) + 1 })} version={tick} onLine={playLine} onError={setError} />}
-          {!playing && <div class="seg" role="tablist" aria-label="Show">
-            <button type="button" role="tab" aria-selected={view === 'places'} class={view === 'places' ? 'on' : ''} title="The build live, and each place to look at and fix" onClick={() => setView('places')}>Places</button>
-            <button type="button" role="tab" aria-selected={view === 'story'} class={view === 'story' ? 'on' : ''} title="Places, locks, items, talks and endings, and the lines to reword" onClick={() => setView('story')}>Story</button>
-            <button type="button" role="tab" aria-selected={view === 'cast'} class={view === 'cast' ? 'on' : ''} title="Characters, their looks, moves and voices, and the inventory icons" onClick={() => setView('cast')}>Cast</button>
-            <button type="button" role="tab" aria-selected={view === 'notes'} class={view === 'notes' ? 'on' : ''} title="Your notes on what to fix, for you or the agent" onClick={() => setView('notes')}>Notes{notes.some((n) => n.state === 'open') ? ` · ${notes.filter((n) => n.state === 'open').length}` : ''}</button>
-          </div>}
-          {!playing && view === 'story' && <div class="tab-body"><StoryView slug={slug} version={tick} onError={setError} /></div>}
-          {!playing && view === 'cast' && <div class="tab-body"><CastView slug={slug} version={tick} onError={setError} /></div>}
-          {!playing && view === 'places' && status && (
-            <div class="build-stage"><div class="build-grid">
-              {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? 'Muse Spark is dreaming up the places…'}</span></div></div></figure>}
-              {/* A picked place: its checks and fixes beside its picture, in the story's place, scrolling inside. */}
-              {placeFocus ? <section class="inspect" aria-label={`Fix ${placeFocus.key}`}>
-<div class="row"><strong>{placeFocus.key}</strong><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Back to the story" onClick={() => setFocus(null)}>✕</button></div>
-              <p class="detail">{placeFocus.shows}</p>
-              {placeFocus.verdict && [...placeFocus.verdict.errors.map((f) => ['error', f] as const), ...placeFocus.verdict.flags.map((f) => ['flag', f] as const)].map(([kind, f]) => (
-                <>
-                  <p class={kind === 'error' ? 'error' : 'flag'}><code>{f.code}</code>{f.key ? ` ${f.key}` : ''}: {f.detail.replace(/\/(?:Users|home)\/[^/\s]+/g, '~')}</p>
-                  {'play' in f && f.play && (
-                    <details class="play-hint">
-                      <summary>How to fix it</summary>
-                      <p class="detail">Look: {f.play.look}</p>
-                      <p class="detail">Then try, in order: {f.play.tools.join(' · ')}</p>
-                      {f.play.last && <p class="detail">Last resort: {f.play.last}</p>}
-                      <button type="button" class="ghost small" title="The agent fixes this with the Studio tools and says what it did. It uses model calls as it works" onClick={() => askAgent(slug, `${placeFocus.key} is not playable: ${f.code}: ${f.detail}. Fix it as your playbook says and tell me what you did.`).catch((e) => setError(e.message))}>Ask the agent to fix it</button>
-                    </details>
-                  )}
-                </>
-              ))}
-              {placeFocus.stages.layout && <button type="button" class="ghost small" title="Start the game in this place. Free" onClick={() => setPlaying({ place: placeFocus.key })}>Play from {placeFocus.key}</button>}
-              {placeFocus.stages.painting ? <PlaceEditor slug={slug} place={placeFocus.key} version={tick} onError={setError} /> : <p class="detail">Fixing opens once the place is painted.</p>}
-            </section> : <Tale slug={slug} version={tick} pitch={status.pitch} places={status.placeDetail} />}
-              <Strip slug={slug} places={status.placeDetail} focus={stageKey ?? null} live={liveBuild} building={!!building} repairing={repairing} onPick={(k) => setFocus(focus === k ? null : k)} />
-            </div></div>
-          )}
-          {!playing && view === 'notes' && <div class="tab-body"><Notes slug={slug} notes={notes} onPlace={(p) => (setView('places'), setFocus(p))} onError={setError} /></div>}
-        </div>
-        <Dock dock={dock} onChange={setDock} title="Agent">
-          {/* A build fills the agent's side with what the models do; after it, a few things to ask. */}
-          {(building || (playable && feed.length > 0 && !crewOff)) && <Crew feed={feed} building={!!building} playable={playable} place={status?.placeDetail[0]?.key}
-            onAsk={(t) => (setCrewOff(true), askAgent(slug, t).catch((e) => setError(e.message)))} onClose={() => setCrewOff(true)} />}
-          <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} />
-        </Dock>
+          <div class={`stage-body ${shownView.kind}`}>
+            {shownView.kind === 'play' && <Play slug={slug} place={playing?.place} round={playing?.round ?? 0} full={playing?.full} onRestart={() => setPlaying({ ...playing, round: (playing?.round ?? 0) + 1 })} version={tick} onLine={playLine} onError={setError} />}
+            {shownView.kind === 'build' && status && (
+              <div class="build-on-stage">
+                <Pipeline job={job} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} />
+                {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? 'Muse Spark is dreaming up the places…'}</span></div></div></figure>}
+              </div>
+            )}
+            {shownView.kind === 'place' && stagedPlace && <PlaceStage slug={slug} place={stagedPlace} version={tick} picked={picked} onPick={setPicked} />}
+            {shownView.kind === 'place' && !stagedPlace && <div class="mat"><p class="detail">{status?.pitch ?? 'Muse Spark is dreaming up the places…'}</p></div>}
+            {shownView.kind === 'cast' && <CastStage slug={slug} version={tick} picked={picked} onPick={setPicked} />}
+            {shownView.kind === 'story' && <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} /></div>}
+          </div>
+        </section>
       </main>
+      {byHand && (
+        <div class="drawer-back" onClick={(e) => e.target === e.currentTarget && setByHand(null)}>
+          <section class="drawer by-hand" role="dialog" aria-label="By hand">
+            <div class="row"><h2>{byHand === '#cast' ? 'Cast' : `${nice(byHand)}, by hand`}</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setByHand(null)}>✕</button></div>
+            {byHand === '#cast' ? <CastView slug={slug} version={tick} onError={setError} /> : <PlaceEditor slug={slug} place={byHand} version={tick} onError={setError} />}
+          </section>
+        </div>
+      )}
       {logOpen && (
         <div class="drawer-back" onClick={(e) => e.target === e.currentTarget && setLogOpen(false)}>
           <section class="drawer log" role="dialog" aria-label="Activity">
@@ -785,7 +757,6 @@ function Workshop({ slug }: { slug: string }) {
           </section>
         </div>
       )}
-
     </>
   );
 }
@@ -968,14 +939,20 @@ function App() {
   if (!token) return <NoToken />;
   if (ready === 'wait') return <main class="narrow"><p class="lead">Opening…</p></main>;
   if (ready !== 'ok') return <main class="narrow"><h1>Studio</h1><p class="error">{ready}</p></main>;
+  return <Shell />;
+}
+
+/** The atelier: the worlds rail on the left, then the page (the prompt, a world, or Setup). */
+function Shell() {
+  useAtelierFeed();
   const path = route.value;
-  if (path === '/setup') return <Setup />;
   const world = /^\/w\/([a-z][a-z0-9-]*)/.exec(path)?.[1];
-  if (world) return <Workshop key={world} slug={world} />;
-  // The kids workshop: /workshop, and the older ?kids=<slug> and ?workshop links.
-  const q = new URLSearchParams(location.search);
-  if (path === '/workshop' || q.has('kids') || q.has('workshop')) return <WorkshopStart key={location.search} />;
-  return <Start />;
+  return (
+    <div class="atelier">
+      <Rail />
+      <div class="atelier-page">{path === '/setup' ? <Setup /> : world ? <Workshop key={world} slug={world} /> : <Start />}</div>
+    </div>
+  );
 }
 
 render(<><App /><Tips /></>, document.getElementById('app')!);

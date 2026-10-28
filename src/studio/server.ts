@@ -374,8 +374,10 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
           throw error;
         }
       }
-      // genaicode's chat styles first, then the Studio's, which tune them to its look.
-      if (url.pathname === '/app.css') return send(200, 'text/css; charset=utf-8', Buffer.concat([fs.readFileSync(CHAT_CSS), Buffer.from('\n'), fs.readFileSync(path.join(STUDIO_WEB, 'style.css'))]));
+      // The Studio's own fonts, then genaicode's chat styles, then the Studio's, which tune them to its look.
+      if (url.pathname === '/app.css') return send(200, 'text/css; charset=utf-8', Buffer.concat([fs.readFileSync(path.join(STUDIO_WEB, 'fonts', 'fonts.css')), fs.readFileSync(CHAT_CSS), Buffer.from('\n'), fs.readFileSync(path.join(STUDIO_WEB, 'style.css'))]));
+      const font = /^\/fonts\/([a-z-]+\.woff2)$/.exec(url.pathname);
+      if (font && fs.existsSync(path.join(STUDIO_WEB, 'fonts', font[1]))) return send(200, 'font/woff2', fs.readFileSync(path.join(STUDIO_WEB, 'fonts', font[1])), { 'cache-control': 'max-age=86400' });
       // Every other path is a screen of the single-page app.
       return send(200, 'text/html; charset=utf-8', fs.readFileSync(path.join(STUDIO_WEB, 'index.html')), { 'content-security-policy': CSP, 'x-frame-options': 'DENY' });
     } catch (error) {

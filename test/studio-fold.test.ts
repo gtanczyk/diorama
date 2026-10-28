@@ -1,5 +1,5 @@
 // Studio never scrolls as a page (Grzegorz: "nie chcę foldów w tej appce"): every screen and state, at three window
-// sizes and with the agent docked each way, fits the window; long content scrolls inside its own panel.
+// sizes, fits the window; long content scrolls inside its own panel.
 import sharp from 'sharp';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -10,7 +10,6 @@ import { startStudio, type Studio } from '../src/studio/server.ts';
 
 const FAKE = fileURLToPath(new URL('./fixtures/fake-diorama.mjs', import.meta.url));
 const SIZES = [[1000, 700], [1440, 860], [1920, 1080]] as const;
-const DOCKS = ['right', 'left', 'float', 'folded'] as const;
 const LONG = 'a wide sunny farm yard seen slightly from above, open dirt ground in front for walking, low wooden fences along both sides, a large red barn with a wide wooden door at the back, a wooden cart with golden hay and a blue water pump nearby, green meadow and blue sky beyond';
 
 type Browser = import('playwright').Browser;
@@ -57,59 +56,55 @@ test('no screen or state scrolls the page', async () => {
   if (!browser) return console.warn('studio-fold: no Chromium (npm run browsers), skipped');
   const spills: string[] = [];
   for (const [width, height] of SIZES) {
-    for (const dock of DOCKS) {
-      const ctx = await browser.newContext({ viewport: { width, height } });
-      await ctx.addInitScript((d) => {
-        const side = d === 'folded' ? 'right' : d;
-        localStorage.setItem('diorama.dock', JSON.stringify({ side, width: 380, folded: d === 'folded', box: { x: 0, y: 80, w: 420, h: 620 } }));
-      }, dock);
-      const page = await ctx.newPage();
-      // The page must not scroll, and in the Workshop neither may its content area or columns: there a spill is
-      // either a fold or content cut off out of reach. The Start page may scroll inside its content area.
-      const check = async (state: string, page_ = false) => {
-        await page.waitForTimeout(250);
-        const m = await page.evaluate((inner) => {
-          const s = document.scrollingElement!;
-          const over = inner ? [...document.querySelectorAll<HTMLElement>('#app > main, #app > main > .left, #app > main > .dock:not(.float)')].filter((e) => e.scrollHeight - e.clientHeight > 1 || e.scrollWidth - e.clientWidth > 1).map((e) => `${e.className} ${e.scrollWidth}x${e.scrollHeight} in ${e.clientWidth}x${e.clientHeight}`) : [];
-          return { h: s.scrollHeight, w: s.scrollWidth, ih: innerHeight, iw: innerWidth, over };
-        }, !page_);
-        if (m.h > m.ih || m.w > m.iw) spills.push(`${width}x${height} dock=${dock} ${state}: page ${m.w}x${m.h}`);
-        for (const o of m.over) spills.push(`${width}x${height} dock=${dock} ${state}: ${o}`);
-      };
-      const open = async (to: string) => {
-        await page.goto(`${studio.url}${to.replace(/^\//, '')}#${studio.token}`);
-        await page.waitForSelector('#app > main', { timeout: 10_000 });
-        await page.waitForTimeout(600);
-      };
-      await open('/w/farm');
-      await check('places');
-      await page.locator('.strip .card').nth(1).dispatchEvent('click');
-      await check('picked place');
-      await page.locator('.strip .card').nth(1).dispatchEvent('click');
-      for (const tab of ['Story', 'Cast', 'Notes']) {
-        await page.getByRole('tab', { name: tab }).dispatchEvent('click');
-        await check(tab);
-      }
-      await page.getByRole('tab', { name: 'Places' }).dispatchEvent('click');
-      const play = page.getByRole('button', { name: 'Play', exact: true });
-      if (await play.count()) {
-        await play.dispatchEvent('click');
-        await check('play');
-        await page.getByRole('button', { name: 'Close game' }).dispatchEvent('click');
-      }
-      // Pages and overlays are the same at every dock: once per size.
-      if (dock === 'right') {
-        const history = page.getByRole('button', { name: 'History' });
-        if (await history.count()) (await history.dispatchEvent('click'), await check('history'), await page.keyboard.press('Escape'));
-        const activity = page.getByRole('button', { name: 'Activity' });
-        if (await activity.count()) (await activity.dispatchEvent('click'), await check('activity'), await page.keyboard.press('Escape'));
-        await open('/');
-        await check('start', true);
-        await open('/setup');
-        await check('setup');
-      }
-      await ctx.close();
+    const ctx = await browser.newContext({ viewport: { width, height } });
+    const page = await ctx.newPage();
+    // The page must not scroll, and in a world neither may the page, the conversation or the stage: there a spill
+    // is either a fold or content cut off out of reach. The conversation and the rail scroll inside their lists.
+    const check = async (state: string) => {
+      await page.waitForTimeout(250);
+      const m = await page.evaluate(() => {
+        const s = document.scrollingElement!;
+        const over = [...document.querySelectorAll<HTMLElement>('.atelier, .atelier-page > main.world, main.world > .convo, main.world > .theatre')].filter((e) => e.scrollHeight - e.clientHeight > 1 || e.scrollWidth - e.clientWidth > 1).map((e) => `${e.className} ${e.scrollWidth}x${e.scrollHeight} in ${e.clientWidth}x${e.clientHeight}`);
+        return { h: s.scrollHeight, w: s.scrollWidth, ih: innerHeight, iw: innerWidth, over };
+      });
+      if (m.h > m.ih || m.w > m.iw) spills.push(`${width}x${height} ${state}: page ${m.w}x${m.h}`);
+      for (const o of m.over) spills.push(`${width}x${height} ${state}: ${o}`);
+    };
+    const open = async (to: string) => {
+      await page.goto(`${studio.url}${to.replace(/^\//, '')}#${studio.token}`);
+      await page.waitForSelector('.atelier-page > main', { timeout: 10_000 });
+      await page.waitForTimeout(600);
+    };
+    await open('/');
+    await check('atelier');
+    await open('/w/farm');
+    await check('place');
+    await page.locator('.wcard .thumb').nth(1).dispatchEvent('click');
+    await check('second place');
+    await page.locator('.wcard .thumb').last().dispatchEvent('click');
+    await check('unpainted place');
+    for (const card of ['Story', 'Cast']) {
+      const c = page.locator('.wcard.click', { hasText: card });
+      if (await c.count()) (await c.first().dispatchEvent('click'), await check(card));
     }
+    const play = page.getByRole('button', { name: '▶ Play' });
+    if (await play.count()) {
+      await play.first().dispatchEvent('click');
+      await check('play');
+      await page.getByRole('button', { name: 'Close game' }).dispatchEvent('click');
+    }
+    await page.locator('.bell').dispatchEvent('click');
+    await check('bell');
+    await page.keyboard.press('Escape');
+    for (const item of ['History', 'Activity', /by hand/]) {
+      await page.locator('.menu-button').dispatchEvent('click');
+      const b = page.locator('.top-menu').getByRole('button', { name: item });
+      if (await b.count()) (await b.first().dispatchEvent('click'), await check(String(item)), await page.keyboard.press('Escape'));
+      else await page.keyboard.press('Escape');
+    }
+    await open('/setup');
+    await check('setup');
+    await ctx.close();
   }
   expect(spills).toEqual([]);
 }, 300_000);

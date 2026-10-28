@@ -1,9 +1,11 @@
 // The Muse Code panel: genaicode's own chat (genaicode/react), fed the session state the Studio server keeps
 // for this world. The page holds no agent and no key: it sends what the person types and answers approvals.
-import { AgentChat, type SessionState } from 'genaicode/react';
+import { AgentChat, type ChatNotice, type SessionState, type SessionTurn } from 'genaicode/react';
+import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, fileUrl, token } from './api.ts';
-import { Camera } from './kids.tsx';
+import { Camera } from './camera.tsx';
+import { pickPrefix, shownPick, type Picked } from './world.tsx';
 
 /** What each Studio tool does, as the person would say it. */
 const SAYS: Record<string, string> = {
@@ -153,7 +155,10 @@ function steps(args: readonly string[]): string[] {
 }
 const clock = (s: number) => (s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`);
 
-export function AgentPanel({ slug, replay, speed = 1, jobs = [] }: { slug: string; replay?: string | null; speed?: number; jobs?: readonly JobInfo[] }) {
+/** In the atelier the panel is the world's conversation: cards before and between turns, and the thing picked on the stage. */
+type Atelier = { notices?: readonly ChatNotice[]; afterTurn?: (turn: SessionTurn, index: number) => ComponentChildren; footer?: () => ComponentChildren; picked?: Picked | null; onUnpick?: () => void; empty?: ComponentChildren };
+
+export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterTurn, footer, picked, onUnpick, empty }: { slug: string; replay?: string | null; speed?: number; jobs?: readonly JobInfo[] } & Atelier) {
   const [liveState, live] = useSession(replay ? '' : slug);
   const [replayed, replayDone] = useReplay(slug, replay ?? null, speed);
   const state = describeCalls(replay ? replayed : liveState, jobs);
@@ -190,8 +195,10 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [] }: { slug: strin
   };
   const images = (list: DataTransfer | null) => [...(list?.files ?? [])].filter((f) => f.type.startsWith('image/'));
   const send = (text: string) => {
-    const said = pics.length ? `[Pictures: ${pics.join(', ')}]\n${text}` : text;
+    const looked = picked ? pickPrefix(picked) + text : text;
+    const said = pics.length ? `[Pictures: ${pics.join(', ')}]\n${looked}` : looked;
     setPics([]);
+    onUnpick?.();
     void post('say', { text: said });
   };
   const choose = async (name: string) => {
@@ -218,8 +225,11 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [] }: { slug: strin
         formatToolName={(name) => (name.startsWith('mcp__diorama__') ? SAYS[name.slice(14)] ?? name.slice(14).replace(/_/g, ' ') : name)}
         foldSteps
         renderPrompt={(text) => shownPrompt(text, slug)}
-        placeholder={running ? undefined : `Ask ${current?.label ?? 'the agent'}…`}
-        theme="dark"
+        notices={notices}
+        renderAfterTurn={afterTurn as ((turn: SessionTurn, index: number) => never) | undefined}
+        renderFooter={footer as (() => never) | undefined}
+        placeholder={running ? undefined : picked ? `What about the ${picked.name}?` : `Ask for a change, or click something in the picture…`}
+        theme="light"
         disabled={!!replay || !live}
         header={
           <div class="row">
@@ -234,9 +244,10 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [] }: { slug: strin
               : <span class={`live ${live ? 'on' : ''}`}>{running ? 'working…' : live ? 'ready' : 'reconnecting'}</span>}
           </div>
         }
-        emptyState={<p class="note">Ask for a world, a fix or a check. Each step shows here and in Activity, and Undo takes back everything the agent did in its last turn.</p>}
+        emptyState={empty ?? <p class="note">Ask for a world, a fix or a check. Each step shows here and in Activity, and Undo takes back everything the agent did in its last turn.</p>}
         hint={replay ? null : (
           <div class="pics">
+            {picked && <span class="pick-chip" title="Goes with your next message: the agent knows what you mean by this">📍 {picked.name}<button type="button" class="ghost bare" aria-label="Forget it" onClick={onUnpick}>×</button></span>}
             {pics.map((f) => (
               <span class="pic">
                 <img src={fileUrl(slug, f)} alt="" />
@@ -244,8 +255,8 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [] }: { slug: strin
               </span>
             ))}
             {adding > 0 && <span class="detail">adding…</span>}
-            <button type="button" class="ghost small" title="Show the agent a picture with your message. Or paste one (Cmd+V) or drop it here" onClick={() => picker.current?.click()}>Add a picture</button>
-            <button type="button" class="ghost small" title={camera ? 'Close the camera' : 'Take a webcam photo to send the agent with your message'} onClick={() => setCamera(!camera)}>{camera ? 'Close the camera' : 'Take a photo'}</button>
+            <button type="button" class="ghost small" title="Show the agent a picture with your message: a drawing, a photo, a reference. Or paste one (Cmd+V) or drop it here" onClick={() => picker.current?.click()}>＋ Picture</button>
+            <button type="button" class="ghost small" title={camera ? 'Close the camera' : 'Take a webcam photo (a drawing held up works) to send the agent with your message'} onClick={() => setCamera(!camera)}>{camera ? 'Close the camera' : 'Camera'}</button>
             <input ref={picker} type="file" accept="image/*" multiple hidden onChange={(e) => (addFiles(e.currentTarget.files ?? []), (e.currentTarget.value = ''))} />
             {error && <span class="error">{error}</span>}
           </div>
@@ -275,11 +286,13 @@ const dataUrl = (f: Blob) => new Promise<string>((resolve, reject) => {
 /** A sent prompt as the person sees it: the pictures it carried as thumbnails, then their words. */
 function shownPrompt(text: string, slug: string) {
   const m = /^\[Pictures: ([^\]]+)\]\n?/.exec(text);
-  if (!m) return studioNote(text);
+  const { pick, rest } = shownPick(m ? text.slice(m[0].length) : text);
+  if (!m && !pick) return studioNote(text);
   return (
     <>
-      <span class="pics sent">{m[1].split(', ').map((f) => <a href={fileUrl(slug, f)} target="_blank" rel="noreferrer"><img src={fileUrl(slug, f)} alt="" /></a>)}</span>
-      {text.slice(m[0].length)}
+      {m && <span class="pics sent">{m[1].split(', ').map((f) => <a href={fileUrl(slug, f)} target="_blank" rel="noreferrer"><img src={fileUrl(slug, f)} alt="" /></a>)}</span>}
+      {pick && <span class="pick-chip sent">📍 {pick}</span>}
+      {rest}
     </>
   );
 }
