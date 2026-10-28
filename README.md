@@ -1,8 +1,8 @@
-# Diorama
-
 <p align="center">
   <img src="docs/images/play.gif" width="720" alt="Playing a Diorama world: a girl with a candle lantern walks through a moonlit garden at a click, and says a line about the boat by the shore">
 </p>
+
+# Diorama
 
 **Type one sentence. Walk around in the painted game it becomes.**
 
