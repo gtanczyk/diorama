@@ -11,7 +11,9 @@ const STAND = 'standing still in a relaxed A-pose: arms hanging slightly away fr
 // Looks often say "hand in pocket"; this pose wins over it.
 const HANDS = 'Both hands empty and fully visible, hanging beside the thighs: not in pockets, not on the hips, not holding anything, not in front of the body.';
 const SAME_HEAD = 'Whatever is on the head (hood up or down, hat, hair) is exactly as in the front picture, from this side too.';
-const PLAIN = 'Full body from head to feet, centred, nothing cropped. Plain flat light grey background, soft even light, no shadow on the ground, no other objects.';
+// Looks written from a photo may still say where the person sat or lay ("against a headboard"): a profile then
+// paints the headboard behind them, and TRELLIS grows it into the body as a slab around the model.
+const PLAIN = 'Full body from head to feet, centred, nothing cropped. Standing free: nothing behind or beside them, no bed, headboard, chair, wall or pillow, whatever the description says about where they were. Plain flat light grey background, soft even light, no shadow on the ground, no other objects.';
 
 /** Front from the cast painting; back from the front; the profiles from front and back, so the hood or hat stays the same.
  * A creature (not a person on two legs: a round eye, a frog, a living teapot) is painted as it is, with no A-pose and no hands. */

@@ -36,13 +36,26 @@ export async function cutHero(painting: Buffer, mask: Mask): Promise<Buffer> {
     .toBuffer();
 }
 
-/** For a photo of a real person: same person, same pose and outline, so live footage can dissolve into the figure. */
+/** For a photo of a real person standing whole in frame: same person, same pose and outline, so live footage can dissolve into the figure. */
 export function photoPrompt(world: World): string {
   return `Repaint this photo of a person as a character of a 2D point-and-click adventure game. Keep the same person, face, hair, clothes, body proportions and exact pose, at the same place and size in the frame, so the outline matches the photo. Show the whole figure from head to feet.
 
 Style: ${world.style}
 
 Plain flat light grey background, no floor, no shadow, no other people, no text.`;
+}
+
+/**
+ * For a photo of a person sitting, lying or cut off by the frame: the same person, standing. Their pose is not
+ * theirs to keep: a hero painted sitting against a headboard walks as a sitting cut-out, and the 3D model is
+ * built from that painting, headboard and all.
+ */
+export function photoStandPrompt(world: World, who: Who): string {
+  return `Paint the person in this photo as a single full-body character for a 2D point-and-click adventure game: the same person, so anyone who knows them sees it at once (same face, hair, beard, build and clothes), but standing upright on both feet in a relaxed walking-ready pose, seen from the side in three-quarter view, facing to the right. In the photo they may be sitting, lying or cut off by the frame; here the whole figure is visible from the top of the head down to both feet, centred, about two thirds of the image tall. What the photo does not show (legs, trousers, shoes) is as described: ${who.looks}
+
+Style: ${world.style}
+
+Nothing they sat or lay on: no bed, headboard, pillow, chair or blanket. Plain flat light grey background, no floor, no shadow, no other people, no props around, no text.`;
 }
 
 /** For a child's drawing: the character they drew, as they drew it, made whole enough to walk. */
@@ -56,16 +69,22 @@ Plain flat light grey background, no paper, no table, no written name, no floor,
 }
 
 /**
- * `from` is a photo of a real person, or a child's drawing of the character; `restyle` is the character as painted
- * before in another style (`was`), repainted in the world's style with the same face, clothes and pose.
+ * `from` is a photo of a real person (`standing`: whole and on their feet in it, so the pose is kept), or a child's
+ * drawing of the character; `restyle` is the character as painted before in another style (`was`), repainted in the
+ * world's style with the same face, clothes and pose. `upright` (a person on two legs, cast/figures.json): a figure
+ * that comes out sitting, lying or cut off is painted once more, as a seated painting makes a seated walker and a
+ * 3D model with the chair grown into it.
  */
-export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, from?: { photo?: Buffer; drawing?: Buffer; restyle?: { painting: Buffer; was: string } }): Promise<{ painting: Buffer; figure: Buffer }> {
+export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, from?: { photo?: Buffer; standing?: boolean; drawing?: Buffer; restyle?: { painting: Buffer; was: string } }, upright = false): Promise<{ painting: Buffer; figure: Buffer }> {
+  let fallback: { painting: Buffer; figure: Buffer; why: string } | undefined;
   // A take SAM finds no one in (a drawing painted back as loose scribble) is painted once more before giving up.
   for (const t of [take, take + 1]) {
     const painting = from?.restyle
       ? await museEdit(memo, { label: `figure:${who.key}:restyle`, prompt: restyleFigurePrompt(who.looks, from.restyle.was, world.style, !!from.drawing), images: [from.restyle.painting, ...(from.drawing ? [from.drawing] : [])], take: t })
       : from?.photo
-      ? await museEdit(memo, { label: `figure:${who.key}:photo`, prompt: photoPrompt(world), images: [await sharp(from.photo).rotate().png().toBuffer()], take: t })
+      ? from.standing
+        ? await museEdit(memo, { label: `figure:${who.key}:photo`, prompt: photoPrompt(world), images: [await sharp(from.photo).rotate().png().toBuffer()], take: t })
+        : await museEdit(memo, { label: `figure:${who.key}:photo-stand`, prompt: photoStandPrompt(world, who), images: [await sharp(from.photo).rotate().png().toBuffer()], take: t })
       : from?.drawing
         ? await museEdit(memo, { label: `figure:${who.key}:drawing`, prompt: drawingPrompt(world, who), images: [from.drawing], take: t })
         : await musePaint(memo, { label: `figure:${who.key}`, prompt: figurePrompt(world, who), take: t });
@@ -78,9 +97,33 @@ export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, 
     }
     if (!found.length) continue;
     const biggest = found.reduce((a, b) => (area(b.mask) > area(a.mask) ? b : a));
-    return { painting: png, figure: await cutHero(png, biggest.mask) };
+    const made = { painting: png, figure: await cutHero(png, biggest.mask) };
+    const why = upright ? await notStanding(memo, who.key, made.figure, t) : undefined;
+    if (!why) return made;
+    console.log(`  ${who.key} take ${t}: the figure is not standing whole (${why}); painting it once more`);
+    fallback ??= { ...made, why };
+  }
+  if (fallback) {
+    console.log(`  ${who.key}: kept a figure that is not standing whole (${fallback.why}); try another take (cast_redo anotherTake)`);
+    return { painting: fallback.painting, figure: fallback.figure };
   }
   throw new Error(`${who.key}: SAM found no one in the painting, two takes; try another take (cast_redo anotherTake)`);
+}
+
+/**
+ * Why a cut-out of a person on two legs is not one standing whole, or undefined when it is. A standing figure is
+ * about twice as tall as wide (robots and big-headed drawn children down to about 1.4), so only a squatter one is
+ * looked at by Spark: sitting with knees up comes out about as wide as tall.
+ */
+export async function notStanding(memo: Memo, key: string, figure: Buffer, take = 0): Promise<string | undefined> {
+  const { width = 1, height = 1 } = await sharp(figure).metadata();
+  if (height / width >= 1.6) return undefined;
+  const flat = await sharp(figure).flatten({ background: '#cccccc' }).png().toBuffer();
+  const a = await askSparkJson<{ standing?: unknown; why?: unknown }>(memo, {
+    label: `figure-standing:${key}#${take}`, images: [flat],
+    prompt: 'This is a character cut out for a 2D adventure game, where it has to walk. Is it standing upright on its own feet, with the whole body from head to feet shown, and nothing it sits or leans on? Sitting, lying, kneeling, crouching, or legs or feet cut off is no. A character that has no legs by nature (a ghost, a blob) is yes.\n\nReply with JSON only: {"standing": true or false, "why": "a few words"}',
+  });
+  return a.standing === false ? String(a.why ?? 'not standing') || 'not standing' : undefined;
 }
 
 const area = (m: Mask) => m.bits.reduce((s, b) => s + b, 0);

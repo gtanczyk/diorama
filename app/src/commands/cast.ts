@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import { defineCommand, takeOption } from '../registry.ts';
 import { castBodies, paintFigure, readBodies, type Who } from '../scene/cast.ts';
+import { photoStanding } from '../scene/photo.ts';
 import { rigFigure } from '../scene/rig.ts';
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
 import { drawingFor, players, readDrawn } from '../world/drawings.ts';
@@ -10,7 +11,7 @@ import { castStyle, markStyled, readStyled } from '../world/styled.ts';
 
 defineCommand({
   name: 'cast',
-  usage: 'cast <slug> [key...]     paint the hero, NPCs and players (heroes for more gamepads, drawings marked player) with Muse, cut them out with SAM 3.1 (cast/<key>.png) [--take N] [--photo me.jpg: paint the hero from a full-body photo] (a character a child drew, drawings.json, is painted from the drawing)',
+  usage: 'cast <slug> [key...]     paint the hero, NPCs and players (heroes for more gamepads, drawings marked player) with Muse, cut them out with SAM 3.1 (cast/<key>.png) [--take N] [--photo me.jpg: paint the hero from a photo, standing even if they sit in it] (a character a child drew, drawings.json, is painted from the drawing)',
   async run(args) {
     const take = Number(takeOption(args, 'take', '0'));
     const photoPath = takeOption(args, 'photo', '');
@@ -22,6 +23,9 @@ defineCommand({
     // world --hero-photo keeps the photo next to the cast, so a plain `cast` uses it too.
     const kept = files.path('cast', `${world.hero.key}-photo.png`);
     const photo = photoPath ? fs.readFileSync(photoPath) : fs.existsSync(kept) ? fs.readFileSync(kept) : undefined;
+    // Only a person standing whole in the photo keeps the photo's pose; anyone sitting, lying or cut off is painted standing.
+    const standing = photo ? await photoStanding(files.memo, photo) : false;
+    if (photo && !standing) console.log(`${world.hero.key}: the photo does not show them standing whole; painted standing`);
     // A character a child drew is painted from what was read off the drawing, as its preview was, so the preview is the figure.
     const drawn = readDrawn(files);
     const drawnLooks = (w: Who): Who => ({ ...w, looks: drawn.find((d) => d.key === w.key && (d.kind === 'hero' || d.kind === 'npc' || d.kind === 'player'))?.looks ?? w.looks });
@@ -45,7 +49,7 @@ defineCommand({
       const before = files.path('cast', `${who.key}-painting.png`);
       const heroPhoto = who.key === world.hero.key ? photo : undefined;
       const restyle = was && was !== style && !heroPhoto && fs.existsSync(before) ? { painting: fs.readFileSync(before), was } : undefined;
-      const made = await paintFigure(files.memo, { ...world, style }, who, fixes[who.key]?.take ?? take, { photo: heroPhoto, drawing: drawingFor(files, who.key), restyle }).catch((error: Error) => {
+      const made = await paintFigure(files.memo, { ...world, style }, who, fixes[who.key]?.take ?? take, { photo: heroPhoto, standing, drawing: drawingFor(files, who.key), restyle }, bodies[who.key]?.upright !== false).catch((error: Error) => {
         if (who.key === world.hero.key) throw error;
         missing.push(`${who.key}: ${error.message}`);
         return null;

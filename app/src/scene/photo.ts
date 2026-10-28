@@ -74,13 +74,45 @@ export async function paintPhoto(memo: Memo, world: World, place: Place, photo: 
   return sharp(painted).resize(FRAME.width, FRAME.height, { fit: 'fill' }).png().toBuffer();
 }
 
-/** Spark describes the person in a photo head to toe, so world.json's hero is them. */
+// Looks feed every later painting (cast, the four model views, sprites), so they describe the person and not
+// the photo: "lying against a headboard" in looks puts a headboard behind the figure in every view, and
+// "legs not visible" leaves the painters to guess. This catches what the photo leaked into them.
+const POSE_WORDS = /\b(not visible|out of (the )?frame|cropped|cut off|(from|at) the (chest|waist|shoulders)|chest[- ]up|waist[- ]up|lying|lies|reclin\w*|sitting|sits|seated|leaning|propped|headboard|pillows?|bed|sofa|couch|armchair|chair|desk|blanket|duvet|selfie|in the photo|camera)\b/gi;
+
+/** The words in looks that are about the photo (pose, furniture, framing) rather than the person. */
+export function poseWords(looks: string): string[] {
+  return [...new Set([...looks.matchAll(POSE_WORDS)].map((m) => m[0].toLowerCase()))];
+}
+
+/** Spark describes the person in a photo head to toe, so world.json's hero is them, standing, whatever the photo shows. */
 export async function describePerson(memo: Memo, photo: Buffer): Promise<{ key: string; looks: string }> {
-  const prompt = `This photo shows the real person who will be the hero of a 2D point-and-click adventure. Describe them head to toe as a game character: build, hair, face, beard or glasses, every piece of clothing with its colour, shoes. No name, no guesses about who they are.
+  const prompt = `This photo shows the real person who will be the hero of a 2D point-and-click adventure, where they will stand and walk. Describe them head to toe as a game character standing on their feet: build, hair, face, beard or glasses, every piece of clothing with its colour, trousers or skirt, shoes. No name, no guesses about who they are.
+
+Describe the person only, never the photo: not how they sit or lie, not the bed, chair or pillow, not how the photo frames them. When the photo does not show part of them (legs, trousers, shoes), choose plain ones that go with the rest and describe those as if seen; never write that something is not visible.
+
+The key names who they are in the game (like the-developer), not where they are in the photo.
 
 Reply with JSON only: {"key": "kebab-key like the-developer", "looks": "..."}`;
-  const answer = await askSparkJson<{ key: string; looks: string }>(memo, { label: 'hero-photo', prompt, images: [photo] });
-  return World.shape.hero.parse(answer);
+  let ask = prompt;
+  let hero: { key: string; looks: string } | undefined;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const answer = await askSparkJson<{ key: string; looks: string }>(memo, { label: `hero-photo#${attempt}`, prompt: ask, images: [photo] });
+    hero = World.shape.hero.parse(answer);
+    const leaked = poseWords(`${hero.key.replace(/-/g, ' ')} ${hero.looks}`);
+    if (!leaked.length) return hero;
+    console.log(`  hero photo try ${attempt}: looks speak of the photo (${leaked.join(', ')})`);
+    ask = `${prompt}\n\nYour last answer was:\n${JSON.stringify(answer)}\n\nFix: it describes the photo, not the person (${leaked.join(', ')}). Describe them standing, head to toe, with every piece of clothing as if seen.`;
+  }
+  return hero!;
+}
+
+/** Whether the photo shows the person standing with the whole body in frame, so the hero can be painted in that very pose. */
+export async function photoStanding(memo: Memo, photo: Buffer): Promise<boolean> {
+  const answer = await askSparkJson<{ standing?: unknown }>(memo, {
+    label: 'hero-photo-pose', images: [photo],
+    prompt: 'Does this photo show the person standing upright on their feet, with the whole body from the top of the head down to both feet inside the frame? Sitting, lying, leaning back, kneeling, or any part of the legs or feet cut off by the frame or hidden is no.\n\nReply with JSON only: {"standing": true or false}',
+  });
+  return answer.standing === true;
 }
 
 /** Upright, at most 1600 px on the long side, PNG: what Spark and Muse get. */
