@@ -66,9 +66,10 @@ defineCommand({
       const plates = fs.existsSync(at('plates')) ? fs.readdirSync(at('plates')).filter((f) => f.endsWith('.png')).map((f) => f.slice(0, -4)) : [];
       const carry = await carryFrom(at(), 'derive', painting);
       if (carry) console.log(`  ${place.key}: ${tilesLine(carry)}; questions it does not reach keep their answers`);
-      const last = carry && fs.existsSync(at('geometry.json')) ? Geometry.parse(files.readJson(at('geometry.json'))).scale : undefined;
-      const lastScale = last && { ...last, source: last.source ?? ('spark' as const) };
-      const out = await derive(files.memo, { place, layout, things, floors, painting, plates, carry, lastScale }, (line) => console.log(`  ${place.key}: ${line}`));
+      const before = fs.existsSync(at('geometry.json')) ? Geometry.safeParse(files.readJson(at('geometry.json'))).data?.scale : undefined;
+      const previousScale = before && { ...before, source: before.source ?? ('spark' as const) };
+      const lastScale = carry ? previousScale : undefined;
+      const out = await derive(files.memo, { place, layout, things, floors, painting, plates, carry, lastScale, previousScale }, (line) => console.log(`  ${place.key}: ${line}`));
       // Shadows only with a light: without one the runtime has nothing to darken by.
       const lit = out.shadows.light && maskArea(out.shadows.mask) > 0;
       if (lit) files.write(at('masks', 'shadows.png'), await maskToPng(out.shadows.mask));

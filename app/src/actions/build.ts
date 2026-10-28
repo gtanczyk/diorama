@@ -46,13 +46,14 @@ defineAction({
 
 defineAction({
   name: 'run_step',
-  description: `Run one build step on a world (${STEPS.join(', ')}). Runs as a job.`,
-  input: z.object({ slug: Slug, step: Step }),
+  description: `Run one build step on a world (${STEPS.join(', ')}). Runs as a job. With place: that place only, from the step through verify.`,
+  input: z.object({ slug: Slug, step: Step, place: Slug.optional().describe('Only this place: rebuilt from the step through verify') }),
   job: true,
-  async run({ slug, step }, ctx) {
+  async run({ slug, step, place }, ctx) {
     if (step === 'world') throw new Error('the world step makes a new world: use world_build with an idea');
     const blocked = agentBlocked(path.join(ctx.root, slug), ctx.by);
     if (blocked) throw new ActionError(423, blocked);
+    if (place) return ctx.jobs.start(slug, ['build', slug, '--from', step, '--to', 'verify', '--place', place], `${step} · ${place}`, ctx.by);
     return ctx.jobs.start(slug, ['build', slug, '--from', step, '--to', step], step, ctx.by);
   },
 });

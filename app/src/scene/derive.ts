@@ -20,8 +20,11 @@ import { samFind } from '../meta/sam.ts';
 
 export type ThingIn = { key: string; kind: Kind; phrase?: string; source: MaskSource; coarse: boolean; mask: Mask };
 /** `plates`: things that have a clean plate (plates/<key>.png), for the runtime to hide them once taken. */
-/** carry: after a small repaint, each question whose region the change does not reach is asked about the old painting; lastScale: the scale it had. */
-export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors: Mask[]; painting: Buffer; plates?: string[]; carry?: Carry; lastScale?: Scale };
+/**
+ * carry: after a small repaint, each question whose region the change does not reach is asked about the old painting; lastScale: the scale it had.
+ * previousScale: the scale the place had before this run, whatever ran; kept when Spark cannot be asked now.
+ */
+export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors: Mask[]; painting: Buffer; plates?: string[]; carry?: Carry; lastScale?: Scale; previousScale?: Scale };
 export type Derived = { geometry: Geometry; grid: Grid; blobs: Blob[]; footprint: Mask; probes: Sample[]; shadows: Shadows };
 
 const { width: W, height: H } = FRAME;
@@ -231,10 +234,21 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   // A repaint changes how a place looks, not how big a person is in it, and Spark's sizes drift from one asking
   // to the next: after a small repaint the place keeps the scale it had.
   const kept = carry && input.lastScale;
-  const probes = kept ? [] : await sparkPeople(memo, `scale:${place.key}`, painting, points, refs);
+  let sparkFailed = '';
+  const probes = kept ? [] : await sparkPeople(memo, `scale:${place.key}`, painting, points, refs).catch((error) => ((sparkFailed = error instanceof Error ? error.message.slice(0, 160) : String(error)), [] as Sample[]));
   let scale: Scale | undefined = kept || undefined;
   if (kept) log(`scale kept from before the repaint (${kept.source})`);
-  for (const [source, samples] of kept ? [] : ([['spark', probes], ['anchors', anchorSamples(sharpOnFloor, layout)]] as const)) {
+  // Spark could not be asked (a network or model hiccup): the scale Spark gave this place before beats a guess from
+  // object heights, which shrank a hero to a dwarf by a kitchen stove.
+  if (sparkFailed) {
+    flag(`scale from spark: the asks failed (${sparkFailed})`);
+    if (input.previousScale?.source === 'spark') {
+      scale = input.previousScale;
+      log('scale kept from the last build, when Spark answered');
+    }
+  }
+  for (const [source, samples] of kept || scale ? [] : ([['spark', probes], ['anchors', anchorSamples(sharpOnFloor, layout)]] as const)) {
+    if (source === 'spark' && sparkFailed) continue;
     const fit = scaleFrom(samples, topY, layout.horizon, source);
     if (fit.scale) {
       scale = fit.scale;

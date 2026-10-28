@@ -77,7 +77,10 @@ export const SCALE_ASKS = 3;
 
 export async function sparkPeople(memo: Memo, label: string, painting: Buffer, points: { x: number; y: number }[], refs: Reference[] = []): Promise<Sample[]> {
   const orders = [points, [...points].reverse(), [...points.filter((_, i) => i % 2), ...points.filter((_, i) => i % 2 === 0)]].slice(0, SCALE_ASKS);
-  const takes = await Promise.all(orders.map((order, k) => askPeople(memo, k ? `${label}#${k}` : label, painting, order, refs).catch(() => [] as Sample[])));
+  const errors: unknown[] = [];
+  const takes = await Promise.all(orders.map((order, k) => askPeople(memo, k ? `${label}#${k}` : label, painting, order, refs).catch((error) => (errors.push(error), [] as Sample[]))));
+  // One take failing is fine, the others carry the median. All of them failing is not an answer of zero points: say why.
+  if (points.length && errors.length === orders.length) throw errors[0];
   return medianPeople(points, takes);
 }
 

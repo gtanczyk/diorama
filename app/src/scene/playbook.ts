@@ -74,6 +74,10 @@ export const PLAYBOOK: Record<string, Play> = {
     tools: ['mask_fix phrase: the floor mask may reach into the sky', 'floor_cells remove: cells high up that are not floor'],
   },
   SCALE_NEAR: CLOSE_UP,
+  SCALE_FALLBACK: {
+    look: 'place_status: the DERIVE flags say why Spark gave no scale ("the asks failed": a hiccup; "N usable points": its answers did not fit); walk.png\'s blue rulers show how tall the hero is where',
+    tools: ['run_step derive with the place: Spark judges a person\'s height again (3 Spark calls), the walk floor and fixes stay'],
+  },
   SCALE_FAR: {
     look: 'place_status: the blue rulers on walk.png show how tall the hero is at the back',
     tools: ['floor_cells remove: far floor cells near the horizon that no one should walk to'],
