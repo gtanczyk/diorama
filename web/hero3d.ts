@@ -14,7 +14,8 @@ const smooth = (u: number) => u * u * (3 - 2 * u);
 /** model.json, written by `diorama model`. */
 export type ModelInfo = {
   glb: string;
-  views: Record<'front' | 'back' | 'left' | 'right', { image: string; u: [number, number]; v: [number, number]; iou: number }>;
+  /** bands: the across fit per slice of the height (src/model/fit.ts BANDS), feet first; without them, u everywhere. */
+  views: Record<'front' | 'back' | 'left' | 'right', { image: string; u: [number, number]; v: [number, number]; iou: number; bands?: [number, number][] }>;
 };
 
 /** How the painting lights the figure where it stands (colours as 0xRRGGBB). */
@@ -39,6 +40,9 @@ const turn = (axis: THREE.Vector3, a: number) => new THREE.Quaternion().setFromA
 // Which way each painted view looks at the figure (it faces +z): model axis across the picture, its
 // sign, and the normal axis and sign of the surfaces that view sees. Matches src/model/fit.ts.
 const VIEWS = [['front', 'x', 1, 'z', 1], ['back', 'x', -1, 'z', -1], ['left', 'z', -1, 'x', 1], ['right', 'z', 1, 'x', -1]] as const;
+
+/** Slices of the height each view is fitted on, as src/model/fit.ts BANDS (no Node imports here). */
+const BANDS = 20;
 
 /** How much each view is preferred where two see a surface (added to how squarely it faces it). */
 const TRUST = { front: 0.3, back: 0.1, left: 0, right: 0 };
@@ -281,9 +285,10 @@ export class Figure3D {
       const f = info.views[name];
       uniforms[`p_${name}`] = { value: tex };
       uniforms[`f_${name}`] = { value: new THREE.Vector4(f.u[0], f.u[1], f.v[0], f.v[1]) };
+      uniforms[`b_${name}`] = { value: (f.bands?.length === BANDS ? f.bands : Array(BANDS).fill(f.u)).map(([a, b]) => new THREE.Vector2(a, b)) };
     }));
     uniforms.camDir = this.camDir;
-    const decl = VIEWS.map(([k]) => `uniform sampler2D p_${k}; uniform vec4 f_${k}; uniform vec3 bg_${k};`).join('\n');
+    const decl = VIEWS.map(([k]) => `uniform sampler2D p_${k}; uniform vec4 f_${k}; uniform vec2 b_${k}[${BANDS}]; uniform vec3 bg_${k};`).join('\n');
     // Which painted view a surface wears: the one nearest the camera, wherever that view sees the surface at
     // all (it faces the view, nothing nearer covers it, the painting shows figure there, not background); the
     // others only fill what it cannot see. Views are fitted by silhouette and never line up exactly, so two
@@ -291,7 +296,8 @@ export class Figure3D {
     // Under the arm in a profile the sweater is covered, so the arm's paint stays on the arm. The front is the
     // painting the hero was cast from, so it keeps the figure until the camera is well round the side.
     const sample = VIEWS.map(([k, ax, sx, nax, ns], i) => `
-  c[${i}] = texture2D(p_${k}, vec2(f_${k}.x * ${sx.toFixed(1)} * vRest.${ax} + f_${k}.y, 1. - (f_${k}.z * vRest.y + f_${k}.w))).rgb;
+  ab = mix(b_${k}[band], b_${k}[band2], bandT);
+  c[${i}] = texture2D(p_${k}, vec2(ab.x * ${sx.toFixed(1)} * vRest.${ax} + ab.y, 1. - (f_${k}.z * vRest.y + f_${k}.w))).rgb;
   facing[${i}] = ${ns.toFixed(1)} * rn.${nax};
   paint[${i}] = notBg(c[${i}], bg_${k});
   score[${i}] = ${TRUST[k].toFixed(2)} + camDir.${nax} * ${ns.toFixed(1)} - 2. * (1. - smoothstep(0.05, 0.25, facing[${i}])) - 2. * (1. - vVis[${i}]) - 2. * (1. - paint[${i}]);`).join('');
@@ -306,7 +312,10 @@ uniform vec3 camDir; varying vec3 vRest; varying vec3 vRestN; varying vec4 vVis;
 #define SHARP 28.
 float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + abs(c.g - bg.g) + abs(c.b - bg.b)); }
 ` + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-  vec3 rn = normalize(vRestN); vec3 c[4]; float facing[4]; float score[4]; float paint[4];${sample}
+  vec3 rn = normalize(vRestN); vec3 c[4]; float facing[4]; float score[4]; float paint[4]; vec2 ab;
+  // Between the centres of the two nearest slices of the height.
+  float bandAt = clamp(vRest.y * ${BANDS}. - 0.5, 0., ${BANDS - 1}.);
+  int band = int(floor(bandAt)); int band2 = min(band + 1, ${BANDS - 1}); float bandT = bandAt - floor(bandAt);${sample}
   float best = max(max(score[0], score[1]), max(score[2], score[3]));
   vec3 acc = vec3(0.); float wsum = 0.;
   for (int i = 0; i < 4; i++) { float w = exp(SHARP * (score[i] - best)) * step(0.001, facing[i]); acc += c[i] * w; wsum += w; }

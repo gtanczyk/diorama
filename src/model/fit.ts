@@ -1,8 +1,10 @@
 // Where each painted view of the hero lands on the model: a scale and offset per image axis, found by
 // laying the model's silhouette over the figure in the painting. The runtime projects with the same
 // numbers, so the paint sits on the coat while it walks.
+import fs from 'node:fs';
+import path from 'node:path';
 import sharp from 'sharp';
-import type { Shape } from './glb.ts';
+import { normalise, readShape, type Shape } from './glb.ts';
 
 /** Which way each view looks at the hero (who faces +z): the model axis that runs left to right in the picture, and its sign. */
 export const VIEWS = {
@@ -13,8 +15,15 @@ export const VIEWS = {
 } as const;
 export type ViewName = keyof typeof VIEWS;
 
-/** u = a * axis + b, v = c * y + d, in image units (0..1, v from the top), model in hero units. */
-export type ViewFit = { u: [number, number]; v: [number, number]; iou: number };
+/**
+ * u = a * axis + b, v = c * y + d, in image units (0..1, v from the top), model in hero units. bands: [a, b] for
+ * each of BANDS slices of the height from the feet up, fitted on that slice alone (the runtime blends them
+ * between slice centres). Muse paints a profile's head, body and legs each a little off from the model, and a
+ * fit of the whole silhouette leaves the profile's face on the model's cheek, a second face beside the front's.
+ */
+export type ViewFit = { u: [number, number]; v: [number, number]; iou: number; bands?: [number, number][] };
+
+export const BANDS = 20;
 
 const R = 160;
 
@@ -67,10 +76,16 @@ async function figureMask(png: Buffer): Promise<{ mask: Uint8Array; aspect: numb
   return { mask, aspect: (meta.height ?? 1) / (meta.width ?? 1) };
 }
 
-function iou(sil: Uint8Array, mask: Uint8Array, a: number, b: number, c: number, d: number): number {
+/**
+ * How well the painted figure lies over the model's silhouette. `bare` weighs model left unpainted against paint
+ * off the model: above 1, a fit that covers the model wins, since a bare edge is painted from another view
+ * (its nose, its mouth) while paint off the model shows nowhere.
+ */
+function iou(sil: Uint8Array, mask: Uint8Array, a: number, b: number, c: number, d: number, rows: [number, number] = [0, R], bare = 1): number {
   let both = 0;
-  let either = 0;
-  for (let y = 0; y < R; y++) {
+  let silOnly = 0;
+  let maskOnly = 0;
+  for (let y = rows[0]; y < rows[1]; y++) {
     const v = c * (1 - (y + 0.5) / R) + d;
     const my = Math.floor(v * R);
     for (let x = 0; x < R; x++) {
@@ -79,10 +94,11 @@ function iou(sil: Uint8Array, mask: Uint8Array, a: number, b: number, c: number,
       const m = mx >= 0 && mx < R && my >= 0 && my < R ? mask[my * R + mx] : 0;
       const s = sil[y * R + x];
       both += s & m;
-      either += s | m;
+      silOnly += s & (1 - m);
+      maskOnly += m & (1 - s);
     }
   }
-  return either ? both / either : 0;
+  return both ? both / (both + bare * silOnly + maskOnly) : 0;
 }
 
 export async function fitView(shape: Shape, view: ViewName, png: Buffer): Promise<ViewFit> {
@@ -107,5 +123,51 @@ export async function fitView(shape: Shape, view: ViewName, png: Buffer): Promis
       }
     }
   }
-  return { ...best, iou: Math.round(best.iou * 1000) / 1000 };
+  return { ...best, iou: Math.round(best.iou * 1000) / 1000, bands: fitBands(sil, mask, best) };
+}
+
+/** Each slice's own scale and offset across, near the whole fit, then smoothed with its neighbours. */
+function fitBands(sil: Uint8Array, mask: Uint8Array, whole: ViewFit): [number, number][] {
+  const [a0, b0] = whole.u;
+  const [c, d] = whole.v;
+  const raw = [...Array(BANDS).keys()].map((k): [number, number] => {
+    // Model heights k/BANDS..(k+1)/BANDS are silhouette rows from (1 - (k+1)/BANDS) R down.
+    const rows: [number, number] = [Math.max(0, Math.floor((1 - (k + 1) / BANDS) * R)), Math.min(R, Math.ceil((1 - k / BANDS) * R))];
+    let area = 0;
+    for (let y = rows[0]; y < rows[1]; y++) for (let x = 0; x < R; x++) area += sil[y * R + x];
+    if (area < 20) return [a0, b0];
+    let best: [number, number] = [a0, b0];
+    let top = -Infinity;
+    for (let ka = 0.85; ka <= 1.1501; ka += 0.015) {
+      for (let db = -0.08; db <= 0.0801; db += 0.004) {
+        // A slight pull to the whole fit, so a slice with little to go on stays with its neighbours.
+        const score = iou(sil, mask, a0 * ka, b0 + db, c, d, rows, 2) - 0.05 * (Math.abs(ka - 1) + 4 * Math.abs(db));
+        if (score > top) [top, best] = [score, [a0 * ka, b0 + db]];
+      }
+    }
+    return best;
+  });
+  return raw.map((_, k) => {
+    const near = [raw[Math.max(0, k - 1)], raw[k], raw[k], raw[Math.min(BANDS - 1, k + 1)]];
+    return [near.reduce((s, n) => s + n[0], 0) / 4, near.reduce((s, n) => s + n[1], 0) / 4];
+  });
+}
+
+/** Fits every view of a model; model.json's `views`. */
+export async function fitViews(glb: Buffer, views: Record<ViewName, Buffer>): Promise<Record<ViewName, { image: string } & ViewFit>> {
+  const shape = normalise(readShape(glb));
+  const fits = {} as Record<ViewName, { image: string } & ViewFit>;
+  for (const v of Object.keys(VIEWS) as ViewName[]) fits[v] = { image: `${v}.png`, ...(await fitView(shape, v, views[v])) };
+  return fits;
+}
+
+/** A model fitted before views were fitted slice by slice is fitted again (no Muse, no TRELLIS: its own files). */
+export async function refitIfOld(modelDir: string, always = false): Promise<boolean> {
+  const file = path.join(modelDir, 'model.json');
+  const info = JSON.parse(fs.readFileSync(file, 'utf8')) as { glb: string; views: Record<ViewName, { image: string } & ViewFit> };
+  if (!always && Object.values(info.views).every((v) => v.bands?.length === BANDS)) return false;
+  const views = Object.fromEntries(Object.entries(info.views).map(([k, v]) => [k, fs.readFileSync(path.join(modelDir, v.image))])) as Record<ViewName, Buffer>;
+  info.views = await fitViews(fs.readFileSync(path.join(modelDir, info.glb)), views);
+  fs.writeFileSync(file, JSON.stringify(info, null, 2));
+  return true;
 }
