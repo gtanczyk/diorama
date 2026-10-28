@@ -33,7 +33,7 @@ type PlaceDetail = {
 type Job = { id: string; label: string; args: string[]; unplayable?: Array<{ place: string; errors: string[] }>; state: string; by: string; step?: string; error?: string; startedAt?: string; endedAt?: string; tail: string[] };
 type Note = { id: string; at: string; by: string; place?: string; point?: [number, number]; text: string; state: 'open' | 'done'; reply?: string };
 type Spend = { usd: number; priced: boolean; calls: Record<string, number> };
-type Budget = { total: Spend; today: Spend; limitUsd: number | null; over: boolean; prices: Record<string, number> };
+type Budget = { total: Spend; today: Spend; limitUsd: number | null; creditsLeft: number | null; sparkTier: string; sparkViaClaude: boolean; claudeCalls: number; over: boolean; prices: Record<string, number> };
 type Status = Summary & { placeDetail: PlaceDetail[]; build: Record<string, { seconds: number }>; typical?: Record<string, number>; calls: Record<string, number>; jobs: Job[] };
 
 let steps: string[] = [];
@@ -293,6 +293,7 @@ function BudgetBox() {
   const [b, setB] = useState<Budget | null>(null);
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [limit, setLimit] = useState('');
+  const [credits, setCredits] = useState('');
   const [saved, setSaved] = useState('');
   const load = () => call<Budget>('budget').then((x) => {
     setB(x);
@@ -303,20 +304,24 @@ function BudgetBox() {
   const save = async (e: Event) => {
     e.preventDefault();
     const p = Object.fromEntries(Object.entries(prices).filter(([, v]) => v.trim() !== '' && !Number.isNaN(Number(v))).map(([k, v]) => [k, Number(v)]));
-    await call('budget_set', { prices: p, ...(limit.trim() && { limitUsd: Number(limit) }) });
+    await call('budget_set', { prices: p, ...(limit.trim() && { limitUsd: Number(limit) }), ...(credits.trim() && { creditsUsd: Number(credits) }) });
+    setCredits('');
     setSaved('Saved');
     setTimeout(() => setSaved(''), 1500);
     void load();
   };
   if (!b) return null;
-  const models = Object.keys(MODEL_NAMES).filter((m) => b.total.calls[m] || m in b.prices || ['spark', 'muse', 'sam'].includes(m));
+  // Meta models are priced from each call (tokens, images); only the others take a price per call here.
+  const models = Object.keys(MODEL_NAMES).filter((m) => !['spark', 'muse', 'sam'].includes(m) && (b.total.calls[m] || m in b.prices));
   return (
     <form class="budget" onSubmit={save}>
       <h2>Budget</h2>
       <p class="lead">{b.total.priced ? `$${b.total.usd.toFixed(2)} spent` : `${Object.values(b.total.calls).reduce((x, y) => x + y, 0)} model calls sent`}{b.limitUsd !== null ? ` of $${b.limitUsd}` : ''}, {b.today.priced ? `$${b.today.usd.toFixed(2)}` : `${Object.values(b.today.calls).reduce((x, y) => x + y, 0)} calls`} today. Answers already asked are reused for free.</p>
-      <p class="note">Dollars per call, from your Meta and ElevenLabs billing pages. Without a price a model is only counted.</p>
+      {b.creditsLeft !== null && <p class="lead">About ${b.creditsLeft.toFixed(2)} of Meta credits left (agent turns not counted).</p>}
+      <p class="note">Meta calls are priced from what each one used. Spark tier: {b.sparkTier}{b.sparkViaClaude ? `; dev mode: Spark answered by Claude (${b.claudeCalls} calls, not Meta's bill)` : ''}. Other models take dollars per call from their billing page.</p>
       <div class="prices">
         {models.map((m) => <label>{MODEL_NAMES[m]} · {b.total.calls[m] ?? 0} calls<input inputMode="decimal" placeholder="$ per call" value={prices[m] ?? ''} onInput={(e) => setPrices({ ...prices, [m]: e.currentTarget.value })} /></label>)}
+        <label title="Type the balance dev.meta.ai shows now; the Studio counts down from it">Meta credits now ($)<input inputMode="decimal" placeholder={b.creditsLeft === null ? '55.36' : b.creditsLeft.toFixed(2)} value={credits} onInput={(e) => setCredits(e.currentTarget.value)} /></label>
         <label title="Studio shows a banner once the spend passes this">Warn at ($)<input inputMode="decimal" placeholder="150" value={limit} onInput={(e) => setLimit(e.currentTarget.value)} /></label>
       </div>
       <div class="row"><button type="submit" class="ghost small" title="Keep the prices and the limit on this computer">Save</button><span class="detail">{saved}</span></div>
@@ -814,7 +819,7 @@ function Workshop({ slug }: { slug: string }) {
         </Card>
       )}
       {undone && !job && <p class="world-note">{undone}{canRedo ? ' · ' : ''}{canRedo && <button type="button" class="link" onClick={() => call('history_redo', { slug }).catch((e) => setError(e.message))}>Redo</button>}</p>}
-      {budget?.over && <p class="world-note">Budget: ${budget.total.usd} spent of the ${budget.limitUsd} limit.</p>}
+      {budget?.over && <p class="world-note">{budget.creditsLeft !== null && budget.creditsLeft <= 5 ? `Meta credits nearly gone: about $${budget.creditsLeft.toFixed(2)} left.` : `Budget: $${budget.total.usd} spent of the $${budget.limitUsd} limit.`}</p>}
       {playable && !job && !agentBusy && (
         <div class={`wcard play${shownView.kind === 'play' ? ' on' : ''}`} style={places[0]?.image ? { backgroundImage: `url("${fileUrl(slug, places[0].image.file, places[0].image.v)}")` } : undefined}>
           <div class="in"><div class="grow"><div class="k">Ready</div><h3>Play {status?.title ?? slug}</h3></div><button type="button" class="amber" onClick={() => onStage({ kind: 'play' })}>▶ Play</button></div>
@@ -888,7 +893,7 @@ function Workshop({ slug }: { slug: string }) {
         <div class="drawer-back" onClick={(e) => e.target === e.currentTarget && setLogOpen(false)}>
           <section class="drawer log" role="dialog" aria-label="Activity">
             <div class="row"><h2>Activity</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setLogOpen(false)}>✕</button></div>
-            <div class="row"><span class="detail" title={status ? `this world: ${Object.entries(status.calls).map(([m, n]) => `${m} ${n}`).join(', ') || 'no calls yet'}` : undefined}>{calls} calls this session{budget ? ` · ${spend(budget.today)} today · ${spend(budget.total)}${budget.limitUsd !== null ? ` of $${budget.limitUsd}` : ''} total` : ''}</span></div>
+            <div class="row"><span class="detail" title={status ? `this world: ${Object.entries(status.calls).map(([m, n]) => `${m} ${n}`).join(', ') || 'no calls yet'}` : undefined}>{calls} calls this session{budget ? ` · ${spend(budget.today)} today · ${spend(budget.total)}${budget.limitUsd !== null ? ` of $${budget.limitUsd}` : ''} total${budget.creditsLeft !== null ? ` · $${budget.creditsLeft.toFixed(2)} Meta credits left` : ''}` : ''}</span></div>
             <label class="detail" title="Also show every line the build steps print, not only what matters"><input type="checkbox" checked={allLines} onChange={(e) => setAllLines(e.currentTarget.checked)} /> Every line the steps print</label>
             <ol>{[...lines].reverse().filter((l) => allLines || l.kind !== 'out').map((l) => <li key={l.seq} class={l.kind}>{l.text}</li>)}</ol>
           </section>

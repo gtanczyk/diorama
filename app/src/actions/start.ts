@@ -38,7 +38,7 @@ Decide:
 - language: the language the idea is written in, in English ("English", "Polish").
 
 Reply with JSON only: {"title": "...", "slug": "...", "places": 3, "language": "English"${photos.length ? ', "pictures": ["place"]' : ''}}`;
-  return Shape.parse(await askSparkJson(memo, { label: 'idea-shape', prompt, images: photos }));
+  return Shape.parse(await askSparkJson(memo, { label: 'idea-shape', prompt, images: photos, personal: true }));
 }
 
 /** The slug cleaned to a folder name, numbered when a world has it already. */

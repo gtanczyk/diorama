@@ -156,24 +156,32 @@ test('notes wait as pending until closed with a reply, and can be reopened', asy
   expect(seen).toContain('feedback.changed');
 });
 
-test('budget counts only calls sent, and prices them where a price is set', async () => {
+test('budget counts only calls sent, prices Meta calls by what they used, and counts Meta credits down', async () => {
   const { root, dir, ctx } = world();
   process.env.XDG_CONFIG_HOME = path.join(root, 'config');
   fs.mkdirSync(path.join(dir, 'memo'), { recursive: true });
   const now = new Date().toISOString();
   const lines = [
-    { at: now, model: 'spark', hit: false }, { at: now, model: 'spark', hit: false }, { at: now, model: 'spark', hit: true },
+    // An old Spark call without its cost takes the list estimate; a new one says what it cost.
+    { at: now, model: 'spark', hit: false }, { at: now, model: 'spark', hit: false, usd: 0.002, via: 'contributor' }, { at: now, model: 'spark', hit: true },
+    // Dev mode: answered by Claude, not on Meta's bill.
+    { at: now, model: 'spark', hit: false, usd: 0, via: 'claude' },
     { at: '2020-01-01T00:00:00Z', model: 'muse', hit: false },
+    { at: now, model: 'sound', hit: false },
   ];
   fs.writeFileSync(path.join(dir, 'memo', 'calls.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n'));
-  const b = (await runAction('budget', {}, ctx('user'))) as { total: { calls: Record<string, number>; priced: boolean }; today: { calls: Record<string, number> } };
-  expect(b.total.calls).toEqual({ spark: 2, muse: 1 });
-  expect(b.today.calls).toEqual({ spark: 2 });
-  expect(b.total.priced).toBe(false);
-  await runAction('budget_set', { prices: { spark: 0.01, muse: 0.04 }, limitUsd: 0.05 }, ctx('user'));
-  const priced = (await runAction('budget', {}, ctx('user'))) as { total: { usd: number; priced: boolean }; over: boolean };
+  type B = { total: { calls: Record<string, number>; usd: number; priced: boolean }; today: { calls: Record<string, number> }; claudeCalls: number; creditsLeft: number | null; over: boolean };
+  const b = (await runAction('budget', {}, ctx('user'))) as B;
+  expect(b.total.calls).toEqual({ spark: 2, muse: 1, sound: 1 });
+  expect(b.today.calls).toEqual({ spark: 2, sound: 1 });
+  expect(b.claudeCalls).toBe(1);
+  expect(b.total).toMatchObject({ usd: 0.04, priced: false });
+  await runAction('budget_set', { prices: { sound: 0.02 }, limitUsd: 0.05, creditsUsd: 10 }, ctx('user'));
+  const priced = (await runAction('budget', {}, ctx('user'))) as B;
   expect(priced.total).toMatchObject({ usd: 0.06, priced: true });
   expect(priced.over).toBe(true);
+  // Calls before the balance was typed in are already in it.
+  expect(priced.creditsLeft).toBe(10);
   delete process.env.XDG_CONFIG_HOME;
 });
 

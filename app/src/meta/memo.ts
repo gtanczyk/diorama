@@ -17,13 +17,16 @@ export function inputHash(...parts: (string | Buffer)[]): string {
   return h.digest('hex').slice(0, 32);
 }
 
+/** What a call cost, when the asker knows: dollars and which backend answered (e.g. "claude" for a dev-mode Spark). */
+export type Paid = { data: Buffer; usd?: number; via?: string };
+
 export class Memo {
   /** Calls actually sent to each model in this process (cache hits are not counted). */
   readonly sent: Record<ModelName, number> = { spark: 0, muse: 0, sam: 0, sound: 0, music: 0, voice: 0, space: 0 };
 
   constructor(readonly dir: string) {}
 
-  async remember(model: ModelName, label: string, hash: string, ext: string, ask: () => Promise<Buffer>): Promise<Buffer> {
+  async remember(model: ModelName, label: string, hash: string, ext: string, ask: () => Promise<Buffer | Paid>): Promise<Buffer> {
     const file = path.join(this.dir, model, `${hash}.${ext}`);
     // Paid audio is also kept for every world on this machine: another world asking the same pays nothing.
     const shared = SHARED.has(model) ? path.join(process.env.DIORAMA_CACHE || path.join(os.homedir(), '.cache', 'diorama'), 'memo', model, `${hash}.${ext}`) : undefined;
@@ -35,10 +38,11 @@ export class Memo {
       return answer;
     }
     const started = Date.now();
-    const answer = await ask();
+    const got = await ask();
+    const { data: answer, usd, via } = Buffer.isBuffer(got) ? { data: got } as Paid : got;
     for (const f of [file, shared]) if (f) (fs.mkdirSync(path.dirname(f), { recursive: true }), fs.writeFileSync(f, answer));
     this.sent[model]++;
-    this.log({ model, label, hash, ms: Date.now() - started, hit: false });
+    this.log({ model, label, hash, ms: Date.now() - started, hit: false, ...(usd !== undefined && { usd: Math.round(usd * 1e6) / 1e6 }), ...(via && { via }) });
     return answer;
   }
 
@@ -52,7 +56,7 @@ export class Memo {
     fs.rmSync(path.join(this.dir, model, `${hash}.${ext}`), { force: true });
   }
 
-  private log(entry: { model: ModelName; label: string; hash: string; ms: number; hit: boolean }) {
+  private log(entry: { model: ModelName; label: string; hash: string; ms: number; hit: boolean; usd?: number; via?: string }) {
     fs.mkdirSync(this.dir, { recursive: true });
     fs.appendFileSync(path.join(this.dir, 'calls.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`);
   }

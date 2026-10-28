@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import type { ModelName } from '../meta/memo.ts';
+import { sparkTier, sparkViaClaude } from '../meta/spark.ts';
 import { configDir } from '../secrets.ts';
 import { Slug } from '../world/schema.ts';
 import { defineAction } from './registry.ts';
@@ -16,6 +17,9 @@ export const BudgetConfig = z.object({
   prices: z.record(z.enum(MODELS), z.number().min(0)).default({}),
   /** Dollars the Studio warns at; the hackathon gives $150 of Meta credits. */
   limitUsd: z.number().min(0).optional(),
+  /** Meta credits left as the billing page showed them at `creditsAt` (an ISO time); spend since then is taken off. */
+  creditsUsd: z.number().min(0).optional(),
+  creditsAt: z.string().optional(),
   /** A build that leaves places unplayable wakes the Studio agent to repair them. */
   autoRepair: z.boolean().default(true),
 });
@@ -33,28 +37,45 @@ export function readBudget(): BudgetConfig {
 
 type Tally = Partial<Record<ModelName, number>>;
 
-/** Calls sent per model in one world, all time and since `since` (an ISO time). */
-function tally(dir: string, since: string): { all: Tally; recent: Tally } {
+/**
+ * List prices for calls logged before calls carried their own cost (memo/calls.jsonl "usd"). Spark's is the
+ * average a standard-tier build call cost (about 5k tokens in, 4k out); newer calls log their real token cost.
+ */
+const LIST: Partial<Record<ModelName, number>> = { muse: 0.01, sam: 0.0025, spark: 0.03 };
+
+/** Calls sent per model in one world, all time and since `since` (an ISO time), and the Meta dollars they cost. */
+function tally(dir: string, since: string, credits?: string) {
   const all: Tally = {};
   const recent: Tally = {};
+  const usd = { all: 0, recent: 0, sinceCredits: 0, viaClaude: 0 };
   const log = path.join(dir, 'memo', 'calls.jsonl');
-  if (!fs.existsSync(log)) return { all, recent };
+  if (!fs.existsSync(log)) return { all, recent, usd };
   for (const line of fs.readFileSync(log, 'utf8').split('\n')) {
     if (!line) continue;
     try {
-      const c = JSON.parse(line) as { at: string; model: ModelName; hit: boolean };
+      const c = JSON.parse(line) as { at: string; model: ModelName; hit: boolean; usd?: number; via?: string };
       if (c.hit) continue;
+      // Dev-mode Spark answered by Claude: paid from Anthropic credits, not Meta's.
+      if (c.via === 'claude') {
+        usd.viaClaude++;
+        continue;
+      }
       all[c.model] = (all[c.model] ?? 0) + 1;
-      if (c.at >= since) recent[c.model] = (recent[c.model] ?? 0) + 1;
+      const cost = c.usd ?? LIST[c.model] ?? 0;
+      usd.all += cost;
+      if (c.at >= since) (recent[c.model] = (recent[c.model] ?? 0) + 1), (usd.recent += cost);
+      if (credits && c.at >= credits) usd.sinceCredits += cost;
     } catch {}
   }
-  return { all, recent };
+  return { all, recent, usd };
 }
 
-const usd = (t: Tally, prices: BudgetConfig['prices']) => {
-  let sum = 0;
+/** Meta models are priced from the calls themselves; others (ElevenLabs, Spaces) only when a price is set. */
+const cost = (t: Tally, meta: number, prices: BudgetConfig['prices']) => {
+  let sum = meta;
   let priced = true;
   for (const [m, n] of Object.entries(t) as [ModelName, number][]) {
+    if (m in LIST) continue;
     const p = prices[m as (typeof MODELS)[number]];
     if (p === undefined) priced = false;
     else sum += p * n;
@@ -79,21 +100,29 @@ defineAction({
     const slugs = slug ? [slug] : fs.existsSync(ctx.root) ? fs.readdirSync(ctx.root, { withFileTypes: true }).filter((d) => d.isDirectory() && (Slug.safeParse(d.name).success || d.name === '.start')).map((d) => d.name) : [];
     const total: Tally = {};
     const day: Tally = {};
+    const meta = { all: 0, recent: 0, sinceCredits: 0, viaClaude: 0 };
     const worlds = slugs.map((s) => {
-      const t = tally(path.join(ctx.root, s), today);
+      const t = tally(path.join(ctx.root, s), today, config.creditsAt);
       add(total, t.all);
       add(day, t.recent);
-      return { slug: s, calls: t.all, ...usd(t.all, config.prices) };
+      for (const k of Object.keys(meta) as (keyof typeof meta)[]) meta[k] += t.usd[k];
+      return { slug: s, calls: t.all, ...cost(t.all, t.usd.all, config.prices) };
     }).filter((w) => Object.keys(w.calls).length > 0).sort((a, b) => b.usd - a.usd);
-    const spent = usd(total, config.prices);
+    const spent = cost(total, meta.all, config.prices);
+    const creditsLeft = config.creditsUsd === undefined ? null : Math.round((config.creditsUsd - meta.sinceCredits) * 100) / 100;
     return {
       total: { calls: total, ...spent },
-      today: { calls: day, ...usd(day, config.prices) },
+      today: { calls: day, ...cost(day, meta.recent, config.prices) },
       worlds,
       prices: config.prices,
       limitUsd: config.limitUsd ?? null,
+      // Meta credits left by the last balance typed in, minus what was sent since. Agent turns (Muse Code) are not counted.
+      creditsLeft,
+      sparkTier: sparkTier(),
+      sparkViaClaude: sparkViaClaude(),
+      claudeCalls: meta.viaClaude,
       autoRepair: config.autoRepair,
-      over: config.limitUsd !== undefined && spent.usd >= config.limitUsd,
+      over: (config.limitUsd !== undefined && spent.usd >= config.limitUsd) || (creditsLeft !== null && creditsLeft <= 5),
       file: file(),
     };
   },
@@ -101,16 +130,18 @@ defineAction({
 
 defineAction({
   name: 'budget_set',
-  description: 'Set the dollars per call of a model (from its billing page), the dollar limit the Studio warns at, and whether a build that '
+  description: 'Set the dollars per call of a non-Meta model, the dollar limit the Studio warns at, the Meta credits left as the billing page shows them now, and whether a build that '
     + 'leaves places unplayable wakes the agent to repair them (autoRepair, on by default).',
   input: z.object({
     prices: z.record(z.enum(MODELS), z.number().min(0)).optional(),
     limitUsd: z.number().min(0).optional(),
+    creditsUsd: z.number().min(0).optional().describe('Meta credits left as the billing page shows them now'),
     autoRepair: z.boolean().optional(),
   }),
-  async run({ prices, limitUsd, autoRepair }) {
+  async run({ prices, limitUsd, creditsUsd, autoRepair }) {
     const was = readBudget();
-    const next = BudgetConfig.parse({ prices: { ...was.prices, ...prices }, limitUsd: limitUsd ?? was.limitUsd, autoRepair: autoRepair ?? was.autoRepair });
+    const credits = creditsUsd === undefined ? { creditsUsd: was.creditsUsd, creditsAt: was.creditsAt } : { creditsUsd, creditsAt: new Date().toISOString() };
+    const next = BudgetConfig.parse({ prices: { ...was.prices, ...prices }, limitUsd: limitUsd ?? was.limitUsd, ...credits, autoRepair: autoRepair ?? was.autoRepair });
     fs.mkdirSync(path.dirname(file()), { recursive: true, mode: 0o700 });
     fs.writeFileSync(file(), `${JSON.stringify(next, null, 2)}\n`);
     return next;

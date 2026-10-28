@@ -1,6 +1,7 @@
 // Muse Image: paints from a prompt, or from reference images whose layout it keeps.
 import { metaPost } from './http.ts';
 import { inputHash, type Memo } from './memo.ts';
+import { PRICES } from './prices.ts';
 
 export const MUSE = 'muse-image-1.0';
 
@@ -19,13 +20,14 @@ const PNG_OUT = { n: 1, response_format: 'b64_json', output_format: 'png' } as c
 
 export async function musePaint(memo: Memo, { label, prompt, size = '1200x896', take = 0 }: MuseAsk): Promise<Buffer> {
   return memo.remember('muse', label, inputHash(MUSE, 'paint', size, String(take), prompt), 'png', async () =>
-    firstImage(await metaPost('/images/generations', { model: MUSE, prompt, size, ...PNG_OUT }), label));
+    ({ data: await firstImage(await metaPost('/images/generations', { model: MUSE, prompt, size, ...PNG_OUT }), label), usd: PRICES.museImage }));
 }
 
 export async function museEdit(memo: Memo, { label, prompt, size = '1200x896', take = 0, images }: MuseAsk & { images: Buffer[] }): Promise<Buffer> {
   if (images.length === 0) throw new Error(`muse ${label}: an edit needs an image`);
-  return memo.remember('muse', label, inputHash(MUSE, 'edit', size, String(take), prompt, ...images), 'png', async () =>
-    firstImage(await metaPost('/images/edits', {
+  return memo.remember('muse', label, inputHash(MUSE, 'edit', size, String(take), prompt, ...images), 'png', async () => ({
+    usd: PRICES.museImage,
+    data: await firstImage(await metaPost('/images/edits', {
       model: MUSE,
       prompt,
       size,
@@ -33,5 +35,6 @@ export async function museEdit(memo: Memo, { label, prompt, size = '1200x896', t
       reasoning_strength: 'low',
       tool_enablement: { enable_image_search: false, enable_web_search: false, enable_shell: false },
       ...PNG_OUT,
-    }), label));
+    }), label),
+  }));
 }

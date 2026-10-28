@@ -47,7 +47,7 @@ Reply with JSON only:
 {"key": "...", "shows": "...", "mood": "...", "things": [{"key": "kebab-key", "role": "prop | item | exit", "looks": "a few words"}]}`;
   let ask = prompt;
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const answer = await askSparkJson(memo, { label: `photo-place#${attempt}`, prompt: ask, images: [image] });
+    const answer = await askSparkJson(memo, { label: `photo-place#${attempt}`, prompt: ask, images: [image], personal: true });
     const parsed = Place.omit({ exits: true }).safeParse(answer);
     const issues = parsed.success ? (parsed.data.things.some((t) => t.role === 'exit') ? [] : ['no thing has role exit; the door is the exit']) : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
     if (parsed.success && issues.length === 0) return { ...parsed.data, exits: [] };
@@ -96,7 +96,7 @@ Reply with JSON only: {"key": "kebab-key like the-developer", "looks": "..."}`;
   let ask = prompt;
   let hero: { key: string; looks: string } | undefined;
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const answer = await askSparkJson<{ key: string; looks: string }>(memo, { label: `hero-photo#${attempt}`, prompt: ask, images: [photo] });
+    const answer = await askSparkJson<{ key: string; looks: string }>(memo, { label: `hero-photo#${attempt}`, prompt: ask, images: [photo], personal: true });
     hero = World.shape.hero.parse(answer);
     const leaked = poseWords(`${hero.key.replace(/-/g, ' ')} ${hero.looks}`);
     if (!leaked.length) return hero;
@@ -109,7 +109,7 @@ Reply with JSON only: {"key": "kebab-key like the-developer", "looks": "..."}`;
 /** Whether the photo shows the person standing with the whole body in frame, so the hero can be painted in that very pose. */
 export async function photoStanding(memo: Memo, photo: Buffer): Promise<boolean> {
   const answer = await askSparkJson<{ standing?: unknown }>(memo, {
-    label: 'hero-photo-pose', images: [photo],
+    label: 'hero-photo-pose', images: [photo], personal: true,
     prompt: 'Does this photo show the person standing upright on their feet, with the whole body from the top of the head down to both feet inside the frame? Sitting, lying, leaning back, kneeling, or any part of the legs or feet cut off by the frame or hidden is no.\n\nReply with JSON only: {"standing": true or false}',
   });
   return answer.standing === true;

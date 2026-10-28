@@ -91,7 +91,7 @@ ${KIND_TEXT}${taken.length ? `\nKeys already used by other drawings: ${taken.joi
 Reply with JSON only: {"kind": "...", "key": "...", "looks": "..."}`;
   let ask = prompt;
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const answer = await askSparkJson<{ kind?: string; key?: string; looks?: string }>(memo, { label: `drawing:${file}#${attempt}`, prompt: ask, images: [image] });
+    const answer = await askSparkJson<{ kind?: string; key?: string; looks?: string }>(memo, { label: `drawing:${file}#${attempt}`, prompt: ask, images: [image], personal: true });
     const parsed = Drawn.safeParse({ file, kind: answer?.kind === 'character' ? 'npc' : answer?.kind, key: answer?.key, looks: answer?.looks });
     if (parsed.success) return parsed.data;
     ask = `${prompt}\n\nYour last answer was:\n${JSON.stringify(answer)}\n\nFix: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`;

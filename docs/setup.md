@@ -28,6 +28,13 @@ npm run check                  # typecheck and tests
 
 Model answers are kept by a hash of their inputs under each world's memo folder, so rerunning a step with the same inputs is free.
 
+### What it costs
+
+Every call sent is logged with its price in `worlds/<slug>/memo/calls.jsonl` (Meta list prices: Muse Image $0.01 an image, SAM 3.1 $0.0025 an image, Muse Spark by tokens). Studio Setup shows the total, today's spend and, once you type the balance your Meta billing page shows, the credits left; the banner warns at $5.
+
+- `DIORAMA_SPARK_TIER`: `auto` (default) sends Spark to Meta's contributor tier (same model, about 1/15 the price, Meta may train on the prompt and answer), except calls that carry your own photos or drawings, which stay `standard`. Set `standard` or `contributor` to force one.
+- `DIORAMA_SPARK_VIA=claude` (development only): Spark's text and vision asks go to Claude (`DIORAMA_ANTHROPIC_API_KEY`, model `DIORAMA_CLAUDE_MODEL`, default `claude-sonnet-5-5`), so testing a pipeline change spends no Meta credits. Its answers are kept under their own memo keys: a normal build never replays them. Muse Image and SAM stay on Meta.
+
 ## Playing and sharing a world
 
 - `diorama play <slug>` serves it on localhost.

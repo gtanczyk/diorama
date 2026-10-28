@@ -3,6 +3,7 @@ import { buildObjectPrompt, decodeMaskToRaster, parseImageStream, recordsOfKind,
 import { emptyMask, imageSize, type Mask } from '../image/mask.ts';
 import { metaPost } from './http.ts';
 import { inputHash, type Memo } from './memo.ts';
+import { PRICES } from './prices.ts';
 
 export const SAM = 'sam-3.1';
 
@@ -76,7 +77,7 @@ export async function samFind(memo: Memo, { label, image, prompt }: { label: str
       metadata: { include_confidence: 'true' },
       stream: true,
     }, 'text/event-stream');
-    return Buffer.from((await records(serverEvents(res))).rawOutput, 'utf8');
+    return { data: Buffer.from((await records(serverEvents(res))).rawOutput, 'utf8'), usd: PRICES.sam };
   });
   return readSamOutput(output.toString('utf8'), width, height);
 }
