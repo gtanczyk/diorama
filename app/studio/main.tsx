@@ -633,7 +633,7 @@ function Workshop({ slug }: { slug: string }) {
         }
         case 'file.changed': {
           // A new picture of a place puts that place on the stage.
-          const at = /^places\/([^/]+)\/(blockin|painting|masks\/overlay|depth|walk)\.png$/.exec(String(e.file));
+          const at = /^places\/([^/]+)\/(blockin|plan|painting|masks\/overlay|depth|walk)\.png$/.exec(String(e.file));
           if (at && e.exists) setLivePlace({ key: at[1], at: Date.now() });
           return soon();
         }

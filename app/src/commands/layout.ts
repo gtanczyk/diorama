@@ -1,6 +1,6 @@
-// diorama layout <slug> [place...]: layout.json and blockin.png for each place.
+// diorama layout <slug> [place...]: layout.json, blockin.png (for Muse) and plan.png (for people) for each place.
 import fs from 'node:fs';
-import { renderBlockin } from '../scene/blockin.ts';
+import { renderBlockin, renderPlan } from '../scene/blockin.ts';
 import { layOut } from '../scene/layout.ts';
 import { defineCommand } from '../registry.ts';
 import { WorldFiles } from '../world/files.ts';
@@ -19,7 +19,9 @@ defineCommand({
       const photo = fs.existsSync(photoFile) ? fs.readFileSync(photoFile) : undefined;
       const layout = await layOut(files.memo, world, place, photo);
       files.write(files.place(place.key, 'layout.json'), layout);
-      files.write(files.place(place.key, 'blockin.png'), photo ?? await renderBlockin(layout, place));
+      const blockin = photo ?? await renderBlockin(layout, place);
+      files.write(files.place(place.key, 'blockin.png'), blockin);
+      files.write(files.place(place.key, 'plan.png'), await renderPlan(layout, place, blockin, world.names));
       console.log(`${place.key}: ${layout.floors.length} floor(s), ${layout.things.length} things, horizon ${layout.horizon}`);
     }));
     console.log(`spark calls sent: ${files.memo.sent.spark}`);

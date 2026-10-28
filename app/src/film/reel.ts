@@ -106,7 +106,7 @@ export async function placeBeats(files: WorldFiles, placeKey: string, clean = fa
 
   await add('world', `One sentence becomes a world: ${world.places.length} places, a hero, a story`, 'Muse Spark', null, worldSvg(world, place.key));
   if (has('photo.png')) await add('photo', 'A real photo is the first place', 'Camera', read('photo.png'));
-  if (has('blockin.png')) await add('layout', 'Spark lays out every thing, light and floor', 'Muse Spark', read('blockin.png'));
+  if (has('blockin.png')) await add('layout', 'Spark plans every thing, light and floor', 'Muse Spark', read(has('plan.png') ? 'plan.png' : 'blockin.png'));
   if (has('painting-first.png')) await add('paint', 'Muse paints over the block-in', 'Muse Image', read('painting-first.png'), '', 'wipeleft');
   const critique = has('critique.json') ? (JSON.parse(read('critique.json').toString()) as Critique) : null;
   if (critique?.issues.length && has('painting-first.png')) {

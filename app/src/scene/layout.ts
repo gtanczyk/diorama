@@ -12,6 +12,10 @@ export const FRAME = { width: 1200, height: 896 } as const;
 const Colour = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const XY = z.tuple([z.number(), z.number()]);
 
+/** The silhouette a thing gets in the block-in: enough for Muse to keep it where it is and the size it is. */
+export const SHAPES = ['block', 'low', 'post', 'tree', 'arch', 'round', 'steps', 'flat'] as const;
+export type Shape = (typeof SHAPES)[number];
+
 export const Layout = z.object({
   horizon: z.number(),
   sky: Colour,
@@ -25,6 +29,7 @@ export const Layout = z.object({
     width: z.number(),
     height: z.number(),
     metres: z.number().positive(),
+    shape: z.enum(SHAPES).optional().catch(undefined),
   })),
   lights: z.array(z.object({ key: z.string(), x: z.number(), y: z.number(), colour: Colour })).max(6),
 });
@@ -160,13 +165,13 @@ Give:
 - horizon: y of the horizon, or of where the back wall meets the floor (120 to 520)
 - sky and ground: the main colour above and below it
 - floors: 1 to 4 walkable areas below the horizon as outlines, nearest first; the first reaches the bottom edge; every other floor touches one listed before it (a bridge, steps or a path across water or a drop is a floor too), so the hero can walk everywhere; leave room to walk around things
-- things: every thing as a box standing on the floor: x (centre), footY (where it touches the floor), width, height in px, metres (real height), colour (main colour); nearer things sit lower and are bigger; exits sit at the edge of a floor; every exit, item and person stands on a floor; leave a way round every big thing, and never stand one across the only way to a floor
+- things: every thing as a box standing on the floor: x (centre), footY (where it touches the floor), width, height in px, metres (real height), colour (main colour), shape (its silhouette: block = a box, stall, cupboard; low = bench, table, boat, cart, bed; post = lamp, pole, sign, column; tree; arch = door, gate, archway, window, tunnel; round = barrel, pot, rock, bush, well; steps = stairs or steps; flat = lies on the floor: rug, water, tracks); nearer things sit lower and are bigger; exits sit at the edge of a floor; every exit, item and person stands on a floor; leave a way round every big thing, and never stand one across the only way to a floor
 - lights: up to 6 visible sources (lamps, fires, windows) with x, y, colour
 
 Reply with JSON only:
 {"horizon": 0, "sky": "#rrggbb", "ground": "#rrggbb",
  "floors": [{"key": "...", "is": "what the floor is", "colour": "#rrggbb", "outline": [[x, y], ...]}],
- "things": [{"key": "...", "colour": "#rrggbb", "x": 0, "footY": 0, "width": 0, "height": 0, "metres": 1.0}],
+ "things": [{"key": "...", "colour": "#rrggbb", "x": 0, "footY": 0, "width": 0, "height": 0, "metres": 1.0, "shape": "block"}],
  "lights": [{"key": "...", "x": 0, "y": 0, "colour": "#rrggbb"}]}`;
 }
 

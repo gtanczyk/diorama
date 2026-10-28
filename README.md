@@ -45,8 +45,8 @@ Each is a four-place world built from that one sentence: about 17 minutes of ste
 
 | Model | What it does in Diorama |
 | --- | --- |
-| **Muse Spark** | Designs the world and the story, lays out each place as a colour block-in, critiques paintings, names what to cut out, plans the sound, judges playthroughs |
-| **Muse Image** | Paints each place over its block-in, repaints only the regions the critic flags, paints the cast, their walk and talk sheets and inventory icons |
+| **Muse Spark** | Designs the world and the story, lays out each place as a shaded plan sketch (a perspective floor, a silhouette per thing, lights and shadows), critiques paintings, names what to cut out, plans the sound, judges playthroughs |
+| **Muse Image** | Paints each place over its plan sketch, keeping every shape where it stands, repaints only the regions the critic flags, paints the cast, their walk and talk sheets and inventory icons |
 | **SAM 3.1** | Cuts every thing, floor, stair, puddle and patch of water out of the painting; the masks become the walk grid, occlusion and pick-ups |
 | **Muse Voice Transcribe** | Hears an idea you say aloud, and listens to every voiced line to catch a take that does not say it |
 | **Muse Code** | The Studio's agent: it fixes a world with you through the same actions as the GUI |
@@ -58,7 +58,7 @@ Also used: Depth Anything V2 (ONNX, on the CPU) for shadows and parallax, Eleven
 <p align="center"><img src="docs/images/how-a-place-is-made.gif" width="720" alt="One place being made: Muse Spark's block-in, Muse Image's painting, SAM 3.1's cut-outs, the depth map, the measured walk grid, and the hero walking in it"></p>
 
 1. **world, story**: Spark turns the sentence into places, a cast, items, locks and endings, and checks every ending can be reached.
-2. **layout, paint**: Spark lays out each place as a block-in; Muse paints over it; a Spark critic marks what is wrong and Muse repaints only those regions.
+2. **layout, paint**: Spark lays out each place and names each thing's silhouette; the layout becomes a shaded sketch (`blockin.png`, what Muse sees) and a named plan (`plan.png`, what Studio shows); Muse paints over the sketch; a Spark critic marks what is wrong and Muse repaints only those regions.
 3. **masks, plates**: SAM 3.1 cuts out every thing and floor; Muse paints the place without the things the hero can take.
 4. **derive, backdrop, weather**: code measures floor, scale, occlusion, stairs and light from the masks and the depth map; the place becomes a little stage with cards, far flats, moving water, rain and drips.
 5. **cast, model, sprites**: the hero and characters are painted, cut out, turned into 3D models and drawn back as sprite sheets in the world's style.

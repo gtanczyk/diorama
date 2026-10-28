@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { blockinSvg } from '../src/scene/blockin.ts';
+import { blockinSvg, planSvg, shade, shapeOf } from '../src/scene/blockin.ts';
 import { closeUpIssues, layoutIssues, type Layout } from '../src/scene/layout.ts';
 import type { Place } from '../src/world/schema.ts';
 
@@ -36,8 +36,24 @@ test('floors above the horizon, missing and tiny things are caught', () => {
 
 test('npcs get no mass in the block-in', () => {
   const svg = blockinSvg(layout(), place);
-  expect(svg).toContain('#888888');
-  expect(svg).not.toContain('#aa6644');
+  expect(svg).toContain(shade('#888888', 0.12));
+  expect(svg).not.toContain(shade('#aa6644', 0.12));
+});
+
+test('a thing gets the silhouette Spark named, else one from its key, then its looks', () => {
+  const box = { key: 'curving-tram-tracks', colour: '#555555', x: 300, footY: 500, width: 200, height: 60, metres: 0.1 };
+  expect(shapeOf(box, { key: box.key, role: 'exit', looks: 'steel tracks into a dark arch' })).toBe('flat');
+  expect(shapeOf({ ...box, key: 'ivy-riverside-arch' })).toBe('arch');
+  expect(shapeOf({ ...box, key: 'old-thing' }, { key: 'old-thing', role: 'prop', looks: 'a mossy rain barrel' })).toBe('round');
+  expect(shapeOf({ ...box, key: 'old-thing', shape: 'tree' })).toBe('tree');
+});
+
+test('the plan for people names every thing and floor; a person is a dashed spot', () => {
+  const svg = planSvg(layout(), place, { innkeeper: 'Old Bram' });
+  expect(svg).toContain('>well<');
+  expect(svg).toContain('>Old Bram<');
+  expect(svg).toContain('stroke-dasharray');
+  expect(svg).toContain('>yard<');
 });
 
 test('a quay across a canal, with the exit on it, is caught; a bridge floor joins it', () => {

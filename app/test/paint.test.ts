@@ -17,10 +17,11 @@ const layout: Layout = {
 };
 const world = { style: 'gouache on rough paper' } as World;
 
-test('the prompt names each mass by colour and side, and leaves npcs out', () => {
+test('the prompt names each shape by what it is and where it stands, not by colour, and leaves npcs out', () => {
   const prompt = paintPrompt(world, place, layout);
-  expect(prompt).toContain('the #3355aa mass on the right: a blue rowing boat');
-  expect(prompt).toContain('the #665544 area: wet planks, open floor to walk on');
+  expect(prompt).toContain('the low wide box at the front, on the far right: a blue rowing boat');
+  expect(prompt).toContain('the tiled floor area: wet planks, open floor to walk on');
+  expect(prompt).not.toContain('#3355aa');
   expect(prompt).not.toContain('net-mender');
 });
 

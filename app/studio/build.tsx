@@ -144,14 +144,14 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
 
 /** What a place step leaves behind, and who makes it. */
 const STEP_LAYER: Record<string, { layer: LayerName; doing: string; by: string }> = {
-  layout: { layer: 'blockin', doing: 'lays out every thing, light and floor', by: 'Muse Spark' },
-  paint: { layer: 'painting', doing: 'paints over the block-in', by: 'Muse Image' },
+  layout: { layer: 'blockin', doing: 'plans where every thing, light and floor goes', by: 'Muse Spark' },
+  paint: { layer: 'painting', doing: 'paints over the plan sketch', by: 'Muse Image' },
   masks: { layer: 'masks', doing: 'cuts out every thing and the floor', by: 'SAM 3.1' },
   derive: { layer: 'walk', doing: 'measures depth, scale and where to walk', by: 'Depth Anything' },
 };
 /** The pictures in the order the build lays them on, with what each one says. */
 const SHOWN: Array<{ layer: LayerName; title: string; by: string; enter: string }> = [
-  { layer: 'blockin', title: 'Block-in', by: 'Muse Spark', enter: 'fade' },
+  { layer: 'blockin', title: 'Plan', by: 'Muse Spark', enter: 'fade' },
   { layer: 'painting', title: 'Painting', by: 'Muse Image', enter: 'wipe' },
   { layer: 'masks', title: 'Things', by: 'SAM 3.1', enter: 'iris' },
   { layer: 'depth', title: 'Depth', by: 'Depth Anything', enter: 'sweep' },
@@ -266,7 +266,7 @@ export function Stage({ slug, place, live, building, hold }: { slug: string; pla
 }
 
 const LAYER_TIPS: Record<string, string> = {
-  blockin: 'Block-in: the rough plan of the place before painting',
+  blockin: 'Plan: where Spark put every thing, light and floor. Muse paints over this sketch (without the names) and keeps each shape where it stands',
   first: 'The first painting, before the critic\'s fixes',
   painting: 'The painting Muse made',
   masks: 'What SAM cut out: each thing and floor',
