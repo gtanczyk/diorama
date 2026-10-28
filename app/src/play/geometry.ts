@@ -79,6 +79,16 @@ export function personPx(g: Geometry, feetY: number): number {
   return Math.max(8, g.scale.pxPerY * (feetY - g.scale.horizonY));
 }
 
+/**
+ * How much more floor one screen pixel up or down covers than one sideways, at feet y: the floor is foreshortened,
+ * so a step into the picture moves the feet fewer pixels than a step across it. A ~50° lens (focal ≈ the frame's
+ * width) over the place's horizon; held to 1..3 so a far horizon cannot freeze anyone.
+ */
+export function depthStretch(g: Geometry, feetY: number): number {
+  const below = feetY - g.scale.horizonY;
+  return below > 0 ? Math.min(3, Math.max(1, 1100 / below)) : 3;
+}
+
 /** The occluder's floor line at column x: interpolated, flat past either end, baseY without a line. */
 export function floorYAt(o: Occluder, x: number): number {
   const line = o.floor;

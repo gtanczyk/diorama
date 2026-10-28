@@ -1,5 +1,5 @@
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
-import { FLAME_GLOW, FLAME_SWAY_M, flameAt, flicker, floorYAt, hiddenRuns, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
+import { FLAME_GLOW, FLAME_SWAY_M, flameAt, depthStretch, flicker, floorYAt, hiddenRuns, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, RIM_ALPHA, RIM_COLOUR, RIM_WIDTH, SEPARATE_ALPHA, SEPARATE_BLUR, SEPARATE_SHIFT } from '../src/play/focus.ts';
@@ -829,9 +829,12 @@ class Game {
   private move(hero: Body, dt: number) {
     let budget = personPx(this.place.g, hero.y) * (hero.run ? RUN : WALK) * dt;
     const fromY = hero.y;
+    // The budget is floor walked, not screen pixels: going into the picture or out of it covers more floor per
+    // pixel than going across, so the body moves fewer pixels there and its feet do not skate over the floor.
     while (budget > 0 && hero.path.length) {
       const [tx, ty] = hero.path[0];
-      const d = Math.hypot(tx - hero.x, ty - hero.y);
+      const k = depthStretch(this.place.g, hero.y);
+      const d = Math.hypot(tx - hero.x, (ty - hero.y) * k);
       const moved = Math.min(d, budget);
       if (Math.abs(tx - hero.x) > 1) hero.facing = tx > hero.x ? 1 : -1;
       if (d > 0.5) hero.yaw = turnToward(hero.yaw, Math.atan2(tx - hero.x, ty - hero.y), dt * 10);

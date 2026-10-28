@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { floorYAt, hiddenRuns, hides, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, type Geometry, type Occluder } from '../src/play/geometry.ts';
+import { depthStretch, floorYAt, hiddenRuns, hides, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { WalkGrid } from '../src/play/path.ts';
 import { previewGeometry } from '../src/play/preview.ts';
 import type { Layout } from '../src/scene/layout.ts';
@@ -71,6 +71,15 @@ test('preview geometry walks the layout floors around things, scaled by their he
   expect(g.occluders.map((o) => o.key)).toEqual(['well']);
   expect(personPx(g, 600)).toBeGreaterThan(100);
   expect(grid.walkable(...g.things[0].stand)).toBe(true);
+});
+
+test('a step into the picture covers more floor than a step across it, so feet do not skate', () => {
+  const g = { scale: { pxPerY: 1, horizonY: 300 } } as unknown as Geometry;
+  // Far up the floor one pixel is a lot of floor; near the front it is about the same as sideways.
+  expect(depthStretch(g, 450)).toBe(3);
+  expect(depthStretch(g, 850)).toBe(2);
+  expect(depthStretch(g, 1500)).toBe(1);
+  expect(depthStretch(g, 200)).toBe(3);
 });
 
 test('on stairs the feet rest on each tread and step over the risers', () => {
