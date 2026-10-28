@@ -71,7 +71,7 @@ Model answers are memoised by a hash of their inputs, so running a step again wi
 
 `npm run studio` opens the GUI on 127.0.0.1: describe a world (type it, say it, or add a photo of a real room or person), watch it build place by place, play it, and fix it by talking to the agent that looks after the world: click a thing on the stage and say what should change. Everything it does is an action that the page, the terminal (`diorama action`) and the agent (`diorama mcp`) share. See [docs/studio.md](docs/studio.md).
 
-<p align="center"><img src="docs/images/studio.jpg" width="720" alt="Diorama Studio: a world as a conversation with its agent on the left, the place on a stage on the right; clicking the fish buns puts them into the message"></p>
+<p align="center"><img src="docs/images/studio-world.jpg" width="720" alt="Diorama Studio: a world as a conversation with its agent on the left, the place on a stage on the right; clicking the fish buns puts them into the message"></p>
 
 ## Commands
 
