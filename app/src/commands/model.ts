@@ -41,10 +41,15 @@ defineCommand({
   },
 });
 
-async function buildModel(files: WorldFiles, key: string, take: number, given: string) {
+export async function buildModel(files: WorldFiles, key: string, take: number, given: string) {
   const world = files.world();
   const found = [world.hero, ...world.places.flatMap((p) => p.things)].find((w) => w.key === key);
   if (!found) throw new Error(`no hero or NPC called ${key}`);
+  const supplied = given ? fs.readFileSync(given) : undefined;
+  if (supplied) {
+    const bad = badModel(readShape(supplied));
+    if (bad) throw new Error(`${key}: supplied 3D model rejected: ${bad}`);
+  }
   const who = fixedLooks(files, found);
   const painting = fs.readFileSync(files.path('cast', `${key}-painting.png`));
   const out = (name: string) => files.path('cast', key, 'model', name);
@@ -66,25 +71,32 @@ async function buildModel(files: WorldFiles, key: string, take: number, given: s
     console.log(`${key}: TRELLIS (seed ${seed}${from.length === 1 ? ', front only' : ''}) made a model that is ${bad}`);
   }
   const rejected = out('model.json');
+  const reject = (why: string) => {
+    if (fs.existsSync(rejected)) fs.renameSync(rejected, out('model-rejected.json'));
+    console.log(`${key}: no 3D model: ${why}; ${creature ? 'the painted figure hops as it is' : 'the game walks the 2D rig'}`);
+  };
   if (!given && !shell) {
     // An older model of this character (a flat one, kept before this gate) must not stay in the game.
-    if (fs.existsSync(rejected)) fs.renameSync(rejected, out('model-rejected.json'));
-    console.log(`${key}: no 3D model: every try was flat; ${creature ? 'the painted figure hops as it is' : 'the game walks the 2D rig'}`);
+    reject('every reconstruction was flat or invalid');
     return;
   }
   if (creature) {
     // Make-It-Animatable rigs a person's skeleton only; a creature keeps TRELLIS's mesh as it came (no standing up:
     // a cat or a frog is not meant to be straight up and down).
-    const mesh = given ? fs.readFileSync(given) : shell!;
+    const mesh = supplied ?? shell!;
     files.write(out('model.glb'), mesh);
     const fits = await fitViews(mesh, views);
     files.write(out('model.json'), { glb: 'model.glb', creature: true, views: fits });
     console.log(`${key}: ${out('model.glb')} · a creature, no skeleton: hops, squashes and blinks as one body · views ${Object.entries(fits).map(([v, f]) => `${v} ${f.iou}`).join(', ')}`);
     return;
   }
-  const built = given ? fs.readFileSync(given) : await autoRig(files.memo, key, shell!);
+  const built = supplied ?? await autoRig(files.memo, key, shell!);
+  const bad = badModel(readShape(built));
+  if (bad) { reject(`rigged body rejected: ${bad}`); return; }
   const tilt = lean(readShape(built));
   const rigged = standUp(built);
+  const standingProblem = badModel(readShape(rigged));
+  if (standingProblem) { reject(`standing body rejected: ${standingProblem}`); return; }
   files.write(out('model.glb'), rigged);
 
   const fits = await fitViews(rigged, views);

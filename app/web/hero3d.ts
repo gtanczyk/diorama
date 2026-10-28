@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GESTURES, type Pose as GesturePose } from '../src/play/gestures.ts';
 import { CYCLE } from '../src/play/rig.ts';
 import { creatureMotion } from '../src/play/creature.ts';
+import { shapeProblem } from '../src/model/quality.ts';
 
 const STANCE = 0.6;
 
@@ -174,8 +175,13 @@ export class Figure3D {
 
   static async load(info: ModelInfo, url: (file: string) => string, paint = 1): Promise<Figure3D> {
     const f = new Figure3D(paint);
-    await f.build(info, url);
-    return f;
+    try {
+      await f.build(info, url);
+      return f;
+    } catch (error) {
+      f.dispose();
+      throw error;
+    }
   }
 
   /** Frees the WebGL context (a browser keeps only a few), for a page that shows figures one after another. */
@@ -238,7 +244,13 @@ export class Figure3D {
     const box = new THREE.Box3();
     const v = new THREE.Vector3();
     const pos = body.geometry.attributes.position;
-    for (let i = 0; i < pos.count; i++) box.expandByPoint(body.getVertexPosition(i, v).applyMatrix4(body.matrixWorld));
+    const positions = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      box.expandByPoint(body.getVertexPosition(i, v).applyMatrix4(body.matrixWorld));
+      v.toArray(positions, i * 3);
+    }
+    const problem = shapeProblem(positions);
+    if (problem) throw new Error(`${info.glb}: ${problem}`);
     const h = box.max.y - box.min.y;
     const inner = new THREE.Group();
     this.holder.add(inner);
@@ -249,10 +261,10 @@ export class Figure3D {
     await this.paintViews(body, info, url);
     if (!skinned) {
       // How far it spreads round its feet whichever way it turns (a cat is longer than it is tall): the frame fits it.
-      const [cx, cz] = [(box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2];
       for (let i = 0; i < pos.count; i++) {
         body.getVertexPosition(i, v).applyMatrix4(body.matrixWorld);
-        this.reach = Math.max(this.reach, Math.hypot(v.x - cx, v.z - cz) / h + 0.06);
+        // matrixWorld already centres the mesh and makes its height 1; do not normalise twice.
+        this.reach = Math.max(this.reach, Math.hypot(v.x, v.z) + 0.06);
       }
       return;
     }
@@ -483,6 +495,11 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
     this.camDir.value.set(-Math.sin(yaw), 0, Math.cos(yaw));
     this.holder.updateMatrixWorld(true);
     const [w, h] = [Math.ceil(px * 2 * half), Math.ceil(px * (top - bottom))];
+    const gl = this.renderer.getContext();
+    const limit = Math.min(this.renderer.capabilities.maxTextureSize, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
+    if (gl.isContextLost() || !Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1 || w > limit || h > limit || w * h > 16_777_216) {
+      throw new Error(`3D figure frame ${w}x${h} cannot be rendered safely (device limit ${limit})`);
+    }
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.renderer.setSize(w, h, false);
       this.rt.setSize(w, h);

@@ -1526,7 +1526,16 @@ class Game {
     const h = unit * ((figure?.height ?? 1.62) / 1.62);
     y = foot ?? stepFootY(g, x, y);
     const sprites = figure?.sprites;
-    const model = sprites ? undefined : figure?.model;
+    let model = sprites ? undefined : figure?.model;
+    let modelCanvas: HTMLCanvasElement | undefined;
+    try {
+      modelCanvas = model?.draw({ phase, walking, yaw, px: h, time: this.time, talk });
+    } catch (error) {
+      console.warn('3D figure failed; using its 2D figure:', error);
+      model?.dispose();
+      if (figure) figure.model = undefined;
+      model = undefined;
+    }
     const rig = model || sprites ? undefined : figure?.rig;
     // A creature's cut-out (not upright, no 3D model) moves as one body: hops, squashes, leans, breathes, blinks.
     const creature = figure?.upright === false && !model && !sprites ? creatureMotion({ phase, walking, time: this.time, talk, seed: x * 0.05 }) : undefined;
@@ -1534,7 +1543,6 @@ class Game {
     const bob = creature ? creature.lift * h : rig || model || sprites || !walking ? 0 : Math.abs(Math.sin(phase * Math.PI * 2)) * h * 0.025;
     const rock = creature ? creature.lean * (facing < 0 ? -1 : 1) : rig || model || sprites || !walking ? 0 : Math.sin(phase * Math.PI * 2) * 0.035;
     if (rig) drawRig(rig, pose(rig.rig, phase, walking));
-    const modelCanvas = model?.draw({ phase, walking, yaw, px: h, time: this.time, talk });
     /** Draws the figure into c with its feet at c's origin; returns its half width. */
     const paint = (c: CanvasRenderingContext2D): number => {
       if (sprites) {

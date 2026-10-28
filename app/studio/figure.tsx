@@ -103,8 +103,14 @@ function ModelView({ slug, dir, v }: { slug: string; dir: string; v: number | nu
     const gesture = mode === 'talk' ? Math.floor(t / GESTURE) % GESTURES.length : undefined;
     // A creature has no arms for gestures: it bounces on its words.
     if (label.current) label.current.textContent = gesture === undefined || fig.creatureBody ? '' : GESTURES[gesture].name;
-    const c = fig.draw({ phase: t / STRIDE, walking: mode === 'walk', gesture, yaw: s.yaw, elevation: s.elevation, px: TALL * devicePixelRatio, time: t });
-    c.style.height = `${(c.height / devicePixelRatio).toFixed(0)}px`;
+    try {
+      const c = fig.draw({ phase: t / STRIDE, walking: mode === 'walk', gesture, yaw: s.yaw, elevation: s.elevation, px: TALL * devicePixelRatio, time: t });
+      c.style.height = `${(c.height / devicePixelRatio).toFixed(0)}px`;
+    } catch (e) {
+      fig.canvas.remove();
+      setError((e as Error).message);
+      setFig(null);
+    }
   }, [fig, mode, spin]);
   const drag = {
     onPointerDown: (e: PointerEvent) => ((view.current.drag = { x: e.clientX, y: e.clientY }), (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)),
