@@ -8,7 +8,9 @@ export type DockState = { side: 'right' | 'left' | 'float'; width: number; folde
 const KEY = 'diorama.dock';
 const START: DockState = { side: 'right', width: 380, folded: false, box: { x: 0, y: 80, w: 420, h: 620 } };
 const [MIN_W, MIN_H] = [320, 280];
-const clampWidth = (w: number) => Math.round(Math.min(Math.max(w, 300), Math.max(320, innerWidth * 0.6)));
+// The Workshop keeps at least MAIN px beside the panel: a wide agent never squeezes the build under itself.
+const MAIN = 600;
+export const clampWidth = (w: number) => Math.round(Math.min(Math.max(w, 300), Math.max(320, Math.min(innerWidth * 0.6, innerWidth - MAIN))));
 
 export function useDock(): [DockState, (d: Partial<DockState>) => void] {
   const [dock, setDock] = useState<DockState>(() => {

@@ -9,7 +9,7 @@ import { CastView } from './cast.tsx';
 import { KidsStart, KidsWait, polish, setPolish, t } from './kids.tsx';
 import { StoryView } from './story.tsx';
 import { PlaceEditor } from './place.tsx';
-import { Dock, useDock } from './dock.tsx';
+import { clampWidth, Dock, useDock } from './dock.tsx';
 import { MODEL_NAME, Pipeline, Stage, Strip, Tale, working, type Live, type StagePlace } from './build.tsx';
 import { Tips } from './tip.tsx';
 
@@ -555,7 +555,7 @@ function Workshop({ slug }: { slug: string }) {
         ready={shown.state === 'done' && playable} failed={shown.state === 'failed' || shown.state === 'cancelled'}
         onPlay={() => (setHidden(shown.id), setPlaying({ full: true }))} onHide={() => setHidden(shown.id)} />}
       {/* The Workshop fits the window: Places and Play shrink to it, Story, Cast and Notes scroll inside. Fixing a place gives the page its length back. */}
-      <main class={`workshop${playing ? ' fit playing' : !placeFocus || view !== 'places' ? ' fit' : ''} dock-${dock.folded && dock.side !== 'float' ? `${dock.side}-folded` : dock.side}`} style={{ '--dock-w': `${dock.width}px` }}>
+      <main class={`workshop${playing ? ' fit playing' : !placeFocus || view !== 'places' ? ' fit' : ''} dock-${dock.folded && dock.side !== 'float' ? `${dock.side}-folded` : dock.side}`} style={{ '--dock-w': `${clampWidth(dock.width)}px` }}>
         <div class="left">
           <div class="row">
             <h1>{status?.title ?? slug}</h1>
