@@ -136,12 +136,29 @@ function Menu({ children }: { children?: ComponentChildren }) {
     <div class="share menu-wrap">
       <button type="button" class="ghost menu-button" aria-label="More" title="More: follow the agent, history, style, Setup" aria-expanded={open} onClick={() => setOpen(!open)}>☰</button>
       {open && (
-        <div class="share-menu top-menu" role="menu" onClick={(e) => (e.target as HTMLElement).closest('a') && setOpen(false)}>
-          <label class="follow" title="When the agent opens a place, the cast or the game, the stage goes there too"><input type="checkbox" checked={followAgent.value} onChange={(e) => (followAgent.value = e.currentTarget.checked)} /> Follow the agent</label>
+        <div class="share-menu top-menu" role="menu" onClick={(e) => (e.target as HTMLElement).closest('a, .mi.go') && setOpen(false)}>
+          {children && <p class="menu-head">This diorama</p>}
           {children}
-          <a href="/setup" class="navlink" title="Keys, tools and the budget on this computer" onClick={(e) => (e.preventDefault(), go('/setup'))}>Setup</a>
+          {children && <hr />}
+          <p class="menu-head">Studio</p>
+          <label class="mi switch" title="When the agent opens a place, the cast or the game, the stage goes there too"><span>Follow the agent</span><input type="checkbox" role="switch" checked={followAgent.value} onChange={(e) => (followAgent.value = e.currentTarget.checked)} /></label>
+          <a href="/setup" class="mi" title="Keys, tools and the budget on this computer" onClick={(e) => (e.preventDefault(), go('/setup'))}>Setup</a>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Build again runs every step once more, so it asks first; going on from where a build stopped does not. */
+function Rebuild({ slug, again, onError }: { slug: string; again: boolean; onError: (m: string) => void }) {
+  const [sure, setSure] = useState(false);
+  const run = () => call('world_build', { slug }).catch((e) => onError(e.message));
+  if (!again) return <button type="button" class="mi go" title="Go on from where the build stopped. Answers already asked are reused for free" onClick={run}>Continue the build</button>;
+  if (!sure) return <button type="button" class="mi danger" title="Run every step of the build again. Asks first" onClick={() => setSure(true)}>Build everything again…</button>;
+  return (
+    <div class="mi-confirm">
+      <p>Every step runs again over the whole world. What was asked before is reused for free, anything new costs model calls; History in this menu takes it back.</p>
+      <div class="row"><button type="button" class="danger-fill small mi go" onClick={run}>Build again</button><button type="button" class="ghost small" onClick={() => setSure(false)}>Cancel</button></div>
     </div>
   );
 }
@@ -711,17 +728,15 @@ function Workshop({ slug }: { slug: string }) {
             {stageHint && <small>{stageHint}</small>}
             <span class="grow" />
             {playable && <button type="button" class={shownView.kind === 'play' ? 'ghost' : 'amber'} title={shownView.kind === 'play' ? 'Close the game' : 'Play the game here. Free'} onClick={() => onStage(shownView.kind === 'play' ? { kind: 'place', place: places[0]?.key } : { kind: 'play' })}>{shownView.kind === 'play' ? 'Close game' : '▶ Play'}</button>}
-            {!job && status && status.steps.length > 0 && <button type="button" class="ghost" title="Take back the last job (yours or the agent's). History in ☰ goes further back. Free" onClick={() => call('history_undo', { slug }).catch((e) => setError(e.message))}>↶ Undo</button>}
             {playable && !job && <ShareButton slug={slug} jobs={status?.jobs ?? []} onError={setError} />}
             <button type="button" class="ghost wide" title="The stage alone on the whole screen, for recording. Esc comes back" onClick={() => stageRef.current?.querySelector<HTMLElement>('.stage-body')?.requestFullscreen().catch((e) => setError(e.message))}>Film</button>
             <Bell />
             <Menu>
               {!job && status && status.steps.length > 0 && <HistoryMenu slug={slug} version={tick} onError={setError} />}
               {!job && status && !status.issue && <StyleMenu slug={slug} places={places.map((p) => p.key)} version={tick} onError={setError} />}
-              {!job && <button type="button" class="ghost small" disabled={!status || !!status.issue} title="Run every step again, or go on from where the build stopped. Answers already asked are reused for free" onClick={() => call('world_build', { slug }).catch((e) => setError(e.message))}>{status && status.steps.length >= steps.length - 1 ? 'Build again' : 'Continue the build'}</button>}
-              <button type="button" class="ghost small" title="What the build, the agent and the game did, line by line" onClick={() => setLogOpen(true)}>Activity</button>
-              {stagedPlace?.stages.painting && <button type="button" class="ghost small" title="Masks, floors, stand spots and repaints for this place, by hand" onClick={() => setByHand(stagedPlace.key)}>Fix {nice(stagedPlace.key)} by hand</button>}
-              {castDone && <button type="button" class="ghost small" title="Looks, moves, voices and inventory icons, by hand" onClick={() => setByHand('#cast')}>Cast details</button>}
+              <hr />
+              <button type="button" class="mi go" title="What the build, the agent and the game did, line by line" onClick={() => setLogOpen(true)}>Activity</button>
+              {!job && status && !status.issue && <><hr /><Rebuild slug={slug} again={status.steps.length >= steps.length - 1} onError={setError} /></>}
             </Menu>
           </div>
           <div class={`stage-body ${shownView.kind}`}>
@@ -735,6 +750,8 @@ function Workshop({ slug }: { slug: string }) {
             {shownView.kind === 'place' && stagedPlace && <PlaceStage slug={slug} place={stagedPlace} version={tick} picked={picked} onPick={setPicked} />}
             {shownView.kind === 'place' && !stagedPlace && <div class="mat"><p class="detail">{status?.pitch ?? 'Muse Spark is dreaming up the places…'}</p></div>}
             {shownView.kind === 'cast' && <CastStage slug={slug} version={tick} picked={picked} onPick={setPicked} />}
+            {shownView.kind === 'place' && stagedPlace?.stages.painting && <button type="button" class="stage-tool" title="Masks, floors, stand spots and repaints for this place, by hand. Or just ask the agent" onClick={() => setByHand(stagedPlace.key)}>✎ Fix this place by hand</button>}
+            {shownView.kind === 'cast' && castDone && <button type="button" class="stage-tool" title="Looks, voices, moves and inventory icons, by hand. Or just ask the agent" onClick={() => setByHand('#cast')}>✎ Cast details</button>}
             {shownView.kind === 'story' && <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} /></div>}
           </div>
         </section>
@@ -779,6 +796,17 @@ function Play({ slug, place, round, full, onRestart, version, onLine, onError }:
       return '';
     }
   });
+  // The gamepad choice shows only once two pads are plugged in: with one or none it means nothing.
+  const [padCount, setPadCount] = useState(0);
+  useEffect(() => {
+    const count = () => setPadCount((navigator.getGamepads?.() ?? []).filter(Boolean).length);
+    count();
+    // Pads wake on a button press, often inside the game's frame where these events do not reach: look now and then too.
+    const timer = setInterval(count, 2000);
+    addEventListener('gamepadconnected', count);
+    addEventListener('gamepaddisconnected', count);
+    return () => (clearInterval(timer), removeEventListener('gamepadconnected', count), removeEventListener('gamepaddisconnected', count));
+  }, []);
   const pickPads = (v: string) => {
     setPads(v);
     try {
@@ -805,16 +833,16 @@ function Play({ slug, place, round, full, onRestart, version, onLine, onError }:
     <section class="play">
       <div class="row">
         <strong>Playing{place ? ` from ${place}` : ''}</strong>
-        <span class="detail">click to walk or use, right click to look, or play with a gamepad</span>
+        <span class="detail">click to walk or use, right click to look{padCount ? ', or use the gamepad' : ''}</span>
         <span class="grow" />
-        <label class="detail" title="With several gamepads: all steer the one hero, they take turns, or each pad has its own hero">
+        {padCount > 1 && <label class="detail" title="With several gamepads: all steer the one hero, they take turns, or each pad has its own hero">
           Gamepads{' '}
           <select value={pads} onChange={(e) => pickPads(e.currentTarget.value)}>
             <option value="">one hero</option>
             <option value="turns">take turns</option>
             <option value="party">a hero each</option>
           </select>
-        </label>
+        </label>}
         <button type="button" class="ghost small" title="Start the game over from the beginning. Free" onClick={onRestart}>Restart</button>
         {/* For a big screen: the game letterboxes to it, keyboard and gamepads keep working; Esc comes back. */}
         <button type="button" class="ghost small" title="Play on the whole screen (Esc to come back)" onClick={() => frame.current?.requestFullscreen().then(() => frame.current?.focus()).catch((err) => onError(err.message))}>Full screen</button>

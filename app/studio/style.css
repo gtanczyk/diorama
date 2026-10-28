@@ -777,3 +777,47 @@ main.world { display: grid; grid-template-columns: minmax(340px, 30%) minmax(0, 
 .stage-top h2 { flex: 1 1 auto; }
 .stage-top > :not(h2) { flex: none; }
 @media (max-width: 1100px) { .stage-top > button.ghost.wide { display: none; } }
+
+/* The Studio's own words to the agent: a quiet line in the conversation, never the person's ink bubble. */
+.convo .gc-prompt:has(> .studio-note) { align-self: stretch; background: none; color: var(--muted); border: 0; border-radius: 0; box-shadow: none; padding: 0; max-width: none; }
+.convo .studio-note { font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.convo .studio-note summary { display: flex; gap: 6px; align-items: baseline; padding: 2px 0; }
+.convo .studio-note summary::before { content: 'ⓘ'; color: var(--faint); }
+.convo .studio-note summary::after { content: 'show'; margin-left: auto; color: var(--faint); text-decoration: underline; text-underline-offset: 2px; }
+.convo .studio-note[open] summary::after { content: 'hide'; }
+.convo .studio-note[open] { padding: 8px 12px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; color: var(--text); }
+
+/* ☰: whole-diorama and studio operations as a quiet list; one row each, a hover on every row. */
+.share-menu.top-menu { width: 260px; gap: 0; padding: 6px; background: var(--panel); border-color: var(--line-strong); box-shadow: 0 12px 34px rgba(60, 40, 20, 0.18); max-height: calc(100vh - 90px); overflow: auto; }
+.top-menu .menu-head { margin: 6px 10px 2px; font-size: 11px; }
+.top-menu hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
+.top-menu .mi, .top-menu .share > button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--text); font-size: 14px; font-weight: 400; text-align: left; justify-content: flex-start; text-decoration: none; cursor: pointer; }
+.top-menu .mi:hover, .top-menu .share > button:hover, .top-menu .share > button[aria-expanded="true"] { background: var(--raised); }
+.top-menu .mi.danger { color: var(--bad); }
+.top-menu .share-menu { position: static; width: auto; margin: 2px 0 6px; box-shadow: none; background: var(--bg); max-height: 50vh; }
+.mi-confirm { margin: 2px 0; padding: 10px; border-radius: 8px; background: color-mix(in srgb, var(--bad) 8%, var(--panel)); border: 1px solid color-mix(in srgb, var(--bad) 30%, var(--line)); }
+.mi-confirm p { margin: 0 0 8px; font-size: 12.5px; color: var(--muted); }
+.mi-confirm .row { gap: 6px; }
+button.danger-fill { background: var(--bad); color: #fff; border: 0; font-weight: 600; }
+.top-menu .mi-confirm .mi.go { width: auto; display: inline-flex; padding: 0 12px; color: #fff; }
+/* A switch, not a raw checkbox. */
+.mi.switch { justify-content: space-between; }
+.mi.switch input { appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 32px; height: 18px; margin: 0; border-radius: 9px; background: var(--line-strong); cursor: pointer; transition: background .15s; }
+.mi.switch input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform .15s; }
+.mi.switch input:checked { background: var(--ok); }
+.mi.switch input:checked::after { transform: translateX(14px); }
+/* Hand tools sit on the stage they work on, not in ☰. */
+.stage-body { position: relative; }
+.stage-tool { position: absolute; right: 8px; bottom: 6px; z-index: 2; min-height: 32px; padding: 0 12px; font-size: 13px; border-color: var(--line); background: color-mix(in srgb, var(--panel) 88%, transparent); color: var(--muted); backdrop-filter: blur(4px); }
+.stage-tool:hover { color: var(--text); background: var(--panel); border-color: var(--line-strong); }
+
+/* Every button answers the pointer. Class rules for special buttons (spots, thumbs, the cast) still win. */
+button:where(:hover:not(:disabled)) { background-color: var(--raised); border-color: var(--line-strong); }
+button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 82%, var(--panel)); }
+button.amber:hover:not(:disabled) { background: color-mix(in srgb, var(--amber) 86%, #000); }
+button.danger-fill:hover:not(:disabled) { background: color-mix(in srgb, var(--bad) 86%, #000); }
+.stage-top > button.ghost:hover:not(:disabled), .menu-wrap > .menu-button:hover, .share-wrap > button:hover, .bell:hover { background: var(--raised); border-color: var(--line-strong); }
+button:not(.spot, .thumb, .who):active:not(:disabled) { transform: translateY(1px); }
+.convo .studio-note summary::after { flex: none; white-space: nowrap; }
+.top-menu .mi-confirm .mi.go { background: var(--bad); border-radius: 16px; min-height: 30px; font-weight: 600; }
+.top-menu .mi-confirm .mi.go:hover { background: color-mix(in srgb, var(--bad) 86%, #000); }
