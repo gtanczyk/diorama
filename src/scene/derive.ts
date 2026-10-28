@@ -196,19 +196,24 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   // A fire or a lamp outshining the sky throws each person's shadow away from itself.
   // The layout names a light by its glow ("lamp-glow" at the lamp's head, "oven-fire") as often as by its
   // thing ("street-lamp", "warm-oven"), so a light that names no thing goes to a thing near its point: one
-  // sharing a word with it, else one whose mask holds the point, else the smallest box around it.
-  const boxed = things.flatMap((t) => { const b = maskBox(t.mask); return b ? [{ key: t.key, box: b, mask: t.mask }] : []; });
+  // sharing a word with it, else one whose mask comes within reach of it. Floors and flat things hold no
+  // light, and a light no thing holds (a lantern the painting has no mask for) is left out.
+  const boxed = things.flatMap((t) => { const b = t.kind === 'walk-on' || t.kind === 'flat' ? undefined : maskBox(t.mask); return b ? [{ key: t.key, box: b, mask: t.mask }] : []; });
   const near = (b: [number, number, number, number], x: number, y: number) => x >= b[0] - LIGHT_REACH && x <= b[2] + LIGHT_REACH && y >= b[1] - LIGHT_REACH && y <= b[3] + LIGHT_REACH;
   const area = (b: [number, number, number, number]) => (b[2] - b[0]) * (b[3] - b[1]);
   const words = (k: string) => k.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
-  const lights = [...new Map(layout.lights.map((l) => {
+  const touches = (m: Mask, x: number, y: number) => {
+    for (let v = Math.max(0, Math.round(y) - LIGHT_REACH); v <= Math.min(H - 1, Math.round(y) + LIGHT_REACH); v += 2) {
+      for (let u = Math.max(0, Math.round(x) - LIGHT_REACH); u <= Math.min(W - 1, Math.round(x) + LIGHT_REACH); u += 2) if (m.bits[v * W + u]) return true;
+    }
+    return false;
+  };
+  const lights = [...new Map(layout.lights.flatMap((l) => {
     const around = boxed.filter((t) => near(t.box, l.x, l.y)).sort((a, b) => area(a.box) - area(b.box));
-    const inMask = (m: Mask) => m.bits[Math.min(H - 1, Math.max(0, Math.round(l.y))) * W + Math.min(W - 1, Math.max(0, Math.round(l.x)))] === 1;
     const t = boxed.find((t) => t.key === l.key)
       ?? around.find((t) => words(t.key).some((w) => words(l.key).includes(w)))
-      ?? around.find((t) => inMask(t.mask))
-      ?? around[0];
-    return [t?.key ?? l.key, { key: t?.key ?? l.key, box: t?.box }] as const;
+      ?? around.find((t) => touches(t.mask, l.x, l.y));
+    return t ? [[t.key, { key: t.key, box: t.box }] as const] : [];
   })).values()];
   // A repaint of a lamp or of its glow is asked again; one elsewhere does not change what lights the ground.
   const fireAsked = lights.length ? localLight(memo, `light-source:${place.key}`, paintingFor(carry, painting, lights.map((l) => l.box), 80), lights) : Promise.resolve(undefined);
