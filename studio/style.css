@@ -559,3 +559,6 @@ body.dragging iframe { pointer-events: none; }
 .crew .detail { margin: 0; }
 .crew .ideas { display: flex; flex-wrap: wrap; gap: 6px; }
 .crew .ideas button { font-size: 12px; }
+.things td.remove { white-space: nowrap; text-align: right; }
+.things .add-thing input { width: 100%; }
+button.danger { color: var(--bad); }

@@ -33,7 +33,11 @@ export const Corrections = z.object({
     stand: XY.optional(),
     /** Where an NPC stands (its feet), instead of the layout's spot. */
     at: XY.optional(),
+    /** Not a thing of its own any more (a prop the person took off the list): it stays painted, or is painted out. */
+    removed: z.boolean().optional(),
   })).default({}),
+  /** Props the person added to the place's things, by key: what it is, in words (it must be in the painting). */
+  added: z.record(z.string(), z.object({ looks: z.string().min(3) })).default({}),
   floors: z.record(z.string(), z.object({
     add: z.array(z.string()).default([]),
     remove: z.array(z.string()).default([]),

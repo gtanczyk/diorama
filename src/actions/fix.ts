@@ -10,7 +10,8 @@ import { wordKeys } from '../scene/words.ts';
 import { agentBlocked } from '../studio/locks.ts';
 import { placeTrouble } from '../studio/trouble.ts';
 import { WorldFiles } from '../world/files.ts';
-import { Slug } from '../world/schema.ts';
+import { Slug, World } from '../world/schema.ts';
+import { storyNeeds } from '../story/check.ts';
 import { ActionError, defineAction, type ActionContext } from './registry.ts';
 
 const XY = z.tuple([z.number(), z.number()]);
@@ -153,6 +154,79 @@ defineAction({
   },
 });
 
+/** A prop the person took off a place's list, or one they added: the place's thing list as world.json and the edits make it. */
+function thingsOf(dir: string, place: string) {
+  const world = World.safeParse(JSON.parse(fs.readFileSync(path.join(dir, 'world.json'), 'utf8')));
+  const p = world.success ? world.data.places.find((x) => x.key === place) : undefined;
+  if (!p) throw new ActionError(404, `no place ${place}`);
+  return p;
+}
+
+defineAction({
+  name: 'thing_remove',
+  description: 'Take a thing off a place\'s list when the person says it should not be a thing of its own (a prop only: an exit, an item or a person '
+    + 'belongs to the story, change that with story_redo). paintOut false (default): it stays painted, just no longer a separate card one can '
+    + 'walk behind or click; reruns masks to verify. paintOut true: Muse also paints it out of the picture (one Muse edit); reruns paint to verify. '
+    + 'Kept in corrections.json across rebuilds; history_undo takes it back.',
+  input: z.object({ slug: Slug, place: z.string().min(1), thing: z.string().min(1), paintOut: z.boolean().optional() }),
+  job: true,
+  async run({ slug, place, thing, paintOut }, ctx) {
+    const dir = path.join(ctx.root, slug);
+    const placeDir = path.join(dir, 'places', place);
+    const listed = thingsOf(dir, place).things.find((t) => t.key === thing);
+    const added = readCorrections(placeDir).added[thing];
+    if (!listed && !added) throw new ActionError(404, `${place} has no thing ${thing}`);
+    if (listed && listed.role !== 'prop') throw new ActionError(409, `${thing} is ${listed.role === 'npc' ? 'a person' : `an ${listed.role}`} in the story: change the story with story_redo to take it out`);
+    const story = path.join(dir, 'story.json');
+    if (listed && fs.existsSync(story) && storyNeeds(JSON.parse(fs.readFileSync(story, 'utf8')), place, thing)) throw new ActionError(409, `the story uses ${thing}: change the story with story_redo to take it out`);
+    let region: [number, number, number, number] | undefined;
+    if (paintOut) {
+      const masks = path.join(placeDir, 'masks.json');
+      const box = fs.existsSync(masks) ? (JSON.parse(fs.readFileSync(masks, 'utf8')) as { things?: Record<string, { box?: number[] }> }).things?.[thing]?.box : undefined;
+      if (!box) throw new ActionError(409, `${thing} has no mask yet, so there is nothing to paint out: take it off with paintOut false`);
+      const pad = 16;
+      region = [Math.max(0, box[0] - pad), Math.max(0, box[1] - pad), Math.min(1200, box[2] + pad), Math.min(896, box[3] + pad)];
+    }
+    const looks = (listed?.looks ?? added?.looks ?? thing.replace(/-/g, ' ')).replace(/^(a|an|the)\s+/i, '');
+    return fixPlace(ctx, slug, place, paintOut ? 'paint' : 'masks', `remove ${thing}`, (c) => {
+      if (added) delete c.added[thing];
+      else thingOf(c, thing).removed = true;
+      if (region) c.repaint.push({ region, fix: `Paint out the ${looks}: continue what is behind it, add nothing new` });
+    });
+  },
+});
+
+defineAction({
+  name: 'thing_add',
+  description: 'Make something painted in a place a thing of its own (a prop: a card one walks behind and can look at), when the person says it '
+    + 'is missing from the list: what it is in their words ("the red bench by the fountain"), and its kind if they say how it meets the floor. '
+    + 'It must already be in the painting. Reruns masks to verify; kept in corrections.json across rebuilds.',
+  input: z.object({
+    slug: Slug,
+    place: z.string().min(1),
+    looks: z.string().min(3).max(200).describe('What it is, as painted, in a few words.'),
+    kind: z.enum(KINDS).optional(),
+  }),
+  job: true,
+  async run({ slug, place, looks, kind }, ctx) {
+    const dir = path.join(ctx.root, slug);
+    const p = thingsOf(dir, place);
+    const fixes = readCorrections(path.join(dir, 'places', place));
+    const taken = new Set([...p.things.map((t) => t.key), ...Object.keys(fixes.added)]);
+    if (p.things.length + Object.keys(fixes.added).length >= 10) throw new ActionError(409, `${place} has ten things already: take one off first`);
+    const base = looks.toLowerCase().replace(/^(the|a|an)\s+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').split('-').slice(0, 4).join('-') || 'thing';
+    const key = /^[a-z]/.test(base) ? base : `thing-${base}`;
+    let unique = key;
+    for (let n = 2; taken.has(unique); n++) unique = `${key}-${n}`;
+    const job = await fixPlace(ctx, slug, place, 'masks', `add ${unique}`, (c) => {
+      c.added[unique] = { looks };
+      if (kind) thingOf(c, unique).kind = kind;
+      if (c.things[unique]) delete c.things[unique].removed;
+    });
+    return { thing: unique, job };
+  },
+});
+
 defineAction({
   name: 'place_fix',
   description: 'The Fix it button of a place that failed or was never painted: rebuilds the place from the step it broke at (paint rewords by itself '
@@ -221,10 +295,12 @@ defineAction({
       if (key) {
         delete c.things[key];
         delete c.floors[key];
+        delete c.added[key];
         if (c.words) delete c.words.looks[key];
       } else {
         c.things = {};
         c.floors = {};
+        c.added = {};
         c.repaint = [];
         delete c.words;
       }

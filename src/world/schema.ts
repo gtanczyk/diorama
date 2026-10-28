@@ -15,6 +15,8 @@ export const Place = z.object({
   mood: z.string().min(3),
   things: z.array(Thing).min(1).max(10),
   exits: z.array(z.object({ to: Slug, via: Slug })),
+  /** Props the person took off the list (corrections.json, not world.json): the story's look lines on them are never clicked. */
+  taken: z.array(Slug).optional(),
 });
 
 export const World = z.object({

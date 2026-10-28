@@ -9,11 +9,12 @@ const H = 896;
 const KINDS = ['standing', 'wall', 'on-top', 'walk-on', 'flat'] as const;
 
 type Pic = { file: string; v: number | null } | null;
-type ThingRow = { key: string; kind: string; phrase: string; source: string; coarse: boolean; brushed?: boolean; stand: [number, number] | null };
+type ThingRow = { key: string; kind: string; phrase: string; source: string; coarse: boolean; brushed?: boolean; stand: [number, number] | null; removable?: boolean; why?: string };
 type FloorRow = { key: string; source: string; coarse: boolean; brushed?: boolean };
 type Stroke = { mode: 'add' | 'erase'; radius: number; points: [number, number][] };
 type Fixes = {
-  things: Record<string, { phrase?: string; box?: number[]; kind?: string; strokes: Stroke[]; stand?: [number, number] }>;
+  things: Record<string, { phrase?: string; box?: number[]; kind?: string; strokes: Stroke[]; stand?: [number, number]; removed?: boolean }>;
+  added?: Record<string, { looks: string }>;
   floors: Record<string, { add: string[]; remove: string[]; strokes: Stroke[] }>;
   repaint: Array<{ region: number[]; fix: string }>;
 };
@@ -130,7 +131,8 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
   const big = box && box[2] - box[0] > 8 && box[3] - box[1] > 8;
   const fixes = st?.corrections;
   const fixList = fixes ? [
-    ...Object.entries(fixes.things).map(([k, t]) => ({ key: k, what: [t.phrase && `"${t.phrase}"`, t.kind, t.box && 'box', t.strokes.length && `${t.strokes.length} strokes`, t.stand && 'stand'].filter(Boolean).join(', ') })),
+    ...Object.entries(fixes.added ?? {}).map(([k, a]) => ({ key: k, what: `added: "${a.looks}"` })),
+    ...Object.entries(fixes.things).map(([k, t]) => ({ key: k, what: [t.removed && 'taken off the list', t.phrase && `"${t.phrase}"`, t.kind, t.box && 'box', t.strokes.length && `${t.strokes.length} strokes`, t.stand && 'stand'].filter(Boolean).join(', ') })),
     ...Object.entries(fixes.floors).map(([k, f]) => ({ key: k, what: [f.add.length && `+${f.add.length} cells`, f.remove.length && `-${f.remove.length} cells`, f.strokes.length && `${f.strokes.length} strokes`].filter(Boolean).join(', ') })),
   ] : [];
 
@@ -182,8 +184,11 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
       )}
       {things.length > 0 && (
         <table class="things">
-          <thead><tr><th>Thing</th><th>Kind</th><th>SAM looks for</th><th>Mask</th></tr></thead>
-          <tbody>{things.map((t) => <ThingLine key={t.key} t={t} busy={busy} fix={(input) => act('mask_fix', { thing: t.key, ...input })} />)}</tbody>
+          <thead><tr><th>Thing</th><th>Kind</th><th>SAM looks for</th><th>Mask</th><th /></tr></thead>
+          <tbody>
+            {things.map((t) => <ThingLine key={t.key} t={t} busy={busy} fix={(input) => act('mask_fix', { thing: t.key, ...input })} remove={(paintOut) => act('thing_remove', { thing: t.key, paintOut })} />)}
+            <AddThing busy={busy} add={(looks, kind) => act('thing_add', { looks, ...(kind && { kind }) })} />
+          </tbody>
         </table>
       )}
       {floors.some((f) => f.coarse) && <p class="flag">Coarse floors: {floors.filter((f) => f.coarse).map((f) => f.key).join(', ')}. Brush them, or ask the agent to fix their cells.</p>}
@@ -200,7 +205,22 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
   );
 }
 
-function ThingLine({ t, busy, fix }: { t: ThingRow; busy: boolean; fix: (input: object) => void }) {
+/** The last row of the things: something painted that should be a thing of its own. */
+function AddThing({ busy, add }: { busy: boolean; add: (looks: string, kind: string) => void }) {
+  const [looks, setLooks] = useState('');
+  const [kind, setKind] = useState('');
+  const ok = looks.trim().length >= 3;
+  return (
+    <tr class="add-thing">
+      <td colSpan={2}><select value={kind} disabled={busy} title="How it meets the floor; Spark decides when left empty" onChange={(e) => setKind(e.currentTarget.value)}><option value="">kind: Spark decides</option>{KINDS.map((k) => <option value={k}>{k}</option>)}</select></td>
+      <td><form class="row" onSubmit={(e) => (e.preventDefault(), ok && (add(looks.trim(), kind), setLooks('')))}><input value={looks} placeholder="Add a thing that is painted here, e.g. the red bench" onInput={(e) => setLooks(e.currentTarget.value)} />{ok && <button type="submit" class="primary small" disabled={busy} title="It becomes a thing of its own: Spark finds it, SAM cuts it out, the place is checked again. 1 Spark and 1 SAM call">Add</button>}</form></td>
+      <td colSpan={2} />
+    </tr>
+  );
+}
+
+function ThingLine({ t, busy, fix, remove }: { t: ThingRow; busy: boolean; fix: (input: object) => void; remove: (paintOut: boolean) => void }) {
+  const [asking, setAsking] = useState(false);
   const [phrase, setPhrase] = useState(t.phrase);
   useEffect(() => setPhrase(t.phrase), [t.phrase]);
   return (
@@ -209,6 +229,15 @@ function ThingLine({ t, busy, fix }: { t: ThingRow; busy: boolean; fix: (input: 
       <td><select value={t.kind} disabled={busy} title={KIND_TIPS[t.kind] ?? 'What kind of thing it is'} onChange={(e) => fix({ kind: e.currentTarget.value })}>{KINDS.map((k) => <option value={k}>{k}</option>)}</select></td>
       <td><form class="row" onSubmit={(e) => (e.preventDefault(), phrase.trim() !== t.phrase && fix({ phrase: phrase.trim() }))}><input value={phrase} title="The words SAM searches the painting for. Change them and press Search" onInput={(e) => setPhrase(e.currentTarget.value)} />{phrase.trim() !== t.phrase && phrase.trim().length > 1 && <button type="submit" class="primary small" disabled={busy} title="SAM looks for the thing by these words. 1 SAM call">Search</button>}</form></td>
       <td><span class={`badge ${t.coarse ? 'fail' : 'ok'}`} title={t.coarse ? 'SAM did not find it: the mask is only a box' : undefined}>{t.source}{t.brushed ? ' + brush' : ''}</span></td>
+      <td class="remove">
+        {asking
+          ? <span class="row">
+              <button type="button" class="ghost small" disabled={busy} title="It stays in the picture, but is no longer a thing of its own. Free" onClick={() => (setAsking(false), remove(false))}>Keep it painted</button>
+              <button type="button" class="ghost small danger" disabled={busy} title="Muse paints it out of the picture, then the place is checked again. 1 Muse Image edit" onClick={() => (setAsking(false), remove(true))}>Paint it out</button>
+              <button type="button" class="ghost small" onClick={() => setAsking(false)}>Cancel</button>
+            </span>
+          : <button type="button" class="ghost small" disabled={busy || t.removable === false} title={t.removable === false ? `Can't remove: ${t.why}` : 'Take it off the list'} aria-label={`Remove ${t.key}`} onClick={() => setAsking(true)}>Remove</button>}
+      </td>
     </tr>
   );
 }

@@ -66,7 +66,7 @@ test('fix actions keep their fix in corrections.json and rebuild only that place
 
   const cleared = (await runAction('corrections_clear', { slug: 'w', place: 'dock' }, ctx('user'))) as { id: string; args: string[] };
   expect(cleared.args[3]).toBe('paint');
-  expect(readCorrections(place)).toEqual({ things: {}, floors: {}, repaint: [] });
+  expect(readCorrections(place)).toEqual({ things: {}, floors: {}, repaint: [], added: {} });
 });
 
 test('a locked place refuses the agent\'s fixes there, but not elsewhere', async () => {
@@ -211,7 +211,7 @@ test('the agent gets three fixes of a place that leave it unplayable; then it mu
 test('a moved NPC stands where the person put it, sized for the depth there; npc_move takes only NPCs', async () => {
   const { placeNpcs } = await import('../src/scene/corrections.ts');
   const layout = { horizon: 100, things: [{ key: 'franek', x: 300, footY: 500, width: 80, height: 200 }, { key: 'boat', x: 600, footY: 600, width: 200, height: 100 }] };
-  const moved = placeNpcs(layout, new Set(['franek']), { things: { franek: { at: [200, 300], strokes: [] }, boat: { at: [0, 0], strokes: [] } }, floors: {}, repaint: [] });
+  const moved = placeNpcs(layout, new Set(['franek']), { things: { franek: { at: [200, 300], strokes: [] }, boat: { at: [0, 0], strokes: [] } }, floors: {}, repaint: [], added: {} });
   expect(moved.things[0]).toEqual({ key: 'franek', x: 200, footY: 300, width: 40, height: 100 });
   expect(moved.things[1]).toEqual(layout.things[1]);
   const { dir, ctx } = world();
@@ -224,4 +224,24 @@ test('a moved NPC stands where the person put it, sized for the depth there; npc
   expect(job.args).toEqual(['build', 'w', '--from', 'derive', '--to', 'verify', '--place', 'dock']);
   expect(readCorrections(path.join(dir, 'places', 'dock')).things.franek.at).toEqual([200, 300]);
   await expect(runAction('npc_move', { slug: 'w', place: 'dock', npc: 'boat', at: [1, 1] }, ctx('user'))).rejects.toThrow(/no NPC/);
+});
+
+test('a prop comes off a place\'s list (kept painted or painted out) and a painted one goes on; story things stay', async () => {
+  const { dir, place, ctx } = world();
+  fs.writeFileSync(path.join(dir, 'world.json'), JSON.stringify({ title: 'W', pitch: 'A small test world for things.', style: 'ink and watercolour', start: 'dock', hero: { key: 'ola', looks: 'a girl in a yellow coat' }, places: [{ key: 'dock', shows: 'a wooden dock at night', mood: 'calm', things: [
+    { key: 'crate', role: 'prop', looks: 'a wooden crate' }, { key: 'oar', role: 'item', looks: 'an old oar' }, { key: 'net', role: 'prop', looks: 'a fishing net' }], exits: [] }] }));
+  fs.writeFileSync(path.join(place, 'masks.json'), JSON.stringify({ things: { crate: { box: [100, 500, 200, 600] } } }));
+  fs.writeFileSync(path.join(dir, 'story.json'), JSON.stringify({ interactions: [{ place: 'dock', thing: 'net', verb: 'take', say: 'Tangled.', do: [] }] }));
+  const kept = (await runAction('thing_remove', { slug: 'w', place: 'dock', thing: 'crate' }, ctx('user'))) as { args: string[] };
+  expect(kept.args[3]).toBe('masks');
+  await expect(runAction('thing_remove', { slug: 'w', place: 'dock', thing: 'oar' }, ctx('user'))).rejects.toThrow(/story_redo/);
+  await expect(runAction('thing_remove', { slug: 'w', place: 'dock', thing: 'net' }, ctx('user'))).rejects.toThrow(/story uses/);
+  const out = (await runAction('thing_remove', { slug: 'w', place: 'dock', thing: 'crate', paintOut: true }, ctx('user'))) as { args: string[] };
+  expect(out.args[3]).toBe('paint');
+  expect(readCorrections(place).repaint[0]).toEqual({ region: [84, 484, 216, 616], fix: 'Paint out the wooden crate: continue what is behind it, add nothing new' });
+  const added = (await runAction('thing_add', { slug: 'w', place: 'dock', looks: 'The red bench', kind: 'standing' }, ctx('agent'))) as { thing: string };
+  expect(added.thing).toBe('red-bench');
+  const { WorldFiles } = await import('../src/world/files.ts');
+  const things = new WorldFiles('w', path.dirname(dir)).world().places[0].things.map((t) => `${t.key}:${t.role}`);
+  expect(things).toEqual(['oar:item', 'net:prop', 'red-bench:prop']);
 });

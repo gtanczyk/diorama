@@ -6,7 +6,9 @@ import { withPlay } from '../scene/playbook.ts';
 import type { Verdict } from '../scene/verify.ts';
 import { readCorrections } from '../scene/corrections.ts';
 import { placeTrouble } from '../studio/trouble.ts';
+import { withThingEdits } from '../world/files.ts';
 import { Slug, World } from '../world/schema.ts';
+import { storyNeeds } from '../story/check.ts';
 import { ActionError, defineAction } from './registry.ts';
 
 const STAGES = [
@@ -117,7 +119,8 @@ defineAction({
     const dir = path.join(ctx.root, slug);
     // A world being built for the first time has no folder for its first seconds, but it has its job.
     if (!fs.existsSync(dir) && !ctx.jobs.list(slug).length) throw new ActionError(404, `no world ${slug} yet`);
-    const parsed = World.safeParse(readJson(path.join(dir, 'world.json')));
+    const raw = World.safeParse(readJson(path.join(dir, 'world.json')));
+    const parsed = raw.success ? { success: true as const, data: withThingEdits(raw.data, dir) } : raw;
     const build = readJson<{ steps?: Record<string, unknown> }>(path.join(dir, 'build.json'));
     const places = (parsed.success ? parsed.data.places : []).map((p) => {
       const at = (f: string) => path.join(dir, 'places', p.key, f);
@@ -167,13 +170,25 @@ defineAction({
     // A step that broke for this place in the last build stands before verify's errors: verify did not see it.
     const report = readJson<{ places?: Array<{ place: string; ok: boolean; issues?: Verdict['errors'] }> }>(path.join(ctx.root, slug, 'build.json'))?.places?.find((r) => r.place === place);
     const verdict = readJson<Verdict>(path.join(dir, 'verify.json'));
+    // Whether thing_remove takes a thing: a prop the story does not use (exits, items and people are the story's).
+    const raw = World.safeParse(readJson(path.join(ctx.root, slug, 'world.json')));
+    const roles = new Map((raw.success ? withThingEdits(raw.data, path.join(ctx.root, slug)).places.find((p) => p.key === place)?.things ?? [] : []).map((t) => [t.key, t.role]));
+    const storyText = fs.existsSync(path.join(ctx.root, slug, 'story.json')) ? fs.readFileSync(path.join(ctx.root, slug, 'story.json'), 'utf8') : '';
+    const added = readCorrections(dir).added;
+    const removable = (key: string) => {
+      const role = roles.get(key);
+      if (added[key]) return { role: 'prop', removable: true };
+      if (role !== 'prop') return { role, removable: false, why: `${role === 'npc' ? 'a person' : `an ${role ?? 'unknown thing'}`} in the story: ask the agent to change the story` };
+      if (storyText && storyNeeds(JSON.parse(storyText), place, key)) return { role, removable: false, why: 'the story uses it: ask the agent to change the story' };
+      return { role, removable: true };
+    };
     const broke = report?.issues?.filter((i) => i.code === 'STEP_FAILED') ?? [];
     return {
       playable: broke.length === 0 && (verdict?.ok ?? null),
       errors: [...broke, ...(verdict?.errors ?? [])].map((e) => withPlay(e, verdict?.flags)),
       place,
       pictures: { painting: picture('painting.png') ?? picture('blockin.png'), masks: picture('masks/overlay.png'), walk: picture('walk.png') },
-      things: Object.entries(masks?.things ?? {}).map(([key, t]) => ({ key, ...t, stand: geometry?.things.find((g) => g.key === key)?.stand ?? null })),
+      things: Object.entries(masks?.things ?? {}).map(([key, t]) => ({ key, ...t, stand: geometry?.things.find((g) => g.key === key)?.stand ?? null, ...removable(key) })),
       floors: Object.entries(masks?.floors ?? {}).map(([key, f]) => ({ key, ...f })),
       flagged: masks?.flagged ?? [],
       start: geometry?.start ?? null,

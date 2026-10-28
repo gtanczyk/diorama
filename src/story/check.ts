@@ -9,6 +9,17 @@ export type StoryReport = { issues: string[]; states: number; routes: Route[] };
 
 const MAX_STATES = 200_000;
 
+/** Whether the story needs a thing for more than a look line (what it gives, a lock, a change, a talk): then it stays. */
+export function storyNeeds(raw: unknown, place: string, thing: string): boolean {
+  const story = Story.safeParse(raw);
+  if (!story.success) return JSON.stringify(raw ?? '').includes(`"${thing}"`);
+  const s = story.data;
+  return s.interactions.some((i) => i.place === place && i.thing === thing && (i.verb !== 'look' || i.do.length > 0))
+    || s.locks.some((l) => l.place === place && l.via === thing)
+    || s.changes.some((c) => c.place === place && c.thing === thing)
+    || s.dialogues.some((d) => d.place === place && d.npc === thing);
+}
+
 export function storyNameIssues(world: World, story: Story): string[] {
   const issues: string[] = [];
   const place = (key: string) => world.places.find((p) => p.key === key);
@@ -41,6 +52,8 @@ export function storyNameIssues(world: World, story: Story): string[] {
   };
   story.interactions.forEach((it, i) => {
     const where = `interaction ${i + 1} (${it.verb} ${it.thing})`;
+    // A look line on a prop the person took off the place's list is never clicked; it does no harm.
+    if (it.verb === 'look' && !it.do.length && place(it.place)?.taken?.includes(it.thing)) return;
     thingIn(where, it.place, it.thing, it.verb === 'talk' ? 'npc' : undefined);
     // Clicking an exit always walks through it (and obeys its lock), so an exit only answers "look".
     const exit = place(it.place)?.things.find((t) => t.key === it.thing)?.role === 'exit';
