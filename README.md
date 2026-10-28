@@ -1,10 +1,10 @@
 # Diorama
 
-**Type one sentence. Walk around in the painted game it becomes.**
-
 <p align="center">
-  <img src="docs/images/how-a-place-is-made.gif" width="720" alt="One place of a Diorama world being made: Muse Spark's block-in, Muse Image's painting, SAM 3.1's cut-outs, the depth map, the measured walk grid, and the hero walking in it">
+  <img src="docs/images/play.gif" width="720" alt="Playing a Diorama world: a girl with a candle lantern walks through a moonlit garden at a click, and says a line about the boat by the shore">
 </p>
+
+**Type one sentence. Walk around in the painted game it becomes.**
 
 Diorama is a local tool that turns a story idea into a small point-and-click adventure: painted places, a hero and characters who walk and talk, things to pick up and use, sound and voices, and endings that are checked to be reachable. Meta's models do the creative work; code measures and checks every result, so what comes out is playable, not only pretty. Every step writes plain files, and every fix you make survives the next rebuild.
 
@@ -55,7 +55,7 @@ Also used: Depth Anything V2 (ONNX, on the CPU) for shadows and parallax, Eleven
 
 ## How a place is made
 
-<p align="center"><img src="docs/images/pipeline.jpg" width="720" alt="Six stages of one place: block-in, painting, masks, depth, walk grid, play"></p>
+<p align="center"><img src="docs/images/how-a-place-is-made.gif" width="720" alt="One place being made: Muse Spark's block-in, Muse Image's painting, SAM 3.1's cut-outs, the depth map, the measured walk grid, and the hero walking in it"></p>
 
 1. **world, story**: Spark turns the sentence into places, a cast, items, locks and endings, and checks every ending can be reached.
 2. **layout, paint**: Spark lays out each place as a block-in; Muse paints over it; a Spark critic marks what is wrong and Muse repaints only those regions.
