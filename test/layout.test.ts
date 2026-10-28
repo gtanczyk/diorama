@@ -65,3 +65,21 @@ test('a close-up camera is caught from the things\' sizes', () => {
   expect(closeUpIssues(bakery)[0]).toMatch(/camera is too close/);
   expect(closeUpIssues(layout())).toEqual([]);
 });
+
+test('a stall standing across the only path to the back floor is caught; a bridge across it is not', () => {
+  const market: Place = { key: 'lantern-market', shows: 'square, stall, canal', mood: 'night', exits: [], things: [
+    { key: 'wooden-stall', role: 'prop', looks: 'wide stall' }, { key: 'market-path', role: 'exit', looks: 'path' }, { key: 'curved-bridge', role: 'prop', looks: 'low bridge' },
+  ] };
+  const floors: Layout['floors'] = [
+    { key: 'stone-square', is: 'square', colour: '#555555', outline: [[0, 896], [0, 560], [1200, 560], [1200, 896]] },
+    { key: 'market-path-walk', is: 'path', colour: '#555555', outline: [[500, 560], [700, 560], [640, 410], [560, 410]] },
+  ];
+  const things = (stall: { x: number; footY: number }) => [
+    { key: 'wooden-stall', colour: '#7b4e2c', width: 440, height: 340, metres: 3.2, ...stall },
+    { key: 'market-path', colour: '#5a6d80', x: 600, footY: 420, width: 130, height: 100, metres: 2.4 },
+    { key: 'curved-bridge', colour: '#777777', x: 600, footY: 700, width: 520, height: 170, metres: 1.1 },
+  ];
+  const across = layoutIssues(layout({ horizon: 360, floors, things: things({ x: 600, footY: 645 }) }), market);
+  expect(across).toEqual(expect.arrayContaining([expect.stringMatching(/^floor market-path-walk is cut off by wooden-stall/)]));
+  expect(layoutIssues(layout({ horizon: 360, floors, things: things({ x: 250, footY: 700 }) }), market)).toEqual([]);
+});

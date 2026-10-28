@@ -1,7 +1,7 @@
 // layout.json: where things stand in a place, as a block-in for the painter.
 // Spark lays it out; the gate checks it before any paint is spent on it.
 import { z } from 'zod';
-import { dilate, intersect, polygonMask } from '../image/raster.ts';
+import { components, dilate, intersect, polygonMask, rectMask, subtract, unionAll } from '../image/raster.ts';
 import { maskArea } from '../image/mask.ts';
 import type { Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
@@ -87,6 +87,43 @@ export function reachIssues(layout: Layout, place: Place): string[] {
     if (on < 0) issues.push(`${t.key}: its foot (${Math.round(t.x)}, ${Math.round(t.footY)}) is on no floor; the hero must be able to walk up to it`);
     else if (!joined.has(on)) issues.push(`${t.key} stands on ${layout.floors[on].key}, which the hero can't reach`);
   }
+  if (issues.length === 0) issues.push(...blockedIssues(layout, place, masks));
+  return issues;
+}
+
+/**
+ * Floors that touch can still be cut apart by what stands on them: a wide market stall set right across
+ * the only path to the canal (night-market lantern-market) leaves the path behind it unreachable. Each
+ * standing thing's foot is in the way, as deep as derive will make it; exits (a path, stairs, a door)
+ * and people are not, and small things are stepped round.
+ */
+export function blockedIssues(layout: Layout, place: Place, masks = floorMasks(layout)): string[] {
+  const { width: W, height: H } = FRAME;
+  const passable = new Set(place.things.filter((t) => t.role === 'exit' || t.role === 'npc').map((t) => t.key));
+  // Low wide things (a bridge, a rug, still water) are walked on or over, not round.
+  const blocks = layout.things.filter((t) => !passable.has(t.key) && t.metres >= 0.5 && t.height >= 0.5 * t.width).map((t) => {
+    const depth = Math.max(12, 0.35 * t.width);
+    return { key: t.key, mask: rectMask(W / Q, H / Q, [(t.x - t.width / 2) / Q, (t.footY - depth) / Q, (t.x + t.width / 2) / Q, t.footY / Q]) };
+  });
+  const walk = subtract(unionAll(W / Q, H / Q, masks), unionAll(W / Q, H / Q, blocks.map((b) => b.mask)));
+  const parts = components(walk);
+  const main = parts.reduce((best, c) => (maskArea(intersect(c, masks[0])) > maskArea(intersect(best, masks[0])) ? c : best), parts[0]);
+  if (!main) return [];
+  const reached = dilate(main, 2);
+  const issues: string[] = [];
+  layout.floors.forEach((f, i) => {
+    if (i === 0 || maskArea(intersect(reached, subtract(masks[i], unionAll(W / Q, H / Q, blocks.map((b) => b.mask))))) > 0) return;
+    const across = blocks.filter((b) => maskArea(intersect(b.mask, dilate(masks[i], 2))) > 0).map((b) => b.key);
+    issues.push(`floor ${f.key} is cut off by ${across.join(', ') || 'things'} standing across the way to it: move ${across.length > 1 ? 'them' : 'it'} aside or widen the floor so the hero can walk round`);
+  });
+  const used = new Set(place.things.filter((t) => t.role !== 'prop').map((t) => t.key));
+  for (const t of layout.things) {
+    if (!used.has(t.key)) continue;
+    const x = Math.round(Math.min(W - 1, Math.max(0, t.x)) / Q), y = Math.round(Math.min(H - 1, Math.max(0, t.footY)) / Q);
+    // A thing on a table is reached at the table.
+    const onTop = blocks.some((b) => b.key !== t.key && dilate(b.mask, 2).bits[y * b.mask.width + x]);
+    if (!onTop && masks.some((m) => m.bits[y * m.width + x]) && !dilate(reached, 4).bits[y * reached.width + x]) issues.push(`${t.key}: things stand between the hero and it; leave a way to walk up to it`);
+  }
   return issues;
 }
 
@@ -123,7 +160,7 @@ Give:
 - horizon: y of the horizon, or of where the back wall meets the floor (120 to 520)
 - sky and ground: the main colour above and below it
 - floors: 1 to 4 walkable areas below the horizon as outlines, nearest first; the first reaches the bottom edge; every other floor touches one listed before it (a bridge, steps or a path across water or a drop is a floor too), so the hero can walk everywhere; leave room to walk around things
-- things: every thing as a box standing on the floor: x (centre), footY (where it touches the floor), width, height in px, metres (real height), colour (main colour); nearer things sit lower and are bigger; exits sit at the edge of a floor; every exit, item and person stands on a floor
+- things: every thing as a box standing on the floor: x (centre), footY (where it touches the floor), width, height in px, metres (real height), colour (main colour); nearer things sit lower and are bigger; exits sit at the edge of a floor; every exit, item and person stands on a floor; leave a way round every big thing, and never stand one across the only way to a floor
 - lights: up to 6 visible sources (lamps, fires, windows) with x, y, colour
 
 Reply with JSON only:
