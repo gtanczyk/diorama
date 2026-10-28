@@ -10,4 +10,5 @@ The 3-minute demo film is rendered from data, so every improvement to the tool f
   - `diorama reel <slug> [place]`: the build-up of a place, one beat per step, captioned with the model that made it.
   - `diorama playthrough <slug> [ending] --video`: a story ending played in the browser.
   - `footage/stills/`: single reel stills (from `worlds/<slug>/film/reel-<place>/`) held as technique close-ups.
+  - `npx tsx app/demo/studio-take.ts`: Studio takes from the atelier, a world made from an idea (`--new`) or changed by the agent; writes take.mp4 + take.json beats.
   - `npx tsx app/demo/term.ts <log.txt> "<command>" footage/term.mp4`: the terminal shot, typed and scrolled from a real build log.
