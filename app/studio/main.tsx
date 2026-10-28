@@ -663,7 +663,8 @@ function Workshop({ slug }: { slug: string }) {
   const failed = last && last.state === 'failed' ? last : null;
   
   const playable = !!status?.placeDetail.some((p) => p.stages.layout);
-  const building = job?.args[0] === 'build' ? job : null;
+  // A build, or one step run on its own (the agent's story_redo): the stage shows its bar.
+  const building = job && (job.args[0] === 'build' || steps.includes(job.args[0])) ? job : null;
   const shown = job;
   // How far the watched build is, weighed by how long each step took last time.
   const plan = jobPlan ?? steps;
@@ -680,7 +681,17 @@ function Workshop({ slug }: { slug: string }) {
   // The build stage: the running job's own steps (the build says them; until then, its arguments).
   const arg = (name: string) => (job && job.args.includes(name) ? job.args[job.args.indexOf(name) + 1] : undefined);
   const ownPlan = jobPlan ?? (job?.args[0] === 'build' ? steps.slice(arg('--from') ? steps.indexOf(arg('--from')!) : 0, arg('--to') ? steps.indexOf(arg('--to')!) + 1 : steps.length) : []);
-  const liveBuild: Live = { plan: job ? ownPlan : [], done: jobDone, running, since, calls: jobCalls, lastCall, tail: jobTail, cut };
+  // A job that runs one step on its own (the agent's story_redo runs `story`, a cast redo `cast`) says no steps:
+  // its command is the step, running since the job started.
+  const lone = job && job.args[0] !== 'build' && steps.includes(job.args[0]) ? job.args[0] : null;
+  const loneRuns = !!lone && job!.state === 'running' && jobDone[lone] === undefined && !Object.values(running).includes('run');
+  const liveBuild: Live = {
+    plan: job ? (ownPlan.length ? ownPlan : lone ? [lone] : []) : [],
+    done: jobDone,
+    running: loneRuns ? { ...running, [lone!]: 'run' } : running,
+    since: loneRuns && job!.startedAt ? { ...since, [lone!]: Date.parse(job!.startedAt) } : since,
+    calls: jobCalls, lastCall, tail: jobTail, cut,
+  };
   // On stage: the place picked; else a new picture as it lands; else, in turn, the places a step is working on.
   const busy = building ? (status?.placeDetail ?? []).filter((p) => working(p, liveBuild)).map((p) => p.key) : [];
   useEffect(() => {
