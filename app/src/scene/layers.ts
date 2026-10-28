@@ -30,7 +30,9 @@ export async function farFlats(memo: Memo, place: Place, backdrop: Buffer, horiz
   const prompt = `This is a painted backdrop of a game scene. The horizon is at y=${Math.round(horizonY)} of ${H} px.
 List the separate bands of scenery above and around the horizon, from the FARTHEST to the NEAREST, the way a stage has painted flats one behind another: for example distant mountains, then hills, then a town or a castle on a hill, then a row of houses or trees across the water.
 Do not list the sky, clouds, the sun, water, the ground the characters walk on, or anything in the foreground.
-List 1 to 4 bands, each one a different distance. Give each a short noun phrase that an image segmentation model can search for ("distant mountains", "row of townhouses", "castle on a hill").
+Inside a room (a bedroom, a kitchen, a hall, a cellar) its own walls, ceiling, doors and windows are not far scenery: list no bands for them. List bands there only for a far view seen through a big opening (a wide window onto a city, an open gate onto hills).
+List no bands at all when there is no far view: {"bands": []}.
+List up to 4 bands, each one a different distance. Give each a short noun phrase that an image segmentation model can search for ("distant mountains", "row of townhouses", "castle on a hill").
 Answer only with JSON: {"bands": [{"phrase": "...", "what": "one short sentence"}]}`;
   const { bands } = Bands.parse(await askSparkJson(memo, { label: `flats:${place.key}`, prompt, images: [backdrop] }));
   if (!bands.length) return undefined;

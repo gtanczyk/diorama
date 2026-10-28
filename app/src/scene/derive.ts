@@ -14,7 +14,7 @@ import { blobsOf, footDepth, lineYAt, simplifyLine, type Blob } from './occluder
 import { findShadows, localLight, type Shadows } from './shadows.ts';
 import { atFrame, findSteps, STAIRS } from './stairs.ts';
 import { paintingFor, reaches, type Carry } from './carry.ts';
-import { PERSON_M, probePoints, scaleFrom, sparkPeople, type Sample, type Scale } from './scale.ts';
+import { doorCheck, isDoor, PERSON_M, probePoints, scaleFrom, sparkPeople, type DoorRef, type Sample, type Scale } from './scale.ts';
 import { CELL, connect, gridFromPixels, islands, nearestRoomy, reach, roomy, type Grid } from './walk.ts';
 import { samFind } from '../meta/sam.ts';
 
@@ -73,6 +73,28 @@ export function footprintMask(blobs: Blob[]): Mask {
     }
   }
   return out;
+}
+
+/**
+ * Doors standing on the floor, measured on their masks (the tallest piece): the person at a door's foot, and
+ * the door as a reference for Spark. A door cut off by the top of the frame only says how tall a person is at least.
+ */
+export function doorsOn(things: ThingIn[], layout: Layout, ground: Mask): Array<{ door: DoorRef; ref: { key: string; x: number; footY: number; px: number; metres: number } }> {
+  return things.flatMap((t) => {
+    const metres = layout.things.find((l) => l.key === t.key)?.metres;
+    if (t.kind === 'walk-on' || t.kind === 'flat' || t.coarse || !isDoor(`${t.key} ${t.phrase ?? ''}`, metres)) return [];
+    const b = blobsOf(t.key, t.mask).sort((p, q) => q.baseY - q.box[1] - (p.baseY - p.box[1]))[0];
+    if (!b) return [];
+    const tall = b.baseY - b.box[1];
+    const x = Math.round((b.box[0] + b.box[2]) / 2);
+    // On the floor: floor just under its foot, in the middle half of its width.
+    let floorBelow = false;
+    for (let y = Math.round(b.baseY); y < Math.min(H, b.baseY + 16) && !floorBelow; y++) {
+      for (let u = Math.round(b.box[0] + (b.box[2] - b.box[0]) / 4); u <= x + (b.box[2] - b.box[0]) / 4; u += 2) if (ground.bits[y * W + u]) floorBelow = true;
+    }
+    if (!floorBelow || tall < 40 || !metres) return [];
+    return [{ door: { key: t.key, y: b.baseY, px: (tall * PERSON_M) / metres, atLeast: b.box[1] <= 2 }, ref: { key: t.key, x, footY: b.baseY, px: tall, metres } }];
+  });
 }
 
 /** Scale anchors from things with a real height in the layout, measured on their masks. */
@@ -183,10 +205,12 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     for (let x = CELL / 2; x < W; x += CELL) if (floorAny.bits[y * W + x]) byRow.set(y, [...(byRow.get(y) ?? []), x]);
   }
   const sharpOnFloor = onFloor.filter((b) => !things.find((t) => t.key === b.thing)!.coarse);
-  const refs = sharpOnFloor.flatMap((b) => {
+  // Doors on the floor (a wall thing, so not among the standing ones): the plainest measure of a person there is.
+  const doors = doorsOn(things, layout, ground);
+  const refs = [...sharpOnFloor.flatMap((b) => {
     const metres = layout.things.find((t) => t.key === b.thing)?.metres;
     return metres ? [{ key: b.thing, x: (b.box[0] + b.box[2]) / 2, footY: b.baseY, px: b.baseY - b.box[1], metres }] : [];
-  });
+  }), ...doors.map((d) => d.ref)];
   // Spark's questions about one painting are asked side by side: they do not wait on each other.
   // Painted shadows on the open floor, and the light they tell of.
   // Casters: sharp things on the floor, and things resting on walkable ground (a basket on the steps) too.
@@ -247,14 +271,23 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
       log('scale kept from the last build, when Spark answered');
     }
   }
+  let fitted: Sample[] = [];
   for (const [source, samples] of kept || scale ? [] : ([['spark', probes], ['anchors', anchorSamples(sharpOnFloor, layout)]] as const)) {
     if (source === 'spark' && sparkFailed) continue;
     const fit = scaleFrom(samples, topY, layout.horizon, source);
     if (fit.scale) {
       scale = fit.scale;
+      fitted = samples;
       break;
     }
     flag(`scale from ${source}: ${fit.why}`);
+  }
+  // A person by the door is held against it: the nearest door (the tallest in the painting) is measured best.
+  const door = [...doors].sort((a, b) => b.door.px - a.door.px)[0]?.door;
+  if (scale && door && !kept) {
+    const checked = doorCheck(scale, fitted, door, topY);
+    if (checked?.scale) scale = checked.scale;
+    if (checked) flag(`scale: ${checked.why}`);
   }
   if (!scale) {
     scale = { horizonY: Math.min(layout.horizon, topY - 40), pxPerY: 0.5, source: 'layout' };

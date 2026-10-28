@@ -1168,8 +1168,10 @@ class Game {
       ctx.drawImage(backdrop, 0, h, W, H - h, 0, h, W, H - h);
       ctx.restore();
       // Between the horizon and the floor's back edge stands the upright band (a wall, a railing): column by
-      // column it slides as one piece with the edge it stands on.
+      // column it slides as one piece with the edge it stands on. With no far view (no sky, no flats: a room)
+      // what is above the horizon is that same wall, so the band reaches the top: a door is not cut in two at eye level.
       const edge = this.place.edge;
+      const top = this.place.far?.sky || this.place.far?.flats.length ? h : 0;
       for (let c = 0; c < edge.length; c++) {
         const e = Math.round(edge[c]);
         if (e <= h + 1) continue;
@@ -1177,7 +1179,7 @@ class Game {
         const w = Math.min(g.cell + 1, W - x0);
         if (w <= 0) break;
         const [sx, sy] = shiftAt(g, p, e);
-        ctx.drawImage(backdrop, x0, h, w, e - h + 1, x0 + sx, h + sy, w, e - h + 1);
+        ctx.drawImage(backdrop, x0, top, w, e - top + 1, x0 + sx, top + sy, w, e - top + 1);
       }
       this.drawWater(p);
       this.drawMist(p);

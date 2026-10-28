@@ -106,3 +106,43 @@ Reply with JSON only: {"people": [{"x": 0, "y": 0, "px": 0}]}`;
   const { people } = People.parse(await askSparkJson(memo, { label, prompt, images: [painting] }));
   return people.filter((p) => p.px > 10 && p.px < 900);
 }
+
+/**
+ * A door on the floor: a person standing at its foot is about PERSON_M / metres of its height. `atLeast` when
+ * the frame cuts its top off, so the person is at least that tall there.
+ */
+export type DoorRef = { key: string; y: number; px: number; atLeast: boolean };
+
+/** A door the scale may disagree with by this much before it is pulled to the door. */
+const DOOR_TOL = { low: 0.85, high: 1.3 };
+
+/**
+ * The scale held against a door. Spark judges a person from the whole picture and, in a close-up room, shrank
+ * the hero at the back to half the door's height; nothing in a room says how tall a person is as plainly as
+ * its door. When the scale disagrees, the line is fitted through the door's person with Spark's slope
+ * (least squares on the other samples), else with the old slope through the door. Undefined when it agrees.
+ */
+export function doorCheck(scale: Scale, samples: Sample[], door: DoorRef, topY: number): { scale?: Scale; why: string } | undefined {
+  const implied = scale.pxPerY * (door.y - scale.horizonY);
+  const tooSmall = implied < DOOR_TOL.low * door.px;
+  const tooBig = !door.atLeast && implied > DOOR_TOL.high * door.px;
+  if (!tooSmall && !tooBig) return undefined;
+  const said = `a person by ${door.key} would be ${Math.round(implied)} px, the door says ${door.atLeast ? 'at least ' : ''}${Math.round(door.px)} px`;
+  const fits = (c: number, h: number) => c > SLOPE.min && c < SLOPE.max && h <= topY - 20;
+  const usable = samples.filter((s) => Math.abs(s.y - door.y) > 20);
+  const den = usable.reduce((s, p) => s + (p.y - door.y) ** 2, 0);
+  const slope = den > 0 ? usable.reduce((s, p) => s + (p.y - door.y) * (p.px - door.px), 0) / den : 0;
+  for (const c of [slope, scale.pxPerY]) {
+    const h = door.y - door.px / c;
+    if (c > 0 && fits(c, h)) return { scale: { ...scale, horizonY: Math.round(h), pxPerY: round3(c) }, why: `${said}: scale set through the door` };
+  }
+  return { why: `${said}, and no plausible line goes through it` };
+}
+
+/** Words that name a door a person walks through (not a trapdoor or a door mat). */
+const DOOR_WORD = /(^|[^a-z])(door|doorway)s?([^a-z]|$)/i;
+const NOT_A_DOOR = /trap|mat|knob|handle|bell|oven|fridge|cupboard|cabinet|wardrobe|closet|locker|car\b/i;
+
+export function isDoor(name: string, metres: number | undefined): boolean {
+  return DOOR_WORD.test(name) && !NOT_A_DOOR.test(name) && (metres ?? 0) >= 1.8;
+}
