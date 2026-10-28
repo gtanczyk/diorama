@@ -53,6 +53,8 @@ export type Live = {
   /** Calls sent per model since the job began, and the last one. */
   calls: Record<string, number>;
   lastCall: { by: string; label: string; at: number } | null;
+  /** Per place, the things SAM has cut out so far in this job (from its `mask:place/thing` calls). */
+  cut: Record<string, string[]>;
   tail: string;
 };
 
@@ -219,6 +221,8 @@ export function Stage({ slug, place, live, building }: { slug: string; place: St
           if (s.layer === 'depth') return [base && <img key={`${s.layer}-base`} class="layer" src={fileUrl(slug, base.file, base.v)} alt="" />, <DepthLayer key={`${s.layer}-${l.v}`} class={`${cls} depth`} src={fileUrl(slug, l.file, l.v)} />];
           return <img key={`${s.layer}-${l.v}`} class={cls} src={fileUrl(slug, l.file, l.v)} alt={`${place.key}: ${s.title}`} />;
         })}
+        {/* Cutting out: Spark's boxes for each thing, filled in as SAM returns its mask. Real progress, not a sweep. */}
+        {busy?.step === 'masks' && <Finds slug={slug} place={place.key} cut={live.cut[place.key] ?? []} />}
         {busy && <div class={`scan ${busy.step}`} />}
         {caption && (
           <figcaption>
@@ -386,5 +390,34 @@ export function Crew({ feed, building, playable, place, onAsk, onClose }: { feed
         {ideas.map((t) => <button type="button" class="ghost small" disabled={building || !playable} title={building ? 'After the build' : 'Sends this to the agent below'} onClick={() => onAsk(t)}>{t}</button>)}
       </div>
     </section>
+  );
+}
+
+type Located = { things?: Record<string, { box?: [number, number, number, number]; phrase?: string }> };
+
+/** The things Muse Spark located on a painting, as boxes; each turns solid when SAM 3.1 has cut it out. */
+function Finds({ slug, place, cut }: { slug: string; place: string; cut: string[] }) {
+  const [found, setFound] = useState<Located | null>(null);
+  // locate.json is written once Spark has looked; asked again as SAM answers, until it is there.
+  useEffect(() => {
+    if (found?.things) return;
+    fetch(fileUrl(slug, `places/${place}/locate.json`, Date.now()), { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((j) => j && setFound(j as Located)).catch(() => {});
+  }, [slug, place, cut.length]);
+  useEffect(() => setFound(null), [place]);
+  const things = Object.entries(found?.things ?? {}).filter(([, t]) => t.box);
+  if (!things.length) return null;
+  return (
+    <svg class="finds" viewBox="0 0 1200 896" preserveAspectRatio="none" aria-label={`${cut.length} of ${things.length} things cut out`}>
+      {things.map(([key, t], i) => {
+        const [x0, y0, x1, y1] = t.box!;
+        const done = cut.includes(key);
+        return (
+          <g key={key} class={done ? 'cut' : 'look'} style={{ animationDelay: `${i * 0.08}s` }}>
+            <rect x={x0 + 3} y={y0 + 3} width={Math.max(0, x1 - x0 - 6)} height={Math.max(0, y1 - y0 - 6)} rx="10" />
+            <text x={x0 + 14} y={y0 + 34}>{done ? '✓ ' : ''}{key}</text>
+          </g>
+        );
+      })}
+    </svg>
   );
 }

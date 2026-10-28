@@ -411,6 +411,7 @@ function Workshop({ slug }: { slug: string }) {
   const [jobCalls, setJobCalls] = useState<Record<string, number>>({});
   const [lastCall, setLastCall] = useState<Live['lastCall']>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [cut, setCut] = useState<Record<string, string[]>>({});
   const [crewOff, setCrewOff] = useState(false);
   const feedId = useRef(0);
   const toFeed = (by: string | null, text: string) => setFeed((f) => [{ id: ++feedId.current, by, text, at: Date.now() }, ...f].slice(0, 30));
@@ -457,6 +458,9 @@ function Workshop({ slug }: { slug: string }) {
         case 'step.end': toFeed(null, `${e.step} done`); setJobDone((d) => ({ ...d, [String(e.step)]: Number(e.seconds) })); setRunning((r) => { const n = { ...r }; delete n[String(e.step)]; return n; }); soon(); return add(e, `✓ ${e.step} · ${e.seconds}s`, 'step');
         case 'step.fail': setRunning((r) => ({ ...r, [String(e.step)]: 'fail' })); return add(e, `✕ ${e.step}: ${e.error}`, 'err');
         case 'call': {
+          // A mask from the memo is still a thing cut out: the stage fills its box either way.
+          const m = /^mask:([^/]+)\/([^~#]+)/.exec(String(e.label ?? ''));
+          if (m && e.model === 'sam') setCut((c) => ({ ...c, [m[1]]: [...new Set([...(c[m[1]] ?? []), m[2]])] }));
           if (e.hit) return;
           setCalls((c) => c + 1);
           const by = MODEL_NAME[String(e.model)] ?? String(e.model);
@@ -472,7 +476,7 @@ function Workshop({ slug }: { slug: string }) {
         }
         case 'feedback.changed': return soon();
         case 'job.start': case 'job.end': case 'job.queued': {
-          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setFeed([]), setCrewOff(false));
+          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setFeed([]), setCrewOff(false), setCut({}));
           const job = e.job as Job;
           soon();
           // What the agent changed shows in an open game at once; after the person's own builds the banner offers it.
@@ -540,7 +544,7 @@ function Workshop({ slug }: { slug: string }) {
   // The build stage: the running job's own steps (the build says them; until then, its arguments).
   const arg = (name: string) => (job && job.args.includes(name) ? job.args[job.args.indexOf(name) + 1] : undefined);
   const ownPlan = jobPlan ?? (job?.args[0] === 'build' ? steps.slice(arg('--from') ? steps.indexOf(arg('--from')!) : 0, arg('--to') ? steps.indexOf(arg('--to')!) + 1 : steps.length) : []);
-  const liveBuild: Live = { plan: job ? ownPlan : [], done: jobDone, running, since, calls: jobCalls, lastCall, tail: jobTail };
+  const liveBuild: Live = { plan: job ? ownPlan : [], done: jobDone, running, since, calls: jobCalls, lastCall, tail: jobTail, cut };
   // On stage: the place picked; else a new picture as it lands; else, in turn, the places a step is working on.
   const busy = building ? (status?.placeDetail ?? []).filter((p) => working(p, liveBuild)).map((p) => p.key) : [];
   useEffect(() => {
