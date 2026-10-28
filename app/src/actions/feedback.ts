@@ -27,7 +27,8 @@ function writeNotes(ctx: ActionContext, slug: string, notes: Note[]) {
 
 defineAction({
   name: 'feedback_add',
-  description: 'Leave a note on a world or on a spot of a place (painting pixels) for later: what looks or plays wrong.',
+  description: 'Leave a note on a world or on a spot of a place (painting pixels) for later: what looks or plays wrong. The person\'s own notes come from the Studio; '
+    + 'as the agent, add one only when the person asks you to note something, never as a way to report what you could not fix (say that in your answer).',
   input: z.object({ slug: Slug, text: z.string().min(2).max(2000), place: z.string().min(1).optional(), point: z.tuple([z.number(), z.number()]).optional() }),
   async run({ slug, text, place, point }, ctx) {
     if (!fs.existsSync(path.join(ctx.root, slug))) throw new ActionError(404, `no world ${slug} yet`);

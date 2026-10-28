@@ -735,8 +735,8 @@ function Workshop({ slug }: { slug: string }) {
         </Card>
       )}
       {openNotes.length > 0 && !job && !agentBusy && (
-        <Card kind={`Your notes · ${openNotes.length}`}>
-          {openNotes.slice(0, 3).map((n) => <p>{n.place ? `${nice(n.place)}: ` : ''}{n.text}</p>)}
+        <Card kind={`${openNotes.every((n) => n.by === 'agent') ? 'The agent noted' : openNotes.some((n) => n.by === 'agent') ? 'Open notes' : 'Your notes'} · ${openNotes.length}`}>
+          {openNotes.slice(0, 3).map((n) => <p>{n.by === 'agent' && openNotes.some((x) => x.by !== 'agent') ? <em>the agent: </em> : ''}{n.place ? `${nice(n.place)}: ` : ''}{n.text}</p>)}
           <div class="btns"><button type="button" class="ghost small" onClick={() => setNotesOpen(true)}>All notes</button><button type="button" class="ghost small" title="The agent fixes each open note and closes it with what it did" onClick={() => void ask(`Go through my ${openNotes.length} open note${openNotes.length > 1 ? 's' : ''} (feedback_pending): fix each one and close it with feedback_done.`)}>Hand to the agent</button></div>
         </Card>
       )}
