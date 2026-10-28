@@ -103,7 +103,7 @@ function useReplay(slug: string, file: string | null, speed: number): [SessionSt
   return [state, done];
 }
 
-type Offer = { name: string; label: string; installed: boolean; using: boolean };
+type Offer = { name: string; label: string; agent?: string; installed: boolean; using: boolean };
 
 type Session = { file: string; started: string | null; agents: string[]; prompts: string[]; turns: number; replayable: boolean };
 
@@ -169,6 +169,10 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
   useEffect(() => void (replay || loadOffers()), [slug]);
   const current = offers.find((o) => o.using);
   const running = state?.status === 'running';
+  // Before the first message the agent is a choice; after it, the conversation is handed over instead.
+  const talked = (state?.turns.length ?? 0) > 0;
+  const others = offers.filter((o) => o.installed && !o.using);
+  const labelOf = (agent: string) => offers.find((o) => o.agent === agent || o.name === agent)?.label ?? agent;
   const post = async (verb: string, body: object = {}) => {
     setError('');
     const res = await fetch(`/api/agent/${slug}/${verb}`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -253,18 +257,29 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
         foldSteps
         renderPrompt={(text) => shownPrompt(text, slug)}
         notices={notices}
-        renderAfterTurn={afterTurn && ((turn: SessionTurn, index: number) => afterTurn(turn, index, index === (state?.turns.length ?? 0) - 1) as never)}
+        renderAfterTurn={(turn: SessionTurn, index: number) => {
+          const next = state?.turns[index + 1];
+          const handover = next && next.agent !== turn.agent ? <p class="handover">{labelOf(turn.agent)} handed over to {labelOf(next.agent)}</p> : null;
+          const after = afterTurn?.(turn, index, index === (state?.turns.length ?? 0) - 1);
+          return (handover || after ? <>{after}{handover}</> : null) as never;
+        }}
         renderFooter={footer && (() => footer(running) as never)}
         placeholder={running ? undefined : picked ? `What about the ${picked.name}?` : `Ask for a change, or click something in the picture…`}
         theme="light"
         disabled={!!replay || !live}
         header={
           <div class="row">
-            {offers.length > 1
-              ? <select class="agent-pick" aria-label="Agent" title={running ? 'Stop the agent or wait to switch' : 'A new agent starts a fresh session; the conversation stays on screen'} disabled={running} value={current?.name} onChange={(e) => void choose(e.currentTarget.value)}>
+            {offers.length > 1 && !talked
+              ? <select class="agent-pick" aria-label="Agent" title="Who to talk to. Once you have talked, you can hand the conversation over to another agent" disabled={running} value={current?.name} onChange={(e) => void choose(e.currentTarget.value)}>
                   {offers.map((o) => <option value={o.name} disabled={!o.installed}>{o.label}{o.installed ? '' : ' (not installed)'}</option>)}
                 </select>
               : <h2>{current?.label ?? 'Muse Code'}</h2>}
+            {talked && !replay && others.length > 0 && (
+              <select class="agent-hand" aria-label="Hand over to another agent" title={running ? 'Stop the agent or wait to hand over' : 'Another agent takes over this conversation: it reads everything said so far first'} disabled={running} value="" onChange={(e) => void choose(e.currentTarget.value)}>
+                <option value="" disabled>Hand over…</option>
+                {others.map((o) => <option value={o.name}>to {o.label}</option>)}
+              </select>
+            )}
             <span class="grow" />
             {replay
               ? <span class="live on">{replayDone ? 'replay done' : 'replay'}</span>

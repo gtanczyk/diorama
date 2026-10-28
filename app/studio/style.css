@@ -831,3 +831,9 @@ button:not(.spot, .thumb, .who):active:not(:disabled) { transform: translateY(1p
 .lightbox { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 32px; background: rgba(28, 24, 20, 0.78); animation: enter-fade .15s ease-out; cursor: zoom-out; }
 .lightbox img { max-width: calc(100vw - 64px); max-height: calc(100vh - 64px); object-fit: contain; border-radius: 6px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); cursor: default; }
 .lightbox .close { position: absolute; top: 16px; right: 16px; width: 40px; padding: 0; border-radius: 50%; background: var(--panel); border-color: var(--line); }
+
+/* Handing the conversation to another agent: a quiet control in the header, and a line where it changed hands. */
+.convo .agent-hand { font-family: var(--body); font-size: 12px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); padding: 2px 8px; margin-left: 8px; cursor: pointer; }
+.convo .agent-hand:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); }
+.convo .handover { display: flex; align-items: center; gap: 10px; margin: 14px 0; font-size: 12px; color: var(--muted); }
+.convo .handover::before, .convo .handover::after { content: ""; flex: 1; border-top: 1px dashed var(--line); }

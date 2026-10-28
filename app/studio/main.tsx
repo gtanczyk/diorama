@@ -699,7 +699,7 @@ function Workshop({ slug }: { slug: string }) {
     const changed = touched.length > 0 && turn.endedAt ? (
       <Card kind="Changed" on={shownView.kind === 'place' && touched.includes(shownView.place ?? '')}>
         <div class="thumbs">{touched.map((k) => { const p = places.find((x) => x.key === k); return <button type="button" class="thumb" title={`Show ${nice(k)}`} onClick={() => onStage({ kind: 'place', place: k })} style={p?.image ? { backgroundImage: `url("${fileUrl(slug, p.image.file, p.image.v)}")` } : undefined}>{!p?.image && <span>{nice(k)}</span>}</button>; })}</div>
-        <div class="btns"><button type="button" class="ghost small" title="Play the game to see it. Free" onClick={() => onStage({ kind: 'play' })}>▶ Try it</button><button type="button" class="ghost small" title="Take back the last job. Free" onClick={() => call('history_undo', { slug }).catch((e) => setError(e.message))}>↶ Undo</button></div>
+        <div class="btns"><button type="button" class="ghost small" title="Play the game to see it. Free" onClick={() => onStage({ kind: 'play' })}>▶ Try it</button>{last && <button type="button" class="ghost small" title="Take back the last job. Free" onClick={() => call('history_undo', { slug }).catch((e) => setError(e.message))}>↶ Undo</button>}</div>
       </Card>
     ) : null;
     if (!changed && !question) return null;

@@ -5,7 +5,7 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { claude, codexLive, createAgentSession, detectAgents, museLive, type CodingAgent, withoutProviderCredentials, type AgentSession, type ApprovalDecision, type ApprovalRequest, type SessionState } from 'genaicode/agents';
+import { claude, codexLive, createAgentSession, detectAgents, museLive, type CodingAgent, withoutProviderCredentials, type AgentSession, type ApprovalDecision, type ApprovalRequest, type SessionState, type SessionTurn } from 'genaicode/agents';
 import { redact, withoutSecrets } from '../secrets.ts';
 import type { Events } from './events.ts';
 import { History } from './history.ts';
@@ -104,7 +104,11 @@ class Talk {
   private calls: Call[] = [];
   readonly listeners = new Set<() => void>();
 
+  /** The conversation before this session (earlier agents, before the Studio restarted), shown above it. */
+  readonly past: SessionTurn[];
+
   constructor(readonly slug: string, readonly session: AgentSession, private readonly dir: string, private readonly events: Events) {
+    this.past = pastTurns(dir);
     const id = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
     this.log = path.join(dir, 'studio', 'sessions', `${id}-${randomBytes(2).toString('hex')}.jsonl`);
     session.subscribe((state) => {
@@ -155,6 +159,12 @@ class Talk {
       return changed ? { ...turn, entries } : turn;
     });
     return { ...state, turns };
+  }
+
+  /** What the page shows: the earlier turns, then this session's. */
+  shown(state: SessionState): SessionState {
+    const now = this.told(state);
+    return this.past.length ? { ...now, turns: [...this.past, ...now.turns] } : now;
   }
 
   private filmTimer: NodeJS.Timeout | undefined;
@@ -233,6 +243,14 @@ class Talk {
     } catch {}
   }
 
+  /** A handover in the conversation file, so the next agent reads who it took over from. */
+  handedOver(from: string, to: string) {
+    try {
+      fs.mkdirSync(path.dirname(conversationFile(this.dir)), { recursive: true });
+      fs.appendFileSync(conversationFile(this.dir), `## ${new Date().toISOString().slice(0, 16).replace('T', ' ')} · handed over from ${from} to ${to}\n\n`);
+    } catch {}
+  }
+
   publish(type: string, data: Record<string, unknown>) {
     const clean = JSON.parse(redact(JSON.stringify(data))) as Record<string, unknown>;
     this.record({ type, ...clean });
@@ -265,6 +283,40 @@ export const AGENTS = {
 } satisfies Record<string, { label: string; make(command?: string): CodingAgent }>;
 export type AgentName = keyof typeof AGENTS;
 export const isAgentName = (name: string): name is AgentName => Object.hasOwn(AGENTS, name);
+
+/**
+ * The world's earlier turns from its session logs (studio/sessions/*.jsonl, one per Studio session), oldest first,
+ * the last `limit` of them. Each keeps its last recorded state; one cut off by a restart shows as ended. Their ids
+ * are negative, so they never meet a live turn's.
+ */
+export function pastTurns(dir: string, limit = 60): SessionTurn[] {
+  const logs = path.join(dir, 'studio', 'sessions');
+  let files: string[] = [];
+  try {
+    files = fs.readdirSync(logs).filter((f) => f.endsWith('.jsonl')).sort();
+  } catch {
+    return [];
+  }
+  const turns: SessionTurn[] = [];
+  for (const file of files) {
+    const last = new Map<number, SessionTurn>();
+    for (const line of fs.readFileSync(path.join(logs, file), 'utf8').split('\n')) {
+      if (!line.includes('"type":"state"')) continue;
+      try {
+        const turn = (JSON.parse(line) as { turn?: SessionTurn }).turn;
+        if (turn && typeof turn.id === 'number' && Array.isArray(turn.entries)) last.set(turn.id, turn);
+      } catch {}
+    }
+    turns.push(...[...last.values()].sort((a, b) => a.id - b.id));
+  }
+  const kept = turns.slice(-limit);
+  return kept.map((turn, i) => ({
+    ...turn,
+    id: i - kept.length,
+    endedAt: turn.endedAt ?? turn.startedAt,
+    entries: turn.entries.map((e) => (e.kind === 'text' ? { ...e, streaming: false } : e.kind === 'tool' ? { ...e, done: true } : e.kind === 'approval' && !e.decision ? { ...e, decision: 'deny' as const } : e)),
+  }));
+}
 
 const conversationFile = (dir: string) => path.join(dir, 'studio', 'conversation.md');
 
@@ -344,28 +396,30 @@ export class AgentHub {
   agents(slug: string) {
     const found = detectAgents((Object.keys(AGENTS) as AgentName[]).map((n) => this.make(n)));
     const using = this.talks.get(slug)?.session.get().agent ?? this.make(this.defaultAgent()).name;
-    return (Object.keys(AGENTS) as AgentName[]).map((name, i) => ({ name, label: AGENTS[name].label, installed: !!found[i]?.path, using: found[i]?.agent.name === using }));
+    return (Object.keys(AGENTS) as AgentName[]).map((name, i) => ({ name, label: AGENTS[name].label, agent: found[i]?.agent.name ?? name, installed: !!found[i]?.path, using: found[i]?.agent.name === using }));
   }
 
   /** Switches this world's conversation to another agent; it starts a fresh session, the transcript stays. */
   use(slug: string, name: AgentName) {
     const t = this.talk(slug);
     if (t.session.get().status === 'running') throw new Error('the agent is working: stop it or wait before switching');
+    const from = this.agents(slug).find((a) => a.using)?.label;
     t.session.setAgent(this.make(name));
     t.rebrief();
+    if (from && from !== AGENTS[name].label && (t.past.length || t.session.get().turns.length)) t.handedOver(from, AGENTS[name].label);
     t.publish('agent', { name, label: AGENTS[name].label });
   }
 
   /** What the page shows: genaicode's session state, secrets blanked; null before the first message. */
   state(slug: string): SessionState | null {
-    const t = this.talks.get(slug);
-    return t ? safe(t.told(t.session.get())) : null;
+    const t = this.talks.get(slug) ?? (pastTurns(path.join(this.opts.root, slug), 1).length ? this.talk(slug) : undefined);
+    return t ? safe(t.shown(t.session.get())) : null;
   }
 
   /** Every change of a world's conversation, for the page's live view. */
   watch(slug: string, listener: (state: SessionState) => void): () => void {
     const t = this.talk(slug);
-    const send = () => listener(safe(t.told(t.session.get())));
+    const send = () => listener(safe(t.shown(t.session.get())));
     const off = t.session.subscribe(send);
     t.listeners.add(send);
     return () => {
