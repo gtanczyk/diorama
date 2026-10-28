@@ -103,7 +103,7 @@ class Talk {
   private calls: Call[] = [];
   readonly listeners = new Set<() => void>();
 
-  constructor(readonly slug: string, readonly session: AgentSession, dir: string, private readonly events: Events) {
+  constructor(readonly slug: string, readonly session: AgentSession, private readonly dir: string, private readonly events: Events) {
     const id = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
     this.log = path.join(dir, 'studio', 'sessions', `${id}-${randomBytes(2).toString('hex')}.jsonl`);
     session.subscribe((state) => {
@@ -210,9 +210,26 @@ class Talk {
         this.ended.add(turn.id);
         const said = turn.entries.filter((e) => e.kind === 'text').map((e) => (e as { text: string }).text).at(-1);
         if (said) this.publish('message', { text: said });
+        this.remember(state.agent, turn, said);
         this.publish('turn.end', { status: turn.result.status, ...(turn.result.error && { error: String(turn.result.error) }) });
       }
     }
+  }
+
+  /**
+   * The world's conversation in words, across Studio restarts and agents: studio/conversation.md. A fresh agent
+   * session is told to read it, so switching agents or restarting the Studio does not lose what was agreed.
+   */
+  private remember(agent: string, turn: SessionState['turns'][number], said: string | undefined) {
+    const tools = [...new Set(turn.entries.flatMap((e) => (e.kind === 'tool' ? [toolName(e.name) ?? e.name] : [])))];
+    const who = turn.prompt.startsWith('[Studio]') ? 'Studio' : 'Person';
+    const lines = [`## ${new Date().toISOString().slice(0, 16).replace('T', ' ')} · ${agent}`, '', `**${who}:** ${turn.prompt.trim()}`, ''];
+    if (tools.length) lines.push(`**Tools:** ${tools.join(', ')}`, '');
+    lines.push(`**Agent:** ${said?.trim() || (turn.result?.status === 'completed' ? '(no words)' : `(turn ${turn.result?.status ?? 'ended'})`)}`, '', '');
+    try {
+      fs.mkdirSync(path.dirname(conversationFile(this.dir)), { recursive: true });
+      fs.appendFileSync(conversationFile(this.dir), redact(lines.join('\n')));
+    } catch {}
   }
 
   publish(type: string, data: Record<string, unknown>) {
@@ -247,6 +264,22 @@ export const AGENTS = {
 } satisfies Record<string, { label: string; make(command?: string): CodingAgent }>;
 export type AgentName = keyof typeof AGENTS;
 export const isAgentName = (name: string): name is AgentName => Object.hasOwn(AGENTS, name);
+
+const conversationFile = (dir: string) => path.join(dir, 'studio', 'conversation.md');
+
+/** For a fresh agent session: where the conversation so far is, when there is one. */
+export function earlier(dir: string): string {
+  let size = 0;
+  try {
+    size = fs.statSync(conversationFile(dir)).size;
+  } catch {
+    return '';
+  }
+  if (!size) return '';
+  return `\nYou are joining a conversation about this world that started before this session (another agent, or before the Studio restarted). `
+    + `It is in studio/conversation.md, newest at the end (${Math.round(size / 1024)} KB): read its last part before you answer, `
+    + 'so you know what the person asked, what was changed and what is still open. The person sees the same conversation on screen.';
+}
 
 export class AgentHub {
   private readonly talks = new Map<string, Talk>();
@@ -285,7 +318,7 @@ export class AgentHub {
       transformPrompt: (prompt) => {
         if (t?.briefed && session.get().sessionId) return prompt;
         if (t) t.briefed = true;
-        return `${AGENT_BRIEF(slug)}\n\nPerson: ${prompt}`;
+        return `${AGENT_BRIEF(slug)}${earlier(dir)}\n\nPerson: ${prompt}`;
       },
     });
     t = new Talk(slug, session, dir, this.events);
