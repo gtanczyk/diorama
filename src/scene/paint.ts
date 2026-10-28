@@ -4,8 +4,14 @@ import type { Memo } from '../meta/memo.ts';
 import { museEdit } from '../meta/muse.ts';
 import type { Place, World } from '../world/schema.ts';
 import { fallsIn } from '../play/weather.ts';
-import type { Brief } from './brief.ts';
+import { paintedAnimals, type Brief } from './brief.ts';
 import { FRAME, type Layout } from './layout.ts';
+
+/** Animals listed as masses are painted (a cow in its stall); any other animal is not. */
+const noAnimals = (brief?: Brief) => {
+  const keep = paintedAnimals(brief);
+  return keep.length ? `no animals other than the ${keep.join(', ')} listed above (paint ${keep.length > 1 ? 'those' : 'that'} in, at rest)` : 'no animals';
+};
 
 const third = (x: number) => (x < FRAME.width / 3 ? 'left' : x > (2 * FRAME.width) / 3 ? 'right' : 'middle');
 
@@ -27,7 +33,7 @@ Style: ${world.style}
 The masses:
 ${[...masses, ...floors].join('\n')}
 
-Seen a little from above, like a stage. Keep the floor areas clear to walk on. No people, no animals, no text or letters, no border.${fallsIn(`${place.shows} ${place.mood}`) ? '\nThe rain or snow itself is animated over the picture later: paint no falling streaks, drops or flakes in the air, only what the weather leaves (wet sheen, puddles, snow lying on the ground).' : ''}`;
+Seen a little from above, like a stage. Keep the floor areas clear to walk on. No people, ${noAnimals(brief)}, no text or letters, no border.${fallsIn(`${place.shows} ${place.mood}`) ? '\nThe rain or snow itself is animated over the picture later: paint no falling streaks, drops or flakes in the air, only what the weather leaves (wet sheen, puddles, snow lying on the ground).' : ''}`;
 }
 
 /** Children's drawings of the place or of things in it, as more images after the block-in. */

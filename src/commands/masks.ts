@@ -85,7 +85,9 @@ defineCommand({
       let checks: Record<string, MaskCheck> = Object.fromEntries(things.flatMap((t) => (keptThing.has(t.key) && !fixes.things[t.key]?.box && lastChecks[t.key]?.check ? [[t.key, lastChecks[t.key].check!]] : [])));
       try {
         const look = things.filter((t) => !fixes.things[t.key]?.box && !keptThing.has(t.key));
-        if (look.length) checks = { ...checks, ...await checkMasks(files.memo, place.key, painting, look.map((t) => ({ key: t.key, looks: brief.looks[t.key] ?? place.things.find((x) => x.key === t.key)?.looks ?? t.key, box: t.box as Rect | undefined }))) };
+        // Asked by what the thing is (the world's words), not by how the brief dressed it: a brief that described
+        // "the empty stall the cow uses" let a mask on an empty stall pass.
+        if (look.length) checks = { ...checks, ...await checkMasks(files.memo, place.key, painting, look.map((t) => ({ key: t.key, looks: place.things.find((x) => x.key === t.key)?.looks ?? brief.looks[t.key] ?? t.key, box: t.box as Rect | undefined }))) };
         for (const [key, c] of Object.entries(checks)) if (!c.ok) log(`${key}: Spark sees ${c.seen ?? 'something else'} in its mask`);
       } catch (error) {
         log(`mask check skipped: ${error instanceof Error ? error.message : error}`);

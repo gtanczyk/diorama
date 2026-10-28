@@ -6,7 +6,7 @@ import type { Memo } from '../meta/memo.ts';
 import { museEdit } from '../meta/muse.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import type { Place } from '../world/schema.ts';
-import type { Brief } from './brief.ts';
+import { paintedAnimals, type Brief } from './brief.ts';
 import { FRAME } from './layout.ts';
 import { pasteAlpha } from './plates.ts';
 
@@ -29,7 +29,7 @@ List at most 4 problems a player would notice, worst first:
 - missing: a listed thing is not there
 - wrong: it is there but does not look like its description
 - flat: it is a plain block or smear instead of a painted object
-- unwanted: people, animals, text, letters or a border that should not be there
+- unwanted: people, ${paintedAnimals(brief).length ? 'animals other than the listed ones' : 'animals'}, text, letters or a border that should not be there
 For each give the region to repaint as [x0, y0, x1, y1] in pixels and one sentence on what to paint there. Never ask for text or letters. If the painting is fine, give no issues.
 
 Reply with JSON only: {"issues": [{"key": "...", "problem": "missing | wrong | flat | unwanted", "region": [0, 0, 0, 0], "fix": "..."}]}`;
@@ -54,7 +54,7 @@ export async function repaint(memo: Memo, place: Place, painting: Buffer, found:
   const fixes = found.issues.map((i) => `- around x ${Math.round((i.region[0] + i.region[2]) / 2)}, y ${Math.round((i.region[1] + i.region[3]) / 2)}: ${i.fix}`);
   const prompt = `Repaint only these spots of this background and leave everything else exactly as it is, same style and light:
 ${fixes.join('\n')}
-No people, no animals, no text or letters.`;
+No people, no animals the fixes don't ask for, no text or letters.`;
   const patched = await museEdit(memo, { label: `repaint:${place.key}`, prompt, images: [painting] });
   return pasteRegions(painting, patched, found.issues.map((i) => i.region));
 }

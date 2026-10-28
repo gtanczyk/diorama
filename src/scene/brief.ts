@@ -14,6 +14,9 @@ export const Brief = z.object({
 });
 export type Brief = z.infer<typeof Brief>;
 
+/** Animals that are things of the place: painted into the background, so the painter must not leave them out. */
+export const paintedAnimals = (brief?: Brief) => (brief?.alive ?? []).filter((a) => a.as === 'animal').map((a) => a.key);
+
 export function briefIssues(brief: Brief, place: Place, layout: Layout): string[] {
   const keys = [...place.things.filter((t) => t.role !== 'npc').map((t) => t.key), ...layout.floors.map((f) => f.key)];
   return keys.filter((k) => !brief.looks[k]).map((k) => `no look for ${k}`);
@@ -35,7 +38,7 @@ ${subjects.map((s) => `- ${s}`).join('\n')}
 
 ${SAFE_WORDS}
 
-Also list which subjects move in the game: water that flows, fire, smoke, animals, cloth in wind, flickering light. They are painted still and animated later, so their look must describe them at rest (an animal is left out of the painting: describe the empty spot it uses).
+Also list which subjects move in the game: water that flows, fire, smoke, animals, cloth in wind, flickering light. They are painted still and animated later, so their look must describe them at rest. An animal among the subjects is painted in, standing still, lying or grazing: describe the animal itself, never an empty spot (nobody else will draw it).
 
 Reply with JSON only: {"looks": {"<key>": "..."}, "alive": [{"key": "<key>", "as": "water | fire | smoke | animal | cloth | light"}]}`;
   const answer = await askSparkJson(memo, { label: `brief:${place.key}`, prompt });
