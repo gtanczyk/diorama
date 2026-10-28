@@ -9,10 +9,18 @@ import { emptyMask, maskArea } from '../src/image/mask.ts';
 import { brush, correctCells, correctSpots, readCorrections } from '../src/scene/corrections.ts';
 import { Events } from '../src/studio/events.ts';
 import { Jobs } from '../src/studio/jobs.ts';
+import { History } from '../src/studio/history.ts';
 
 const FAKE = fileURLToPath(new URL('./fixtures/fake-diorama.mjs', import.meta.url));
 const roots: string[] = [];
-afterEach(() => roots.splice(0).forEach((r) => fs.rmSync(r, { recursive: true, force: true })));
+const pools: Jobs[] = [];
+afterEach(async () => {
+  for (const jobs of pools.splice(0)) {
+    jobs.stopAll();
+    await Promise.all(jobs.list().map((j) => jobs.wait(j.id)));
+  }
+  roots.splice(0).forEach((r) => fs.rmSync(r, { recursive: true, force: true }));
+});
 
 function world() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'diorama-fix-'));
@@ -23,8 +31,60 @@ function world() {
   for (const f of ['blockin.png', 'painting.png', 'masks.json']) fs.writeFileSync(path.join(place, f), 'x');
   const events = new Events();
   const jobs = new Jobs(events, { bin: FAKE });
+  pools.push(jobs);
   return { root, dir, place, events, jobs, ctx: (by: 'user' | 'agent') => ({ by, root, events, jobs }) };
 }
+
+test('undo and redo include the source correction, and queued fixes wait for their own snapshot', async () => {
+  const { root, dir, place, events } = world();
+  const history = new History(dir);
+  const jobs = new Jobs(events, { bin: FAKE, beforeStart: (j) => { history.snapshot(j.label, j.by); } }); pools.push(jobs);
+  const ctx = { root, events, jobs, by: 'user' as const };
+  const first = await runAction('mask_fix', { slug: 'w', place: 'dock', thing: 'boat', phrase: 'red boat' }, ctx) as { id: string };
+  const second = await runAction('mask_fix', { slug: 'w', place: 'dock', thing: 'boat', phrase: 'blue boat' }, ctx) as { id: string };
+  expect(readCorrections(place).things.boat.phrase).toBe('red boat');
+  await jobs.wait(second.id);
+  expect((await jobs.wait(first.id)).state).toBe('done');
+  expect(readCorrections(place).things.boat.phrase).toBe('blue boat');
+  await runAction('history_undo', { slug: 'w' }, ctx);
+  expect(readCorrections(place).things.boat.phrase).toBe('red boat');
+  await runAction('history_redo', { slug: 'w' }, ctx);
+  expect(readCorrections(place).things.boat.phrase).toBe('blue boat');
+});
+
+test('world_build resumes at a place failure even when later global steps are recorded', async () => {
+  const { dir, ctx, jobs } = world();
+  fs.writeFileSync(path.join(dir, 'world.json'), '{}');
+  const { STEPS } = await import('../src/commands/build.ts');
+  fs.writeFileSync(path.join(dir, 'build.json'), JSON.stringify({ steps: Object.fromEntries(STEPS.map((s) => [s, {}])), places: [{ place: 'dock', from: 'paint' }] }));
+  const job = await runAction('world_build', { slug: 'w' }, ctx('user')) as { id: string; args: string[] };
+  expect(job.args).toEqual(['build', 'w', '--from', 'paint']);
+  await jobs.wait(job.id);
+  const explicit = await runAction('world_build', { slug: 'w', from: 'derive' }, ctx('user')) as { id: string; args: string[] };
+  expect(explicit.args[3]).toBe('derive'); await jobs.wait(explicit.id);
+});
+
+test('retrying a cancelled queued fix still applies its correction once it starts', async () => {
+  const { ctx, jobs, place } = world();
+  const first = jobs.start('w', ['test', 'w'], 'first', 'user');
+  const queued = await runAction('mask_fix', { slug: 'w', place: 'dock', thing: 'boat', phrase: 'blue boat' }, ctx('user')) as { id: string };
+  jobs.cancel(queued.id);
+  expect(readCorrections(place).things.boat).toBeUndefined();
+  await jobs.wait(first.id);
+  const retried = await runAction('job_retry', { id: queued.id }, ctx('user')) as { id: string };
+  await jobs.wait(retried.id);
+  expect(readCorrections(place).things.boat.phrase).toBe('blue boat');
+});
+
+test('queued additions reserve distinct names before either correction is written', async () => {
+  const { dir, ctx, jobs } = world();
+  fs.writeFileSync(path.join(dir, 'world.json'), JSON.stringify({ title: 'W', pitch: 'A small test world for things.', style: 'ink and watercolour', start: 'dock', hero: { key: 'ola', looks: 'a girl in a yellow coat' }, places: [{ key: 'dock', shows: 'a wooden dock at night', mood: 'calm', things: [{ key: 'crate', role: 'prop', looks: 'a wooden crate' }], exits: [] }] }));
+  const blocker = jobs.start('w', ['sleep', 'w'], 'waiting', 'user');
+  const first = await runAction('thing_add', { slug: 'w', place: 'dock', looks: 'a blue bench' }, ctx('user')) as { thing: string; job: { id: string } };
+  const second = await runAction('thing_add', { slug: 'w', place: 'dock', looks: 'a blue bench' }, ctx('user')) as { thing: string; job: { id: string } };
+  expect([first.thing, second.thing]).toEqual(['blue-bench', 'blue-bench-2']);
+  jobs.cancel(blocker.id); await jobs.wait(blocker.id); await jobs.wait(second.job.id);
+});
 
 test('brush strokes add and erase round dabs along their line', () => {
   const m = brush(emptyMask(100, 100), [{ mode: 'add', radius: 5, points: [[10, 50], [90, 50]] }]);
@@ -48,7 +108,7 @@ test('the person\'s phrase, box and kind replace Spark\'s; floor cells are added
 });
 
 test('fix actions keep their fix in corrections.json and rebuild only that place from the right step', async () => {
-  const { place, ctx } = world();
+  const { place, ctx, jobs } = world();
   const job = (await runAction('mask_fix', { slug: 'w', place: 'dock', thing: 'boat', phrase: 'rowing boat' }, ctx('agent'))) as { id: string; args: string[] };
   expect(job.args).toEqual(['build', 'w', '--from', 'masks', '--to', 'verify', '--place', 'dock']);
   await runAction('floor_cells', { slug: 'w', place: 'dock', floor: 'deck', add: ['c3'], remove: ['A1'] }, ctx('user'));
@@ -57,6 +117,7 @@ test('fix actions keep their fix in corrections.json and rebuild only that place
   expect(stand.args[3]).toBe('derive');
   const paint = (await runAction('repaint_region', { slug: 'w', place: 'dock', region: [0, 0, 100, 100], fix: 'a brass lantern' }, ctx('user'))) as { id: string; args: string[] };
   expect(paint.args[3]).toBe('paint');
+  await jobs.wait(paint.id);
   await expect(runAction('floor_cells', { slug: 'w', place: 'dock', floor: 'deck', add: ['Z99'] }, ctx('user'))).rejects.toThrow(/grid cell/);
 
   const saved = readCorrections(place);
@@ -66,6 +127,7 @@ test('fix actions keep their fix in corrections.json and rebuild only that place
 
   const cleared = (await runAction('corrections_clear', { slug: 'w', place: 'dock' }, ctx('user'))) as { id: string; args: string[] };
   expect(cleared.args[3]).toBe('paint');
+  await jobs.wait(cleared.id);
   expect(readCorrections(place)).toEqual({ things: {}, floors: {}, repaint: [], added: {} });
 });
 
@@ -227,7 +289,7 @@ test('a moved NPC stands where the person put it, sized for the depth there; npc
 });
 
 test('a prop comes off a place\'s list (kept painted or painted out) and a painted one goes on; story things stay', async () => {
-  const { dir, place, ctx } = world();
+  const { dir, place, ctx, jobs } = world();
   fs.writeFileSync(path.join(dir, 'world.json'), JSON.stringify({ title: 'W', pitch: 'A small test world for things.', style: 'ink and watercolour', start: 'dock', hero: { key: 'ola', looks: 'a girl in a yellow coat' }, places: [{ key: 'dock', shows: 'a wooden dock at night', mood: 'calm', things: [
     { key: 'crate', role: 'prop', looks: 'a wooden crate' }, { key: 'oar', role: 'item', looks: 'an old oar' }, { key: 'net', role: 'prop', looks: 'a fishing net' }], exits: [] }] }));
   fs.writeFileSync(path.join(place, 'masks.json'), JSON.stringify({ things: { crate: { box: [100, 500, 200, 600] } } }));
@@ -236,10 +298,12 @@ test('a prop comes off a place\'s list (kept painted or painted out) and a paint
   expect(kept.args[3]).toBe('masks');
   await expect(runAction('thing_remove', { slug: 'w', place: 'dock', thing: 'oar' }, ctx('user'))).rejects.toThrow(/story_redo/);
   await expect(runAction('thing_remove', { slug: 'w', place: 'dock', thing: 'net' }, ctx('user'))).rejects.toThrow(/story uses/);
-  const out = (await runAction('thing_remove', { slug: 'w', place: 'dock', thing: 'crate', paintOut: true }, ctx('user'))) as { args: string[] };
+  const out = (await runAction('thing_remove', { slug: 'w', place: 'dock', thing: 'crate', paintOut: true }, ctx('user'))) as { id: string; args: string[] };
   expect(out.args[3]).toBe('paint');
+  await jobs.wait(out.id);
   expect(readCorrections(place).repaint[0]).toEqual({ region: [84, 484, 216, 616], fix: 'Paint out the wooden crate: continue what is behind it, add nothing new' });
-  const added = (await runAction('thing_add', { slug: 'w', place: 'dock', looks: 'The red bench', kind: 'standing' }, ctx('agent'))) as { thing: string };
+  const added = (await runAction('thing_add', { slug: 'w', place: 'dock', looks: 'The red bench', kind: 'standing' }, ctx('agent'))) as { thing: string; job: { id: string } };
+  await jobs.wait(added.job.id);
   expect(added.thing).toBe('red-bench');
   const { WorldFiles } = await import('../src/world/files.ts');
   const things = new WorldFiles('w', path.dirname(dir)).world().places[0].things.map((t) => `${t.key}:${t.role}`);

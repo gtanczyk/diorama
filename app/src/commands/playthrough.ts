@@ -4,11 +4,13 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { Page } from 'playwright';
+import { playRoute } from '../qa/route.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { checkStory } from '../story/check.ts';
 import type { Action } from '../story/engine.ts';
 import { WorldFiles } from '../world/files.ts';
-import { chromium, type Page } from './explore.ts';
+import { chromium } from './explore.ts';
 import { serveWorld } from './play.ts';
 
 type Step = { use: string; verb?: string; with?: string } | { act: Action } | { wait: number };
@@ -76,13 +78,7 @@ defineCommand({
         const sound = video && (await page.evaluate<boolean>('!!(window.diorama.sound && window.diorama.data.sound && (window.diorama.sound.record(), true))'));
         const run: Run = { ending: route.ending, reached: null, clicks: route.actions.length, seconds: 0, frames: 0 };
         try {
-          const result = await page.evaluate<{ ending: string | null; frames: number; time: number }>(`(async (steps) => {
-            const game = window.diorama;
-            let ending = null;
-            game.on((event, detail) => { if (event === 'ending') ending = detail.ending; });
-            await game.play(steps);
-            return { ending: ending ?? game.state.ending ?? null, frames: game.frame, time: game.time };
-          })(${JSON.stringify(steps)})`);
+          const result = await playRoute(page, steps);
           Object.assign(run, { reached: result.ending, frames: result.frames, seconds: Math.round(result.time * 10) / 10 });
         } catch (error) {
           run.error = (error as Error).message.split('\n')[0];

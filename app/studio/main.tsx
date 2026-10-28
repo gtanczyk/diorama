@@ -503,6 +503,13 @@ function Workshop({ slug }: { slug: string }) {
   }, [byHand]);
   /** Activity, the raw record of what ran, opens as a drawer from the top bar. */
   const [logOpen, setLogOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  useEffect(() => {
+    if (!notesOpen) return;
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setNotesOpen(false);
+    addEventListener('keydown', esc);
+    return () => removeEventListener('keydown', esc);
+  }, [notesOpen]);
   useEffect(() => {
     if (!logOpen) return;
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && setLogOpen(false);
@@ -729,7 +736,7 @@ function Workshop({ slug }: { slug: string }) {
       {openNotes.length > 0 && !job && !agentBusy && (
         <Card kind={`Your notes · ${openNotes.length}`}>
           {openNotes.slice(0, 3).map((n) => <p>{n.place ? `${nice(n.place)}: ` : ''}{n.text}</p>)}
-          <div class="btns"><button type="button" class="ghost small" title="The agent fixes each open note and closes it with what it did" onClick={() => void ask(`Go through my ${openNotes.length} open note${openNotes.length > 1 ? 's' : ''} (feedback_pending): fix each one and close it with feedback_done.`)}>Hand to the agent</button></div>
+          <div class="btns"><button type="button" class="ghost small" onClick={() => setNotesOpen(true)}>All notes</button><button type="button" class="ghost small" title="The agent fixes each open note and closes it with what it did" onClick={() => void ask(`Go through my ${openNotes.length} open note${openNotes.length > 1 ? 's' : ''} (feedback_pending): fix each one and close it with feedback_done.`)}>Hand to the agent</button></div>
         </Card>
       )}
       {undone && !job && <p class="world-note">{undone}{canRedo ? ' · ' : ''}{canRedo && <button type="button" class="link" onClick={() => call('history_redo', { slug }).catch((e) => setError(e.message))}>Redo</button>}</p>}
@@ -770,6 +777,7 @@ function Workshop({ slug }: { slug: string }) {
               {!job && status && !status.issue && <StyleMenu slug={slug} places={places.map((p) => p.key)} version={tick} onError={setError} />}
               <hr />
               <button type="button" class="mi go" title="What the build, the agent and the game did, line by line" onClick={() => setLogOpen(true)}>Activity</button>
+              <button type="button" class="mi go" title="Your notes on this diorama, open and done" onClick={() => setNotesOpen(true)}>Notes{openNotes.length ? ` · ${openNotes.length}` : ''}</button>
               {!job && status && !status.issue && <><hr /><Rebuild slug={slug} again={status.steps.length >= steps.length - 1} onError={setError} /></>}
             </Menu>
           </div>
@@ -805,6 +813,14 @@ function Workshop({ slug }: { slug: string }) {
             <div class="row"><span class="detail" title={status ? `this world: ${Object.entries(status.calls).map(([m, n]) => `${m} ${n}`).join(', ') || 'no calls yet'}` : undefined}>{calls} calls this session{budget ? ` · ${spend(budget.today)} today · ${spend(budget.total)}${budget.limitUsd !== null ? ` of $${budget.limitUsd}` : ''} total` : ''}</span></div>
             <label class="detail" title="Also show every line the build steps print, not only what matters"><input type="checkbox" checked={allLines} onChange={(e) => setAllLines(e.currentTarget.checked)} /> Every line the steps print</label>
             <ol>{[...lines].reverse().filter((l) => allLines || l.kind !== 'out').map((l) => <li key={l.seq} class={l.kind}>{l.text}</li>)}</ol>
+          </section>
+        </div>
+      )}
+      {notesOpen && (
+        <div class="drawer-back" onClick={(e) => e.target === e.currentTarget && setNotesOpen(false)}>
+          <section class="drawer" role="dialog" aria-label="Notes">
+            <div class="row"><h2>Your notes</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close notes" onClick={() => setNotesOpen(false)}>✕</button></div>
+            <Notes slug={slug} notes={notes} onPlace={(p) => { onStage({ kind: 'place', place: p }); setNotesOpen(false); }} onError={setError} />
           </section>
         </div>
       )}
@@ -931,7 +947,7 @@ function Failed({ slug, job, noAgent, onError, onPlace }: { slug: string; job: J
 function Notes({ slug, notes, onPlace, onError }: { slug: string; notes: Note[]; onPlace: (p: string) => void; onError: (m: string) => void }) {
   const [text, setText] = useState('');
   const open = notes.filter((n) => n.state === 'open');
-  const done = notes.filter((n) => n.state === 'done').slice(-5).reverse();
+  const done = notes.filter((n) => n.state === 'done').reverse();
   const add = (e: Event) => {
     e.preventDefault();
     call('feedback_add', { slug, text: text.trim() }).then(() => setText('')).catch((err) => onError(err.message));

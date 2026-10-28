@@ -24,8 +24,9 @@ defineCommand({
       throw new Error(`the input must be JSON, e.g. diorama action ${name} '{"slug":"foghorn"}'`);
     }
     const result = await runAction(name, input, ctx);
-    if (actions.get(name)?.job) {
-      const job = await ctx.jobs.wait((result as Job).id);
+    const started = result && typeof result === 'object' ? ('job' in result ? (result as { job: Job }).job : actions.get(name)?.job ? result as Job : undefined) : undefined;
+    if (started && typeof started.id === 'string') {
+      const job = await ctx.jobs.wait(started.id);
       if (job.state !== 'done') throw new Error(`${job.label}: ${job.state}${job.error ? `, ${job.error}` : ''}`);
       return;
     }

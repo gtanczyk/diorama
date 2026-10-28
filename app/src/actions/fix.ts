@@ -18,7 +18,7 @@ const XY = z.tuple([z.number(), z.number()]);
 const Cell = z.string().refine((c) => !!parseCell(c), 'a grid cell like C12: a letter per 60 px column from A, a number per 60 px row from 1');
 
 /** Applies a change to a place's corrections and rebuilds that place from `from` to verify, as a job. */
-async function fixPlace(ctx: ActionContext, slug: string, place: string, from: 'paint' | 'masks' | 'derive', label: string, change: (c: Corrections) => void) {
+async function fixPlace(ctx: ActionContext, slug: string, place: string, from: 'paint' | 'masks' | 'derive', label: string, change: (c: Corrections) => void, addedThing?: string) {
   const dir = path.join(ctx.root, slug);
   const blocked = agentBlocked(dir, ctx.by, place);
   if (blocked) throw new ActionError(423, blocked);
@@ -34,10 +34,13 @@ async function fixPlace(ctx: ActionContext, slug: string, place: string, from: '
   const placeDir = path.join(dir, 'places', place);
   const needs = { paint: 'blockin.png', masks: 'painting.png', derive: 'masks.json' }[from];
   if (!fs.existsSync(path.join(placeDir, needs))) throw new ActionError(404, `${slug}/${place} has no ${needs} yet: build it first`);
-  const fixes = readCorrections(placeDir);
-  change(fixes);
-  writeCorrections(placeDir, Corrections.parse(fixes));
-  return ctx.jobs.start(slug, ['build', slug, '--from', from, '--to', 'verify', '--place', place], `${label} · ${place}`, ctx.by);
+  return ctx.jobs.start(slug, ['build', slug, '--from', from, '--to', 'verify', '--place', place], `${label} · ${place}`, ctx.by, () => {
+    // The job snapshots first, then changes its source. Queued fixes must not change a running build.
+    const fixes = readCorrections(placeDir);
+    change(fixes);
+    writeCorrections(placeDir, Corrections.parse(fixes));
+    fs.rmSync(path.join(placeDir, 'verify.json'), { force: true });
+  }, addedThing ? { place, key: addedThing } : undefined);
 }
 
 const thingOf = (c: Corrections, key: string) => (c.things[key] ??= { strokes: [] });
@@ -212,17 +215,19 @@ defineAction({
     const dir = path.join(ctx.root, slug);
     const p = thingsOf(dir, place);
     const fixes = readCorrections(path.join(dir, 'places', place));
-    const taken = new Set([...p.things.map((t) => t.key), ...Object.keys(fixes.added)]);
-    if (p.things.length + Object.keys(fixes.added).length >= 10) throw new ActionError(409, `${place} has ten things already: take one off first`);
+    const pending = ctx.jobs.list(slug).flatMap((j) => (j.state === 'queued' || j.state === 'running') && j.addedThing?.place === place ? [j.addedThing.key] : []);
+    const taken = new Set([...p.things.map((t) => t.key), ...Object.keys(fixes.added), ...pending]);
+    if (taken.size >= 10) throw new ActionError(409, `${place} has ten things already: take one off first`);
     const base = looks.toLowerCase().replace(/^(the|a|an)\s+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').split('-').slice(0, 4).join('-') || 'thing';
     const key = /^[a-z]/.test(base) ? base : `thing-${base}`;
     let unique = key;
     for (let n = 2; taken.has(unique); n++) unique = `${key}-${n}`;
     const job = await fixPlace(ctx, slug, place, 'masks', `add ${unique}`, (c) => {
+      if (c.added[unique]) throw new ActionError(409, `${unique} was added while this job waited: add it again to choose a new key`);
       c.added[unique] = { looks };
       if (kind) thingOf(c, unique).kind = kind;
       if (c.things[unique]) delete c.things[unique].removed;
-    });
+    }, unique);
     return { thing: unique, job };
   },
 });

@@ -19,6 +19,9 @@ type Fixes = {
   repaint: Array<{ region: number[]; fix: string }>;
 };
 export type PlaceStatus = {
+  playable: boolean | null;
+  errors: Array<{ code: string; key?: string; detail: string; play?: { look: string; tools: string[]; last?: string } }>;
+  flags: Array<{ code: string; key?: string; detail: string }>;
   place: string;
   pictures: { painting: Pic; masks: Pic; walk: Pic };
   things: ThingRow[];
@@ -138,6 +141,11 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
 
   return (
     <section class="editor">
+      <section class="checks" aria-label="Place checks">
+        {st && <p class="detail">{st.playable === true ? 'Verified playable' : st.playable === false ? 'Needs a fix' : 'Not verified yet'}</p>}
+        {(st?.errors ?? []).map((f) => <div><p class="error"><code>{f.code}</code>{f.key ? ` ${f.key}` : ''}: {f.detail}</p>{f.play && <details><summary>How to fix it</summary><p>{f.play.look}</p><p>{f.play.tools.join(' · ')}</p>{f.play.last && <p>Last resort: {f.play.last}</p>}</details>}</div>)}
+        {(st?.flags ?? []).map((f) => <p class="flag"><code>{f.code}</code>{f.key ? ` ${f.key}` : ''}: {f.detail}</p>)}
+      </section>
       <div class="row">
         <h2>{place}</h2>
         <span class="grow" />

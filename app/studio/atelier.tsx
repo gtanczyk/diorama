@@ -77,7 +77,7 @@ export function useAtelierFeed() {
           const next = { ...busy.value };
           delete next[slug];
           busy.value = next;
-          ended.value = { ...ended.value, [slug]: { label: job?.label ?? 'job', ok: job?.state === 'done', at: Date.now(), error: job?.error } };
+          ended.value = { ...ended.value, [slug]: { label: job?.label ?? 'job', ok: job?.state === 'done', at: Date.parse(e.at), error: job?.error } };
           return soon();
         }
       }
@@ -123,7 +123,7 @@ export function Rail() {
           const b = busy.value[w.slug];
           const n = needs(w);
           return (
-            <a href={`/w/${w.slug}`} class={`rail-world${open === w.slug ? ' on' : ''}`} title={`${w.title}${b ? ` · ${b.label}${b.step ? `: ${b.step}` : ''}` : n ? ` · needs you: ${n}` : ''}`} onClick={(e) => (e.preventDefault(), go(`/w/${w.slug}`))}>
+            <a href={`/w/${w.slug}`} class={`rail-world${open === w.slug ? ' on' : ''}`} title={`${w.title}${b ? ` · ${b.label}${b.step ? `: ${b.step}` : ''}` : n ? ` · needs you: ${n}` : ''}`} onClick={(e) => (e.preventDefault(), markSeen(w.slug), go(`/w/${w.slug}`))}>
               <span class="th" style={w.cover ? { backgroundImage: `url("${fileUrl(w.slug, w.cover.file, w.cover.v)}")` } : undefined} />
               {b ? <Ring p={progress(b)} /> : n ? <span class="dot-needs" aria-label="needs you">!</span> : null}
               <span class="lb">{w.title}</span>
@@ -163,7 +163,7 @@ export function Bell() {
         <div class="bell-pop" role="menu">
           {items.length === 0 && <p class="detail">Nothing building, nothing waiting for you.</p>}
           {items.map(({ w, kind, text }) => (
-            <a href={`/w/${w.slug}`} class={`bell-item ${kind}`} onClick={(e) => (e.preventDefault(), setOpen(false), go(`/w/${w.slug}`))}>
+            <a href={`/w/${w.slug}`} class={`bell-item ${kind}`} onClick={(e) => (e.preventDefault(), markSeen(w.slug), setOpen(false), go(`/w/${w.slug}`))}>
               <span class="th" style={w.cover ? { backgroundImage: `url("${fileUrl(w.slug, w.cover.file, w.cover.v)}")` } : undefined} />
               <span><strong>{w.title}</strong> {kind === 'needs' ? 'needs you' : kind === 'busy' ? 'is building' : 'is ready'}<small>{text}</small></span>
             </a>

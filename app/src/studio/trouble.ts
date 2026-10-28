@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { placeGap, STEPS } from '../commands/build.ts';
 import type { Verdict } from '../scene/verify.ts';
+import { currentVerdict } from '../scene/status.ts';
 import { refusedByFilter } from '../scene/words.ts';
 
 type Step = (typeof STEPS)[number];
@@ -35,7 +36,7 @@ export function placeTrouble(worldDir: string, place: string): Trouble | null {
   const gapFirst = gap && past && (!report?.from || STEPS.indexOf(gap.step) < STEPS.indexOf(report.from as Step));
   if (gapFirst) return { why: `${gap.step} never finished here (no ${gap.file})`, from: gap.step, errors: report?.errors ?? [] };
   if (report?.from) return { why: said(report.from, firstError(report.errors)), from: report.from, errors: report.errors ?? [] };
-  const verdict = readJson<Verdict>(path.join(dir, 'verify.json'));
+  const verdict = currentVerdict(worldDir, place);
   if (verdict && !verdict.ok) {
     const lines = verdict.errors.map((x) => `${x.code}${x.key ? ` ${x.key}` : ''}: ${x.detail}`);
     return { why: (lines[0] ?? 'not playable').slice(0, 160), from: null, errors: lines };

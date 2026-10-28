@@ -36,7 +36,9 @@ defineAction({
     // An existing world picks up at the first step it has not finished.
     const log = path.join(ctx.root, slug, 'build.json');
     const done = !fresh && fs.existsSync(log) ? (JSON.parse(fs.readFileSync(log, 'utf8')) as { steps?: object }).steps ?? {} : {};
-    const start = from ?? (fresh ? 'world' : STEPS.find((s) => s !== 'world' && !(s in done)) ?? 'verify');
+    const unfinished = fresh ? 'world' : STEPS.find((s) => s !== 'world' && !(s in done)) ?? 'verify';
+    const broken = brokenPlaces(path.join(ctx.root, slug)).map((p) => p.from).filter((s): s is typeof STEPS[number] => (STEPS as readonly string[]).includes(s));
+    const start = from ?? [unfinished, ...broken].sort((a, b) => STEPS.indexOf(a) - STEPS.indexOf(b))[0];
     const args = ['build', slug, ...(idea ? [idea] : []), '--from', start, ...(to ? ['--to', to] : []), ...(places ? ['--places', String(places)] : [])];
     return ctx.jobs.start(slug, args, `build ${start} > ${to ?? STEPS[STEPS.length - 1]}`, ctx.by);
   },
@@ -106,7 +108,7 @@ defineAction({
       const broke = brokenPlaces(path.join(ctx.root, job.world), place).map((r) => r.from).filter((s) => steps.includes(s));
       args[from + 1] = [job.step, ...broke].sort((a, b) => steps.indexOf(a) - steps.indexOf(b))[0];
     }
-    return ctx.jobs.start(job.world, args, job.label, ctx.by);
+    return ctx.jobs.retry(job.id, args, ctx.by);
   },
 });
 

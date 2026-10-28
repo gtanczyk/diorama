@@ -725,6 +725,7 @@ class Game {
     const hero = this.data.world.hero.key;
     this.answers.show(options.map((a) => ({
       text: a.kind === 'choose' ? lineChoice(story!, this.state, a.index) : words.goodbye,
+      action: a.kind === 'choose' ? `choose:${a.index}` : a.kind,
       pick: () => void this.act(a),
     })), { name: displayName(hero, this.data.world.names), portrait: this.data.cast[hero] && files(this.data.cast[hero].image) });
     const ending = story?.endings.find((e) => e.key === this.state.ending);

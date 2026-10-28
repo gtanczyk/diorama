@@ -71,8 +71,11 @@ export function PlaceStage({ slug, place, version, picked, onPick, children }: {
   const [masks, setMasks] = useState<Masks | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   useEffect(() => {
+    const controller = new AbortController();
     setMasks(null);
-    fetch(fileUrl(slug, `places/${place.key}/masks.json`, Date.now()), { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((m) => setMasks(m as Masks | null)).catch(() => {});
+    setHover(null);
+    fetch(fileUrl(slug, `places/${place.key}/masks.json`, Date.now()), { cache: 'no-store', signal: controller.signal }).then((r) => (r.ok ? r.json() : null)).then((m) => { if (!controller.signal.aborted) setMasks(m as Masks | null); }).catch(() => {});
+    return () => controller.abort();
   }, [slug, place.key, version]);
   // Big things first, so a small one on top of a big one gets the pointer.
   const spots = Object.entries(masks?.things ?? {}).filter(([, t]) => t.box).sort(([, a], [, b]) => area(b.box!) - area(a.box!));

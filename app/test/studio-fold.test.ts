@@ -20,12 +20,7 @@ let root: string;
 const png = (r: number, g: number, b: number) => sharp({ create: { width: 1200, height: 896, channels: 3, background: { r, g, b } } }).png().toBuffer();
 
 beforeAll(async () => {
-  try {
-    browser = await (await import('playwright')).chromium.launch();
-  } catch {
-    browser = null; // No browser here (npm run browsers): the test says so and passes.
-    return;
-  }
+  browser = await (await import('playwright')).chromium.launch();
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'diorama-fold-'));
   const keys = ['farm-yard', 'barn-interior', 'orchard-hill', 'duck-pond', 'market-square', 'old-mill'];
   fs.mkdirSync(path.join(root, 'farm', 'memo'), { recursive: true });
@@ -53,7 +48,7 @@ afterAll(async () => {
 });
 
 test('no screen or state scrolls the page', async () => {
-  if (!browser) return console.warn('studio-fold: no Chromium (npm run browsers), skipped');
+  if (!browser) throw new Error('Chromium is required: npm run browsers');
   const spills: string[] = [];
   for (const [width, height] of SIZES) {
     const ctx = await browser.newContext({ viewport: { width, height } });

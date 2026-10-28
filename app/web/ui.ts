@@ -144,7 +144,7 @@ export class Answers {
     });
   }
 
-  show(options: Array<{ text: string; pick: () => void }>, hero?: { name: string; portrait?: string }) {
+  show(options: Array<{ text: string; action?: string; pick: () => void }>, hero?: { name: string; portrait?: string }) {
     this.picks = options.map((o) => o.pick);
     this.root.hidden = options.length === 0;
     // New answers start from the first card; the same ones redrawn keep the lit one.
@@ -165,6 +165,7 @@ export class Answers {
     if (hero) who.append(el('span', 'tag', hero.name));
     this.cards = options.map((o, i) => {
       const b = el('button', 'answer');
+      if (o.action) b.dataset.action = o.action;
       b.append(el('span', 'key', String(i + 1)), document.createTextNode(o.text));
       b.onclick = o.pick;
       b.onpointerenter = () => this.hear?.(o.text);

@@ -768,6 +768,7 @@ main.world { display: grid; grid-template-columns: minmax(340px, 30%) minmax(0, 
 .stage-body.play > .play iframe { width: min(100cqw, calc(100cqh * 1200 / 896)); }
 .stage-body.play > .play > .row { flex-wrap: wrap; }
 .drawer.by-hand { width: min(1100px, 92vw); }
+.drawer > .notes, .drawer.by-hand > .editor { flex: 1; min-height: 0; overflow: auto; }
 
 /* Opening cards and turn cards ride in genaicode notices: no dashed box, the chat's own font. */
 .convo .gc-notice:has(> .wcard, > .idea-bubble, > div > .wcard) { align-self: stretch; background: none; border: 0; padding: 0; color: inherit; font-size: inherit; white-space: normal; font-family: var(--body); }

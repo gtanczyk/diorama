@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { withPlay } from '../scene/playbook.ts';
+import { currentVerdict } from '../scene/status.ts';
 import type { Verdict } from '../scene/verify.ts';
 import { readCorrections } from '../scene/corrections.ts';
 import { placeTrouble } from '../studio/trouble.ts';
@@ -79,8 +80,8 @@ export function worldSummary(root: string, slug: string) {
   const dir = path.join(root, slug);
   const parsed = World.safeParse(readJson(path.join(dir, 'world.json')));
   const build = readJson<{ steps?: Record<string, { at: string; seconds: number }> }>(path.join(dir, 'build.json'));
-  const places = parsed.success ? parsed.data.places : [];
-  const verdicts = places.map((p) => readJson<Verdict>(path.join(dir, 'places', p.key, 'verify.json')));
+  const places = parsed.success ? withThingEdits(parsed.data, dir).places : [];
+  const verdicts = places.map((p) => currentVerdict(dir, p.key, p));
   const cover = places.map((p) => ['painting.png', 'blockin.png'].map((f) => `places/${p.key}/${f}`).find((f) => fs.existsSync(path.join(dir, f)))).find(Boolean);
   return {
     slug,
@@ -88,7 +89,7 @@ export function worldSummary(root: string, slug: string) {
     pitch: parsed.success ? parsed.data.pitch : null,
     issue: parsed.success ? null : fs.existsSync(path.join(dir, 'world.json')) ? 'world.json does not parse' : 'no world.json yet',
     places: places.length,
-    playable: verdicts.filter((v) => v?.ok).length,
+    playable: verdicts.filter((v, i) => v?.ok && !placeTrouble(dir, places[i].key)).length,
     verified: verdicts.filter(Boolean).length,
     steps: Object.keys(build?.steps ?? {}),
     cover: cover ? { file: cover, v: stamp(path.join(dir, cover)) } : null,
@@ -127,7 +128,7 @@ defineAction({
     const places = (parsed.success ? parsed.data.places : []).map((p) => {
       const at = (f: string) => path.join(dir, 'places', p.key, f);
       const stages = Object.fromEntries(STAGES.map(([name, f]) => [name, stamp(at(f))]));
-      const verdict = readJson<Verdict>(at('verify.json'));
+      const verdict = currentVerdict(dir, p.key, p);
       const image = ['painting.png', 'blockin.png'].find((f) => stages[f === 'painting.png' ? 'painting' : 'blockin']);
       return {
         key: p.key,
@@ -171,7 +172,7 @@ defineAction({
     const picture = (f: string) => (fs.existsSync(path.join(dir, f)) ? { file: `places/${place}/${f}`, v: stamp(path.join(dir, f)) } : null);
     // A step that broke for this place in the last build stands before verify's errors: verify did not see it.
     const report = readJson<{ places?: Array<{ place: string; ok: boolean; issues?: Verdict['errors'] }> }>(path.join(ctx.root, slug, 'build.json'))?.places?.find((r) => r.place === place);
-    const verdict = readJson<Verdict>(path.join(dir, 'verify.json'));
+    const verdict = currentVerdict(path.join(ctx.root, slug), place);
     // Whether thing_remove takes a thing: a prop the story does not use (exits, items and people are the story's).
     const raw = World.safeParse(readJson(path.join(ctx.root, slug, 'world.json')));
     const roles = new Map((raw.success ? withThingEdits(raw.data, path.join(ctx.root, slug)).places.find((p) => p.key === place)?.things ?? [] : []).map((t) => [t.key, t.role]));
@@ -188,6 +189,7 @@ defineAction({
     return {
       playable: broke.length === 0 && (verdict?.ok ?? null),
       errors: [...broke, ...(verdict?.errors ?? [])].map((e) => withPlay(e, verdict?.flags)),
+      flags: verdict?.flags ?? [],
       place,
       pictures: { painting: picture('painting.png') ?? picture('blockin.png'), masks: picture('masks/overlay.png'), walk: picture('walk.png') },
       things: Object.entries(masks?.things ?? {}).map(([key, t]) => ({ key, ...t, stand: geometry?.things.find((g) => g.key === key)?.stand ?? null, ...removable(key) })),

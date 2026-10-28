@@ -20,6 +20,8 @@ export type Job = {
   endedAt?: string;
   step?: string;
   error?: string;
+  /** A queued addition reserves its key before its source correction is applied. */
+  addedThing?: { place: string; key: string };
   /** Places verify found not playable, with why: the reason a build that finished still fails. */
   unplayable?: Array<{ place: string; errors: string[] }>;
   /** The last lines it printed. */
@@ -30,6 +32,7 @@ export class Jobs {
   private readonly all: Job[] = [];
   private readonly children = new Map<string, ChildProcess>();
   private readonly waiters = new Map<string, Array<(job: Job) => void>>();
+  private readonly prepare = new Map<string, () => void>();
 
   /** echo: also print the job's output (the CLI runs jobs in the foreground). */
   /** beforeStart runs as a job leaves the queue (the Studio snapshots the world there, for undo). */
@@ -40,9 +43,10 @@ export class Jobs {
     return this.all.find((j) => j.world === world && (j.state === 'running' || j.state === 'queued'));
   }
 
-  start(world: string, args: string[], label: string, by: string): Job {
-    const job: Job = { id: randomBytes(4).toString('hex'), world, label, args, by, state: 'queued', queuedAt: new Date().toISOString(), tail: [] };
+  start(world: string, args: string[], label: string, by: string, prepare?: () => void, addedThing?: Job['addedThing']): Job {
+    const job: Job = { id: randomBytes(4).toString('hex'), world, label, args, by, state: 'queued', queuedAt: new Date().toISOString(), tail: [], ...(addedThing && { addedThing }) };
     this.all.push(job);
+    if (prepare) this.prepare.set(job.id, prepare);
     this.events.publish('job.queued', { world, job: { ...job } });
     this.next(world);
     return job;
@@ -54,6 +58,15 @@ export class Jobs {
 
   get(id: string): Job | undefined {
     return this.all.find((j) => j.id === id);
+  }
+
+  /** A cancelled queued edit has not changed its source yet; retry keeps that pending edit. */
+  retry(id: string, args: string[], by: string): Job {
+    const job = this.get(id);
+    if (!job) throw new Error(`no job ${id}`);
+    const prepare = this.prepare.get(id);
+    this.prepare.delete(id);
+    return this.start(job.world, args, job.label, by, prepare, job.addedThing);
   }
 
   cancel(id: string): Job {
@@ -97,7 +110,15 @@ export class Jobs {
     try {
       this.opts.beforeStart?.(job);
     } catch (error) {
-      this.events.publish('log', { world, job: job.id, stream: 'err', line: `snapshot failed: ${error instanceof Error ? error.message : error}` });
+      this.finish(job, 'failed', `snapshot failed: ${error instanceof Error ? error.message : error}`);
+      return;
+    }
+    try {
+      this.prepare.get(job.id)?.();
+      this.prepare.delete(job.id);
+    } catch (error) {
+      this.finish(job, 'failed', error instanceof Error ? error.message : String(error));
+      return;
     }
     job.state = 'running';
     job.startedAt = new Date().toISOString();

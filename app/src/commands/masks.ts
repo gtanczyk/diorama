@@ -23,6 +23,7 @@ defineCommand({
     const places = world.places.filter((p) => only.length === 0 || only.includes(p.key));
     await Promise.all(places.map(async (place) => {
       const at = (...parts: string[]) => files.place(place.key, ...parts);
+      fs.rmSync(at('verify.json'), { force: true });
       const layout = Layout.parse(files.readJson(at('layout.json')));
       const brief = Brief.parse(files.readJson(at('brief.json')));
       const painting = fs.readFileSync(at('painting.png'));
@@ -70,7 +71,7 @@ defineCommand({
       const things = inOrder(place.things.map((t) => t.key), [...thingsOld, ...thingsNew]).map((t) => brushed(t, fixes.things[t.key]?.strokes));
       const floors = inOrder(layout.floors.map((f) => f.key), [...floorsOld, ...floorsNew]).map((f) => brushed(f, fixes.floors[f.key]?.strokes));
       if (carry) console.log(`  ${place.key}: kept ${thingsOld.length}/${things.length} things and ${floorsOld.length}/${floors.length} floors as they were; masked again: ${[...thingsNew, ...floorsNew].map((m) => m.key).join(', ') || 'nothing'}`);
-      const lastChecks = carry && fs.existsSync(at('masks.json')) ? ((files.readJson(at('masks.json')) as { things?: Record<string, { check?: MaskCheck }> }).things ?? {}) : {};
+      const lastChecks = carry && fs.existsSync(at('masks.json')) ? ((files.readJson(at('masks.json')) as { things?: Record<string, { box?: Rect; check?: MaskCheck }> }).things ?? {}) : {};
 
       fs.rmSync(at('masks'), { recursive: true, force: true });
       for (const t of things) files.write(at('masks', `${t.key}.png`), await maskToPng(t.mask));
@@ -80,17 +81,16 @@ defineCommand({
       const labels = [...floors.map((f) => ({ key: f.key, box: maskBox(f.mask) })), ...things.map((t) => ({ key: t.key, box: t.box as Rect | undefined }))]
         .map((l, i) => (l.box ? svgLabel(l.box[0] + 4, l.box[1] + 18, l.key, PALETTE[i % PALETTE.length]) : ''));
       files.write(at('masks', 'overlay.png'), await tintOver(painting, tints, labels.join('')));
-      // Is each thing really in its mask? A box someone fixed by hand is taken as given.
-      // A kept thing keeps its last check (or none); only the things masked again are looked at again.
-      let checks: Record<string, MaskCheck> = Object.fromEntries(things.flatMap((t) => (keptThing.has(t.key) && !fixes.things[t.key]?.box && lastChecks[t.key]?.check ? [[t.key, lastChecks[t.key].check!]] : [])));
+      // A corrected box guides SAM; it does not prove what SAM cut out. Kept masks retain their check.
+      let checks: Record<string, MaskCheck> = Object.fromEntries(things.flatMap((t) => (keptThing.has(t.key) && lastChecks[t.key]?.check && JSON.stringify(t.box) === JSON.stringify(lastChecks[t.key].box) ? [[t.key, lastChecks[t.key].check!]] : [])));
       try {
-        const look = things.filter((t) => !fixes.things[t.key]?.box && !keptThing.has(t.key));
+        const look = things.filter((t) => !checks[t.key]);
         // Asked by what the thing is (the world's words), not by how the brief dressed it: a brief that described
         // "the empty stall the cow uses" let a mask on an empty stall pass.
         if (look.length) checks = { ...checks, ...await checkMasks(files.memo, place.key, painting, look.map((t) => ({ key: t.key, looks: place.things.find((x) => x.key === t.key)?.looks ?? brief.looks[t.key] ?? t.key, box: t.box as Rect | undefined }))) };
         for (const [key, c] of Object.entries(checks)) if (!c.ok) log(`${key}: Spark sees ${c.seen ?? 'something else'} in its mask`);
       } catch (error) {
-        log(`mask check skipped: ${error instanceof Error ? error.message : error}`);
+        throw new Error(`mask check failed: ${error instanceof Error ? error.message : error}`);
       }
       const round = (v: number) => Math.round(v * 100) / 100;
       files.write(at('masks.json'), {
