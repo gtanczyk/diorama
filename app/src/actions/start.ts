@@ -22,7 +22,7 @@ const Shape = z.object({
   slug: z.string().min(2).max(40),
   places: z.number().int().min(2).max(5),
   language: z.string().min(2).max(30),
-  pictures: z.array(z.enum(['place', 'hero', 'none'])).optional(),
+  pictures: z.array(z.enum(['place', 'hero', 'drawing', 'none'])).optional(),
 });
 type Shape = z.infer<typeof Shape>;
 
@@ -30,7 +30,7 @@ type Shape = z.infer<typeof Shape>;
 export async function shapeIdea(memo: Memo, idea: string, photos: Buffer[]): Promise<Shape> {
   const prompt = `Someone wants a short 2D point-and-click adventure game made from this idea:
 """${idea}"""
-${photos.length ? `\nThey added ${photos.length} photo${photos.length > 1 ? 's' : ''} (in order). For each say what it is for: "place" when it shows a real room or spot that should become the first place of the game, "hero" when it shows a person who should be the hero, "none" otherwise. At most one "place" and one "hero".\n` : ''}
+${photos.length ? `\nThey added ${photos.length} photo${photos.length > 1 ? 's' : ''} (in order). For each say what it is for: "place" when it is a photo of a real room or spot that should become the first place of the game, "hero" when it is a photo of a real person who should be the hero, "drawing" when it is a drawing (a child's or anyone's, on paper or a screen) of a character, a thing or a place for the game, "none" otherwise. At most one "place" and one "hero"; any number of drawings.\n` : ''}
 Decide:
 - title: a short, evocative title for the game, in the language the idea is written in.
 - slug: a short name for its folder: 1 to 3 English words in lowercase-kebab, like "last-foghorn" or "lantern-market".
@@ -54,13 +54,13 @@ const bytesOf = (data: string) => Buffer.from(data.replace(/^data:[^,]*,/, ''), 
 defineAction({
   name: 'world_new',
   description: 'Make a new world from an idea and build it: Spark picks its title, folder name, how many places the story needs (2 to 5) and its language, '
-    + 'unless given; photos (optional) of a real room become the first place and of a person the hero. Starts the world_build job and returns the slug.',
+    + 'unless given; photos (optional) of a real room become the first place, of a person the hero, and drawings the characters, things and places they show. Starts the world_build job and returns the slug.',
   input: z.object({
     idea: z.string().min(10).max(4000),
     slug: Slug.optional().describe('the folder name; picked from the idea when left out'),
     places: z.number().int().min(1).max(8).optional().describe('picked from the idea when left out'),
     language: z.string().min(2).max(30).optional().describe('the game\'s language ("Polish"); read from the idea when left out'),
-    photos: z.array(z.object({ name: z.string().min(1).max(120), data: z.string().min(10) })).max(4).optional().describe('photos, base64: a real room becomes the first place, a person the hero'),
+    photos: z.array(z.object({ name: z.string().min(1).max(120), data: z.string().min(10) })).max(16).optional().describe('photos, base64: a real room becomes the first place, a person the hero, drawings the characters, things and places they show'),
   }),
   job: true,
   async run({ idea, slug, places, language, photos = [] }, ctx) {
@@ -79,10 +79,17 @@ defineAction({
       fs.writeFileSync(file, images[at]);
       return [role === 'place' ? '--photo' : '--hero-photo', file];
     };
+    // Drawings are kept with the world; the world step reads each one (what it shows, who leads) and the game is drawn after them.
+    const drawings = (shape.pictures ?? []).flatMap((role, i) => (role === 'drawing' && images[i] ? [i] : []));
+    drawings.forEach((i, n) => {
+      const file = path.join(dir, 'drawings', `${String(n + 1).padStart(2, '0')}-${photos[i].name.replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'drawing'}.png`);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, images[i]);
+    });
     const lang = language ?? shape.language;
     const args = ['build', name, idea.trim(), '--from', 'world', '--places', String(places ?? shape.places), ...(/^english$/i.test(lang) ? [] : ['--language', lang]), ...kept('place'), ...kept('hero')];
     const job = await ctx.jobs.start(name, args, 'build world > verify', ctx.by);
-    return { slug: name, title: shape.title, places: places ?? shape.places, language: lang, job };
+    return { slug: name, title: shape.title, places: places ?? shape.places, language: lang, drawings: drawings.length, job };
   },
 });
 

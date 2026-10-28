@@ -6,7 +6,7 @@ import type { ChatNotice, SessionTurn } from 'genaicode/react';
 import { askAgent, call, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
 import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
-import { base64, shrink } from './camera.tsx';
+import { base64, Camera, shrink } from './camera.tsx';
 import { StoryView } from './story.tsx';
 import { StyleMenu } from './style-menu.tsx';
 import { PlaceEditor } from './place.tsx';
@@ -312,6 +312,10 @@ const EXAMPLES = [
 ];
 
 type Photo = { name: string; data: string };
+/** As many photos as a world_new takes: a class's drawings, a room, a person. */
+const MAX_PHOTOS = 16;
+/** The languages the game's voices speak (ElevenLabs multilingual); Spark writes in all of them. */
+const LANGUAGES = ['Arabic', 'Bulgarian', 'Chinese', 'Croatian', 'Czech', 'Danish', 'Dutch', 'English', 'Filipino', 'Finnish', 'French', 'German', 'Greek', 'Hindi', 'Indonesian', 'Italian', 'Japanese', 'Korean', 'Malay', 'Polish', 'Portuguese', 'Romanian', 'Russian', 'Slovak', 'Spanish', 'Swedish', 'Tamil', 'Turkish', 'Ukrainian'];
 
 /** The mic beside the idea: press to speak, press again; what was said joins the text. */
 function SayIt({ onText, onError }: { onText: (text: string) => void; onError: (m: string) => void }) {
@@ -388,13 +392,20 @@ function Start() {
   const [language, setLanguage] = useState('');
   const [busy, setBusy] = useState(false);
   const [drop, setDrop] = useState(false);
+  const [camera, setCamera] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const taken = !!slug && worlds?.some((w) => w.slug === slug);
   const ready = idea.trim().length >= 10 && !taken && !noKey && !busy;
   const addPhotos = async (files: Iterable<File>) => {
     const pics = [...files].filter((f) => f.type.startsWith('image/'));
     const kept = await Promise.all(pics.map(async (f) => ({ name: (f.name || 'pasted.png').replace(/\.[^.]+$/, '') + '.jpg', data: await shrink(f) })));
-    setPhotos((p) => [...p, ...kept].slice(0, 2));
+    setPhotos((p) => [...p, ...kept].slice(0, MAX_PHOTOS));
+  };
+  // A snap from the camera: shrunk like a picked photo, named in the order taken.
+  const snap = async (jpeg: string) => {
+    const bytes = Uint8Array.from(atob(jpeg.slice(jpeg.indexOf(',') + 1)), (c) => c.charCodeAt(0));
+    const data = await shrink(new Blob([bytes], { type: 'image/jpeg' }));
+    setPhotos((p) => [...p, { name: `photo-${p.length + 1}.jpg`, data }].slice(0, MAX_PHOTOS));
   };
   const build = async (e?: Event) => {
     e?.preventDefault();
@@ -430,17 +441,18 @@ function Start() {
             {photos.length > 0 && (
               <div class="attached">
                 {photos.map((p, i) => (
-                  <span class="att" title="Spark decides: a real room becomes the first place, a person becomes the hero">
-                    <img src={p.data} alt="" />{p.name}
+                  <span class="att" title={`${p.name}. Spark decides what it is: a real room becomes the first place, a person the hero, a drawing a character, thing or place of the game`}>
+                    <button type="button" class="ghost bare" data-lightbox={p.data} aria-label="See it big"><img src={p.data} alt="" /></button>
                     <button type="button" class="ghost bare" aria-label="Remove the photo" onClick={() => setPhotos(photos.filter((_, j) => j !== i))}>×</button>
                   </span>
                 ))}
               </div>
             )}
             <div class="row">
-              <label class="button ghost bare" title="A photo of a real room becomes the first place; a photo of a person becomes the hero. Dropping or pasting a picture works too. Spark reads it: no extra call">
+              <label class="button ghost bare" title="A photo of a real room becomes the first place, of a person the hero, of a drawing a character, thing or place. Dropping or pasting pictures works too">
                 <input type="file" accept="image/*" multiple onChange={(e) => (void addPhotos(e.currentTarget.files ?? []), (e.currentTarget.value = ''))} />＋ Photo
               </label>
+              <button type="button" class="ghost bare" title="Take photos with the camera, one after another: drawings, a room, a person" onClick={() => setCamera(true)}>📷 Camera</button>
               <SayIt onText={(text) => (setIdea((old) => `${old.trim()} ${text}`.trim()), box.current?.focus())} onError={setError} />
               <span class="grow" />
               <button type="submit" class="primary" disabled={!ready}
@@ -453,15 +465,22 @@ function Start() {
             {EXAMPLES.map((x) => <button type="button" class="chip" title="Start from this idea" onClick={() => (setIdea(x), box.current?.focus())}>{x}</button>)}
           </div>
           <details class="more">
-            <summary title="The world's name, how many places and the language: Spark picks them from the idea when left on Auto">More</summary>
-            <div class="row">
-              <label title="The world's name in links and folders: small letters, digits and dashes">Name <input value={slug} placeholder="auto" onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
-              <label title="How many places the game has. Each is about one Muse Image painting plus SAM cut-outs. Auto: as many as the story needs (2 to 5)">Places <select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}><option value={0}>Auto</option>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
-              <label title="The language of the game's text and voices. Auto: the language the idea is written in">Language <select value={language} onChange={(e) => setLanguage(e.currentTarget.value)}><option value="">Auto</option>{['English', 'Polish', 'German', 'French', 'Spanish', 'Italian'].map((l) => <option value={l}>{l}</option>)}</select></label>
+            <summary title="The world's name, how many places and the language: Spark picks them from the idea when left on Auto">More options</summary>
+            <div class="fields">
+              <label title="The world's name in links and folders: small letters, digits and dashes"><span>Name</span><input value={slug} placeholder="Auto" onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
+              <label title="How many places the game has. Each is about one Muse Image painting plus SAM cut-outs. Auto: as many as the story needs (2 to 5)"><span>Places</span><select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}><option value={0}>Auto</option>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
+              <label title="The language of the game's text and voices: every language the voices speak. Auto: the language the idea is written in"><span>Language</span><select value={language} onChange={(e) => setLanguage(e.currentTarget.value)}><option value="">Auto</option>{LANGUAGES.map((l) => <option value={l}>{l}</option>)}</select></label>
             </div>
           </details>
           {error && <p class="error">{error}</p>}
         </form>
+        {camera && (
+          <div class="shoot" role="dialog" aria-label="Camera">
+            <Camera tip={photos.length >= MAX_PHOTOS ? `That is ${MAX_PHOTOS}, the most one world takes.` : 'Hold each drawing flat, filling the picture. Take as many as you like, then Done.'} words={{ snap: photos.length ? `Take another (${photos.length})` : 'Take the photo', done: 'Done', none: 'No camera' }}
+              onSnap={(jpeg) => photos.length < MAX_PHOTOS && void snap(jpeg)} onClose={() => setCamera(false)} />
+            {photos.length > 0 && <div class="taken">{photos.map((p) => <img src={p.data} alt="" />)}</div>}
+          </div>
+        )}
       </main>
     </>
   );

@@ -837,3 +837,27 @@ button:not(.spot, .thumb, .who):active:not(:disabled) { transform: translateY(1p
 .convo .agent-hand:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); }
 .convo .handover { display: flex; align-items: center; gap: 10px; margin: 14px 0; font-size: 12px; color: var(--muted); }
 .convo .handover::before, .convo .handover::after { content: ""; flex: 1; border-top: 1px dashed var(--line); }
+
+/* Start: many photos (a class's drawings), the camera that keeps taking them, and the quiet options under More. */
+main.start .prompt .attached { max-height: 96px; overflow: auto; }
+main.start .prompt .att { padding: 3px 3px 3px 3px; gap: 2px; }
+main.start .prompt .att > button.bare { min-height: 0; padding: 0; border: 0; background: none; line-height: 0; }
+main.start .shoot { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; background: rgba(43, 39, 35, 0.72); backdrop-filter: blur(6px); }
+main.start .shoot .camera { width: min(960px, 100%); padding: 14px; border-radius: 18px; background: var(--panel); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35); }
+main.start .shoot .camera video { max-width: none; max-height: calc(100dvh - 260px); object-fit: contain; }
+main.start .shoot .camera .row { align-items: center; gap: 10px; }
+main.start .shoot .camera .primary { background: var(--amber); color: #fff; border-color: var(--amber); }
+main.start .shoot .taken { display: flex; gap: 6px; max-width: min(960px, 100%); overflow-x: auto; padding: 2px; }
+main.start .shoot .taken img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; border: 2px solid #fff; flex: none; }
+main.start .more { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+main.start .more summary { list-style: none; padding: 6px 14px; border-radius: 999px; color: var(--muted); font-size: 13px; user-select: none; }
+main.start .more summary::-webkit-details-marker { display: none; }
+main.start .more summary::after { content: " ▾"; color: var(--faint); }
+main.start .more[open] summary::after { content: " ▴"; }
+main.start .more summary:hover { background: var(--raised); color: var(--text); }
+main.start .more .fields { display: grid; grid-template-columns: 1.4fr 0.8fr 1.2fr; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: 0 8px 24px rgba(80, 55, 25, 0.06); }
+main.start .more .fields label { text-align: left; display: flex; flex-direction: column; align-items: stretch; gap: 5px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+main.start .more .fields input, main.start .more .fields select { min-width: 0; height: 38px; padding: 0 12px; font-size: 14px; letter-spacing: normal; text-transform: none; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+main.start .more .fields select { appearance: none; padding-right: 30px; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: right 15px top 17px, right 10px top 17px; background-size: 5px 5px; background-repeat: no-repeat; cursor: pointer; }
+main.start .more .fields input:focus, main.start .more .fields select:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3px rgba(194, 122, 44, 0.15); }
+@media (max-width: 640px) { main.start .more .fields { grid-template-columns: 1fr; } }
