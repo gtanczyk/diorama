@@ -750,6 +750,11 @@ function Workshop({ slug }: { slug: string }) {
       {error && <p class="error">{error}</p>}
     </div>
   );
+  // The tab says which world it is.
+  useEffect(() => {
+    document.title = `${status?.title ?? slug} · Diorama`;
+    return () => void (document.title = 'Diorama Studio');
+  }, [status?.title, slug]);
   const stageTitle = shownView.kind === 'place' ? nice(stagedPlace?.key ?? '') : shownView.kind === 'cast' ? 'Cast' : shownView.kind === 'story' ? 'Story' : shownView.kind === 'build' ? (stagePlace ? nice(stagePlace.key) : 'Building') : status?.title ?? slug;
   const stageHint = shownView.kind === 'place' ? 'Click a thing to talk about it' : shownView.kind === 'cast' ? 'Click someone to talk about them' : shownView.kind === 'play' ? 'Click to walk, right click to look, or a gamepad' : '';
 
