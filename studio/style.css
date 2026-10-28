@@ -563,7 +563,9 @@ body.dragging iframe { pointer-events: none; }
 .crew .detail { margin: 0; }
 .crew .ideas { display: flex; flex-wrap: wrap; gap: 6px; }
 .crew .ideas button { font-size: 12px; }
-.things td.remove { white-space: nowrap; text-align: right; }
+.things td.remove { width: 1%; text-align: right; }
+.things tr.confirm td { padding-top: 0; }
+.things tr.confirm .row { flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .things .add-thing input { width: 100%; }
 button.danger { color: var(--bad); }
 /* Start: one idea box up top, the worlds below scroll inside, the page itself never scrolls. */
@@ -596,3 +598,18 @@ main.start .more label, .workshop-start label { display: flex; gap: 8px; align-i
 main.workshop-start { overflow: auto; }
 main.workshop-start > * { flex: none; }
 main.workshop-start .start-worlds { flex: none; overflow: visible; }
+/* In a narrow column the things table drops the mask column; narrower still, each thing is a small card: its key over its controls. */
+.editor { container-type: inline-size; }
+@container (max-width: 640px) {
+  .things th:nth-child(4), .things td:nth-child(4):not([colspan]) { display: none; }
+  .things select { max-width: 110px; }
+}
+@container (max-width: 520px) {
+  table.things thead { display: none; }
+  table.things tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 6px; padding: 6px 0; border-top: 1px solid var(--line); }
+  table.things td { border: 0; padding: 0; }
+  table.things td:first-child, table.things tr.confirm td, table.things tr.add-thing td:nth-child(2) { grid-column: 1 / -1; }
+  table.things tr.add-thing td:last-child { display: none; }
+  table.things tr.confirm { border-top: 0; padding-top: 0; }
+  table.things input { min-width: 0; }
+}

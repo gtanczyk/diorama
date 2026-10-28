@@ -224,20 +224,28 @@ function ThingLine({ t, busy, fix, remove }: { t: ThingRow; busy: boolean; fix: 
   const [phrase, setPhrase] = useState(t.phrase);
   useEffect(() => setPhrase(t.phrase), [t.phrase]);
   return (
+    <>
     <tr>
       <td><code>{t.key}</code></td>
       <td><select value={t.kind} disabled={busy} title={KIND_TIPS[t.kind] ?? 'What kind of thing it is'} onChange={(e) => fix({ kind: e.currentTarget.value })}>{KINDS.map((k) => <option value={k}>{k}</option>)}</select></td>
       <td><form class="row" onSubmit={(e) => (e.preventDefault(), phrase.trim() !== t.phrase && fix({ phrase: phrase.trim() }))}><input value={phrase} title="The words SAM searches the painting for. Change them and press Search" onInput={(e) => setPhrase(e.currentTarget.value)} />{phrase.trim() !== t.phrase && phrase.trim().length > 1 && <button type="submit" class="primary small" disabled={busy} title="SAM looks for the thing by these words. 1 SAM call">Search</button>}</form></td>
       <td><span class={`badge ${t.coarse ? 'fail' : 'ok'}`} title={t.coarse ? 'SAM did not find it: the mask is only a box' : undefined}>{t.source}{t.brushed ? ' + brush' : ''}</span></td>
       <td class="remove">
-        {asking
-          ? <span class="row">
-              <button type="button" class="ghost small" disabled={busy} title="It stays in the picture, but is no longer a thing of its own. Free" onClick={() => (setAsking(false), remove(false))}>Keep it painted</button>
-              <button type="button" class="ghost small danger" disabled={busy} title="Muse paints it out of the picture, then the place is checked again. 1 Muse Image edit" onClick={() => (setAsking(false), remove(true))}>Paint it out</button>
-              <button type="button" class="ghost small" onClick={() => setAsking(false)}>Cancel</button>
-            </span>
-          : <button type="button" class="ghost small" disabled={busy || t.removable === false} title={t.removable === false ? `Can't remove: ${t.why}` : 'Take it off the list'} aria-label={`Remove ${t.key}`} onClick={() => setAsking(true)}>Remove</button>}
+        <button type="button" class={`ghost small${asking ? ' on' : ''}`} disabled={busy || t.removable === false} title={t.removable === false ? `Can't remove: ${t.why}` : 'Take it off the list'} aria-label={`Remove ${t.key}`} onClick={() => setAsking(!asking)}>×</button>
       </td>
     </tr>
+    {asking && (
+      <tr class="confirm">
+        <td colSpan={5}>
+          <span class="row">
+            <span class="detail">Take <code>{t.key}</code> off the list:</span>
+            <button type="button" class="ghost small" disabled={busy} title="It stays in the picture, but is no longer a thing of its own. Free" onClick={() => (setAsking(false), remove(false))}>Keep it painted</button>
+            <button type="button" class="ghost small danger" disabled={busy} title="Muse paints it out of the picture, then the place is checked again. 1 Muse Image edit" onClick={() => (setAsking(false), remove(true))}>Paint it out</button>
+            <button type="button" class="ghost small" onClick={() => setAsking(false)}>Cancel</button>
+          </span>
+        </td>
+      </tr>
+    )}
+    </>
   );
 }
