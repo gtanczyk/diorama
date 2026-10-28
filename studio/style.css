@@ -530,3 +530,6 @@ body.dragging iframe { pointer-events: none; }
 .menu-group { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
 .menu-group p { margin: 0; }
 .menu-head { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+/* One tooltip for the whole Studio (tip.tsx): what a control does and what it costs. */
+.tip { position: fixed; left: 0; top: 0; z-index: 1000; max-width: 300px; padding: 7px 10px; border-radius: 8px; background: var(--raised); color: var(--text); border: 1px solid var(--line-strong); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); font-size: 13px; line-height: 1.4; white-space: pre-line; pointer-events: none; opacity: 0; transition: opacity 0.12s; }
+.tip.on { opacity: 1; }

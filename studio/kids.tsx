@@ -129,7 +129,7 @@ function Recorder({ onClip, big }: { onClip: (blob: Blob, ext: string) => void; 
   const stop = () => (rec?.stop(), setRec(null));
   return (
     <div class="row">
-      <button type="button" class={`record${rec ? ' on' : big ? ' primary' : ''}`} onClick={rec ? stop : start}>{rec ? `■ ${t('Stop', 'Stop')} · ${seconds} s` : `● ${t('Nagrywaj', 'Record')}`}</button>
+      <button type="button" class={`record${rec ? ' on' : big ? ' primary' : ''}`} title={rec ? t('Zatrzymaj: nagranie od razu idzie do odsłuchu', 'Stop: the clip is sent and heard at once') : t('Nagraj opowieść. Każde nagranie Muse zamienia na tekst: 1 wywołanie', 'Record the story. Muse turns each clip into text: 1 call')} onClick={rec ? stop : start}>{rec ? `■ ${t('Stop', 'Stop')} · ${seconds} s` : `● ${t('Nagrywaj', 'Record')}`}</button>
       <span class="detail">{rec ? t('Słucham… jedno dziecko naraz, blisko mikrofonu.', 'Listening… one child at a time, close to the microphone.') : t('Jedno dziecko naraz opowiada kawałek historii, najwyżej minutę lub dwie.', 'One child at a time tells a piece of the story, a minute or two at most.')}</span>
       {error && <span class="error">{error}</span>}
     </div>
@@ -221,8 +221,8 @@ export function KidsStart({ slug, taken, onBuild, onError, children }: { slug: s
       <section class={`card${step === 1 ? ' now' : ''}`}>
         <h2><span class="n">{drew ? '✓' : '1'}</span> {t('Rysunki', 'Their drawings')}</h2>
         <div class="row big">
-          <button type="button" class={step === 1 ? 'primary' : 'ghost'} onClick={() => setCamera(!camera)}>📷 {camera ? t('Zamknij aparat', 'Close the camera') : t('Zrób zdjęcie', 'Take a photo')}</button>
-          <label class="button ghost">
+          <button type="button" class={step === 1 ? 'primary' : 'ghost'} title={camera ? t('Zamknij aparat', 'Close the camera') : t('Sfotografuj rysunek kamerą. Każdy rysunek ożywa w pół minuty: 1 obraz Muse + SAM', 'Photograph a drawing with the webcam. Each comes to life in half a minute: 1 Muse Image + SAM')} onClick={() => setCamera(!camera)}>📷 {camera ? t('Zamknij aparat', 'Close the camera') : t('Zrób zdjęcie', 'Take a photo')}</button>
+          <label class="button ghost" title={t('Dodaj zdjęcia rysunków z dysku. Każdy ożywa: 1 obraz Muse + SAM', 'Add photos of drawings from this computer. Each comes to life: 1 Muse Image + SAM')}>
             <input type="file" accept="image/*" multiple onChange={(e) => (addPhotos(e.currentTarget.files), (e.currentTarget.value = ''))} />
             {t('Dodaj zdjęcia', 'Add photos')}
           </label>
@@ -233,18 +233,18 @@ export function KidsStart({ slug, taken, onBuild, onError, children }: { slug: s
           onDrop={(e) => (e.preventDefault(), addPhotos(e.dataTransfer?.files ?? null))}>
           {m.drawings.map((d) => (
             <figure class={painting.includes(d.file) ? 'painting' : ''}>
-              <button type="button" class="pic" title={d.preview ? t('Pokaż w dużym', 'Show it big') : ''} onClick={() => d.preview && setShown(d.file)}>
+              <button type="button" class="pic" title={d.preview ? t('Pokaż w dużym: rysunek i to, czym się stał', 'Show it big: the drawing and what it became') : t('Ożywa…', 'Coming to life…')} onClick={() => d.preview && setShown(d.file)}>
                 <img src={fileUrl(slug, d.file, d.v)} alt="" />
                 {d.preview && <img class={`alive${d.drawn?.kind === 'place' ? ' place' : ''}`} src={fileUrl(slug, d.preview.file, d.preview.v)} alt="" />}
                 {painting.includes(d.file) && <span class="spark">{t('Ożywa…', 'Coming to life…')}</span>}
               </button>
               <figcaption>
-                <select value={d.drawn?.kind ?? ''} title={d.drawn ? `${d.drawn.key}: ${d.drawn.looks}` : t('Czym jest w grze', 'What it is in the game')} onChange={(e) => setKind(d.file, e.currentTarget.value || null)}>
+                <select value={d.drawn?.kind ?? ''} title={d.drawn ? t(`Czym jest w grze. Zmiana postaci maluje ją od nowa: 1 obraz Muse\n${d.drawn.looks}`, `What it is in the game. A changed character is painted again: 1 Muse Image\n${d.drawn.key}: ${d.drawn.looks}`) : t('Czym jest w grze', 'What it is in the game')} onChange={(e) => setKind(d.file, e.currentTarget.value || null)}>
                   <option value="">{d.drawn ? `${KIND()[d.drawn.kind] ?? d.drawn.kind}?` : t('Czytam…', 'Reading…')}</option>
                   {Object.entries(KIND()).map(([k, label]) => <option value={k}>{label}</option>)}
                 </select>
               </figcaption>
-              <button type="button" class="ghost small" title={t('Usuń', 'Take out')} onClick={() => remove(d.file)}>×</button>
+              <button type="button" class="ghost small" title={t('Usuń ten rysunek z gry', 'Take this drawing out of the game')} onClick={() => remove(d.file)}>×</button>
             </figure>
           ))}
           {!drew && <p class="detail empty">{t('Sfotografuj każdy rysunek, płasko, na cały kadr. Każdy ożyje po mniej więcej pół minucie. Zdjęcia można też tu upuścić.', 'Photograph each drawing, flat and filling the picture. Each one comes to life in about half a minute. You can also drop photos here.')}</p>}
@@ -255,13 +255,13 @@ export function KidsStart({ slug, taken, onBuild, onError, children }: { slug: s
         <Recorder onClip={recorded} big={step === 2} />
         {m.told.length > 0 && (
           <details class="told">
-            <summary class="detail">{t(`Nagrania: ${m.told.length}, co usłyszałem`, `${m.told.length} recording${m.told.length === 1 ? '' : 's'}: what was heard`)}</summary>
+            <summary class="detail" title={t('Odsłuchaj nagrania i przeczytaj, co z nich zrozumiano', 'Play the clips back and read what was heard')}>{t(`Nagrania: ${m.told.length}, co usłyszałem`, `${m.told.length} recording${m.told.length === 1 ? '' : 's'}: what was heard`)}</summary>
             <ul>
               {m.told.map((clip) => (
                 <li>
                   <audio controls preload="none" src={fileUrl(slug, clip.file)} />
                   <span class="grow">{clip.text ?? <span class="detail">{t('jeszcze nie usłyszane', 'not heard yet')}</span>}</span>
-                  <button type="button" class="ghost small" title={t('Usuń', 'Take out')} onClick={() => remove(clip.file)}>×</button>
+                  <button type="button" class="ghost small" title={t('Usuń to nagranie z historii', 'Take this recording out of the story')} onClick={() => remove(clip.file)}>×</button>
                 </li>
               ))}
             </ul>
@@ -275,24 +275,24 @@ export function KidsStart({ slug, taken, onBuild, onError, children }: { slug: s
             {m.reading && <audio controls preload="none" src={fileUrl(slug, m.reading.file, m.reading.v)} />}
             {editing
               ? <textarea rows={5} value={idea} onInput={(e) => setIdea(e.currentTarget.value)} />
-              : <p class="story" onClick={() => setEditing(true)} title={t('Kliknij, żeby zmienić', 'Click to change')}>{idea}</p>}
+              : <p class="story" onClick={() => setEditing(true)} title={t('Kliknij, żeby poprawić tekst. Za darmo', 'Click to change the text. Free')}>{idea}</p>}
           </>
         ) : <p class="detail">{drew || told ? t('Historia powstanie z nagrań i rysunków i zostanie przeczytana na głos.', 'The story is written from the recordings and drawings, and read aloud.') : t('Historia pojawi się tu, gdy dzieci narysują i opowiedzą.', 'The story appears here once they have drawn and told it.')}</p>}
         <div class="row big">
-          {!m.idea && <button type="button" class="ghost" onClick={write} disabled={busy.length > 0 || (!drew && !told)}>{t('Napisz historię', 'Write the story')}</button>}
+          {!m.idea && <button type="button" class="ghost" title={t('Muse Spark składa rysunki i nagrania w jedną krótką historię, a lektor czyta ją na głos. 1 wywołanie Spark + 1 ElevenLabs', 'Muse Spark joins the drawings and recordings into one short story and a storyteller reads it aloud. 1 Spark + 1 ElevenLabs call')} onClick={write} disabled={busy.length > 0 || (!drew && !told)}>{t('Napisz historię', 'Write the story')}</button>}
           <span class="grow" />
-          <button type="button" class="primary" disabled={idea.trim().length < 10 || busy.length > 0 || m.built} onClick={() => onBuild(idea.trim())}>{t('Budujemy grę!', 'Build their game')}</button>
+          <button type="button" class="primary" disabled={idea.trim().length < 10 || busy.length > 0 || m.built} title={m.built ? t('Ta gra jest już zbudowana', 'This game is built already') : t('Buduje całą grę z tej historii, około kwadransa. Na każde miejsce ok. 1 obraz Muse i kilka wywołań SAM i Spark', 'Build the whole game from this story, about a quarter of an hour. Per place about 1 Muse Image and several SAM and Spark calls')} onClick={() => onBuild(idea.trim())}>{t('Budujemy grę!', 'Build their game')}</button>
         </div>
       </section>
       <details class="more">
-        <summary>{t('Więcej', 'More')}</summary>
+        <summary title={t('Nazwa, liczba miejsc, dopiski do historii', 'Name, number of places, notes for the story')}>{t('Więcej', 'More')}</summary>
         {children}
         <div class="row">
-          <input class="grow" placeholder={t('Coś do dodania (nieobowiązkowe): „kotek znajduje czapkę”, „niech będzie śmiesznie”', "Anything to add (optional): 'the cat finds the hat', 'make it funny'")} value={note} onInput={(e) => setNote(e.currentTarget.value)} />
-          <button type="button" class="ghost" onClick={write} disabled={busy.length > 0 || (!drew && !told)}>{m.idea ? t('Napisz od nowa', 'Write it again') : t('Napisz historię', 'Write the story')}</button>
+          <input class="grow" title={t('Dopisek dla Muse Spark przy pisaniu historii', 'A note for Muse Spark when it writes the story')} placeholder={t('Coś do dodania (nieobowiązkowe): „kotek znajduje czapkę”, „niech będzie śmiesznie”', "Anything to add (optional): 'the cat finds the hat', 'make it funny'")} value={note} onInput={(e) => setNote(e.currentTarget.value)} />
+          <button type="button" class="ghost" title={t('Historia pisze się od nowa z dopiskiem i jest czytana na głos. 1 wywołanie Spark + 1 ElevenLabs', 'The story is written again with the note and read aloud. 1 Spark + 1 ElevenLabs call')} onClick={write} disabled={busy.length > 0 || (!drew && !told)}>{m.idea ? t('Napisz od nowa', 'Write it again') : t('Napisz historię', 'Write the story')}</button>
         </div>
-        <label class="detail"><input type="checkbox" checked={grow} onChange={(e) => setGrow(e.currentTarget.checked)} /> {t('Po każdym nagraniu historia pisze się od nowa i jest czytana na głos', 'The story is written again after every recording and read aloud')}</label>
-        {m.idea && !editing && <button type="button" class="ghost small" onClick={() => setEditing(true)}>{t('Zmień tekst historii', 'Change the story text')}</button>}
+        <label class="detail" title={t('Każde nagranie kosztuje wtedy też 1 Spark + 1 ElevenLabs', 'Each recording then also costs 1 Spark + 1 ElevenLabs call')}><input type="checkbox" checked={grow} onChange={(e) => setGrow(e.currentTarget.checked)} /> {t('Po każdym nagraniu historia pisze się od nowa i jest czytana na głos', 'The story is written again after every recording and read aloud')}</label>
+        {m.idea && !editing && <button type="button" class="ghost small" title={t('Popraw tekst ręcznie. Za darmo', 'Change the text by hand. Free')} onClick={() => setEditing(true)}>{t('Zmień tekst historii', 'Change the story text')}</button>}
       </details>
       {big && (
         <div class="show" onClick={() => setShown(null)}>

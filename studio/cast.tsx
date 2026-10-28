@@ -50,9 +50,9 @@ function Items({ slug, version, onError }: { slug: string; version: number; onEr
               <strong>{it.name}</strong>
               <span class="detail">{it.from ? `picked up: ${it.from.place} / ${it.from.thing}` : 'handed over'}{it.how ? ` · ${HOW[it.how]}` : ''}</span>
               <form class="row" onSubmit={(e) => (e.preventDefault(), (hints[it.key] ?? '').trim().length >= 3 && void act('icon_redo', { item: it.key, hint: hints[it.key].trim() }))}>
-                <input value={hints[it.key] ?? it.fix?.hint ?? ''} placeholder="How it should look" aria-label={`How ${it.name} should look`} onInput={(e) => setHints({ ...hints, [it.key]: e.currentTarget.value })} />
-                <button type="button" class="ghost small" onClick={() => act('icon_redo', { item: it.key, anotherTake: true })}>Another take</button>
-                <button type="submit" class={`${(hints[it.key] ?? '').trim().length >= 3 ? 'primary' : 'ghost'} small`}>Redraw</button>
+                <input value={hints[it.key] ?? it.fix?.hint ?? ''} placeholder="How it should look" title="Your words for the icon, e.g. 'a rusty brass key'. Press Redraw to use them" aria-label={`How ${it.name} should look`} onInput={(e) => setHints({ ...hints, [it.key]: e.currentTarget.value })} />
+                <button type="button" class="ghost small" title={it.how === 'cut' ? 'This icon is cut from the painting, so another take comes out the same. Write how it should look and press Redraw.' : `Muse ${it.how === 'paint' ? 'paints' : 'redraws'} the icon again, a new version of the same thing. 1 Muse Image call`} onClick={() => act('icon_redo', { item: it.key, anotherTake: true })}>Another take</button>
+                <button type="submit" class={`${(hints[it.key] ?? '').trim().length >= 3 ? 'primary' : 'ghost'} small`} title="Muse redraws the icon the way you wrote, kept across rebuilds. 1 Muse Image call">Redraw</button>
               </form>
             </div>
           </li>
@@ -91,23 +91,23 @@ function Card({ slug, c, onError }: { slug: string; c: Character; onError: (m: s
           <span class="badge">{c.role === 'hero' ? 'hero' : c.role === 'player' ? 'hero for another gamepad' : c.role === 'narrator' ? 'narrator' : `NPC · ${c.place}`}</span>
           <span class="grow" />
           {parts.length > 0 && <span class="detail">{parts.join(' · ')}</span>}
-          {(c.rig || c.model || c.sprites) && <button type="button" class={`ghost small${moving ? ' on' : ''}`} onClick={() => setMoving(!moving)}>{moving ? 'Hide' : 'See it move'}</button>}
+          {(c.rig || c.model || c.sprites) && <button type="button" class={`ghost small${moving ? ' on' : ''}`} title={moving ? 'Close the preview' : 'Watch the figure walk, stand and talk as the game draws it. Free'} onClick={() => setMoving(!moving)}>{moving ? 'Hide' : 'See it move'}</button>}
         </div>
         {c.role !== 'narrator' && (
           <form class="say" onSubmit={(e) => (e.preventDefault(), changed && void act('cast_redo', { looks: looks.trim() }))}>
-            <textarea rows={3} value={looks} onInput={(e) => setLooks(e.currentTarget.value)} aria-label={`How ${c.key} looks`} />
+            <textarea rows={3} value={looks} title="How the character looks. Change it and press Repaint" onInput={(e) => setLooks(e.currentTarget.value)} aria-label={`How ${c.key} looks`} />
             <div class="row">
               {c.fix?.looks && <span class="detail">your description{c.fix.take ? ` · take ${c.fix.take + 1}` : ''}</span>}
               <span class="grow" />
-              <button type="button" class="ghost small" disabled={busy} onClick={() => act('cast_redo', { anotherTake: true })}>Another take</button>
-              <button type="submit" class="primary small" disabled={busy || !changed}>Repaint</button>
+              <button type="button" class="ghost small" disabled={busy} title="Muse paints this character again from the same description and SAM cuts the figure out. 1 Muse Image + 1 SAM call. Sprites and the 3D model are not remade" onClick={() => act('cast_redo', { anotherTake: true })}>Another take</button>
+              <button type="submit" class="primary small" disabled={busy || !changed} title={changed ? 'Muse paints the character from your new description, kept across rebuilds. 1 Muse Image + 1 SAM call' : 'Change the description first (at least 10 letters)'}>Repaint</button>
             </div>
           </form>
         )}
         <div class="row voice">
           {c.voice
             ? <>
-                <label>Voice <select onFocus={loadVoices} onMouseDown={loadVoices} disabled={busy} value={c.voice.voice} onChange={(e) => act('voice_set', { voice: e.currentTarget.value })}>
+                <label title="Pick another voice. Their lines are spoken again: ElevenLabs, one call per line of this character">Voice <select onFocus={loadVoices} onMouseDown={loadVoices} disabled={busy} value={c.voice.voice} onChange={(e) => act('voice_set', { voice: e.currentTarget.value })}>
                   {(voices ?? [{ id: c.voice.voice, name: c.voice.why, sounds: '' }]).map((v) => <option value={v.id} title={[v.name, v.sounds].filter(Boolean).join(' · ')}>{v.fits === false ? '(does not fit) ' : ''}{short(v.name, 32)}{v.sounds ? ` · ${short(v.sounds, 40)}` : ''}</option>)}
                 </select></label>
                 <span class="detail">{c.lines} line{c.lines === 1 ? '' : 's'}{c.flagged ? `, ${c.flagged} misheard` : ''}</span>

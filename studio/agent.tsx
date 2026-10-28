@@ -238,12 +238,12 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [] }: { slug: strin
             {pics.map((f) => (
               <span class="pic">
                 <img src={fileUrl(slug, f)} alt="" />
-                <button type="button" class="ghost small" aria-label="Take this picture out" onClick={() => setPics((p) => p.filter((x) => x !== f))}>×</button>
+                <button type="button" class="ghost small" aria-label="Take this picture out" title="Take this picture out" onClick={() => setPics((p) => p.filter((x) => x !== f))}>×</button>
               </span>
             ))}
             {adding > 0 && <span class="detail">adding…</span>}
-            <button type="button" class="ghost small" title="Or paste a picture (Cmd+V) or drop one here" onClick={() => picker.current?.click()}>Add a picture</button>
-            <button type="button" class="ghost small" onClick={() => setCamera(!camera)}>{camera ? 'Close the camera' : 'Take a photo'}</button>
+            <button type="button" class="ghost small" title="Show the agent a picture with your message. Or paste one (Cmd+V) or drop it here" onClick={() => picker.current?.click()}>Add a picture</button>
+            <button type="button" class="ghost small" title={camera ? 'Close the camera' : 'Take a webcam photo to send the agent with your message'} onClick={() => setCamera(!camera)}>{camera ? 'Close the camera' : 'Take a photo'}</button>
             <input ref={picker} type="file" accept="image/*" multiple hidden onChange={(e) => (addFiles(e.currentTarget.files ?? []), (e.currentTarget.value = ''))} />
             {error && <span class="error">{error}</span>}
           </div>
@@ -252,10 +252,10 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [] }: { slug: strin
       {camera && <Camera tip="Show the agent what you mean." onSnap={(d) => (void keep('photo.jpg', d), setCamera(false))} onClose={() => setCamera(false)} />}
       {!replay && (
         <details class="replays" onToggle={(e) => (e.currentTarget as HTMLDetailsElement).open && call<Session[]>('agent_sessions', { slug }).then(setSessions).catch(() => {})}>
-          <summary>Recorded sessions</summary>
+          <summary title="Every conversation with the agent is recorded; play one back as it happened (for the film)">Recorded sessions</summary>
           {sessions && sessions.filter((x) => x.replayable).length === 0 && <p class="note">None yet: every conversation is recorded from now on.</p>}
           <ul>{sessions?.filter((x) => x.replayable).map((x) => (
-            <li><a href={`/w/${slug}?replay=${encodeURIComponent(x.file)}`}>{x.started?.slice(0, 16).replace('T', ' ')}</a> <span class="detail">{x.agents.join(', ')} · {x.turns} turn{x.turns === 1 ? '' : 's'}{x.prompts[0] ? ` · ${x.prompts[0]}` : ''}</span></li>
+            <li><a title="Play this session back as it happened. Free, nothing is run again" href={`/w/${slug}?replay=${encodeURIComponent(x.file)}`}>{x.started?.slice(0, 16).replace('T', ' ')}</a> <span class="detail">{x.agents.join(', ')} · {x.turns} turn{x.turns === 1 ? '' : 's'}{x.prompts[0] ? ` · ${x.prompts[0]}` : ''}</span></li>
           ))}</ul>
         </details>
       )}

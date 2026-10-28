@@ -69,14 +69,14 @@ function Verdict({ status, onStep, onFirst }: { status: Status; onStep: (step: s
         <div class="row">
           <span class="detail">Rewritten by the agent to your wish: “{status.fixes.wish}”</span>
           <span class="grow" />
-          <button type="button" class="ghost small" onClick={onFirst}>Back to the first story</button>
+          <button type="button" class="ghost small" title="Drop the wish and go back to Spark's first story (kept, so free). Reworded lines go too" onClick={onFirst}>Back to the first story</button>
         </div>
       )}
       {!ok && <ul class="issues">{status.issues.map((i) => <li>{i}</li>)}</ul>}
       {(status.unvoiced.length > 0 || status.unpainted.length > 0) && (
         <div class="row">
-          {status.unvoiced.length > 0 && <button type="button" class="ghost small" title={status.unvoiced.join('\n')} onClick={() => onStep('voices')}>Speak {status.unvoiced.length} new line{status.unvoiced.length === 1 ? '' : 's'}</button>}
-          {status.unpainted.length > 0 && <button type="button" class="ghost small" onClick={() => onStep('plates')}>Paint {status.unpainted.length} change{status.unpainted.length === 1 ? '' : 's'}</button>}
+          {status.unvoiced.length > 0 && <button type="button" class="ghost small" title={`ElevenLabs speaks the new lines, 1 call each:\n${status.unvoiced.join('\n')}`} onClick={() => onStep('voices')}>Speak {status.unvoiced.length} new line{status.unvoiced.length === 1 ? '' : 's'}</button>}
+          {status.unpainted.length > 0 && <button type="button" class="ghost small" title={`Muse paints how each changed thing looks after it changes. ${status.unpainted.length} Muse Image edit${status.unpainted.length === 1 ? '' : 's'}`} onClick={() => onStep('plates')}>Paint {status.unpainted.length} change{status.unpainted.length === 1 ? '' : 's'}</button>}
         </div>
       )}
       {(status.unseen?.length ?? 0) > 0 && <details open><summary class="detail">{status.unseen!.length} part{status.unseen!.length === 1 ? '' : 's'} of the story the painting will not show (ask the agent to redo)</summary><ul class="issues">{status.unseen!.map((l) => <li>{l}</li>)}</ul></details>}
@@ -150,7 +150,7 @@ function StoryMap({ status, story, pick, onPick }: { status: Status; story: Stor
           const npcs = things(p, 'npc');
           const items = things(p, 'item');
           return (
-            <g class={`node ${pick === p.key ? 'on' : ''} ${p.key === status.start ? 'start' : ''}`} transform={`translate(${at.x} ${at.y})`} tabIndex={0} role="button" aria-label={`Place ${p.key}`}
+            <g class={`node ${pick === p.key ? 'on' : ''} ${p.key === status.start ? 'start' : ''}`} transform={`translate(${at.x} ${at.y})`} tabIndex={0} role="button" aria-label={`Place ${p.key}`} title="See this place's lines"
               onClick={() => onPick(p.key)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onPick(p.key))}>
               <rect width={NODE.w} height={NODE.h} rx="10" />
               <text x="12" y="22" class="name">{p.key}{p.key === status.start ? ' · start' : ''}</text>
@@ -162,7 +162,7 @@ function StoryMap({ status, story, pick, onPick }: { status: Status; story: Stor
           const at = layout.pos.get(`ending:${e.key}`)!;
           const k = `ending:${e.key}`;
           return (
-            <g class={`node ending ${pick === k ? 'on' : ''}`} transform={`translate(${at.x} ${at.y})`} tabIndex={0} role="button" aria-label={`Ending ${e.title}`}
+            <g class={`node ending ${pick === k ? 'on' : ''}`} transform={`translate(${at.x} ${at.y})`} tabIndex={0} role="button" aria-label={`Ending ${e.title}`} title="See this ending and the shortest way to it"
               onClick={() => onPick(k)} onKeyDown={(ev) => (ev.key === 'Enter' || ev.key === ' ') && (ev.preventDefault(), onPick(k))}>
               <rect width={NODE.w} height={NODE.h} rx="29" />
               <text x="16" y="22" class="name">{e.title.length > 22 ? `${e.title.slice(0, 21)}…` : e.title}</text>
@@ -182,7 +182,7 @@ function Text({ path, value, limit, onSave, label }: { path: string; value: stri
   const n = words(text);
   return (
     <span class="line">
-      <textarea id={`story-${path}`} rows={Math.min(4, Math.max(1, Math.ceil(text.length / 70)))} value={text} aria-label={label}
+      <textarea id={`story-${path}`} rows={Math.min(4, Math.max(1, Math.ceil(text.length / 70)))} value={text} aria-label={label} title="Reword it here; saved when you click away. Free (a spoken line needs speaking again)"
         onInput={(e) => setText(e.currentTarget.value)}
         onBlur={() => text.trim() && text.trim() !== value && onSave(path, text.trim())} />
       {limit !== undefined && n > limit && <span class="over">{n} words, keep to {limit}</span>}

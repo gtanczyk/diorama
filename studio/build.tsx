@@ -228,7 +228,7 @@ export function Stage({ slug, place, live, building }: { slug: string; place: St
         {shown.length > 1 && (
           <div class="layers" role="tablist" aria-label="Layers">
             {shown.map((s) => (
-              <button type="button" role="tab" aria-selected={top === s.layer} class={`ghost small${top === s.layer ? ' on' : ''}`} onClick={() => setPick(pick === s.layer ? null : s.layer)}>{s.title}</button>
+              <button type="button" role="tab" aria-selected={top === s.layer} class={`ghost small${top === s.layer ? ' on' : ''}`} title={`${LAYER_TIPS[s.layer] ?? s.title}, by ${s.by}. Click to hold it, again to let the stage cycle`} onClick={() => setPick(pick === s.layer ? null : s.layer)}>{s.title}</button>
             ))}
           </div>
         )}
@@ -236,6 +236,15 @@ export function Stage({ slug, place, live, building }: { slug: string; place: St
     </figure>
   );
 }
+
+const LAYER_TIPS: Record<string, string> = {
+  blockin: 'Block-in: the rough plan of the place before painting',
+  first: 'The first painting, before the critic\'s fixes',
+  painting: 'The painting Muse made',
+  masks: 'What SAM cut out: each thing and floor',
+  depth: 'Depth: how far away each spot is, as colour',
+  walk: 'Where the hero can walk',
+};
 
 /** On a failed or unpainted place: why in one line, and a button that rebuilds it from where it broke or asks the agent. */
 function FixIt({ slug, place, why }: { slug: string; place: string; why: string }) {
@@ -256,7 +265,7 @@ function FixIt({ slug, place, why }: { slug: string; place: string; why: string 
     <div class="fixit">
       <div class="panel">
         <span class="why" title={why}>{said ?? why}</span>
-        {!said && <button type="button" class="small" disabled={busy} onClick={fix}>Fix it</button>}
+        {!said && <button type="button" class="small" disabled={busy} title="Rebuild this place from the step it broke at (a refused painting is reworded by itself). Steps before it are free; a new painting is 1 Muse Image call. If it was built and still fails, the agent repairs it" onClick={fix}>Fix it</button>}
       </div>
     </div>
   );
@@ -272,7 +281,7 @@ export function Strip({ slug, places, focus, live, building, repairing, onPick }
         const n = SHOWN.filter((s) => has(p, s.layer)).length;
         return (
           <li class={`${focus === p.key ? 'focus' : ''}${busy ? ' busy' : ''}`}>
-            <button type="button" class="card" onClick={() => onPick(p.key)}>
+            <button type="button" class="card" title="Open this place to look at it and fix it; click again to close" onClick={() => onPick(p.key)}>
               <span class="thumb">
                 {top ? <img src={fileUrl(slug, p.layers![top.layer]!.file, p.layers![top.layer]!.v)} alt={p.shows} loading="lazy" /> : <span class="noimg">{p.shows}</span>}
                 {busy && <span class="scan" />}

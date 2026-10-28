@@ -37,6 +37,12 @@ function useFrames(draw: (t: number) => void, deps: unknown[]) {
   }, deps);
 }
 
+const FIGURE_TIPS = {
+  model: 'The 3D model the game walks this character with. Drag to turn it',
+  rig: 'The cut-out 2D rig: the fallback when there is no WebGL',
+  sprites: 'The painted sprites for each facing, looping',
+};
+
 export function FigurePreview({ slug, who, stamps }: { slug: string; who: string; stamps: Stamps }) {
   const tabs = ([['model', '3D model'], ['rig', '2D rig'], ['sprites', 'Sprites']] as const).filter(([k]) => stamps[k]);
   const [tab, setTab] = useState(tabs[0]?.[0]);
@@ -44,7 +50,7 @@ export function FigurePreview({ slug, who, stamps }: { slug: string; who: string
   return (
     <div class="figure-preview">
       <div class="tabs">
-        {tabs.map(([k, label]) => <button type="button" class={`ghost small${tab === k ? ' on' : ''}`} onClick={() => setTab(k)}>{label}</button>)}
+        {tabs.map(([k, label]) => <button type="button" class={`ghost small${tab === k ? ' on' : ''}`} title={FIGURE_TIPS[k]} onClick={() => setTab(k)}>{label}</button>)}
       </div>
       {tab === 'model' && <ModelView slug={slug} dir={`cast/${who}/model`} v={stamps.model} />}
       {tab === 'rig' && (stamps.model || stamps.sprites) && <p class="detail">The game walks this character with its {stamps.sprites ? 'sprites' : '3D model'}; the cut-out rig is only the fallback (no WebGL, or ?model=0).</p>}
@@ -57,7 +63,7 @@ export function FigurePreview({ slug, who, stamps }: { slug: string; who: string
 function Modes({ modes, mode, set }: { modes: Mode[]; mode: Mode; set: (m: Mode) => void }) {
   return (
     <div class="tabs">
-      {modes.map((m) => <button type="button" class={`ghost small${mode === m ? ' on' : ''}`} onClick={() => set(m)}>{m}</button>)}
+      {modes.map((m) => <button type="button" class={`ghost small${mode === m ? ' on' : ''}`} title={`Show the ${m} animation`} onClick={() => set(m)}>{m}</button>)}
     </div>
   );
 }
@@ -114,7 +120,7 @@ function ModelView({ slug, dir, v }: { slug: string; dir: string; v: number | nu
     <div class="moves">
       <div class="row">
         <Modes modes={['walk', 'stand', 'talk']} mode={mode} set={setMode} />
-        <label class="detail"><input type="checkbox" checked={spin} onChange={(e) => setSpin(e.currentTarget.checked)} /> turn</label>
+        <label class="detail" title="Keep turning the model round by itself"><input type="checkbox" checked={spin} onChange={(e) => setSpin(e.currentTarget.checked)} /> turn</label>
         <span class="grow" />
         <span class="detail" ref={label} />
       </div>

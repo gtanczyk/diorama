@@ -31,14 +31,27 @@ type Tool = 'look' | 'note' | 'box' | 'repaint' | 'brush' | 'stand' | 'move';
 type Rect = [number, number, number, number];
 
 const TOOLS: Array<[Tool, string, string]> = [
-  ['look', 'Look', 'Just look'],
-  ['note', 'Note', 'Click a spot and say what is wrong; the note waits for you or the agent'],
-  ['box', 'Box', 'Drag a box around where a thing really is, so SAM finds it there'],
-  ['brush', 'Brush', 'Paint onto or rub out of a thing\'s or a floor\'s mask'],
-  ['stand', 'Stand', 'Click where the hero should stand to use a thing'],
-  ['move', 'Move NPC', 'Click where an NPC should stand (its feet); it is sized for the depth there'],
-  ['repaint', 'Repaint', 'Drag over a region and say how Muse should paint it (one Muse edit)'],
+  ['look', 'Look', 'Just look, clicks change nothing'],
+  ['note', 'Note', 'Click a spot and say what is wrong; the note waits for you or the agent. Free'],
+  ['box', 'Box', 'Drag a box around where a thing really is, so SAM finds it there. 1 SAM call'],
+  ['brush', 'Brush', 'Paint onto or rub out of a thing\'s or a floor\'s mask. Free, saved answers are reused'],
+  ['stand', 'Stand', 'Click where the hero should stand to use a thing. Free'],
+  ['move', 'Move NPC', 'Click where an NPC should stand (its feet); it is sized for the depth there. Free, no repaint'],
+  ['repaint', 'Repaint', 'Drag over a region and say how Muse should paint it. 1 Muse Image edit'],
 ];
+
+const LAYER_TIPS: Record<string, string> = {
+  painting: 'The painting Muse made',
+  masks: 'What SAM cut out: each thing and floor in its own colour',
+  walk: 'Where the hero can walk, and how big they are at each spot',
+};
+const KIND_TIPS: Record<string, string> = {
+  standing: 'Standing: people walk around and behind it. Changing the kind is free',
+  wall: 'Wall: part of the backdrop. Changing the kind is free',
+  'on-top': 'On top of something else. Changing the kind is free',
+  'walk-on': 'Walk-on: people walk over it. Changing the kind is free',
+  flat: 'Flat: lies on the floor, never in front of anyone. Changing the kind is free',
+};
 
 const norm = ([a, b, c, d]: Rect): Rect => [Math.round(Math.min(a, c)), Math.round(Math.min(b, d)), Math.round(Math.max(a, c)), Math.round(Math.max(b, d))];
 
@@ -127,7 +140,7 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
         <h2>{place}</h2>
         <span class="grow" />
         <div class="seg" role="group" aria-label="Picture">
-          {(['painting', 'masks', 'walk'] as const).map((l) => <button type="button" class={layer === l ? 'on' : ''} disabled={!st?.pictures[l]} onClick={() => setLayer(l)}>{l}</button>)}
+          {(['painting', 'masks', 'walk'] as const).map((l) => <button type="button" title={LAYER_TIPS[l]} class={layer === l ? 'on' : ''} disabled={!st?.pictures[l]} onClick={() => setLayer(l)}>{l}</button>)}
         </div>
       </div>
       <div class="seg tools" role="group" aria-label="Tool">
@@ -136,13 +149,13 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
       {tool !== 'look' && <p class="detail">{TOOLS.find(([t]) => t === tool)![2]}.</p>}
       {(tool === 'box' || tool === 'brush' || tool === 'stand' || tool === 'move') && (
         <div class="row">
-          <label>{tool === 'brush' ? 'Mask of' : tool === 'move' ? 'NPC' : 'Thing'} <select value={target} onChange={(e) => setTarget(e.currentTarget.value)}>
+          <label title={tool === 'brush' ? 'The thing or floor whose mask the brush paints' : tool === 'move' ? 'The NPC to move' : 'The thing this tool fixes'}>{tool === 'brush' ? 'Mask of' : tool === 'move' ? 'NPC' : 'Thing'} <select value={target} onChange={(e) => setTarget(e.currentTarget.value)}>
             {tool === 'brush' && floors.length > 0 && <optgroup label="Things">{things.map((t) => <option value={t.key}>{t.key}</option>)}</optgroup>}
             {tool === 'brush' && floors.length > 0 ? <optgroup label="Floors">{floors.map((f) => <option value={f.key}>{f.key}</option>)}</optgroup> : targets.map((k) => <option value={k}>{k}</option>)}
           </select></label>
           {tool === 'brush' && <>
-            <div class="seg" role="group" aria-label="Brush"><button type="button" class={mode === 'add' ? 'on' : ''} onClick={() => setMode('add')}>Add</button><button type="button" class={mode === 'erase' ? 'on' : ''} onClick={() => setMode('erase')}>Erase</button></div>
-            <label>Size <input type="range" min={3} max={60} value={radius} onInput={(e) => setRadius(Number(e.currentTarget.value))} /></label>
+            <div class="seg" role="group" aria-label="Brush"><button type="button" class={mode === 'add' ? 'on' : ''} title="Strokes add to the mask" onClick={() => setMode('add')}>Add</button><button type="button" class={mode === 'erase' ? 'on' : ''} title="Strokes rub out of the mask" onClick={() => setMode('erase')}>Erase</button></div>
+            <label title="How wide the brush is">Size <input type="range" min={3} max={60} value={radius} onInput={(e) => setRadius(Number(e.currentTarget.value))} /></label>
           </>}
         </div>
       )}
@@ -156,15 +169,15 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
           {point && <circle cx={point[0]} cy={point[1]} r={10} class="pin" />}
         </svg>
       </div>
-      {tool === 'box' && big && <div class="row"><span class="detail">{target} is in [{box!.join(', ')}]</span><span class="grow" /><button type="button" class="primary small" disabled={busy || !target} onClick={() => act('mask_fix', { thing: target, box })}>Find it here</button></div>}
-      {tool === 'stand' && point && <div class="row"><span class="detail">Stand at {point.join(', ')} to use {target}</span><span class="grow" /><button type="button" class="primary small" disabled={busy || !target} onClick={() => act('stand_set', { thing: target, at: point })}>Set stand spot</button></div>}
+      {tool === 'box' && big && <div class="row"><span class="detail">{target} is in [{box!.join(', ')}]</span><span class="grow" /><button type="button" class="primary small" disabled={busy || !target} title="SAM looks for the thing inside this box only, then the place is checked again. 1 SAM call" onClick={() => act('mask_fix', { thing: target, box })}>Find it here</button></div>}
+      {tool === 'stand' && point && <div class="row"><span class="detail">Stand at {point.join(', ')} to use {target}</span><span class="grow" /><button type="button" class="primary small" disabled={busy || !target} title="The hero walks here to use it. Kept across rebuilds. Free" onClick={() => act('stand_set', { thing: target, at: point })}>Set stand spot</button></div>}
       {tool === 'move' && npcs.length === 0 && <p class="detail">No one stands in this place.</p>}
-      {tool === 'move' && point && <div class="row"><span class="detail">{target} stands with feet at {point.join(', ')}</span><span class="grow" /><button type="button" class="primary small" disabled={busy || !target} onClick={() => act('npc_move', { npc: target, at: point })}>Move here</button></div>}
-      {tool === 'brush' && strokes.length > 0 && <div class="row"><span class="detail">{strokes.length} stroke{strokes.length > 1 ? 's' : ''} on {target}</span><span class="grow" /><button type="button" class="ghost small" onClick={() => setStrokes((s) => s.slice(0, -1))}>Undo stroke</button><button type="button" class="primary small" disabled={busy || !target} onClick={() => act('mask_brush', { layer: isFloor ? 'floor' : 'thing', key: target, strokes })}>Apply and rebuild</button></div>}
+      {tool === 'move' && point && <div class="row"><span class="detail">{target} stands with feet at {point.join(', ')}</span><span class="grow" /><button type="button" class="primary small" disabled={busy || !target} title="The NPC stands here, sized for the depth. Kept across rebuilds. Free, no repaint" onClick={() => act('npc_move', { npc: target, at: point })}>Move here</button></div>}
+      {tool === 'brush' && strokes.length > 0 && <div class="row"><span class="detail">{strokes.length} stroke{strokes.length > 1 ? 's' : ''} on {target}</span><span class="grow" /><button type="button" class="ghost small" title="Take back the last stroke" onClick={() => setStrokes((s) => s.slice(0, -1))}>Undo stroke</button><button type="button" class="primary small" disabled={busy || !target} title="Keep the strokes and rebuild this place from its masks. Kept across rebuilds. Free, saved answers are reused" onClick={() => act('mask_brush', { layer: isFloor ? 'floor' : 'thing', key: target, strokes })}>Apply and rebuild</button></div>}
       {((tool === 'note' && point) || (tool === 'repaint' && big)) && (
         <form class="say" onSubmit={(e) => { e.preventDefault(); if (tool === 'note') void act('feedback_add', { point, text: text.trim() }); else void act('repaint_region', { region: box, fix: text.trim() }); }}>
           <textarea rows={2} placeholder={tool === 'note' ? 'What is wrong here?' : 'How should Muse paint this region?'} value={text} onInput={(e) => setText(e.currentTarget.value)} />
-          <div class="row"><span class="grow" /><button type="submit" class="primary small" disabled={busy || text.trim().length < 3}>{tool === 'note' ? 'Leave note' : 'Repaint (1 Muse edit)'}</button></div>
+          <div class="row"><span class="grow" /><button type="submit" class="primary small" disabled={busy || text.trim().length < 3} title={tool === 'note' ? 'Keep the note on this spot, for you or the agent. Free' : 'Muse repaints only this region your way, then the place is measured again. 1 Muse Image edit'}>{tool === 'note' ? 'Leave note' : 'Repaint (1 Muse edit)'}</button></div>
         </form>
       )}
       {things.length > 0 && (
@@ -176,9 +189,9 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
       {floors.some((f) => f.coarse) && <p class="flag">Coarse floors: {floors.filter((f) => f.coarse).map((f) => f.key).join(', ')}. Brush them, or ask the agent to fix their cells.</p>}
       {(fixList.length > 0 || (fixes?.repaint.length ?? 0) > 0) && (
         <div class="fixes">
-          <div class="row"><strong>Your fixes</strong><span class="detail">kept across rebuilds</span><span class="grow" /><button type="button" class="ghost small" disabled={busy} onClick={() => act('corrections_clear', {})}>Clear all</button></div>
+          <div class="row"><strong>Your fixes</strong><span class="detail">kept across rebuilds</span><span class="grow" /><button type="button" class="ghost small" disabled={busy} title={(fixes?.repaint.length ?? 0) > 0 ? 'Take back every fix of this place. It is painted again: 1 Muse Image call' : 'Take back every fix of this place and rebuild it from its masks. Free'} onClick={() => act('corrections_clear', {})}>Clear all</button></div>
           <ul>
-            {fixList.map((f) => <li><code>{f.key}</code> {f.what}<button type="button" class="ghost small" disabled={busy} onClick={() => act('corrections_clear', { key: f.key })}>Clear</button></li>)}
+            {fixList.map((f) => <li><code>{f.key}</code> {f.what}<button type="button" class="ghost small" disabled={busy} title={`Take back the fixes of ${f.key} and rebuild this place from its masks. Free`} onClick={() => act('corrections_clear', { key: f.key })}>Clear</button></li>)}
             {fixes!.repaint.map((r) => <li>repaint [{r.region.join(', ')}]: {r.fix}</li>)}
           </ul>
         </div>
@@ -193,8 +206,8 @@ function ThingLine({ t, busy, fix }: { t: ThingRow; busy: boolean; fix: (input: 
   return (
     <tr>
       <td><code>{t.key}</code></td>
-      <td><select value={t.kind} disabled={busy} onChange={(e) => fix({ kind: e.currentTarget.value })}>{KINDS.map((k) => <option value={k}>{k}</option>)}</select></td>
-      <td><form class="row" onSubmit={(e) => (e.preventDefault(), phrase.trim() !== t.phrase && fix({ phrase: phrase.trim() }))}><input value={phrase} onInput={(e) => setPhrase(e.currentTarget.value)} />{phrase.trim() !== t.phrase && phrase.trim().length > 1 && <button type="submit" class="primary small" disabled={busy}>Search</button>}</form></td>
+      <td><select value={t.kind} disabled={busy} title={KIND_TIPS[t.kind] ?? 'What kind of thing it is'} onChange={(e) => fix({ kind: e.currentTarget.value })}>{KINDS.map((k) => <option value={k}>{k}</option>)}</select></td>
+      <td><form class="row" onSubmit={(e) => (e.preventDefault(), phrase.trim() !== t.phrase && fix({ phrase: phrase.trim() }))}><input value={phrase} title="The words SAM searches the painting for. Change them and press Search" onInput={(e) => setPhrase(e.currentTarget.value)} />{phrase.trim() !== t.phrase && phrase.trim().length > 1 && <button type="submit" class="primary small" disabled={busy} title="SAM looks for the thing by these words. 1 SAM call">Search</button>}</form></td>
       <td><span class={`badge ${t.coarse ? 'fail' : 'ok'}`} title={t.coarse ? 'SAM did not find it: the mask is only a box' : undefined}>{t.source}{t.brushed ? ' + brush' : ''}</span></td>
     </tr>
   );

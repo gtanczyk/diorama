@@ -11,6 +11,7 @@ import { StoryView } from './story.tsx';
 import { PlaceEditor } from './place.tsx';
 import { Dock, useDock } from './dock.tsx';
 import { MODEL_NAME, Pipeline, Stage, Strip, Tale, working, type Live, type StagePlace } from './build.tsx';
+import { Tips } from './tip.tsx';
 
 type Check = { id: string; label: string; state: 'ok' | 'missing' | 'optional' | 'fail'; detail: string; fix?: string[] };
 type Summary = { slug: string; title: string; pitch: string | null; issue: string | null; places: number; playable: number; verified: number; steps: string[]; cover: { file: string; v: number | null } | null };
@@ -80,7 +81,7 @@ function HistoryMenu({ slug, version, onError }: { slug: string; version: number
   const back = (id: string) => call('history_undo', { slug, id }).then(() => (setOpen(false), setSure(null))).catch((e) => onError(e.message));
   return (
     <div class="share">
-      <button type="button" class="ghost" aria-expanded={open} onClick={() => (setOpen(!open), setSure(null))}>History</button>
+      <button type="button" class="ghost" aria-expanded={open} title="Every job this world went through. Go back to before any of them. Free" onClick={() => (setOpen(!open), setSure(null))}>History</button>
       {open && (
         <div class="share-menu history" role="menu">
           {!snaps && <p class="detail">Reading the history…</p>}
@@ -95,8 +96,8 @@ function HistoryMenu({ slug, version, onError }: { slug: string; version: number
                 </div>
                 {s.changed !== undefined && <p class="detail">{(s.changed ?? 0) + (s.added ?? 0) + (s.removed ?? 0) === 0 ? 'changed nothing' : `changed ${touched(s)} · ${(s.changed ?? 0) + (s.added ?? 0)} file${(s.changed ?? 0) + (s.added ?? 0) === 1 ? '' : 's'}${s.removed ? `, removed ${s.removed}` : ''}`}</p>}
                 {sure === s.id
-                  ? <div class="row"><span class="detail">Everything after it goes too.</span><span class="grow" /><button type="button" class="primary small" onClick={() => back(s.id)}>Go back</button><button type="button" class="ghost small" onClick={() => setSure(null)}>Cancel</button></div>
-                  : <button type="button" class="ghost small" onClick={() => setSure(s.id)}>Back to before this</button>}
+                  ? <div class="row"><span class="detail">Everything after it goes too.</span><span class="grow" /><button type="button" class="primary small" title="Put the world back as it was before this job. Redo takes it back. Free" onClick={() => back(s.id)}>Go back</button><button type="button" class="ghost small" onClick={() => setSure(null)}>Cancel</button></div>
+                  : <button type="button" class="ghost small" title="Asks once more before going back. Everything after this job goes too" onClick={() => setSure(s.id)}>Back to before this</button>}
               </li>
             ))}
           </ol>
@@ -118,10 +119,10 @@ function Share({ slug, jobs, onError }: { slug: string; jobs: Job[]; onError: (m
   return (
     <div class="menu-group">
       <p class="menu-head">Share this game</p>
-      <button type="button" class="ghost small" onClick={() => call('world_export', { slug }).catch((e) => onError(e.message))}>Make a zip</button>
+      <button type="button" class="ghost small" title="Pack a playable copy to download, for itch.io or e-mail. Free, no model calls" onClick={() => call('world_export', { slug }).catch((e) => onError(e.message))}>Make a zip</button>
       {exported && <a class="detail" href={`/exports/${slug}.zip`} download>Download {slug}.zip</a>}
       <p class="detail">A zip plays offline and goes on itch.io as an HTML game.</p>
-      <button type="button" class="ghost small" onClick={publish}>Publish a link</button>
+      <button type="button" class="ghost small" title="Put the game on GitHub Pages: anyone with the link can play. Asks first. Free, no model calls" onClick={publish}>Publish a link</button>
       {link && <a class="detail" href={link} target="_blank" rel="noopener">{link}</a>}
       {firstTime && <p class="detail">{firstTime}</p>}
       <p class="detail">Puts it on this repository's GitHub Pages, public.</p>
@@ -143,21 +144,21 @@ function Header({ world, live, pl, onActivity, more }: { world?: string; live?: 
   }, []);
   return (
     <header class="top" ref={top}>
-      <a href="/" class="brand" onClick={(e) => (e.preventDefault(), go('/'))}>
+      <a href="/" class="brand" title="All worlds and a new idea" onClick={(e) => (e.preventDefault(), go('/'))}>
         <svg width="22" height="22" viewBox="0 0 28 28" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 21 L14 6 L25 21 Z" /><path d="M3 21 H25" /><path d="M9 21 L14 14 L19 21" /></svg>
         Diorama Studio
       </a>
       {world && <><span class="sep">/</span><span class="crumb">{world}</span></>}
       <span class="grow" />
       {live !== undefined && <span class={`live-dot ${live ? 'on' : ''}`} title={live ? 'Live: changes show as they happen' : 'Reconnecting to the studio…'} aria-label={live ? 'live' : 'reconnecting'} />}
-      {onActivity && <button type="button" class="ghost small" onClick={onActivity}>Activity</button>}
+      {onActivity && <button type="button" class="ghost small" title="What the build, the agent and the game did, line by line, and the model calls so far" onClick={onActivity}>Activity</button>}
       {/* What is seldom needed waits behind one button. */}
       <div class="share">
-        <button type="button" class="ghost tiny menu-button" aria-label={pl ? 'Więcej' : 'More'} aria-expanded={menu} onClick={() => setMenu(!menu)}>☰</button>
+        <button type="button" class="ghost tiny menu-button" aria-label={pl ? 'Więcej' : 'More'} title={pl ? 'Więcej: śledzenie agenta, ustawienia' : 'More: follow the agent, Setup, share the game'} aria-expanded={menu} onClick={() => setMenu(!menu)}>☰</button>
         {menu && (
           <div class="share-menu top-menu" role="menu" onClick={(e) => (e.target as HTMLElement).closest('a') && setMenu(false)}>
-            <label class="follow" title="When the agent opens a place, a tab or the game, the page goes there too"><input type="checkbox" checked={followAgent.value} onChange={(e) => (followAgent.value = e.currentTarget.checked)} /> {pl ? 'Śledź agenta' : 'Follow agent'}</label>
-            <a href="/setup" class="navlink" onClick={(e) => (e.preventDefault(), go('/setup'))}>{pl ? 'Ustawienia' : 'Setup'}</a>
+            <label class="follow" title={pl ? 'Gdy agent otwiera miejsce, zakładkę albo grę, strona idzie za nim' : 'When the agent opens a place, a tab or the game, the page goes there too'}><input type="checkbox" checked={followAgent.value} onChange={(e) => (followAgent.value = e.currentTarget.checked)} /> {pl ? 'Śledź agenta' : 'Follow agent'}</label>
+            <a href="/setup" class="navlink" title={pl ? 'Klucze, programy i budżet na tym komputerze' : 'Keys, tools and the budget on this computer'} onClick={(e) => (e.preventDefault(), go('/setup'))}>{pl ? 'Ustawienia' : 'Setup'}</a>
             {more}
           </div>
         )}
@@ -168,7 +169,7 @@ function Header({ world, live, pl, onActivity, more }: { world?: string; live?: 
 
 function Copy({ text }: { text: string }) {
   const [done, setDone] = useState(false);
-  return <button type="button" class="ghost small" onClick={() => navigator.clipboard?.writeText(text).then(() => (setDone(true), setTimeout(() => setDone(false), 1200)))}>{done ? 'Copied' : 'Copy'}</button>;
+  return <button type="button" class="ghost small" title="Copy these commands to paste in a terminal" onClick={() => navigator.clipboard?.writeText(text).then(() => (setDone(true), setTimeout(() => setDone(false), 1200)))}>{done ? 'Copied' : 'Copy'}</button>;
 }
 
 function Setup() {
@@ -214,8 +215,8 @@ function Setup() {
           ))}
         </ol>
         <div class="row">
-          <button type="button" class="primary" disabled={!!busy} onClick={() => run('setup_status')}>{busy === 'setup_status' ? 'Checking…' : 'Check again'}</button>
-          <button type="button" class="ghost" disabled={!!busy || checks?.find((c) => c.id === 'META_API_KEY')?.state === 'missing'} onClick={() => run('setup_check')}>{busy === 'setup_check' ? 'Calling Meta…' : 'Test the Meta key live'}</button>
+          <button type="button" class="primary" disabled={!!busy} title="Look at this computer again: keys, tools, the agent. Free" onClick={() => run('setup_status')}>{busy === 'setup_status' ? 'Checking…' : 'Check again'}</button>
+          <button type="button" class="ghost" disabled={!!busy || checks?.find((c) => c.id === 'META_API_KEY')?.state === 'missing'} title="Send one tiny request to Meta to see the key works. 1 small Meta call" onClick={() => run('setup_check')}>{busy === 'setup_check' ? 'Calling Meta…' : 'Test the Meta key live'}</button>
         </div>
         <BudgetBox />
       </main>
@@ -254,9 +255,9 @@ function BudgetBox() {
       <p class="note">Dollars per call, from your Meta and ElevenLabs billing pages. Without a price a model is only counted.</p>
       <div class="prices">
         {models.map((m) => <label>{MODEL_NAMES[m]} · {b.total.calls[m] ?? 0} calls<input inputMode="decimal" placeholder="$ per call" value={prices[m] ?? ''} onInput={(e) => setPrices({ ...prices, [m]: e.currentTarget.value })} /></label>)}
-        <label>Warn at ($)<input inputMode="decimal" placeholder="150" value={limit} onInput={(e) => setLimit(e.currentTarget.value)} /></label>
+        <label title="Studio shows a banner once the spend passes this">Warn at ($)<input inputMode="decimal" placeholder="150" value={limit} onInput={(e) => setLimit(e.currentTarget.value)} /></label>
       </div>
-      <div class="row"><button type="submit" class="ghost small">Save</button><span class="detail">{saved}</span></div>
+      <div class="row"><button type="submit" class="ghost small" title="Keep the prices and the limit on this computer">Save</button><span class="detail">{saved}</span></div>
     </form>
   );
 }
@@ -317,8 +318,8 @@ function Start() {
           <div class="row">
             <h1 class="grow">{kids ? say('Gra z dziecięcych rysunków', 'A game from children\'s drawings') : 'What should the world be?'}</h1>
             <div class="tabs">
-              <button type="button" class={`ghost small${kids ? '' : ' on'}`} onClick={() => (setKids(false), setPlaces(4))}>{say('Opisz', 'Describe it')}</button>
-              <button type="button" class={`ghost small${kids ? ' on' : ''}`} onClick={() => (setKids(true), setPlaces(3))}>{say('Rysunki i głosy', 'Drawings and voices')}</button>
+              <button type="button" class={`ghost small${kids ? '' : ' on'}`} title={say('Opisz świat słowami, Muse Spark wymyśla resztę', 'Describe a world in words, Muse Spark makes up the rest')} onClick={() => (setKids(false), setPlaces(4))}>{say('Opisz', 'Describe it')}</button>
+              <button type="button" class={`ghost small${kids ? ' on' : ''}`} title={say('Warsztat: zdjęcia dziecięcych rysunków i nagrania ich historii stają się grą', 'Workshop: photos of children\'s drawings and recordings of their story become the game')} onClick={() => (setKids(true), setPlaces(3))}>{say('Rysunki i głosy', 'Drawings and voices')}</button>
               {kids && <button type="button" class="ghost small" title={say('Warsztat po angielsku', 'Run the workshop in Polish')} onClick={() => setPolish(!polish.value)}>{polish.value ? 'EN' : 'PL'}</button>}
             </div>
           </div>
@@ -326,10 +327,10 @@ function Start() {
           {(() => {
             const settings = (
               <div class="row">
-                <label>{say('Nazwa', 'Name')} <input value={name} onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
-                <label>{say('Miejsca', 'Places')} <select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
+                <label title={say('Nazwa świata w adresie: małe litery, cyfry i myślniki', 'The world\'s name in links and folders: small letters, digits and dashes')}>{say('Nazwa', 'Name')} <input value={name} onInput={(e) => setSlug(e.currentTarget.value)} pattern="[a-z][a-z0-9\-]*" /></label>
+                <label title={say('Ile miejsc ma gra. Każde to jeden obraz Muse i kilka wywołań SAM', 'How many places the game has. Each is about one Muse Image painting plus SAM cut-outs')}>{say('Miejsca', 'Places')} <select value={places} onChange={(e) => setPlaces(Number(e.currentTarget.value))}>{[2, 3, 4, 5, 6].map((n) => <option value={n}>{n}</option>)}</select></label>
                 <span class="grow" />
-                {!kids && <button type="submit" class="primary" disabled={idea.trim().length < 10 || !!taken || noKey}>{taken ? 'Name taken' : noKey ? 'Needs the Meta key' : 'Build it'}</button>}
+                {!kids && <button type="submit" class="primary" disabled={idea.trim().length < 10 || !!taken || noKey} title={taken ? 'A world has this name already: change Name' : noKey ? 'Add the Meta key in Setup first' : idea.trim().length < 10 ? 'Write the idea first (at least 10 letters)' : 'Build the whole game: story, paintings, cut-outs, depth, cast, sound, play test. A few minutes; per place about 1 Muse Image + several SAM and Spark calls'}>{taken ? 'Name taken' : noKey ? 'Needs the Meta key' : 'Build it'}</button>}
               </div>
             );
             // In a workshop the name and the number of places wait under More: the children's steps come first.
@@ -559,18 +560,18 @@ function Workshop({ slug }: { slug: string }) {
           <div class="row">
             <h1>{status?.title ?? slug}</h1>
             <span class="grow" />
-            {playable && <button type="button" class={playing ? 'primary' : 'ghost'} onClick={() => setPlaying(playing ? null : {})}>{playing ? 'Close game' : 'Play'}</button>}
+            {playable && <button type="button" class={playing ? 'primary' : 'ghost'} title={playing ? 'Close the game and go back to the build' : 'Play the game here. Free'} onClick={() => setPlaying(playing ? null : {})}>{playing ? 'Close game' : 'Play'}</button>}
             {!job && status && status.steps.length > 0 && <HistoryMenu slug={slug} version={tick} onError={setError} />}
-            {!job && canRedo && <button type="button" class="ghost" title="Take back the undo" onClick={() => call('history_redo', { slug }).catch((e) => setError(e.message))}>Redo</button>}
+            {!job && canRedo && <button type="button" class="ghost" title="Take back the undo. Free" onClick={() => call('history_redo', { slug }).catch((e) => setError(e.message))}>Redo</button>}
             {/* Stop sits beside the build button, never in its place: a double click must not start a build and stop it again. */}
             {job && <button type="button" class="ghost" title={`Stop ${job.label} (started by ${job.by === 'agent' ? 'the agent' : 'you'})`} onClick={() => call('job_cancel', { id: job.id })}>Stop</button>}
-            <button type="button" class="primary" disabled={!status || !!status.issue || !!job} title={job ? `${job.label} is running${job.step ? `: ${job.step}` : ''}` : undefined} onClick={() => call('world_build', { slug }).catch((e) => setError(e.message))}>
+            <button type="button" class="primary" disabled={!status || !!status.issue || !!job} title={job ? `${job.label} is running${job.step ? `: ${job.step}` : ''}` : status?.issue ? status.issue : status && status.steps.length >= steps.length - 1 ? 'Run every step again and check the game. Answers already asked are reused for free; only what changed calls the models' : 'Go on from the step the build stopped at. Done steps are free; new ones call the models'} onClick={() => call('world_build', { slug }).catch((e) => setError(e.message))}>
               {job ? `${job.by === 'agent' ? 'Agent: ' : ''}${job.label}…` : status && status.steps.length >= steps.length - 1 ? 'Rebuild verify' : 'Continue build'}
             </button>
           </div>
           {status?.pitch && <p class="lead" title={status.pitch}>{status.pitch}</p>}
           {error && <p class="error">{error}</p>}
-          {movedFrom.value && movedFrom.value !== slug && <p class="banner">The agent moved the view here from {movedFrom.value}. <button type="button" class="ghost" onClick={() => { const back = movedFrom.value!; movedFrom.value = null; go(`/w/${back}`); }}>Back to {movedFrom.value}</button> <button type="button" class="ghost" onClick={() => (movedFrom.value = null)}>Stay</button></p>}
+          {movedFrom.value && movedFrom.value !== slug && <p class="banner">The agent moved the view here from {movedFrom.value}. <button type="button" class="ghost" title="Go back to the world you were on" onClick={() => { const back = movedFrom.value!; movedFrom.value = null; go(`/w/${back}`); }}>Back to {movedFrom.value}</button> <button type="button" class="ghost" title="Stay here with the agent" onClick={() => (movedFrom.value = null)}>Stay</button></p>}
           {undone && !job && <p class="banner">{undone}{canRedo ? ' · Redo puts it back.' : ''}</p>}
           {/* Playing, the game is the view: the build bar and the tabs step aside until it closes. */}
           {status && !playing && <Pipeline job={job} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} />}
@@ -578,10 +579,10 @@ function Workshop({ slug }: { slug: string }) {
           {budget?.over && <p class="banner">Budget: ${budget.total.usd} spent of the ${budget.limitUsd} limit. Check Setup before the next big build.</p>}
           {playing && <Play slug={slug} place={playing.place} round={playing.round ?? 0} full={playing.full} onRestart={() => setPlaying({ ...playing, round: (playing.round ?? 0) + 1 })} version={tick} onLine={playLine} onError={setError} />}
           {!playing && <div class="seg" role="tablist" aria-label="Show">
-            <button type="button" role="tab" aria-selected={view === 'places'} class={view === 'places' ? 'on' : ''} onClick={() => setView('places')}>Places</button>
-            <button type="button" role="tab" aria-selected={view === 'story'} class={view === 'story' ? 'on' : ''} onClick={() => setView('story')}>Story</button>
-            <button type="button" role="tab" aria-selected={view === 'cast'} class={view === 'cast' ? 'on' : ''} onClick={() => setView('cast')}>Cast</button>
-            <button type="button" role="tab" aria-selected={view === 'notes'} class={view === 'notes' ? 'on' : ''} onClick={() => setView('notes')}>Notes{notes.some((n) => n.state === 'open') ? ` · ${notes.filter((n) => n.state === 'open').length}` : ''}</button>
+            <button type="button" role="tab" aria-selected={view === 'places'} class={view === 'places' ? 'on' : ''} title="The build live, and each place to look at and fix" onClick={() => setView('places')}>Places</button>
+            <button type="button" role="tab" aria-selected={view === 'story'} class={view === 'story' ? 'on' : ''} title="Places, locks, items, talks and endings, and the lines to reword" onClick={() => setView('story')}>Story</button>
+            <button type="button" role="tab" aria-selected={view === 'cast'} class={view === 'cast' ? 'on' : ''} title="Characters, their looks, moves and voices, and the inventory icons" onClick={() => setView('cast')}>Cast</button>
+            <button type="button" role="tab" aria-selected={view === 'notes'} class={view === 'notes' ? 'on' : ''} title="Your notes on what to fix, for you or the agent" onClick={() => setView('notes')}>Notes{notes.some((n) => n.state === 'open') ? ` · ${notes.filter((n) => n.state === 'open').length}` : ''}</button>
           </div>}
           {!playing && view === 'story' && <StoryView slug={slug} version={tick} onError={setError} />}
           {!playing && view === 'cast' && <CastView slug={slug} version={tick} onError={setError} />}
@@ -604,12 +605,12 @@ function Workshop({ slug }: { slug: string }) {
                       <p class="detail">Look: {f.play.look}</p>
                       <p class="detail">Then try, in order: {f.play.tools.join(' · ')}</p>
                       {f.play.last && <p class="detail">Last resort: {f.play.last}</p>}
-                      <button type="button" class="ghost small" onClick={() => askAgent(slug, `${placeFocus.key} is not playable: ${f.code}: ${f.detail}. Fix it as your playbook says and tell me what you did.`).catch((e) => setError(e.message))}>Ask the agent to fix it</button>
+                      <button type="button" class="ghost small" title="The agent fixes this with the Studio tools and says what it did. It uses model calls as it works" onClick={() => askAgent(slug, `${placeFocus.key} is not playable: ${f.code}: ${f.detail}. Fix it as your playbook says and tell me what you did.`).catch((e) => setError(e.message))}>Ask the agent to fix it</button>
                     </details>
                   )}
                 </>
               ))}
-              {placeFocus.stages.layout && <button type="button" class="ghost small" onClick={() => setPlaying({ place: placeFocus.key })}>Play from {placeFocus.key}</button>}
+              {placeFocus.stages.layout && <button type="button" class="ghost small" title="Start the game in this place. Free" onClick={() => setPlaying({ place: placeFocus.key })}>Play from {placeFocus.key}</button>}
               {placeFocus.stages.painting ? <PlaceEditor slug={slug} place={placeFocus.key} version={tick} onError={setError} /> : <p class="detail">Fixing opens once the place is painted.</p>}
             </section>
           )}
@@ -622,9 +623,9 @@ function Workshop({ slug }: { slug: string }) {
       {logOpen && (
         <div class="drawer-back" onClick={(e) => e.target === e.currentTarget && setLogOpen(false)}>
           <section class="drawer log" role="dialog" aria-label="Activity">
-            <div class="row"><h2>Activity</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" onClick={() => setLogOpen(false)}>✕</button></div>
+            <div class="row"><h2>Activity</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setLogOpen(false)}>✕</button></div>
             <div class="row"><span class="detail" title={status ? `this world: ${Object.entries(status.calls).map(([m, n]) => `${m} ${n}`).join(', ') || 'no calls yet'}` : undefined}>{calls} calls this session{budget ? ` · ${spend(budget.today)} today · ${spend(budget.total)}${budget.limitUsd !== null ? ` of $${budget.limitUsd}` : ''} total` : ''}</span></div>
-            <label class="detail"><input type="checkbox" checked={allLines} onChange={(e) => setAllLines(e.currentTarget.checked)} /> Every line the steps print</label>
+            <label class="detail" title="Also show every line the build steps print, not only what matters"><input type="checkbox" checked={allLines} onChange={(e) => setAllLines(e.currentTarget.checked)} /> Every line the steps print</label>
             <ol>{[...lines].reverse().filter((l) => allLines || l.kind !== 'out').map((l) => <li key={l.seq} class={l.kind}>{l.text}</li>)}</ol>
           </section>
         </div>
@@ -688,16 +689,16 @@ function Play({ slug, place, round, full, onRestart, version, onLine, onError }:
             <option value="party">a hero each</option>
           </select>
         </label>
-        <button type="button" class="ghost small" onClick={onRestart}>Restart</button>
+        <button type="button" class="ghost small" title="Start the game over from the beginning. Free" onClick={onRestart}>Restart</button>
         {/* For a big screen: the game letterboxes to it, keyboard and gamepads keep working; Esc comes back. */}
         <button type="button" class="ghost small" title="Play on the whole screen (Esc to come back)" onClick={() => frame.current?.requestFullscreen().then(() => frame.current?.focus()).catch((err) => onError(err.message))}>Full screen</button>
-        <button type="button" class="ghost small" title="The bot plays every route to an ending and says where it got stuck" onClick={() => call('playthrough', { slug }).catch((err) => onError(err.message))}>Bot playthrough</button>
+        <button type="button" class="ghost small" title="The bot plays every route to an ending in a browser and says where it got stuck. A minute or two, no model calls" onClick={() => call('playthrough', { slug }).catch((err) => onError(err.message))}>Bot playthrough</button>
       </div>
       {!fresh && (
         <div class="banner row" role="status">
           <span>The world changed since this game started.</span>
           <span class="grow" />
-          <button type="button" class="primary small" onClick={onRestart}>Reload the game</button>
+          <button type="button" class="primary small" title="Start the game again with the latest changes" onClick={onRestart}>Reload the game</button>
         </div>
       )}
       {/* The game letterboxes to the room it is given, never wider or taller: no page scroll while playing. */}
@@ -723,16 +724,16 @@ function Failed({ slug, job, noAgent, onError, onPlace }: { slug: string; job: J
     <section class="failed" role="alert">
       <div class="row"><strong>{job.label} failed{step ? ` at ${step}` : ''}</strong><span class="detail">by {job.by}</span></div>
       {job.unplayable?.length ? job.unplayable.map((u) => (
-        <div class="row"><button type="button" class="ghost small" onClick={() => onPlace(u.place)}>{u.place}</button><span class="error">{u.errors.join(' · ') || 'not playable: see verify.json'}</span></div>
+        <div class="row"><button type="button" class="ghost small" title="Open this place to look at it and fix it" onClick={() => onPlace(u.place)}>{u.place}</button><span class="error">{u.errors.join(' · ') || 'not playable: see verify.json'}</span></div>
       )) : job.error && <p class="error">{job.error}</p>}
       {noAgent && listed && <p class="detail">The agent would repair these, but {noAgent} is not installed on this computer. <a href="/setup" onClick={(e) => (e.preventDefault(), go('/setup'))}>Setup</a> says how to add it.</p>}
       {lines.length > 0 && (more || !listed) && <pre>{(more ? lines : lines.slice(-6)).join('\n')}</pre>}
       <div class="row">
-        <button type="button" class="primary small" onClick={retry}>Try again</button>
-        <button type="button" class="ghost small" disabled={!!noAgent} title={noAgent ? `${noAgent} is not installed` : undefined} onClick={ask}>Ask the agent</button>
-        <button type="button" class="ghost small" title="Put the world back as it was before this job" onClick={() => call('history_undo', { slug }).catch((e) => onError(e.message))}>Undo it</button>
+        <button type="button" class="primary small" title="Run the job again from the step it failed on. Done steps are free" onClick={retry}>Try again</button>
+        <button type="button" class="ghost small" disabled={!!noAgent} title={noAgent ? `${noAgent} is not installed` : 'The agent finds out why and fixes it with the Studio tools. It uses model calls as it works'} onClick={ask}>Ask the agent</button>
+        <button type="button" class="ghost small" title="Put the world back as it was before this job. Free" onClick={() => call('history_undo', { slug }).catch((e) => onError(e.message))}>Undo it</button>
         <span class="grow" />
-        {(lines.length > 6 || (listed && lines.length > 0)) && <button type="button" class="ghost small" onClick={() => setMore(!more)}>{more ? 'Less' : `Its output (${lines.length} lines)`}</button>}
+        {(lines.length > 6 || (listed && lines.length > 0)) && <button type="button" class="ghost small" title={more ? 'Show only the last lines' : 'Every line the job printed'} onClick={() => setMore(!more)}>{more ? 'Less' : `Its output (${lines.length} lines)`}</button>}
       </div>
     </section>
   );
@@ -752,15 +753,15 @@ function Notes({ slug, notes, onPlace, onError }: { slug: string; notes: Note[];
       <div class="row">
         <h2>Notes{open.length ? ` · ${open.length} open` : ''}</h2>
         <span class="grow" />
-        {open.length > 0 && <button type="button" class="primary small" onClick={() => askAgent(slug, `Go through my ${open.length} open note${open.length > 1 ? 's' : ''} (feedback_pending): fix each one and close it with feedback_done.`).catch((e) => onError(e.message))}>Hand {open.length > 1 ? 'them' : 'it'} to the agent</button>}
+        {open.length > 0 && <button type="button" class="primary small" title="The agent fixes each open note and closes it with what it did. It uses model calls as it works" onClick={() => askAgent(slug, `Go through my ${open.length} open note${open.length > 1 ? 's' : ''} (feedback_pending): fix each one and close it with feedback_done.`).catch((e) => onError(e.message))}>Hand {open.length > 1 ? 'them' : 'it'} to the agent</button>}
       </div>
       <ul>
         {open.map((n) => (
           <li class="open">
-            {n.place && <button type="button" class="ghost small" onClick={() => onPlace(n.place!)}>{n.place}{n.point ? ` @${n.point.join(',')}` : ''}</button>}
+            {n.place && <button type="button" class="ghost small" title="Open the place this note is on" onClick={() => onPlace(n.place!)}>{n.place}{n.point ? ` @${n.point.join(',')}` : ''}</button>}
             <span>{n.text}</span>
             <span class="grow" />
-            <button type="button" class="ghost small" onClick={() => call('feedback_done', { slug, id: n.id, reply: 'done by hand' }).catch((e) => onError(e.message))}>Done</button>
+            <button type="button" class="ghost small" title="Close the note: you fixed it yourself" onClick={() => call('feedback_done', { slug, id: n.id, reply: 'done by hand' }).catch((e) => onError(e.message))}>Done</button>
           </li>
         ))}
         {done.map((n) => (
@@ -768,13 +769,13 @@ function Notes({ slug, notes, onPlace, onError }: { slug: string; notes: Note[];
             <span>{n.text}</span>
             <span class="detail">→ {n.reply}</span>
             <span class="grow" />
-            <button type="button" class="ghost small" onClick={() => call('feedback_reopen', { slug, id: n.id }).catch((e) => onError(e.message))}>Reopen</button>
+            <button type="button" class="ghost small" title="Open the note again: it is not fixed" onClick={() => call('feedback_reopen', { slug, id: n.id }).catch((e) => onError(e.message))}>Reopen</button>
           </li>
         ))}
       </ul>
       <form class="row" onSubmit={add}>
         <input class="grow" placeholder="A note on the whole world (or pick a place and use Note on its picture)" value={text} onInput={(e) => setText(e.currentTarget.value)} />
-        <button type="submit" class="ghost small" disabled={text.trim().length < 2}>Add</button>
+        <button type="submit" class="ghost small" disabled={text.trim().length < 2} title="Keep the note open until it is fixed. Free">Add</button>
       </form>
     </section>
   );
@@ -819,4 +820,4 @@ function App() {
   return <Start />;
 }
 
-render(<App />, document.getElementById('app')!);
+render(<><App /><Tips /></>, document.getElementById('app')!);
