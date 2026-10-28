@@ -12,7 +12,7 @@ const args = process.argv.slice(2);
 const place = takeOption(args, 'place', '');
 const prompt = takeOption(args, 'prompt', '');
 const agent = takeOption(args, 'agent', 'muse');
-const out = path.resolve(takeOption(args, 'out', 'demo/footage/studio'));
+const out = path.resolve(takeOption(args, 'out', 'app/demo/footage/studio'));
 const [slug] = args.filter((a) => !a.startsWith('--'));
 if (!slug || !place || !prompt) throw new Error('usage: npx tsx demo/studio-take.ts <slug> --place <place> --prompt "<what to ask>" [--agent muse] [--out dir]');
 

@@ -27,8 +27,8 @@ async function cardPng(title: string, note: string): Promise<Buffer> {
 }
 
 async function main() {
-  const cutFile = path.resolve(process.argv[2] ?? 'demo/cut.json');
-  const out = path.resolve(process.argv[3] ?? 'demo/out/cut.mp4');
+  const cutFile = path.resolve(process.argv[2] ?? 'app/demo/cut.json');
+  const out = path.resolve(process.argv[3] ?? 'app/demo/out/cut.mp4');
   const cut = JSON.parse(fs.readFileSync(cutFile, 'utf8')) as Cut;
   const fps = cut.fps ?? 30;
   const base = path.dirname(cutFile);

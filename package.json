@@ -5,22 +5,22 @@
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
-    "diorama": "bin/diorama.mjs"
+    "diorama": "app/bin/diorama.mjs"
   },
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "diorama": "node bin/diorama.mjs",
-    "setup": "node bin/diorama.mjs setup",
-    "doctor": "node bin/diorama.mjs doctor",
-    "studio": "node bin/diorama.mjs studio",
-    "build": "node bin/diorama.mjs build",
-    "play": "node bin/diorama.mjs play",
-    "publish": "node bin/diorama.mjs publish",
-    "export": "node bin/diorama.mjs export",
+    "diorama": "node app/bin/diorama.mjs",
+    "setup": "node app/bin/diorama.mjs setup",
+    "doctor": "node app/bin/diorama.mjs doctor",
+    "studio": "node app/bin/diorama.mjs studio",
+    "build": "node app/bin/diorama.mjs build",
+    "play": "node app/bin/diorama.mjs play",
+    "publish": "node app/bin/diorama.mjs publish",
+    "export": "node app/bin/diorama.mjs export",
     "browsers": "playwright install chromium",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p web && tsc --noEmit -p studio",
+    "typecheck": "tsc --noEmit -p app && tsc --noEmit -p app/web && tsc --noEmit -p app/studio",
     "test": "vitest run",
     "check": "npm run typecheck && npm test"
   },
