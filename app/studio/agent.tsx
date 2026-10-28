@@ -8,7 +8,7 @@ import { Camera } from './camera.tsx';
 import { pickPrefix, shownPick, type Picked } from './world.tsx';
 
 /** What each Studio tool does, as the person would say it. */
-const SAYS: Record<string, string> = {
+export const SAYS: Record<string, string> = {
   world_export: 'Make a zip',
   world_publish: 'Publish a link',
   picture_view: 'Look at your picture',

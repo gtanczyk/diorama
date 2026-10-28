@@ -80,6 +80,9 @@ function Card({ slug, c, onError, focused }: { slug: string; c: Character; onErr
   const [looks, setLooks] = useState(c.looksNow);
   const [busy, setBusy] = useState(false);
   // Opened on this character: it moves right away.
+  // Asked for a 3D model: the button waits for it, so a second click cannot pay for the same work again.
+  const [animating, setAnimating] = useState(false);
+  useEffect(() => void (c.model && setAnimating(false)), [!!c.model]);
   const [moving, setMoving] = useState(!!focused && !!(c.rig || c.model || c.sprites));
   useEffect(() => setLooks(c.looksNow), [c.looksNow]);
   const act = async (name: string, input: object) => {
@@ -111,7 +114,7 @@ function Card({ slug, c, onError, focused }: { slug: string; c: Character; onErr
           <span class="grow" />
           {parts.length > 0 && <span class="has">{parts.map(([sign, what]) => <span class="sign" title={what}>{sign}</span>)}</span>}
           {c.modelIssue && <span class="detail" title={c.modelIssue}>3D model not used ({c.modelIssue.split(':')[0]})</span>}
-          {c.role !== 'narrator' && c.figure && !c.model && <button type="button" class="ghost small" disabled={busy} title={`Muse paints ${c.key} from 4 sides and TRELLIS builds a 3D model${creature ? ': no skeleton, in the game it hops, squashes, leans and blinks as one body' : ''}. Kept across rebuilds. 4 Muse Image calls + TRELLIS (needs the HF token)`} onClick={() => act('cast_animate', {})}>Animate in 3D</button>}
+          {c.role !== 'narrator' && c.figure && !c.model && <button type="button" class="ghost small" disabled={busy || animating} title={animating ? 'Building the 3D model: a few minutes. It shows here when done' : `Muse paints ${c.key} from 4 sides and TRELLIS builds a 3D model${creature ? ': no skeleton, in the game it hops, squashes, leans and blinks as one body' : ''}. Kept across rebuilds. 4 Muse Image calls + TRELLIS (needs the HF token)`} onClick={() => (setAnimating(true), void act('cast_animate', {}))}>{animating ? 'Animating…' : 'Animate in 3D'}</button>}
           {(c.rig || c.model || c.sprites) && <button type="button" class={`ghost small round${moving ? ' on' : ''}`} aria-label={moving ? 'Close the preview' : 'See it move'} title={moving ? 'Close the preview' : 'See it move: walk, stand and talk as the game draws it. Free'} onClick={() => setMoving(!moving)}>{moving ? '■' : '▶'}</button>}
         </div>
         {c.role !== 'narrator' && (

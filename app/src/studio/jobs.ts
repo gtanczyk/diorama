@@ -44,6 +44,10 @@ export class Jobs {
   }
 
   start(world: string, args: string[], label: string, by: string, prepare?: () => void, addedThing?: Job['addedThing']): Job {
+    // The same job already waiting or running (a button pressed again, the agent asking twice) is that job:
+    // a second run would only pay for the same model calls again. A pending edit is its own job.
+    const same = prepare ? undefined : this.all.find((j) => j.world === world && (j.state === 'queued' || j.state === 'running') && !this.prepare.has(j.id) && j.args.join('\0') === args.join('\0'));
+    if (same) return same;
     const job: Job = { id: randomBytes(4).toString('hex'), world, label, args, by, state: 'queued', queuedAt: new Date().toISOString(), tail: [], ...(addedThing && { addedThing }) };
     this.all.push(job);
     if (prepare) this.prepare.set(job.id, prepare);

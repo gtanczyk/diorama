@@ -15,6 +15,7 @@ import { Bell, Logo, Rail, useAtelierFeed, worlds as allWorlds } from './atelier
 import { Card, CastCard, CastStage, nice, PlacesCard, PlaceStage, WorldStrip, type Picked, type StageView } from './world.tsx';
 import { Tips } from './tip.tsx';
 import { Lightbox } from './lightbox.tsx';
+import { Activity, type ActivityJob, type ActivityLine } from './activity.tsx';
 import { followAgent, go, movedFrom, route } from './nav.ts';
 import { MAX_WORLD_PHOTOS } from '../src/world/photo-limits.ts';
 
@@ -533,7 +534,7 @@ function Start() {
   );
 }
 
-type Line = { seq: number; text: string; kind: string };
+type Line = ActivityLine;
 
 // ?replay=<session file> plays a recorded conversation back in the agent panel (for the film); ?speed=2 doubles it.
 const query = new URLSearchParams(location.search);
@@ -588,6 +589,8 @@ function Workshop({ slug }: { slug: string }) {
   /** Places the build is mending right now, with what it tries. */
   const [repairing, setRepairing] = useState<Record<string, string>>({});
   const [calls, setCalls] = useState(0);
+  /** Model calls per job, for Activity. */
+  const [costs, setCosts] = useState<Record<string, Record<string, number>>>({});
   /** For the build stage: when each running step began, calls per model this job, the last call, the place last changed. */
   const [since, setSince] = useState<Record<string, number>>({});
   const [jobCalls, setJobCalls] = useState<Record<string, number>>({});
@@ -616,7 +619,8 @@ function Workshop({ slug }: { slug: string }) {
       clearTimeout(timer);
       timer = setTimeout(refresh, 300);
     };
-    const add = (e: StudioEvent, text: string, kind: string) => setLines((l) => [...l.slice(-400), { seq: e.seq, text, kind }]);
+    // Each line keeps when it happened and the job it belongs to, so Activity can fold a job's steps under it.
+    const add = (e: StudioEvent, text: string, kind: string, more: Partial<Line> = {}) => setLines((l) => [...l.slice(-600), { seq: e.seq, text, kind, at: Date.parse(e.at) || Date.now(), ...(typeof e.job === 'string' && { job: e.job }), ...more }]);
     const stop = follow(slug, (e) => {
       switch (e.type) {
         // Verify's notes on a playable place live in the place's inspector; Activity sums them up in one line.
@@ -637,6 +641,7 @@ function Workshop({ slug }: { slug: string }) {
           if (m && e.model === 'sam') setCut((c) => ({ ...c, [m[1]]: [...new Set([...(c[m[1]] ?? []), m[2]])] }));
           if (e.hit) return;
           setCalls((c) => c + 1);
+          if (typeof e.job === 'string') setCosts((c) => ({ ...c, [e.job as string]: { ...c[e.job as string], [String(e.model)]: (c[e.job as string]?.[String(e.model)] ?? 0) + 1 } }));
           const by = MODEL_NAME[String(e.model)] ?? String(e.model);
           setJobCalls((c) => ({ ...c, [by]: (c[by] ?? 0) + 1 }));
           return setLastCall({ by, label: String(e.label ?? '').replace(/#\d+$/, ''), at: Date.now() });
@@ -654,7 +659,7 @@ function Workshop({ slug }: { slug: string }) {
           soon();
           // What the agent changed shows in an open game at once; after the person's own builds the banner offers it.
           if (e.type === 'job.end' && job.by === 'agent' && job.state === 'done') setPlaying((p) => (p ? { ...p, round: (p.round ?? 0) + 1 } : p));
-          return add(e, `${e.type === 'job.end' ? (job.state === 'done' ? 'done' : job.state) : e.type === 'job.start' ? 'started' : 'queued'}: ${job.label} (by ${job.by})${job.error ? ` · ${job.error}` : ''}`, e.type === 'job.end' && job.state !== 'done' ? 'err' : 'job');
+          return add(e, `${e.type === 'job.end' ? (job.state === 'done' ? 'done' : job.state) : e.type === 'job.start' ? 'started' : 'queued'}: ${job.label} (by ${job.by})${job.error ? ` · ${job.error}` : ''}`, e.type === 'job.end' && job.state !== 'done' ? 'err' : 'job', { job: job.id, info: job as ActivityJob });
         }
         case 'history.undo': {
           soon();
@@ -676,7 +681,7 @@ function Workshop({ slug }: { slug: string }) {
           if (e.missing) return (setNoAgent(String(e.missing)), add(e, `${e.missing} is not installed, so no agent can repair ${(e.places as string[]).join(', ')}: see Setup`, 'err'));
           return add(e, `agent asked to repair ${(e.places as string[]).join(', ')}`, 'agent');
         case 'lock.changed': return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.locked ? 'locked' : 'unlocked'} ${e.place ?? 'the world'}`, 'act');
-        case 'action.start': if (quiet.has(String(e.action)) && e.by !== 'agent') return; return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.action}`, e.by === 'agent' ? 'agent' : 'act');
+        case 'action.start': if (quiet.has(String(e.action)) && e.by !== 'agent') return; return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.action}`, e.by === 'agent' ? 'agent' : 'act', { who: e.by === 'agent' ? 'agent' : 'you', act: String(e.action) });
         case 'ui.focus':
           if (e.by !== 'agent') return;
           // A reload of the open game is always fine; moving the view only when the person follows the agent.
@@ -748,7 +753,7 @@ function Workshop({ slug }: { slug: string }) {
     const layer = (step && STEP_SHOWS[step]) ?? ({ paint: 'painting', cut: 'masks', space: 'walk' } as Record<string, LayerName>)[phase];
     if (layer) setHold({ layer, at: Date.now() });
   };
-  const playLine = (text: string) => setLines((l) => [...l.slice(-400), { seq: -Date.now() - Math.random(), text, kind: 'play' }]);
+  const playLine = (text: string) => setLines((l) => [...l.slice(-600), { seq: -Date.now() - Math.random(), text, kind: 'play', at: Date.now() }]);
 
   const places = status?.placeDetail ?? [];
   const shownView: StageView = playing ? { kind: 'play' } : stage ?? (building ? { kind: 'build' } : { kind: 'place', place: places[0]?.key });
@@ -904,8 +909,8 @@ function Workshop({ slug }: { slug: string }) {
           <section class="drawer log" role="dialog" aria-label="Activity">
             <div class="row"><h2>Activity</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setLogOpen(false)}>✕</button></div>
             <div class="row"><span class="detail" title={status ? `this world: ${Object.entries(status.calls).map(([m, n]) => `${m} ${n}`).join(', ') || 'no calls yet'}` : undefined}>{calls} calls this session{budget ? ` · ${spend(budget.today)} today · ${spend(budget.total)}${budget.limitUsd !== null ? ` of $${budget.limitUsd}` : ''} total${budget.creditsLeft !== null ? ` · $${budget.creditsLeft.toFixed(2)} Meta credits left` : ''}` : ''}</span></div>
-            <label class="detail" title="Also show every line the build steps print, not only what matters"><input type="checkbox" checked={allLines} onChange={(e) => setAllLines(e.currentTarget.checked)} /> Every line the steps print</label>
-            <ol>{[...lines].reverse().filter((l) => allLines || l.kind !== 'out').map((l) => <li key={l.seq} class={l.kind}>{l.text}</li>)}</ol>
+            <label class="mi switch" title="Also show every line the build steps print, not only what matters"><input type="checkbox" checked={allLines} onChange={(e) => setAllLines(e.currentTarget.checked)} /> <span>Every line the steps print</span></label>
+            <Activity lines={lines} costs={costs} all={allLines} />
           </section>
         </div>
       )}
