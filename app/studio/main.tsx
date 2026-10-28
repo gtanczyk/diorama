@@ -149,6 +149,22 @@ function Menu({ children }: { children?: ComponentChildren }) {
   );
 }
 
+/**
+ * What the agent asked at the end of its turn: its ask_person question, or a plain question it ended its answer
+ * with, which gets a yes and a no in the language it was asked in.
+ */
+function asked(turn: SessionTurn): { question: string; options: string[]; recommended?: number } | null {
+  const tool = turn.entries.findLast((e) => e.kind === 'tool' && e.name.endsWith('ask_person'));
+  if (tool?.kind === 'tool' && !tool.isError) {
+    const q = tool.input as { question?: string; options?: string[]; recommended?: number } | undefined;
+    if (q?.question && q.options?.length) return { question: q.question, options: q.options, recommended: q.recommended };
+  }
+  const text = turn.entries.findLast((e) => e.kind === 'text');
+  if (text?.kind !== 'text' || !/\?\s*$/.test(text.text)) return null;
+  const pl = /[ąćęłńóśźż]|\b(czy|się|mogę|chcesz)\b/i.test(text.text);
+  return { question: '', options: pl ? ['Tak', 'Nie'] : ['Yes', 'No'], recommended: 0 };
+}
+
 /** Build again runs every step once more, so it asks first; going on from where a build stopped does not. */
 function Rebuild({ slug, again, onError }: { slug: string; again: boolean; onError: (m: string) => void }) {
   const [sure, setSure] = useState(false);
@@ -664,19 +680,31 @@ function Workshop({ slug }: { slug: string }) {
     castDone && { id: 'cast', afterTurn: 0, text: <CastCard slug={slug} version={tick} stage={shownView} onStage={onStage} /> },
   ].filter(Boolean) as ChatNotice[];
   // What a turn of the agent changed: the places it touched, to look at, and its undo.
-  const afterTurn = (turn: SessionTurn) => {
+  const afterTurn = (turn: SessionTurn, _index: number, last: boolean) => {
     // While the agent works its steps fold into one line; what it last said stays out in the open.
     if (!turn.endedAt) {
       const said = turn.entries.findLast((e) => e.kind === 'text');
       return said && said !== turn.entries.at(-1) && said.kind === 'text' && said.text.trim() ? <p class="agent-says">{said.text}</p> : null;
     }
     const touched = [...new Set(turn.entries.flatMap((e) => (e.kind === 'tool' && e.name.startsWith('mcp__diorama__') && !quiet.has(e.name.slice(14)) && e.input && typeof (e.input as { place?: unknown }).place === 'string' ? [String((e.input as { place: string }).place)] : [])))];
-    if (!touched.length || !turn.endedAt) return null;
-    return (
+    const question = last && turn.endedAt ? asked(turn) : null;
+    const changed = touched.length > 0 && turn.endedAt ? (
       <Card kind="Changed" on={shownView.kind === 'place' && touched.includes(shownView.place ?? '')}>
         <div class="thumbs">{touched.map((k) => { const p = places.find((x) => x.key === k); return <button type="button" class="thumb" title={`Show ${nice(k)}`} onClick={() => onStage({ kind: 'place', place: k })} style={p?.image ? { backgroundImage: `url("${fileUrl(slug, p.image.file, p.image.v)}")` } : undefined}>{!p?.image && <span>{nice(k)}</span>}</button>; })}</div>
         <div class="btns"><button type="button" class="ghost small" title="Play the game to see it. Free" onClick={() => onStage({ kind: 'play' })}>▶ Try it</button><button type="button" class="ghost small" title="Take back the last job. Free" onClick={() => call('history_undo', { slug }).catch((e) => setError(e.message))}>↶ Undo</button></div>
       </Card>
+    ) : null;
+    if (!changed && !question) return null;
+    return (
+      <>
+        {changed}
+        {question && (
+          <Card kind="The agent asks" tone="ask">
+            {question.question && <h3>{question.question}</h3>}
+            <div class="btns">{question.options.map((o, i) => <button type="button" class={i === question.recommended ? 'primary small' : 'ghost small'} title={i === question.recommended ? 'What the agent advises' : undefined} onClick={() => void ask(o)}>{o}</button>)}</div>
+          </Card>
+        )}
+      </>
     );
   };
   // While the agent works, its progress is the last thing above the prompt: what waits for you comes back after.

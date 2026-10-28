@@ -51,3 +51,20 @@ defineAction({
     return { ok: true };
   },
 });
+
+defineAction({
+  name: 'ask_person',
+  reads: true,
+  description: 'Ask the person a question with a few answers to tap (yes/no, which of two fixes, go ahead or not), shown in the Studio as a card with buttons. '
+    + 'Put the question here and not again in your text, then end your turn: their tap arrives as their next message, the answer\'s words exactly.',
+  input: z.object({
+    slug: Slug,
+    question: z.string().min(3).max(300).describe('One short question, in the language of the person\'s newest message'),
+    options: z.array(z.string().min(1).max(60)).min(2).max(4).describe('2 to 4 short answers, in that language: "Yes, rebuild it" and "No, leave it" rather than bare yes/no'),
+    recommended: z.number().int().min(0).max(3).optional().describe('Index of the answer you advise'),
+  }),
+  async run(input, ctx) {
+    ctx.events.publish('ui.ask', { ...input, world: input.slug, by: ctx.by });
+    return { asked: true, next: 'End your turn now. The person\'s tap comes back as their next message.' };
+  },
+});

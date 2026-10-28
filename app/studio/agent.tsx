@@ -17,7 +17,7 @@ const SAYS: Record<string, string> = {
   corrections_get: 'Read fixes', corrections_clear: 'Take fixes back', mask_fix: 'Fix a mask', thing_remove: 'Remove a thing', thing_add: 'Add a thing', mask_brush: 'Brush a mask',
   floor_cells: 'Fix floor cells', stand_set: 'Move a stand spot', repaint_region: 'Repaint a region', water_flow: 'Set water flow', fog_drift: 'Set fog drift', weather_set: 'Set weather',
   feedback_pending: 'Read open notes', feedback_list: 'Read notes', feedback_done: 'Close a note', feedback_add: 'Leave a note', feedback_reopen: 'Reopen a note',
-  history_list: 'Read history', history_undo: 'Undo a job', history_redo: 'Redo', lock_set: 'Change a lock', ui_focus: 'Show a place', budget: 'Check budget', setup_status: 'Check Setup',
+  history_list: 'Read history', history_undo: 'Undo a job', history_redo: 'Redo', lock_set: 'Change a lock', ui_focus: 'Show a place', ask_person: 'Ask you', budget: 'Check budget', setup_status: 'Check Setup',
   cast_status: 'Look at the cast', cast_redo: 'Repaint a character', voice_list: 'List voices', voice_set: 'Change a voice',
   story_status: 'Read the story', story_text: 'Reword a line', story_redo: 'Rewrite the story', place_view: 'Look at the floor', play_reload: 'Reload the game', npc_move: 'Move an NPC',
 };
@@ -156,7 +156,7 @@ function steps(args: readonly string[]): string[] {
 const clock = (s: number) => (s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`);
 
 /** In the atelier the panel is the world's conversation: cards before and between turns, and the thing picked on the stage. */
-type Atelier = { notices?: readonly ChatNotice[]; afterTurn?: (turn: SessionTurn, index: number) => ComponentChildren; footer?: (agentBusy: boolean) => ComponentChildren; picked?: Picked | null; onUnpick?: () => void; empty?: ComponentChildren };
+type Atelier = { notices?: readonly ChatNotice[]; afterTurn?: (turn: SessionTurn, index: number, last: boolean) => ComponentChildren; footer?: (agentBusy: boolean) => ComponentChildren; picked?: Picked | null; onUnpick?: () => void; empty?: ComponentChildren };
 
 export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterTurn, footer, picked, onUnpick, empty }: { slug: string; replay?: string | null; speed?: number; jobs?: readonly JobInfo[] } & Atelier) {
   const [liveState, live] = useSession(replay ? '' : slug);
@@ -226,7 +226,7 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
         foldSteps
         renderPrompt={(text) => shownPrompt(text, slug)}
         notices={notices}
-        renderAfterTurn={afterTurn as ((turn: SessionTurn, index: number) => never) | undefined}
+        renderAfterTurn={afterTurn && ((turn: SessionTurn, index: number) => afterTurn(turn, index, index === (state?.turns.length ?? 0) - 1) as never)}
         renderFooter={footer && (() => footer(running) as never)}
         placeholder={running ? undefined : picked ? `What about the ${picked.name}?` : `Ask for a change, or click something in the picture…`}
         theme="light"
