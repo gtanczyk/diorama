@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { claude, codexLive, createAgentSession, detectAgents, museLive, type CodingAgent, withoutProviderCredentials, type AgentSession, type ApprovalDecision, type ApprovalRequest, type SessionState, type SessionTurn } from 'genaicode/agents';
-import { redact, withoutSecrets } from '../secrets.ts';
+import { configDir, redact, withoutSecrets } from '../secrets.ts';
 import type { Events } from './events.ts';
 import { History } from './history.ts';
 
@@ -354,6 +354,23 @@ export class AgentHub {
     private readonly opts: { root: string; mcpUrl: string; agentToken: string; command?: string },
   ) {}
 
+  /** The agent last picked in the Studio, for new conversations (~/.config/diorama/studio.json). */
+  private static prefs = () => path.join(configDir(), 'studio.json');
+  private saved(): string | undefined {
+    try {
+      return (JSON.parse(fs.readFileSync(AgentHub.prefs(), 'utf8')) as { agent?: string }).agent;
+    } catch {
+      return undefined;
+    }
+  }
+  private save(name: AgentName) {
+    try {
+      fs.mkdirSync(path.dirname(AgentHub.prefs()), { recursive: true });
+      const old = fs.existsSync(AgentHub.prefs()) ? JSON.parse(fs.readFileSync(AgentHub.prefs(), 'utf8')) : {};
+      fs.writeFileSync(AgentHub.prefs(), `${JSON.stringify({ ...old, agent: name }, null, 2)}\n`);
+    } catch {}
+  }
+
   private talk(slug: string): Talk {
     let t = this.talks.get(slug);
     if (t) return t;
@@ -362,7 +379,7 @@ export class AgentHub {
     fs.mkdirSync(cwd, { recursive: true });
     const ask = process.env.DIORAMA_AGENT_TOOLS === 'ask';
     const session = createAgentSession({
-      agent: this.make(this.defaultAgent()),
+      agent: this.make(this.defaultAgent(slug)),
       cwd,
       task: {
         env: withoutProviderCredentials(withoutSecrets(process.env)) as Record<string, string>,
@@ -395,19 +412,24 @@ export class AgentHub {
     return name === 'muse' ? AGENTS.muse.make(this.opts.command) : AGENTS[name].make();
   }
 
-  /** DIORAMA_AGENT when set; otherwise Muse Code, or the first agent this machine has when Muse Code is not installed. */
-  private defaultAgent(): AgentName {
+  /**
+   * DIORAMA_AGENT when set; else the agent this world's conversation was last with, so a restart carries on with
+   * it; else the one last picked in the Studio; else Muse Code, or the first agent this machine has.
+   */
+  private defaultAgent(slug?: string): AgentName {
     const wanted = process.env.DIORAMA_AGENT;
     if (wanted && isAgentName(wanted)) return wanted;
     const names = Object.keys(AGENTS) as AgentName[];
     const found = detectAgents(names.map((n) => this.make(n)));
-    return names.find((_, i) => found[i]?.path) ?? 'muse';
+    const installed = (n: string | undefined) => names.find((name, i) => found[i]?.path && (name === n || found[i]?.agent.name === n));
+    const last = slug ? pastTurns(path.join(this.opts.root, slug), 1)[0]?.agent : undefined;
+    return installed(last) ?? installed(this.saved()) ?? names.find((_, i) => found[i]?.path) ?? 'muse';
   }
 
   /** The agents on offer, which are installed, and which one this world's conversation uses. */
   agents(slug: string) {
     const found = detectAgents((Object.keys(AGENTS) as AgentName[]).map((n) => this.make(n)));
-    const using = this.talks.get(slug)?.session.get().agent ?? this.make(this.defaultAgent()).name;
+    const using = this.talks.get(slug)?.session.get().agent ?? this.make(this.defaultAgent(slug)).name;
     return (Object.keys(AGENTS) as AgentName[]).map((name, i) => ({ name, label: AGENTS[name].label, agent: found[i]?.agent.name ?? name, installed: !!found[i]?.path, using: found[i]?.agent.name === using }));
   }
 
@@ -418,6 +440,7 @@ export class AgentHub {
     const from = this.agents(slug).find((a) => a.using)?.label;
     t.session.setAgent(this.make(name));
     t.rebrief();
+    this.save(name);
     if (from && from !== AGENTS[name].label && (t.past.length || t.session.get().turns.length)) t.handedOver(from, AGENTS[name].label);
     t.publish('agent', { name, label: AGENTS[name].label });
   }

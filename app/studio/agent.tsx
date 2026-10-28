@@ -287,7 +287,7 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
           <>
           <div class="row">
             {offers.length > 1 && !talked
-              ? <select class="agent-pick" aria-label="Agent" title="Who to talk to. Once you have talked, you can hand the conversation over to another agent" disabled={running} value={current?.name} onChange={(e) => void choose(e.currentTarget.value)}>
+              ? <select class="agent-pick" aria-label="Agent" title="Who to talk to. Your pick is remembered for new worlds; once you have talked, you can hand the conversation over to another agent" disabled={running} value={current?.name} onChange={(e) => void choose(e.currentTarget.value)}>
                   {offers.map((o) => <option value={o.name} disabled={!o.installed}>{o.label}{o.installed ? '' : ' (not installed)'}</option>)}
                 </select>
               : <h2>{current?.label ?? 'Muse Code'}</h2>}
