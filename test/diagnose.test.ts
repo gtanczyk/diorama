@@ -94,6 +94,25 @@ test('a mask check doubt without a box is a flag, not an error', async () => {
   expect(v.flags.map((f) => f.code)).toContain('MASK_DOUBT');
 });
 
+test('a thing Spark finds nowhere, seeing another kind of thing in its box, was never painted; a prop in the wrong box is MASK_WRONG', async () => {
+  const { verifyPlace, sameKind } = await import('../src/scene/verify.ts');
+  const g = geometry([0, 0]);
+  g.things[0] = { ...g.things[0], key: 'horse', role: 'prop', stand: [120, 500], mask: 'masks/horse.png' };
+  g.things.push({ key: 'cow', role: 'prop', box: [300, 600, 400, 700], stand: [350, 700], mask: 'masks/cow.png' });
+  const place = { key: 'barn', shows: 'a barn', mood: 'calm', exits: [], things: [{ key: 'horse', role: 'prop', looks: 'a chestnut horse in its stall' }, { key: 'cow', role: 'prop', looks: 'a brown and white cow' }] } as never;
+  const v = verifyPlace(place, g, { things: {
+    horse: { coarse: false, source: 'sam-text', check: { ok: false, seen: 'hay in an empty stall', box: null } },
+    cow: { coarse: false, source: 'sam-text', check: { ok: false, seen: 'a pile of hay', box: [810, 515, 1055, 725] } },
+  }, floors: {} });
+  expect(v.errors).toEqual(expect.arrayContaining([
+    expect.objectContaining({ code: 'THING_NOT_PAINTED', key: 'horse' }),
+    expect.objectContaining({ code: 'MASK_WRONG', key: 'cow', box: [810, 515, 1055, 725] }),
+  ]));
+  expect(sameKind('a bronze bell', 'bell', 'a small brass bell')).toBe(true);
+  expect(sameKind('two wooden barrels', 'barrel', 'an old barrel')).toBe(true);
+  expect(sameKind('hay in an empty stall', 'horse', 'a chestnut horse in its stall')).toBe(false);
+});
+
 test('a floor cut off after derive shut rows too near the camera gets the close-up play, not a bridge', async () => {
   const { withPlay } = await import('../src/scene/playbook.ts');
   const err = { code: 'UNREACHABLE', detail: '301 walkable cells cut off' };

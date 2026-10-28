@@ -29,6 +29,20 @@ export function gridOf(g: Pick<Geometry, 'walk' | 'zone'>): Grid {
 /** plates.json: whether SAM still finds the thing on its plate. */
 export type PlateNotes = Record<string, { stillThere: boolean }>;
 
+const words = (text: string) => text.toLowerCase().match(/[a-z]{3,}/g)?.map((w) => w.replace(/(es|s)$/, '')) ?? [];
+
+/** What a thing is, in a word or two: its key's words and the head noun of its looks ("a chestnut horse in its stall" -> horse). */
+function kindWords(key: string, looks = ''): Set<string> {
+  const head = looks.toLowerCase().split(/\b(?:with|in|on|of|at|by|that|which|under|over|near|beside)\b|[,;(]/)[0];
+  return new Set([...words(key.replace(/[-_]/g, ' ')), ...words(head).slice(-1)]);
+}
+
+/** Does Spark's word for what it sees name the same kind of thing? */
+export function sameKind(seen: string, key: string, looks?: string): boolean {
+  const kind = kindWords(key, looks);
+  return words(seen).some((w) => kind.has(w));
+}
+
 export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates: PlateNotes = {}): Verdict {
   const errors: Finding[] = [];
   const flags: Finding[] = [];
@@ -68,10 +82,13 @@ export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates:
     }
     const check = notes.things[thing.key]?.check;
     if (check && !check.ok) {
-      // Only a mask Spark can point away from is wrong for sure (it gives the box the thing is in); a doubt
-      // without one is often Spark being picky about details, so it is flagged for a look, not failed.
-      if (check.box && thing.role !== 'prop') errors.push({ code: 'MASK_WRONG', key: thing.key, detail: `Spark sees ${check.seen ?? 'something else'} in its mask; it is at [${check.box.join(', ')}]`, box: check.box });
-      else flags.push({ code: 'MASK_DOUBT', key: thing.key, detail: `Spark sees ${check.seen ?? 'something else'} in its mask${check.box ? `; maybe it is at [${check.box.join(', ')}]` : ''}` });
+      const seen = check.seen ?? 'something else';
+      // Spark points to where the thing really is: the mask is wrong for sure, whatever the thing's role.
+      if (check.box) errors.push({ code: 'MASK_WRONG', key: thing.key, detail: `Spark sees ${seen} in its mask; it is at [${check.box.join(', ')}]`, box: check.box });
+      // Spark sees no such thing anywhere, and what it sees is not even the same kind of thing: it was never
+      // painted. A doubt about details ("a bronze bell" for "a small brass bell") stays a flag to look at.
+      else if (check.seen && !sameKind(check.seen, thing.key, thing.looks)) errors.push({ code: 'THING_NOT_PAINTED', key: thing.key, detail: `Spark sees ${seen} where it should be, and no ${thing.key} anywhere` });
+      else flags.push({ code: 'MASK_DOUBT', key: thing.key, detail: `Spark sees ${seen} in its mask` });
     }
     if (notes.things[thing.key]?.source === 'colour-cut') flags.push({ code: 'COLOUR_CUT', key: thing.key, detail: 'SAM missed it; its mask was cut out of its box by colour' });
     if (t.coarse && thing.role !== 'npc') flags.push({ code: 'COARSE_MASK', key: thing.key, detail: `mask is a ${notes.things[thing.key]?.source ?? 'box'}, so it hides no one` });
