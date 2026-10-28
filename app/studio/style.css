@@ -905,3 +905,14 @@ main.start .more .fields input:focus, main.start .more .fields select:focus { ou
 .cast .who .sign { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: var(--raised); font-size: 14px; cursor: help; }
 .cast .who button.round { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 0; border-radius: 50%; font-size: 12px; }
 .cast .who.focus { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(194, 122, 44, 0.15); scroll-margin-top: 8px; }
+
+/* A long conversation: the world pinned under the agent's header once its opening cards scrolled away. */
+.world-strip { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 6px 16px rgba(80, 55, 25, 0.08); animation: drawer-in 0.15s ease-out; }
+.world-strip button { min-height: 0; padding: 0; border: 2px solid transparent; background: none; }
+.world-strip .ws-story { flex: 1; min-width: 0; padding: 4px 6px; border-radius: 8px; font-family: var(--display); font-size: 14px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.world-strip .ws-places { display: flex; gap: 4px; flex: none; }
+.world-strip .ws-thumb { width: 44px; height: 33px; border-radius: 6px; background: var(--raised) center / cover; }
+.world-strip .ws-thumb.trouble { box-shadow: inset 0 0 0 2px var(--bad); }
+.world-strip .ws-cast { display: flex; align-items: flex-end; height: 36px; padding: 0 4px; border-radius: 8px; flex: none; }
+.world-strip .ws-cast img { height: 100%; max-width: 26px; object-fit: contain; }
+.world-strip button:hover, .world-strip button.on { border-color: var(--amber); background: var(--raised); }

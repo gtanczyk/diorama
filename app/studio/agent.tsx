@@ -156,9 +156,9 @@ function steps(args: readonly string[]): string[] {
 const clock = (s: number) => (s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`);
 
 /** In the atelier the panel is the world's conversation: cards before and between turns, and the thing picked on the stage. */
-type Atelier = { notices?: readonly ChatNotice[]; afterTurn?: (turn: SessionTurn, index: number, last: boolean) => ComponentChildren; footer?: (agentBusy: boolean) => ComponentChildren; picked?: Picked | null; onUnpick?: () => void; empty?: ComponentChildren };
+type Atelier = { pinned?: ComponentChildren; notices?: readonly ChatNotice[]; afterTurn?: (turn: SessionTurn, index: number, last: boolean) => ComponentChildren; footer?: (agentBusy: boolean) => ComponentChildren; picked?: Picked | null; onUnpick?: () => void; empty?: ComponentChildren };
 
-export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterTurn, footer, picked, onUnpick, empty }: { slug: string; replay?: string | null; speed?: number; jobs?: readonly JobInfo[] } & Atelier) {
+export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterTurn, footer, picked, onUnpick, empty, pinned }: { slug: string; replay?: string | null; speed?: number; jobs?: readonly JobInfo[] } & Atelier) {
   const [liveState, live] = useSession(replay ? '' : slug);
   const [replayed, replayDone] = useReplay(slug, replay ?? null, speed);
   const state = describeCalls(replay ? replayed : liveState, jobs);
@@ -234,6 +234,22 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
     watch.observe(root, { childList: true, subtree: true, characterData: true });
     return () => watch.disconnect();
   }, [slug]);
+  // The world's opening cards scrolled out of sight in a long talk: pin the world strip under the header.
+  const [away, setAway] = useState(false);
+  useEffect(() => {
+    const scroller = panel.current?.querySelector<HTMLElement>('.gc-scroll');
+    if (!scroller || !pinned) return;
+    const check = () => {
+      const cards = scroller.querySelectorAll('[data-opening]');
+      const top = scroller.getBoundingClientRect().top;
+      setAway(cards.length > 0 && [...cards].every((c) => c.getBoundingClientRect().bottom < top + 8));
+    };
+    check();
+    scroller.addEventListener('scroll', check, { passive: true });
+    const watch = new MutationObserver(check);
+    watch.observe(scroller, { childList: true, subtree: true });
+    return () => (scroller.removeEventListener('scroll', check), watch.disconnect());
+  }, [slug, !!pinned, !!state]);
   return (
     <section
       ref={panel}
@@ -268,6 +284,7 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
         theme="light"
         disabled={!!replay || !live}
         header={
+          <>
           <div class="row">
             {offers.length > 1 && !talked
               ? <select class="agent-pick" aria-label="Agent" title="Who to talk to. Once you have talked, you can hand the conversation over to another agent" disabled={running} value={current?.name} onChange={(e) => void choose(e.currentTarget.value)}>
@@ -285,6 +302,8 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
               ? <span class="live on">{replayDone ? 'replay done' : 'replay'}</span>
               : <span class={`live ${live ? 'on' : ''}`}>{running ? 'working…' : live ? 'ready' : 'reconnecting'}</span>}
           </div>
+          {away && pinned}
+          </>
         }
         emptyState={empty ?? <p class="note">Ask for a world, a fix or a check. Each step shows here and in Activity, and Undo takes back everything the agent did in its last turn.</p>}
         hint={replay ? null : (

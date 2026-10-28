@@ -12,7 +12,7 @@ import { StyleMenu } from './style-menu.tsx';
 import { PlaceEditor } from './place.tsx';
 import { MODEL_NAME, Pipeline, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
 import { Bell, Logo, Rail, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
-import { Card, CastCard, CastStage, nice, PlacesCard, PlaceStage, type Picked, type StageView } from './world.tsx';
+import { Card, CastCard, CastStage, nice, PlacesCard, PlaceStage, WorldStrip, type Picked, type StageView } from './world.tsx';
 import { Tips } from './tip.tsx';
 import { Lightbox } from './lightbox.tsx';
 import { followAgent, go, movedFrom, route } from './nav.ts';
@@ -731,7 +731,7 @@ function Workshop({ slug }: { slug: string }) {
   const opening = [
     idea && { id: 'idea', afterTurn: 0, text: <div class="idea-bubble">{idea}</div> },
     status?.title && status.steps.includes('story') && { id: 'story', afterTurn: 0, text: (
-      <Card kind="Story" by="Muse Spark" on={shownView.kind === 'story'} onClick={() => onStage({ kind: 'story' })}>
+      <Card kind="Story" by="Muse Spark" on={shownView.kind === 'story'} onClick={() => onStage({ kind: 'story' })} opening>
         <h3>{status.title}</h3>
         {status.pitch && <p>{status.pitch}</p>}
       </Card>
@@ -818,7 +818,7 @@ function Workshop({ slug }: { slug: string }) {
             <h1 title={status?.pitch ?? undefined}>{status?.title ?? slug}</h1>
             <small>{places.length ? `${places.length} places` : 'being made'}{status && status.playable ? ` · ${status.playable} playable` : ''}{job ? ' · building' : playable ? ' · ready to play' : ''}{live ? '' : ' · reconnecting…'}</small>
           </header>
-          <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} notices={opening} afterTurn={afterTurn} footer={footer} picked={picked} onUnpick={() => setPicked(null)}
+          <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} notices={opening} pinned={places.length > 0 && <WorldStrip slug={slug} version={tick} title={status?.title} places={places} stage={shownView} onStage={onStage} />} afterTurn={afterTurn} footer={footer} picked={picked} onUnpick={() => setPicked(null)}
             empty={<span />} />
         </section>
         <section class="theatre" ref={stageRef}>

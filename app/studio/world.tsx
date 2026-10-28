@@ -13,9 +13,9 @@ export type CardPlace = { key: string; shows: string; image: Pic; stages: Record
 type Character = { key: string; role: string; looksNow: string; figure: Pic };
 
 /** A card in the conversation: what it shows decides the stage when clicked. */
-export function Card({ kind, by, on, onClick, children, tone }: { kind: string; by?: string; on?: boolean; onClick?: () => void; children: ComponentChildren; tone?: 'ask' | 'play' }) {
+export function Card({ kind, by, on, onClick, children, tone, opening }: { kind: string; by?: string; on?: boolean; onClick?: () => void; children: ComponentChildren; tone?: 'ask' | 'play'; opening?: boolean }) {
   return (
-    <div class={`wcard${on ? ' on' : ''}${tone ? ` ${tone}` : ''}${onClick ? ' click' : ''}`} onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}
+    <div class={`wcard${on ? ' on' : ''}${tone ? ` ${tone}` : ''}${onClick ? ' click' : ''}`} data-opening={opening || undefined} onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}
       onKeyDown={(e) => onClick && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onClick())}>
       <div class="k">{kind}{by && <span class="by">{by}</span>}</div>
       {children}
@@ -29,7 +29,7 @@ export { nice };
 /** The places as small paintings; one not painted yet shows its name. */
 export function PlacesCard({ slug, places, stage, onStage }: { slug: string; places: CardPlace[]; stage: StageView; onStage: (s: StageView) => void }) {
   return (
-    <Card kind="Places" by="Muse Image · SAM 3.1" on={stage.kind === 'place'}>
+    <Card kind="Places" by="Muse Image · SAM 3.1" on={stage.kind === 'place'} opening>
       <div class="thumbs">
         {places.map((p) => (
           <button type="button" class={`thumb${stage.kind === 'place' && stage.place === p.key ? ' on' : ''}${p.trouble ? ' trouble' : p.verdict?.ok ? ' ready' : ''}`} title={`${nice(p.key)}: ${p.shows}${p.verdict?.ok ? ' (playable)' : ''}`} onClick={() => onStage({ kind: 'place', place: p.key })}
@@ -48,9 +48,33 @@ export function CastCard({ slug, version, stage, onStage }: { slug: string; vers
   const shown = cast?.filter((c) => c.figure) ?? [];
   if (!shown.length) return null;
   return (
-    <Card kind="Cast" by="Muse Image · 3D" on={stage.kind === 'cast'} onClick={() => onStage({ kind: 'cast' })}>
+    <Card kind="Cast" by="Muse Image · 3D" on={stage.kind === 'cast'} onClick={() => onStage({ kind: 'cast' })} opening>
       <div class="lineup-mini">{shown.map((c) => <img src={fileUrl(slug, c.figure!.file, c.figure!.v)} alt={nice(c.key)} title={`${nice(c.key)}: ${c.looksNow}`} />)}</div>
     </Card>
+  );
+}
+
+/**
+ * The world at a glance, pinned over a long conversation once its first cards scrolled away: the story, the places
+ * and the cast, each a click from the stage as on its card.
+ */
+export function WorldStrip({ slug, version, title, places, stage, onStage }: { slug: string; version: number; title?: string; places: CardPlace[]; stage: StageView; onStage: (s: StageView) => void }) {
+  const cast = useCast(slug, version)?.filter((c) => c.figure) ?? [];
+  return (
+    <div class="world-strip">
+      {title && <button type="button" class={`ws-story${stage.kind === 'story' ? ' on' : ''}`} title="The story: places, items, people and endings" onClick={() => onStage({ kind: 'story' })}>{title}</button>}
+      <span class="ws-places">
+        {places.map((p) => (
+          <button type="button" class={`ws-thumb${stage.kind === 'place' && stage.place === p.key ? ' on' : ''}${p.trouble ? ' trouble' : ''}`} title={nice(p.key)} onClick={() => onStage({ kind: 'place', place: p.key })}
+            style={p.image ? { backgroundImage: `url("${fileUrl(slug, p.image.file, p.image.v)}")` } : undefined} />
+        ))}
+      </span>
+      {cast.length > 0 && (
+        <button type="button" class={`ws-cast${stage.kind === 'cast' ? ' on' : ''}`} title="The cast and the items" onClick={() => onStage({ kind: 'cast' })}>
+          {cast.slice(0, 5).map((c) => <img src={fileUrl(slug, c.figure!.file, c.figure!.v)} alt="" />)}
+        </button>
+      )}
+    </div>
   );
 }
 
