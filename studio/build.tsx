@@ -96,7 +96,8 @@ export function Pipeline({ job, all, live, build, typical }: { job?: JobLike; al
       <div class="row head">
         <strong>{job ? `${job.by === 'agent' ? 'Agent: ' : ''}${job.label}` : 'Build'}</strong>
         {job && calls.map(([by, n]) => <span class={`count ${tone(by)}${fresh && live.lastCall?.by === by ? ' hot' : ''}`}><ModelTag by={by} /> {n}</span>)}
-        <span class="detail tail">{job ? (fresh && live.lastCall ? `${live.lastCall.by}: ${live.lastCall.label}` : live.tail) : ''}</span>
+        {/* A step's raw line is cut to what it is doing ("barn-interior layout try 1"); the whole line is on hover. */}
+        <span class="detail tail" title={job ? live.tail : undefined}>{job ? (fresh && live.lastCall ? `${live.lastCall.by}: ${live.lastCall.label}` : live.tail.split(/: |[.!?]\s/)[0].slice(0, 60)) : ''}</span>
         {when && <span class="detail when">{when}</span>}
       </div>
       <ol class="phases" aria-label="Build phases">
@@ -209,7 +210,8 @@ export function Stage({ slug, place, live, building }: { slug: string; place: St
   return (
     <figure class="stage-live" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <div class="frame">
-        {shown.length === 0 && <div class="empty"><span>{place.shows}</span></div>}
+        {/* Not painted yet: the place's name and who paints it; what it shows is in the tooltip and the story beside. */}
+        {shown.length === 0 && <div class="empty waiting" title={place.shows}><strong>{place.key}</strong><span><ModelTag by="Muse Image" /> {busy ? `${busy.doing}…` : 'paints it next'}</span></div>}
         {/* The depth map needs a painting under it; the rest are whole pictures, each over the one before. */}
         {shown.slice(0, upTo + 1).map((s) => {
           const l = place.layers![s.layer]!;
@@ -281,9 +283,9 @@ export function Strip({ slug, places, focus, live, building, repairing, onPick }
         const n = SHOWN.filter((s) => has(p, s.layer)).length;
         return (
           <li class={`${focus === p.key ? 'focus' : ''}${busy ? ' busy' : ''}`}>
-            <button type="button" class="card" title="Open this place to look at it and fix it; click again to close" onClick={() => onPick(p.key)}>
+            <button type="button" class="card" title={`${p.shows}\n\nOpen this place to look at it and fix it; click again to close`} onClick={() => onPick(p.key)}>
               <span class="thumb">
-                {top ? <img src={fileUrl(slug, p.layers![top.layer]!.file, p.layers![top.layer]!.v)} alt={p.shows} loading="lazy" /> : <span class="noimg">{p.shows}</span>}
+                {top ? <img src={fileUrl(slug, p.layers![top.layer]!.file, p.layers![top.layer]!.v)} alt={p.shows} loading="lazy" /> : <span class="noimg" title={p.shows}>{busy ? `${busy.by}…` : 'waiting to paint'}</span>}
                 {busy && <span class="scan" />}
               </span>
               <span class="name">
@@ -347,5 +349,42 @@ export function Tale({ slug, version, pitch, hero, places }: { slug: string; ver
       )}
       {s && s.endings.length > 0 && <p class="endings">{s.endings.length === 1 ? 'Ending' : `${s.endings.length} endings`}: {s.endings.map((e) => e.title).join(' · ')}</p>}
     </aside>
+  );
+}
+
+export type FeedItem = { id: number; by: string | null; text: string; at: number };
+
+/** Ideas for the agent once a world plays: one click asks it. */
+const NEXT = (place?: string) => [
+  'Make it night, with warm lanterns',
+  'Add gentle rain and puddles',
+  place ? `Add a friendly animal in ${place}` : 'Add a friendly animal',
+  'Add one more place to explore',
+];
+
+/**
+ * The agent's side while a build runs: what each model does right now, newest first; when the world plays, a few
+ * things to ask the agent next. The chat stays below, one click away.
+ */
+export function Crew({ feed, building, playable, place, onAsk, onClose }: { feed: FeedItem[]; building: boolean; playable: boolean; place?: string; onAsk: (text: string) => void; onClose: () => void }) {
+  const ideas = NEXT(place);
+  return (
+    <section class={`crew${building ? ' live' : ''}`} aria-live="polite">
+      <div class="row">
+        <strong>{building ? 'Building now' : 'Try next'}</strong>
+        <span class="grow" />
+        {!building && <button type="button" class="ghost tiny" aria-label="Hide" title="Hide until the next build" onClick={onClose}>✕</button>}
+      </div>
+      {building && (
+        <ol class="feed">
+          {feed.length === 0 && <li class="detail">Starting…</li>}
+          {feed.slice(0, 9).map((f) => <li key={f.id} class={f.by ? 'call' : 'step'}>{f.by ? <ModelTag by={f.by} /> : <span class="ok">✓</span>}<span>{f.text}</span></li>)}
+        </ol>
+      )}
+      <p class="detail">{building ? 'When it is done, ask the agent:' : 'Ask the agent, one click:'}</p>
+      <div class="ideas">
+        {ideas.map((t) => <button type="button" class="ghost small" disabled={building || !playable} title={building ? 'After the build' : 'Sends this to the agent below'} onClick={() => onAsk(t)}>{t}</button>)}
+      </div>
+    </section>
   );
 }

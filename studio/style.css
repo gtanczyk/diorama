@@ -388,6 +388,9 @@ section.agent .gc-fold > summary { display: block; cursor: pointer; }
 .stage-live .layer.depth { opacity: 0.78; }
 .stage-live .empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 40px; text-align: center; font-family: Georgia, serif; font-size: 20px; color: var(--muted); }
 .stage-live .empty span { animation: pulse 2.4s ease-in-out infinite; max-width: 32em; }
+.stage-live .empty.waiting { flex-direction: column; gap: 10px; background: repeating-linear-gradient(135deg, transparent 0 18px, rgba(255, 255, 255, 0.02) 18px 36px); }
+.stage-live .empty.waiting strong { font-size: 30px; font-weight: 400; color: var(--text); }
+.stage-live .empty.waiting span { display: inline-flex; align-items: center; gap: 8px; font-family: inherit; font-size: 14px; }
 .stage-live figcaption { position: absolute; left: 14px; bottom: 14px; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; border-radius: 16px; background: rgba(12, 14, 17, 0.72); backdrop-filter: blur(6px); font-size: 14px; }
 .stage-live figcaption .model { font-size: 12px; background: rgba(255, 255, 255, 0.08); }
 .stage-live .where { position: absolute; right: 14px; bottom: 14px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 10px; border-radius: 12px; background: rgba(12, 14, 17, 0.6); font-size: 12px; color: var(--muted); }
@@ -430,10 +433,11 @@ section.agent .gc-fold > summary { display: block; cursor: pointer; }
 .strip .card { all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 5px; width: 100%; }
 .strip .thumb { position: relative; display: block; aspect-ratio: 1200 / 896; border-radius: 10px; overflow: hidden; background: var(--raised); }
 .strip .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; animation: enter-fade 0.8s ease-out both; }
-.strip .noimg { position: absolute; inset: 0; overflow: hidden; padding: 10px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; color: var(--faint); }
+.strip .noimg { position: absolute; inset: 0; overflow: hidden; padding: 10px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-style: italic; color: var(--faint); background: repeating-linear-gradient(135deg, transparent 0 10px, rgba(255, 255, 255, 0.025) 10px 20px); }
 .strip li.focus .thumb { outline: 2px solid var(--accent); outline-offset: 2px; }
-.strip .name { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 13px; }
-.strip .name strong { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strip .name { display: flex; flex-wrap: nowrap; justify-content: space-between; align-items: center; gap: 6px; font-size: 13px; min-width: 0; }
+.strip .name strong { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.strip .name .badge { flex: none; white-space: nowrap; max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
 .strip .dots { display: flex; gap: 3px; }
 .strip li { position: relative; }
 /* Fix it sits over the bottom of the thumbnail, so a failed card is no taller than the others. */
@@ -459,6 +463,7 @@ section.agent .gc-fold > summary { display: block; cursor: pointer; }
   main.workshop.fit .build-grid { height: 100%; grid-template-rows: minmax(0, 1fr) 132px; grid-template-areas: "stage tale" "strip tale";
     grid-template-columns: min(calc(100cqw - clamp(220px, 34cqw, 316px)), calc((100cqh - 144px) * 1200 / 896)) minmax(0, 1fr); }
   main.workshop.fit .tale { contain: size; }
+  main.workshop.fit .build-grid > .inspect { grid-area: tale; min-height: 0; overflow: auto; overscroll-behavior: contain; margin: 0; }
   main.workshop.fit .stage-live { min-height: 0; }
   main.workshop.fit .stage-live .frame { width: 100%; margin: 0; }
   main.workshop.fit .strip { display: flex; gap: 10px; overflow-x: auto; }
@@ -540,3 +545,17 @@ body.dragging iframe { pointer-events: none; }
 /* One tooltip for the whole Studio (tip.tsx): what a control does and what it costs. */
 .tip { position: fixed; left: 0; top: 0; z-index: 1000; max-width: 300px; padding: 7px 10px; border-radius: 8px; background: var(--raised); color: var(--text); border: 1px solid var(--line-strong); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); font-size: 13px; line-height: 1.4; white-space: pre-line; pointer-events: none; opacity: 0; transition: opacity 0.12s; }
 .tip.on { opacity: 1; }
+
+/* The agent's side during a build: what the models do now; after it, ideas to ask. */
+.crew { flex: none; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
+.crew.live { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.crew .row strong { font-size: 13px; }
+.crew.live .row strong::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 4px; background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+.crew .feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; max-height: 40vh; overflow: hidden; }
+.crew .feed li { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); animation: rise 0.4s ease-out both; white-space: nowrap; overflow: hidden; }
+.crew .feed li span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.crew .feed li:nth-child(n + 5) { opacity: 0.6; }
+.crew .feed li.step { color: var(--ok); }
+.crew .detail { margin: 0; }
+.crew .ideas { display: flex; flex-wrap: wrap; gap: 6px; }
+.crew .ideas button { font-size: 12px; }

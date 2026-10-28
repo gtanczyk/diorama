@@ -10,7 +10,7 @@ import { KidsStart, KidsWait, polish, setPolish, t } from './kids.tsx';
 import { StoryView } from './story.tsx';
 import { PlaceEditor } from './place.tsx';
 import { clampWidth, Dock, useDock } from './dock.tsx';
-import { MODEL_NAME, Pipeline, Stage, Strip, Tale, working, type Live, type StagePlace } from './build.tsx';
+import { Crew, MODEL_NAME, Pipeline, Stage, Strip, Tale, working, type FeedItem, type Live, type StagePlace } from './build.tsx';
 import { Tips } from './tip.tsx';
 
 type Check = { id: string; label: string; state: 'ok' | 'missing' | 'optional' | 'fail'; detail: string; fix?: string[] };
@@ -410,6 +410,10 @@ function Workshop({ slug }: { slug: string }) {
   const [since, setSince] = useState<Record<string, number>>({});
   const [jobCalls, setJobCalls] = useState<Record<string, number>>({});
   const [lastCall, setLastCall] = useState<Live['lastCall']>(null);
+  const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [crewOff, setCrewOff] = useState(false);
+  const feedId = useRef(0);
+  const toFeed = (by: string | null, text: string) => setFeed((f) => [{ id: ++feedId.current, by, text, at: Date.now() }, ...f].slice(0, 30));
   const [livePlace, setLivePlace] = useState<{ key: string; at: number } | null>(null);
   const [spin, setSpin] = useState(0);
   const [focus, setFocus] = useState<string | null>(null);
@@ -450,13 +454,14 @@ function Workshop({ slug }: { slug: string }) {
         }
         case 'build.start': return setJobPlan(e.steps as string[]);
         case 'step.start': setSince((t) => ({ ...t, [String(e.step)]: Date.parse(e.at) })); setRunning((r) => ({ ...r, [String(e.step)]: 'run' })); return;
-        case 'step.end': setJobDone((d) => ({ ...d, [String(e.step)]: Number(e.seconds) })); setRunning((r) => { const n = { ...r }; delete n[String(e.step)]; return n; }); soon(); return add(e, `✓ ${e.step} · ${e.seconds}s`, 'step');
+        case 'step.end': toFeed(null, `${e.step} done`); setJobDone((d) => ({ ...d, [String(e.step)]: Number(e.seconds) })); setRunning((r) => { const n = { ...r }; delete n[String(e.step)]; return n; }); soon(); return add(e, `✓ ${e.step} · ${e.seconds}s`, 'step');
         case 'step.fail': setRunning((r) => ({ ...r, [String(e.step)]: 'fail' })); return add(e, `✕ ${e.step}: ${e.error}`, 'err');
         case 'call': {
           if (e.hit) return;
           setCalls((c) => c + 1);
           const by = MODEL_NAME[String(e.model)] ?? String(e.model);
           setJobCalls((c) => ({ ...c, [by]: (c[by] ?? 0) + 1 }));
+          toFeed(by, String(e.label ?? '').replace(/#\d+$/, ''));
           return setLastCall({ by, label: String(e.label ?? '').replace(/#\d+$/, ''), at: Date.now() });
         }
         case 'file.changed': {
@@ -467,7 +472,7 @@ function Workshop({ slug }: { slug: string }) {
         }
         case 'feedback.changed': return soon();
         case 'job.start': case 'job.end': case 'job.queued': {
-          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null));
+          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setFeed([]), setCrewOff(false));
           const job = e.job as Job;
           soon();
           // What the agent changed shows in an open game at once; after the person's own builds the banner offers it.
@@ -554,8 +559,8 @@ function Workshop({ slug }: { slug: string }) {
       {shown && status && <KidsWait slug={slug} places={status.placeDetail} progress={total ? 1 - left / total : 0} left={shown.state === 'running' ? left : null} doing={plan.find((s) => running[s] === 'run')}
         ready={shown.state === 'done' && playable} failed={shown.state === 'failed' || shown.state === 'cancelled'}
         onPlay={() => (setHidden(shown.id), setPlaying({ full: true }))} onHide={() => setHidden(shown.id)} />}
-      {/* The Workshop fits the window: Places and Play shrink to it, Story, Cast and Notes scroll inside. Fixing a place gives the page its length back. */}
-      <main class={`workshop${playing ? ' fit playing' : !placeFocus || view !== 'places' ? ' fit' : ''} dock-${dock.folded && dock.side !== 'float' ? `${dock.side}-folded` : dock.side}`} style={{ '--dock-w': `${clampWidth(dock.width)}px` }}>
+      {/* The Workshop never scrolls as a page: Places and Play shrink to the window; a picked place, Story, Cast and Notes scroll inside. */}
+      <main class={`workshop${playing ? ' fit playing' : ' fit'} dock-${dock.folded && dock.side !== 'float' ? `${dock.side}-folded` : dock.side}`} style={{ '--dock-w': `${clampWidth(dock.width)}px` }}>
         <div class="left">
           <div class="row">
             <h1>{status?.title ?? slug}</h1>
@@ -589,12 +594,9 @@ function Workshop({ slug }: { slug: string }) {
           {!playing && view === 'places' && status && (
             <div class="build-stage"><div class="build-grid">
               {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? 'Muse Spark is dreaming up the places…'}</span></div></div></figure>}
-              <Tale slug={slug} version={tick} pitch={status.pitch} places={status.placeDetail} />
-              <Strip slug={slug} places={status.placeDetail} focus={stageKey ?? null} live={liveBuild} building={!!building} repairing={repairing} onPick={(k) => setFocus(focus === k ? null : k)} />
-            </div></div>
-          )}
-          {!playing && view === 'places' && placeFocus && (
-            <section class="inspect">
+              {/* A picked place: its checks and fixes beside its picture, in the story's place, scrolling inside. */}
+              {placeFocus ? <section class="inspect" aria-label={`Fix ${placeFocus.key}`}>
+<div class="row"><strong>{placeFocus.key}</strong><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Back to the story" onClick={() => setFocus(null)}>✕</button></div>
               <p class="detail">{placeFocus.shows}</p>
               {placeFocus.verdict && [...placeFocus.verdict.errors.map((f) => ['error', f] as const), ...placeFocus.verdict.flags.map((f) => ['flag', f] as const)].map(([kind, f]) => (
                 <>
@@ -612,11 +614,16 @@ function Workshop({ slug }: { slug: string }) {
               ))}
               {placeFocus.stages.layout && <button type="button" class="ghost small" title="Start the game in this place. Free" onClick={() => setPlaying({ place: placeFocus.key })}>Play from {placeFocus.key}</button>}
               {placeFocus.stages.painting ? <PlaceEditor slug={slug} place={placeFocus.key} version={tick} onError={setError} /> : <p class="detail">Fixing opens once the place is painted.</p>}
-            </section>
+            </section> : <Tale slug={slug} version={tick} pitch={status.pitch} places={status.placeDetail} />}
+              <Strip slug={slug} places={status.placeDetail} focus={stageKey ?? null} live={liveBuild} building={!!building} repairing={repairing} onPick={(k) => setFocus(focus === k ? null : k)} />
+            </div></div>
           )}
           {!playing && view === 'notes' && <div class="tab-body"><Notes slug={slug} notes={notes} onPlace={(p) => (setView('places'), setFocus(p))} onError={setError} /></div>}
         </div>
         <Dock dock={dock} onChange={setDock} title="Agent">
+          {/* A build fills the agent's side with what the models do; after it, a few things to ask. */}
+          {(building || (playable && feed.length > 0 && !crewOff)) && <Crew feed={feed} building={!!building} playable={playable} place={status?.placeDetail[0]?.key}
+            onAsk={(t) => (setCrewOff(true), askAgent(slug, t).catch((e) => setError(e.message)))} onClose={() => setCrewOff(true)} />}
           <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} />
         </Dock>
       </main>
