@@ -554,8 +554,8 @@ function Workshop({ slug }: { slug: string }) {
       {shown && status && <KidsWait slug={slug} places={status.placeDetail} progress={total ? 1 - left / total : 0} left={shown.state === 'running' ? left : null} doing={plan.find((s) => running[s] === 'run')}
         ready={shown.state === 'done' && playable} failed={shown.state === 'failed' || shown.state === 'cancelled'}
         onPlay={() => (setHidden(shown.id), setPlaying({ full: true }))} onHide={() => setHidden(shown.id)} />}
-      {/* Places and Play fit the window: the build is watched and the game played, not scrolled. Fixing a place gives the page its length back. */}
-      <main class={`workshop${playing ? ' fit playing' : view === 'places' && !placeFocus ? ' fit' : ''} dock-${dock.folded && dock.side !== 'float' ? `${dock.side}-folded` : dock.side}`} style={{ '--dock-w': `${dock.width}px` }}>
+      {/* The Workshop fits the window: Places and Play shrink to it, Story, Cast and Notes scroll inside. Fixing a place gives the page its length back. */}
+      <main class={`workshop${playing ? ' fit playing' : !placeFocus || view !== 'places' ? ' fit' : ''} dock-${dock.folded && dock.side !== 'float' ? `${dock.side}-folded` : dock.side}`} style={{ '--dock-w': `${dock.width}px` }}>
         <div class="left">
           <div class="row">
             <h1>{status?.title ?? slug}</h1>
@@ -584,8 +584,8 @@ function Workshop({ slug }: { slug: string }) {
             <button type="button" role="tab" aria-selected={view === 'cast'} class={view === 'cast' ? 'on' : ''} title="Characters, their looks, moves and voices, and the inventory icons" onClick={() => setView('cast')}>Cast</button>
             <button type="button" role="tab" aria-selected={view === 'notes'} class={view === 'notes' ? 'on' : ''} title="Your notes on what to fix, for you or the agent" onClick={() => setView('notes')}>Notes{notes.some((n) => n.state === 'open') ? ` · ${notes.filter((n) => n.state === 'open').length}` : ''}</button>
           </div>}
-          {!playing && view === 'story' && <StoryView slug={slug} version={tick} onError={setError} />}
-          {!playing && view === 'cast' && <CastView slug={slug} version={tick} onError={setError} />}
+          {!playing && view === 'story' && <div class="tab-body"><StoryView slug={slug} version={tick} onError={setError} /></div>}
+          {!playing && view === 'cast' && <div class="tab-body"><CastView slug={slug} version={tick} onError={setError} /></div>}
           {!playing && view === 'places' && status && (
             <div class="build-stage"><div class="build-grid">
               {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? 'Muse Spark is dreaming up the places…'}</span></div></div></figure>}
@@ -614,7 +614,7 @@ function Workshop({ slug }: { slug: string }) {
               {placeFocus.stages.painting ? <PlaceEditor slug={slug} place={placeFocus.key} version={tick} onError={setError} /> : <p class="detail">Fixing opens once the place is painted.</p>}
             </section>
           )}
-          {!playing && view === 'notes' && <Notes slug={slug} notes={notes} onPlace={(p) => (setView('places'), setFocus(p))} onError={setError} />}
+          {!playing && view === 'notes' && <div class="tab-body"><Notes slug={slug} notes={notes} onPlace={(p) => (setView('places'), setFocus(p))} onError={setError} /></div>}
         </div>
         <Dock dock={dock} onChange={setDock} title="Agent">
           <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} />

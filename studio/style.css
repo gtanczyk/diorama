@@ -443,7 +443,7 @@ section.agent .gc-fold > summary { display: block; cursor: pointer; }
 .strip .dots i.on { background: var(--ok); }
 @media (max-width: 1100px) { .build-grid { grid-template-columns: 1fr; grid-template-areas: "stage" "strip" "tale"; } .tale { contain: none; } .pipeline .phases { flex-wrap: wrap; } }
 
-/* Places fits the window (main.workshop.fit): the stage takes the height that is left, the story and Activity scroll inside. */
+/* The Workshop fits the window (main.workshop.fit): the stage takes the height that is left; the tale and the Story, Cast and Notes tabs scroll inside. */
 @media (min-width: 961px) and (min-height: 560px) {
   main.workshop.fit { height: calc(100dvh - var(--top-h, 55px)); padding-block: 14px; overflow: hidden; }
   main.workshop.fit > .left { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
@@ -453,8 +453,10 @@ section.agent .gc-fold > summary { display: block; cursor: pointer; }
   main.workshop.fit .seg { align-self: flex-start; }
   /* The stage column is as wide as the picture the height allows; the story takes the rest. */
   main.workshop.fit > .left > .build-stage { flex: 1 1 0; min-height: 0; container-type: size; }
-  main.workshop.fit .build-grid { height: 100%; grid-template-rows: minmax(0, 1fr) 132px;
-    grid-template-columns: min(calc(100cqw - 316px), calc((100cqh - 144px) * 1200 / 896)) minmax(0, 1fr); }
+  /* Also on a narrow window: the picture shrinks before the story drops under it, so nothing goes below the fold. */
+  main.workshop.fit .build-grid { height: 100%; grid-template-rows: minmax(0, 1fr) 132px; grid-template-areas: "stage tale" "strip tale";
+    grid-template-columns: min(calc(100cqw - clamp(220px, 34cqw, 316px)), calc((100cqh - 144px) * 1200 / 896)) minmax(0, 1fr); }
+  main.workshop.fit .tale { contain: size; }
   main.workshop.fit .stage-live { min-height: 0; }
   main.workshop.fit .stage-live .frame { width: 100%; margin: 0; }
   main.workshop.fit .strip { display: flex; gap: 10px; overflow-x: auto; }
@@ -463,6 +465,7 @@ section.agent .gc-fold > summary { display: block; cursor: pointer; }
   main.workshop.fit .tale { min-height: 0; }
   main.workshop.fit > .right { min-height: 0; }
   main.workshop.fit > .left > .play { flex: 1 1 0; min-height: 0; }
+  main.workshop.fit > .left > .tab-body { flex: 1 1 0; min-height: 0; overflow: auto; overscroll-behavior: contain; padding-right: 4px; }
   main.workshop.fit .play .screen { flex: 1 1 0; min-height: 0; container-type: size; display: grid; place-items: center; }
   main.workshop.fit .play iframe { width: min(100cqw, calc(100cqh * 1200 / 896)); }
   main.workshop.fit > .right .dock-body { flex: 1 1 0; min-height: 0; overflow: hidden; }
