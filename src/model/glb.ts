@@ -1,5 +1,7 @@
 // Reads the bind-pose shape of a skinned glTF binary: vertex positions in scene space and triangles.
 // Enough for measuring a silhouette; the runtime loads the file itself with three.js.
+import fs from 'node:fs';
+import path from 'node:path';
 
 type Node = { mesh?: number; skin?: number; children?: number[]; matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[] };
 type Accessor = { bufferView: number; byteOffset?: number; componentType: number; count: number; type: string };
@@ -89,6 +91,37 @@ export function normalise({ positions, triangles }: Shape): Shape {
   const h = hi[1] - lo[1];
   const centre = [(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2];
   return { positions: positions.map((v, i) => (v - centre[i % 3]) / h), triangles };
+}
+
+/**
+ * Shallowest a body may be, front to back, as a share of its height. People and animals stand 0.18-0.30 deep
+ * (demo35: 0.18, 0.23, 0.29); TRELLIS turns a flat children's drawing into a card about 0.03 deep, which walks
+ * as a paper slab seen edge-on.
+ */
+export const MIN_DEPTH = 0.08;
+
+/** Why a model cannot stand in for the character (a flat card), or null; extents without the outer 2% of vertices. */
+export function badModel(shape: Shape): string | null {
+  const p = normalise(shape).positions;
+  const span = (axis: number) => {
+    const v: number[] = [];
+    for (let i = axis; i < p.length; i += 3) v.push(p[i]);
+    v.sort((a, b) => a - b);
+    return v[Math.floor(v.length * 0.98)] - v[Math.floor(v.length * 0.02)];
+  };
+  const depth = span(2) / span(1);
+  return depth < MIN_DEPTH ? `flat: ${depth.toFixed(2)} of its height deep (a body is at least ${MIN_DEPTH})` : null;
+}
+
+/** Why cast/<key>/model/ cannot be used (a model kept before badModel was checked), or null. */
+export function modelProblem(modelDir: string): string | null {
+  const glb = path.join(modelDir, 'model.glb');
+  if (!fs.existsSync(glb)) return 'no model.glb';
+  try {
+    return badModel(readShape(fs.readFileSync(glb)));
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 
 /** How far the body leans: the slope of x and of z against height, over the body between shins and brow. */

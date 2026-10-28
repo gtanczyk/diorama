@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { defineCommand, takeOption } from '../registry.ts';
 import { autoRig, reconstruct } from '../model/build.ts';
 import { fitViews, refitIfOld } from '../model/fit.ts';
-import { lean, readShape, standUp } from '../model/glb.ts';
+import { badModel, lean, readShape, standUp } from '../model/glb.ts';
 import { paintViews } from '../model/views.ts';
 import { planSprites } from '../model/plan.ts';
 import { Story } from '../story/schema.ts';
@@ -48,7 +48,26 @@ async function buildModel(files: WorldFiles, key: string, take: number, given: s
 
   const views = await paintViews(files.memo, key, who.looks ?? '', painting, take);
   for (const [name, png] of Object.entries(views)) files.write(out(`${name}.png`), png);
-  const built = given ? fs.readFileSync(given) : await autoRig(files.memo, key, await reconstruct(files.memo, key, [views.front, views.back, views.left, views.right]));
+  // TRELLIS sometimes makes a flat card of a flat drawing: other seeds, then the front alone (depth guessed),
+  // and with none of them a body, no model: the character walks with its 2D rig.
+  const all = [views.front, views.back, views.left, views.right];
+  const tries = [[1, all], [2, all], [3, all], [1, [views.front]]] as const;
+  let shell: Buffer | undefined;
+  for (const [seed, from] of tries) {
+    if (given) break;
+    const made = await reconstruct(files.memo, key, [...from], seed);
+    const bad = badModel(readShape(made));
+    if (!bad) { shell = made; break; }
+    console.log(`${key}: TRELLIS (seed ${seed}${from.length === 1 ? ', front only' : ''}) made a model that is ${bad}`);
+  }
+  const rejected = out('model.json');
+  if (!given && !shell) {
+    // An older model of this character (a flat one, kept before this gate) must not stay in the game.
+    if (fs.existsSync(rejected)) fs.renameSync(rejected, out('model-rejected.json'));
+    console.log(`${key}: no 3D model: every try was flat; the game walks the 2D rig`);
+    return;
+  }
+  const built = given ? fs.readFileSync(given) : await autoRig(files.memo, key, shell!);
   const tilt = lean(readShape(built));
   const rigged = standUp(built);
   files.write(out('model.glb'), rigged);

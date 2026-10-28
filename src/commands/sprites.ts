@@ -8,6 +8,7 @@ import { cutSheet, FACINGS, flatGuide, onGrey, paintSheet, renderGuides, SHEET, 
 import { Story } from '../story/schema.ts';
 import { fixedLooks } from '../scene/cast-fixes.ts';
 import { refitIfOld } from '../model/fit.ts';
+import { modelProblem } from '../model/glb.ts';
 import { WorldFiles } from '../world/files.ts';
 
 const LEGS_OK = 0.6;
@@ -39,6 +40,11 @@ defineCommand({
     for (const p of plans) {
       if (!fs.existsSync(files.path('cast', p.key, 'model', 'model.json'))) {
         console.log(`${p.key}: no model yet, skipped (diorama model ${slug} ${p.key})`);
+        continue;
+      }
+      const bad = modelProblem(files.path('cast', p.key, 'model'));
+      if (bad) {
+        console.log(`${p.key}: model is ${bad}, skipped: walks with the 2D rig (diorama model ${slug} ${p.key} tries again)`);
         continue;
       }
       await drawCharacter(files, p, take, tries);

@@ -7,6 +7,7 @@ import { CastFixes, castFixesFile, readCastFixes } from '../scene/cast-fixes.ts'
 import { DESIGNED, designDescriptions, needsDesign, stockVoices, voiceCandidates, Voices } from '../sound/voices.ts';
 import { agentBlocked } from '../studio/locks.ts';
 import { players } from '../world/drawings.ts';
+import { modelProblem } from '../model/glb.ts';
 import { WorldFiles } from '../world/files.ts';
 import { Slug } from '../world/schema.ts';
 import { ActionError, defineAction, type ActionContext } from './registry.ts';
@@ -40,7 +41,7 @@ function writeFix(ctx: ActionContext, slug: string, key: string, change: (f: Cas
 defineAction({
   name: 'cast_status',
   reads: true,
-  description: 'Every character of a world (hero and NPCs): how they look (and the person\'s fixes), which parts exist (cut-out figure, rig, 3D model, sprite sheets), their voice and how many lines they speak, with a sample.',
+  description: 'Every character of a world (hero and NPCs): how they look (and the person\'s fixes), which parts exist (cut-out figure, rig, 3D model, sprite sheets; modelIssue says why a model is not used, e.g. flat), their voice and how many lines they speak, with a sample.',
   input: z.object({ slug: Slug }),
   async run({ slug }, ctx) {
     const files = new WorldFiles(slug, ctx.root);
@@ -58,10 +59,17 @@ defineAction({
         figure: pic(`cast/${c.key}.png`),
         painting: pic(`cast/${c.key}-painting.png`),
         rig: fs.existsSync(files.path('cast', c.key, 'rig.json')),
-        model: fs.existsSync(files.path('cast', c.key, 'model', 'model.json')),
-        sprites: fs.existsSync(files.path('cast', c.key, 'sprites', 'sprites.json')),
-        // When each was last written, so Studio's preview reloads them after a rebuild.
-        stamps: { rig: stamp(files.path('cast', c.key, 'rig.json')), model: stamp(files.path('cast', c.key, 'model', 'model.json')), sprites: stamp(files.path('cast', c.key, 'sprites', 'sprites.json')) },
+        ...(() => {
+          // A flat model (and the sheets painted over it) is not used by the game; say why instead.
+          const has = fs.existsSync(files.path('cast', c.key, 'model', 'model.json'));
+          const modelIssue = has ? modelProblem(files.path('cast', c.key, 'model')) : null;
+          const sprites = !modelIssue && fs.existsSync(files.path('cast', c.key, 'sprites', 'sprites.json'));
+          return {
+            model: has && !modelIssue, sprites, modelIssue,
+            // When each was last written, so Studio's preview reloads them after a rebuild.
+            stamps: { rig: stamp(files.path('cast', c.key, 'rig.json')), model: has && !modelIssue ? stamp(files.path('cast', c.key, 'model', 'model.json')) : null, sprites: sprites ? stamp(files.path('cast', c.key, 'sprites', 'sprites.json')) : null },
+          };
+        })(),
         voice: voices?.success ? voices.data.cast[c.key] ?? null : null,
         lines: lines.length,
         flagged: lines.filter((l) => l.flags.some((f) => f.startsWith('heard'))).length,

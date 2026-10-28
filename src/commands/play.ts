@@ -11,6 +11,7 @@ import { Rig } from '../play/rig.ts';
 import { Weather } from '../play/weather.ts';
 import { readBodies } from '../scene/cast.ts';
 import type { ModelInfo } from '../../web/hero3d.ts';
+import { modelProblem } from '../model/glb.ts';
 import type { SpriteInfo } from '../../web/main.ts';
 import { soundData } from '../sound/data.ts';
 import { defineCommand, takeOption } from '../registry.ts';
@@ -70,9 +71,12 @@ export function worldData(files: WorldFiles) {
       const key = f.slice(0, -4);
       const rig = fs.existsSync(files.path('cast', key, 'rig.json')) ? Rig.parse(files.readJson(files.path('cast', key, 'rig.json'))) : undefined;
       // cast/<key>/model/model.json (diorama model): a rigged 3D figure the page draws instead of the 2D rig.
-      const model = fs.existsSync(files.path('cast', key, 'model', 'model.json')) ? { dir: `cast/${key}/model`, info: files.readJson(files.path('cast', key, 'model', 'model.json')) as ModelInfo } : undefined;
+      // A flat one (a card TRELLIS made of a flat drawing, kept before the model step checked) is left out, and so
+      // are the sheets painted over its guides: the character walks with its 2D rig.
+      const modelOk = fs.existsSync(files.path('cast', key, 'model', 'model.json')) && !modelProblem(files.path('cast', key, 'model'));
+      const model = modelOk ? { dir: `cast/${key}/model`, info: files.readJson(files.path('cast', key, 'model', 'model.json')) as ModelInfo } : undefined;
       // cast/<key>/sprites/sprites.json (diorama sprites): painted walk sheets, preferred over the 3D figure.
-      const sprites = fs.existsSync(files.path('cast', key, 'sprites', 'sprites.json')) ? { dir: `cast/${key}/sprites`, info: files.readJson(files.path('cast', key, 'sprites', 'sprites.json')) as SpriteInfo } : undefined;
+      const sprites = modelOk && fs.existsSync(files.path('cast', key, 'sprites', 'sprites.json')) ? { dir: `cast/${key}/sprites`, info: files.readJson(files.path('cast', key, 'sprites', 'sprites.json')) as SpriteInfo } : undefined;
       const body = bodies[key];
       const walks = body?.upright !== false;
       return [key, { image: `cast/${f}`, ...(body && { height: body.height }), ...(!walks && { upright: false }), ...(walks && rig ? { rig, parts: `cast/${key}` } : {}), ...(walks && model && { model }), ...(walks && sprites && { sprites }) }];
