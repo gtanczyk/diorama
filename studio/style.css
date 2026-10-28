@@ -238,7 +238,9 @@ section.agent .row { padding: 12px 14px 0; }
 .progress .steps li { background: var(--raised); }
 .progress .tail { font-family: ui-monospace, Menlo, monospace; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
 /* A turn that ended well: a step that failed on the way was retried, so its summary says no "errors" (the step itself still shows it). */
-section.agent .gc-turn:has(.gc-turn-footer:not(.gc-bad)) .gc-fold summary .gc-err { display: none; }
+/* A refused or failed step mid-turn is the agent finding its way; "errors" in the fold is for a turn that ended badly. */
+section.agent .gc-turn:not(:has(.gc-turn-footer.gc-bad)) .gc-fold summary .gc-err { display: none; }
+section.agent .gc-fold > summary { display: block; cursor: pointer; }
 /* A workshop with children: drawings, recordings, their story. */
 .tabs { display: flex; gap: 6px; }
 .tabs button.on { border-color: var(--accent); color: var(--text); }

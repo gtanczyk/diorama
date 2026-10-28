@@ -123,6 +123,8 @@ export function describeCalls(state: SessionState | null, jobs: readonly JobInfo
       if (e.kind === 'approval' && e.request.summary?.includes('mcp__diorama__')) {
         return { ...e, request: { ...e.request, summary: e.request.summary.replace(/mcp__diorama__(\w+)/g, (_, name: string) => SAYS[name] ?? name.replace(/_/g, ' ')) } };
       }
+      // The agent's own tool, refused or failed with nothing to say: say so, not "No output."
+      if (e.kind === 'tool' && e.done && e.isError && !e.output?.trim() && !e.name.startsWith('mcp__diorama__')) return { ...e, output: 'Refused or failed; the agent carries on.' };
       if (e.kind !== 'tool' || !e.name.startsWith('mcp__diorama__') || !e.input || typeof e.input !== 'object') return e;
       const input = e.input as Record<string, unknown>;
       const j = job(input.id);
