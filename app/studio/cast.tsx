@@ -16,17 +16,21 @@ type Character = {
 };
 type Voice = { id: string; name: string; sounds: string; fits?: boolean };
 
-export function CastView({ slug, version, onError }: { slug: string; version: number; onError: (m: string) => void }) {
+export function CastView({ slug, version, onError, focus }: { slug: string; version: number; onError: (m: string) => void; focus?: string }) {
   const [cast, setCast] = useState<Character[] | null>(null);
   useEffect(() => void call<Character[]>('cast_status', { slug }).then(setCast).catch((e) => onError(e.message)), [slug, version]);
+  // Opened on one character: scroll to their card once it is there.
+  useEffect(() => {
+    if (cast && focus) document.getElementById(`cast-${focus}`)?.scrollIntoView({ block: 'start' });
+  }, [!!cast, focus]);
   if (!cast) return <p class="detail">Reading the cast…</p>;
   return (
-    <>
+    <div class="cast-view">
       <ul class="cast">
         {cast.map((c) => <Card key={c.key} slug={slug} c={c} onError={onError} />)}
       </ul>
       <Items slug={slug} version={version} onError={onError} />
-    </>
+    </div>
   );
 }
 
@@ -85,7 +89,7 @@ function Card({ slug, c, onError }: { slug: string; c: Character; onError: (m: s
   const creature = c.body?.upright === false;
   const parts = [creature && 'creature', c.figure && 'figure', c.rig && 'rig', c.model && '3D model', c.sprites && 'sprites'].filter(Boolean);
   return (
-    <li class={`who ${c.role}`}>
+    <li id={`cast-${c.key}`} class={`who ${c.role}`}>
       {c.role !== 'narrator' && (c.figure ? <img src={fileUrl(slug, c.figure.file, c.figure.v)} alt={c.key} loading="lazy" /> : <div class="noimg">not painted yet</div>)}
       <div class="body">
         <div class="row">

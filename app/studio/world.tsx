@@ -107,19 +107,31 @@ export function PlaceStage({ slug, place, version, picked, onPick, children }: {
 const area = (b: Box) => (b[2] - b[0]) * (b[3] - b[1]);
 
 /** The cast standing in a row; a click puts them into the next message. */
-export function CastStage({ slug, version, picked, onPick }: { slug: string; version: number; picked: Picked | null; onPick: (p: Picked) => void }) {
+export function CastStage({ slug, version, picked, onPick, onOpen }: { slug: string; version: number; picked: Picked | null; onPick: (p: Picked) => void; onOpen?: (key: string) => void }) {
   const cast = useCast(slug, version);
   if (!cast) return <div class="mat"><p class="detail">Reading the cast…</p></div>;
   const shown = cast.filter((c) => c.figure);
   if (!shown.length) return <div class="mat"><p class="detail">Nobody is cast yet: the build paints them after the places.</p></div>;
   return (
     <div class="mat lineup">
-      {shown.map((c) => (
-        <button type="button" class={`who${picked && !picked.place && picked.thing === c.key ? ' picked' : ''}`} title={`${c.looksNow}. Click to talk about ${nice(c.key)}`} onClick={() => onPick({ thing: c.key, name: nice(c.key) })}>
-          <img src={fileUrl(slug, c.figure!.file, c.figure!.v)} alt="" />
-          <span>{nice(c.key)}{c.role === 'hero' ? ' · hero' : ''}</span>
-        </button>
-      ))}
+      {shown.map((c) => {
+        const on = !!picked && !picked.place && picked.thing === c.key;
+        return (
+          <div class={`who-at${on ? ' on' : ''}`}>
+            <button type="button" class={`who${on ? ' picked' : ''}`} title={`${c.looksNow}. Click to talk about ${nice(c.key)} or see their details`} onClick={() => onPick({ thing: c.key, name: nice(c.key) })}>
+              <img src={fileUrl(slug, c.figure!.file, c.figure!.v)} alt="" />
+              <span>{nice(c.key)}{c.role === 'hero' ? ' · hero' : ''}</span>
+            </button>
+            {/* Picked: it goes into the next message, and its details are one click away. */}
+            {on && (
+              <div class="who-acts">
+                <span class="detail">📍 in your next message</span>
+                {onOpen && <button type="button" class="ghost small" title="Looks, voice, 3D model and sprites, by hand. Free to look" onClick={() => onOpen(c.key)}>✎ Details</button>}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

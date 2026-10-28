@@ -880,3 +880,12 @@ main.start .more .fields input:focus, main.start .more .fields select:focus { ou
 .ask-note summary::after { content: ' ▸'; opacity: 0.55; font-size: 0.85em; }
 .ask-note[open] summary::after { content: ' ▾'; }
 .ask-note p { margin: 8px 0 0; font-size: 12.5px; line-height: 1.45; opacity: 0.72; white-space: pre-wrap; word-break: break-word; }
+
+/* By hand: whatever the drawer holds (a place's editor, the cast) scrolls inside it, under its title row. */
+.drawer.by-hand > :not(.row) { flex: 1; min-height: 0; overflow: auto; }
+.mat.lineup .who-at { position: relative; display: flex; flex-direction: column; align-items: center; }
+.mat.lineup .who-acts { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 6px; display: flex; align-items: center; gap: 10px; white-space: nowrap; padding: 4px 4px 4px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 18px rgba(80, 55, 25, 0.12); animation: drawer-in 0.15s ease-out; }
+.mat.lineup .who-acts .detail { font-size: 12px; }
+.mat.lineup .who-acts button { min-height: 30px; padding: 0 12px; }
+.drawer.by-hand .cast-view { display: flex; flex-direction: column; gap: 14px; }
+.drawer.by-hand .cast { scroll-margin-top: 0; }

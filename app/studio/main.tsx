@@ -838,9 +838,8 @@ function Workshop({ slug }: { slug: string }) {
             )}
             {shownView.kind === 'place' && stagedPlace && <PlaceStage slug={slug} place={stagedPlace} version={tick} picked={picked} onPick={setPicked} />}
             {shownView.kind === 'place' && !stagedPlace && <div class="mat"><p class="detail">{status?.pitch ?? 'Muse Spark is dreaming up the places…'}</p></div>}
-            {shownView.kind === 'cast' && <CastStage slug={slug} version={tick} picked={picked} onPick={setPicked} />}
+            {shownView.kind === 'cast' && <CastStage slug={slug} version={tick} picked={picked} onPick={setPicked} onOpen={(key) => setByHand(`#cast:${key}`)} />}
             {shownView.kind === 'place' && stagedPlace?.stages.painting && <button type="button" class="stage-tool" title="Masks, floors, stand spots and repaints for this place, by hand. Or just ask the agent" onClick={() => setByHand(stagedPlace.key)}>✎ Fix this place by hand</button>}
-            {shownView.kind === 'cast' && castDone && <button type="button" class="stage-tool" title="Looks, voices, moves and inventory icons, by hand. Or just ask the agent" onClick={() => setByHand('#cast')}>✎ Cast details</button>}
             {shownView.kind === 'story' && <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} /></div>}
           </div>
         </section>
@@ -848,8 +847,8 @@ function Workshop({ slug }: { slug: string }) {
       {byHand && (
         <div class="drawer-back" onClick={(e) => e.target === e.currentTarget && setByHand(null)}>
           <section class="drawer by-hand" role="dialog" aria-label="By hand">
-            <div class="row"><h2>{byHand === '#cast' ? 'Cast' : `${nice(byHand)}, by hand`}</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setByHand(null)}>✕</button></div>
-            {byHand === '#cast' ? <CastView slug={slug} version={tick} onError={setError} /> : <PlaceEditor slug={slug} place={byHand} version={tick} onError={setError} />}
+            <div class="row"><h2>{byHand.startsWith('#cast') ? 'Cast' : `${nice(byHand)}, by hand`}</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setByHand(null)}>✕</button></div>
+            {byHand.startsWith('#cast') ? <CastView slug={slug} version={tick} onError={setError} focus={byHand.split(':')[1]} /> : <PlaceEditor slug={slug} place={byHand} version={tick} onError={setError} />}
           </section>
         </div>
       )}
