@@ -23,7 +23,8 @@ export function mcpTools() {
 
 /** Answers one JSON-RPC message; null for a notification. */
 /** `world`: the world the calling agent session is about; a tool call that leaves out `slug` gets it. */
-export async function handleMcp(message: Message, ctx: ActionContext, world?: string): Promise<Reply | null> {
+/** `seen`: told of each tool call (name, arguments) and, through the function it returns, of how it ended. */
+export async function handleMcp(message: Message, ctx: ActionContext, world?: string, seen?: (name: string, args: Record<string, unknown>) => (ok: boolean, result: unknown) => void): Promise<Reply | null> {
   if (message.id === undefined || message.id === null) return null;
   const id = message.id;
   const ok = (result: unknown): Reply => ({ jsonrpc: '2.0', id, result });
@@ -45,7 +46,16 @@ export async function handleMcp(message: Message, ctx: ActionContext, world?: st
       try {
         const args = { ...((message.params?.arguments ?? {}) as Record<string, unknown>) };
         if (world && args.slug === undefined && takesSlug(name)) args.slug = world;
-        const { result, images } = withoutImages(await runAction(name, args, ctx));
+        const settle = seen?.(name, args);
+        let ran: unknown;
+        try {
+          ran = await runAction(name, args, ctx);
+        } catch (error) {
+          settle?.(false, error);
+          throw error;
+        }
+        settle?.(true, ran);
+        const { result, images } = withoutImages(ran);
         const content = [{ type: 'text', text: redact(JSON.stringify(result, null, 1)) }, ...images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType }))];
         return ok({ content, structuredContent: wrap(result), isError: false });
       } catch (error) {

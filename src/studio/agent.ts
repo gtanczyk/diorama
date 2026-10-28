@@ -56,6 +56,28 @@ export function readsOnly(request: ApprovalRequest): boolean {
   return request.kind === 'other' && subject?.kind === 'fileAccess' && subject.access === 'read';
 }
 
+type Call = { turn?: number; name: string; args: Record<string, unknown>; done: boolean; ok?: boolean; summary?: string };
+
+/** A Studio tool's own name, however the agent spells it (mcp__diorama__job_wait, diorama.job_wait). */
+export function toolName(name: string): string | undefined {
+  return /^(?:mcp__diorama__|diorama[.:_/]+)(\w+)$/.exec(name)?.[1];
+}
+
+/** A tool's result in one line for the panel: a job by its name and state, else the result itself, short. */
+export function summarize(result: unknown): string {
+  if (result instanceof Error) return result.message;
+  if (typeof result === 'string') return result.slice(0, 400);
+  if (!result || typeof result !== 'object') return String(result);
+  const r = result as Record<string, unknown>;
+  if (typeof r.label === 'string' && typeof r.state === 'string') {
+    const tail = Array.isArray(r.tail) ? (r.tail as unknown[]).filter((x) => typeof x === 'string').slice(-3).join('\n') : '';
+    return `${r.label}: ${r.state}${typeof r.step === 'string' ? `, at ${r.step}` : ''}${typeof r.error === 'string' ? ` (${r.error})` : ''}${tail ? `\n${tail}` : ''}`;
+  }
+  const { images: _images, ...rest } = r;
+  const text = JSON.stringify(rest);
+  return text.length > 400 ? `${text.slice(0, 400)}…` : text;
+}
+
 class Talk {
   readonly log: string;
   /** Whether the current agent session got the brief; a new agent starts without it. */
@@ -71,13 +93,64 @@ class Talk {
   private tools = new Set<string>();
   private ended = new Set<number>();
 
+  /**
+   * The Studio's tools as the Studio saw them called (arguments, outcome). Some agents report a tool call by
+   * name alone (Muse Code), so the panel showed "Wait for a job · No output."; the calls fill that in.
+   */
+  private calls: Call[] = [];
+  readonly listeners = new Set<() => void>();
+
   constructor(readonly slug: string, readonly session: AgentSession, dir: string, private readonly events: Events) {
     const id = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
     this.log = path.join(dir, 'studio', 'sessions', `${id}-${randomBytes(2).toString('hex')}.jsonl`);
     session.subscribe((state) => {
       this.announce(state);
-      this.film(state);
+      this.film(this.told(state));
     });
+  }
+
+  /** A Studio tool the agent called: kept with the turn it ran in; the returned function settles it. */
+  call(name: string, args: Record<string, unknown>): (ok: boolean, result: unknown) => void {
+    const c: Call = { turn: this.session.get().turns.at(-1)?.id, name, args, done: false };
+    this.calls.push(c);
+    if (this.calls.length > 400) this.calls.splice(0, this.calls.length - 400);
+    this.changed();
+    return (ok, result) => {
+      Object.assign(c, { done: true, ok, summary: summarize(result) });
+      this.changed();
+    };
+  }
+
+  private changed() {
+    for (const l of this.listeners) l();
+    this.film(this.told(this.session.get()));
+  }
+
+  /** The state with each Studio tool's arguments and outcome filled in where the agent left them out. */
+  told(state: SessionState): SessionState {
+    if (!this.calls.length) return state;
+    const turns = state.turns.map((turn) => {
+      const mine = this.calls.filter((c) => c.turn === turn.id);
+      if (!mine.length) return turn;
+      const seen = new Map<string, number>();
+      let changed = false;
+      const entries = turn.entries.map((e) => {
+        if (e.kind !== 'tool') return e;
+        const name = toolName(e.name);
+        if (!name) return e;
+        const n = seen.get(name) ?? 0;
+        seen.set(name, n + 1);
+        const c = mine.filter((x) => x.name === name)[n];
+        if (!c) return e;
+        const bare = e.input === undefined || e.input === null || (typeof e.input === 'object' && !Object.keys(e.input).length);
+        const silent = !e.output || /^no output\.?$/i.test(e.output.trim());
+        if (!bare && !(silent && c.done)) return e;
+        changed = true;
+        return { ...e, ...(bare && { input: c.args }), ...(silent && c.done && { output: c.summary, isError: e.isError || !c.ok }) };
+      });
+      return changed ? { ...turn, entries } : turn;
+    });
+    return { ...state, turns };
   }
 
   private filmTimer: NodeJS.Timeout | undefined;
@@ -249,12 +322,24 @@ export class AgentHub {
   /** What the page shows: genaicode's session state, secrets blanked; null before the first message. */
   state(slug: string): SessionState | null {
     const t = this.talks.get(slug);
-    return t ? safe(t.session.get()) : null;
+    return t ? safe(t.told(t.session.get())) : null;
   }
 
   /** Every change of a world's conversation, for the page's live view. */
   watch(slug: string, listener: (state: SessionState) => void): () => void {
-    return this.talk(slug).session.subscribe((s) => listener(safe(s)));
+    const t = this.talk(slug);
+    const send = () => listener(safe(t.told(t.session.get())));
+    const off = t.session.subscribe(send);
+    t.listeners.add(send);
+    return () => {
+      off();
+      t.listeners.delete(send);
+    };
+  }
+
+  /** For the MCP endpoint: a Studio tool the agent of this world called, settled by the returned function. */
+  called(slug: string, name: string, args: Record<string, unknown>): (ok: boolean, result: unknown) => void {
+    return this.talks.get(slug)?.call(name, args) ?? (() => {});
   }
 
   /** A message from the person: steers the running turn, or starts a new one that resumes the conversation. */

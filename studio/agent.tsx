@@ -105,7 +105,7 @@ type Offer = { name: string; label: string; installed: boolean; using: boolean }
 
 type Session = { file: string; started: string | null; agents: string[]; prompts: string[]; turns: number; replayable: boolean };
 
-type JobInfo = { id: string; label: string; state: string; step?: string; by: string };
+type JobInfo = { id: string; label: string; state: string; step?: string; by: string; args?: string[]; startedAt?: string };
 
 /**
  * genaicode's chat shows a tool's argument only for the usual keys (command, path, description...), so a
@@ -128,12 +128,28 @@ export function describeCalls(state: SessionState | null, jobs: readonly JobInfo
       const j = job(input.id);
       const where = [input.slug, input.place, input.thing ?? input.npc ?? input.key ?? input.step, input.path].filter((v) => typeof v === 'string').join(' · ');
       const description = j ? `${j.label}${j.state === 'running' && j.step ? ` · ${j.step}` : ` · ${j.state}`}` : where;
-      const output = !e.done && j && e.name.endsWith('job_wait') ? `${j.label}: ${j.state}${j.step ? `, at ${j.step}` : ''} (started by ${j.by === 'agent' ? 'the agent' : 'you'})` : e.output;
+      // A running wait says which job, which step and for how long, live: the person sees what they wait for.
+      const took = j?.startedAt ? Math.max(0, Math.round((Date.now() - Date.parse(j.startedAt)) / 1000)) : undefined;
+      const at = j?.step && j.args ? steps(j.args).indexOf(j.step) : -1;
+      const output = !e.done && j && (e.name.endsWith('job_wait') || e.name.endsWith('run_step'))
+        ? `${j.label}: ${j.state}${j.step ? `, at ${j.step}${at >= 0 ? ` (${at + 1}/${steps(j.args!).length})` : ''}` : ''}${took !== undefined ? ` · ${clock(took)}` : ''} (started by ${j.by === 'agent' ? 'the agent' : 'you'})`
+        : e.output;
       return description ? { ...e, input: { ...input, description }, output } : e;
     }),
   }));
   return { ...state, turns };
 }
+
+const BUILD_STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'icons', 'derive', 'backdrop', 'weather', 'cast', 'model', 'sprites', 'sound', 'voices', 'verify'];
+/** The steps a job runs, from its command: one step, a range (--from/--to) or a whole build. */
+function steps(args: readonly string[]): string[] {
+  if (args[0] !== 'build') return BUILD_STEPS.includes(args[0]) ? [args[0]] : [];
+  const flag = (name: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
+  const from = BUILD_STEPS.indexOf(flag('--from') ?? 'world');
+  const to = BUILD_STEPS.indexOf(flag('--to') ?? 'verify');
+  return BUILD_STEPS.slice(Math.max(0, from), to < 0 ? undefined : to + 1);
+}
+const clock = (s: number) => (s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`);
 
 export function AgentPanel({ slug, replay, speed = 1, jobs = [] }: { slug: string; replay?: string | null; speed?: number; jobs?: readonly JobInfo[] }) {
   const [liveState, live] = useSession(replay ? '' : slug);

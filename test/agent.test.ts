@@ -45,6 +45,9 @@ test('a message runs Muse with the Studio MCP server, without keys, and its tool
   expect(state.turns[0].prompt).toBe('what worlds are there?');
   expect(state.turns[0].entries.some((e: { kind: string; name?: string }) => e.kind === 'tool' && e.name === 'mcp__diorama__world_list')).toBe(true);
   expect(JSON.stringify(state)).not.toContain(process.env.META_API_KEY!);
+  // Muse reports a tool by name alone: the Studio fills in what the call returned, never "No output."
+  const tool = state.turns[0].entries.find((e: { kind: string; name?: string }) => e.kind === 'tool' && e.name === 'mcp__diorama__world_list');
+  expect(tool.output).toMatch(/harbour/);
 });
 
 test('the next message resumes the same Muse session and sends only the new text', async () => {
