@@ -8,7 +8,8 @@ import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
 import { base64, Camera, shrink } from './camera.tsx';
 import { StoryView } from './story.tsx';
-import { StyleMenu } from './style-menu.tsx';
+import { StyleView } from './style-menu.tsx';
+import { askSure, Sure } from './sure.tsx';
 import { PlaceEditor } from './place.tsx';
 import { callBy, MODEL_NAME, Pipeline, standIn, viaName, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
 import { Bell, Logo, Rail, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
@@ -104,7 +105,7 @@ function Share({ slug, jobs, onError }: { slug: string; jobs: Job[]; onError: (m
   const link = last('publish')?.tail.map((l) => /play: (https?:\S+)/.exec(l)?.[1]).find(Boolean);
   const firstTime = last('publish')?.tail.find((l) => l.includes('first publish:'))?.trim();
   const publish = () => {
-    if (confirm(`Put ${slug} on the public web? Anyone with the link can play it.`)) call('world_publish', { slug }).catch((e) => onError(e.message));
+    void askSure({ title: 'Put it on the web?', body: `${slug} gets a public link: anyone who has it can play the game.`, go: 'Publish' }).then((yes) => yes && call('world_publish', { slug }).catch((e) => onError(e.message)));
   };
   return (
     <div class="menu-group">
@@ -170,16 +171,9 @@ function asked(turn: SessionTurn): { question: string; options: string[]; recomm
 
 /** Build again runs every step once more, so it asks first; going on from where a build stopped does not. */
 function Rebuild({ slug, again, onError }: { slug: string; again: boolean; onError: (m: string) => void }) {
-  const [sure, setSure] = useState(false);
   const run = () => call('world_build', { slug }).catch((e) => onError(e.message));
   if (!again) return <button type="button" class="mi go" title="Go on from where the build stopped. Answers already asked are reused for free" onClick={run}>Continue the build</button>;
-  if (!sure) return <button type="button" class="mi danger" title="Run every step of the build again. Asks first" onClick={() => setSure(true)}>Build everything again…</button>;
-  return (
-    <div class="mi-confirm">
-      <p>Every step runs again over the whole world. What was asked before is reused for free, anything new costs model calls; History in this menu takes it back.</p>
-      <div class="row"><button type="button" class="danger-fill small mi go" onClick={run}>Build again</button><button type="button" class="ghost small" onClick={() => setSure(false)}>Cancel</button></div>
-    </div>
-  );
+  return <button type="button" class="mi danger go" title="Run every step of the build again. Asks first" onClick={() => void askSure({ title: 'Build everything again?', body: 'Every step runs again over the whole world. What was asked before is reused for free; anything new costs model calls. History takes it back.', go: 'Build again', danger: true }).then((yes) => yes && run())}>Build everything again…</button>;
 }
 
 /** The bell and the menu, top right of a page with no stage of its own. */
@@ -557,12 +551,13 @@ function Workshop({ slug }: { slug: string }) {
   const [logOpen, setLogOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [styleOpen, setStyleOpen] = useState(false);
   useEffect(() => {
-    if (!historyOpen) return;
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setHistoryOpen(false);
+    if (!historyOpen && !styleOpen) return;
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && (setHistoryOpen(false), setStyleOpen(false));
     addEventListener('keydown', esc);
     return () => removeEventListener('keydown', esc);
-  }, [historyOpen]);
+  }, [historyOpen, styleOpen]);
   useEffect(() => {
     if (!notesOpen) return;
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && setNotesOpen(false);
@@ -884,11 +879,11 @@ function Workshop({ slug }: { slug: string }) {
   if (shownView.kind === 'place') lastPlace.current = shownView.place;
   const back = () => (lastPlace.current && places.some((p) => p.key === lastPlace.current) ? onStage({ kind: 'place', place: lastPlace.current }) : setStage(null));
   useEffect(() => {
-    if (!away || byHand || notesOpen || logOpen || historyOpen) return;
+    if (!away || byHand || notesOpen || logOpen || historyOpen || styleOpen) return;
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && !(e.target instanceof HTMLElement && e.target.closest('input, textarea, select')) && back();
     addEventListener('keydown', esc);
     return () => removeEventListener('keydown', esc);
-  }, [away, byHand, notesOpen, logOpen, historyOpen]);
+  }, [away, byHand, notesOpen, logOpen, historyOpen, styleOpen]);
 
   return (
     <>
@@ -914,14 +909,14 @@ function Workshop({ slug }: { slug: string }) {
             <Menu>
               {status && status.steps.length > 0 && <button type="button" class="mi go" title="The build bar again: every step, clickable for what it made. Free" onClick={() => onStage({ kind: 'build' })}>Build</button>}
               {status && status.steps.length > 0 && <button type="button" class="mi go" title="Every job this world went through; go back to before any of them. Free" onClick={() => setHistoryOpen(true)}>History</button>}
-              {!job && status && !status.issue && <StyleMenu slug={slug} places={places.map((p) => p.key)} version={tick} onError={setError} />}
+              {!job && status && !status.issue && <button type="button" class="mi go" title="The style every place and character is painted in, and changing it: repainted keeping where everything is. Shows the cost first" onClick={() => setStyleOpen(true)}>Style</button>}
               <hr />
               <button type="button" class="mi go" title="What the build, the agent and the game did, line by line" onClick={() => setLogOpen(true)}>Activity</button>
               <button type="button" class="mi go" title="Your notes on this diorama, open and done" onClick={() => setNotesOpen(true)}>Notes{openNotes.length ? ` · ${openNotes.length}` : ''}</button>
               {!job && status && !status.issue && <><hr /><Rebuild slug={slug} again={status.steps.length >= steps.length - 1} onError={setError} /></>}
-              {!job && <><hr /><button type="button" class="mi danger" title="Moves the world to worlds/.trash, so it can be brought back by moving its folder back" onClick={() => {
-                if (!confirm(`Delete ${status?.title ?? slug}? It goes to worlds/.trash/, so you can still bring it back by moving the folder back.`)) return;
-                call('world_delete', { slug }).then(() => go('/')).catch((e) => setError(e.message));
+              {!job && <><hr /><button type="button" class="mi danger go" title="Moves the world to worlds/.trash, so it can be brought back by moving its folder back" onClick={() => {
+                void askSure({ title: `Delete ${status?.title ?? slug}?`, body: 'It leaves the Studio and goes to worlds/.trash/: moving its folder back from there brings it back.', go: 'Delete this world', danger: true, type: slug })
+                  .then((yes) => void (yes && call('world_delete', { slug }).then(() => go('/')).catch((e) => setError(e.message))));
               }}>Delete this world…</button></>}
             </Menu>
           </div>
@@ -954,6 +949,14 @@ function Workshop({ slug }: { slug: string }) {
           <section class="drawer by-hand" role="dialog" aria-label="By hand">
             <div class="row"><h2>{byHand.startsWith('#cast') ? 'Cast' : `${nice(byHand.split('@')[0])}, by hand`}</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setByHand(null)}>✕</button></div>
             {byHand.startsWith('#cast') ? <CastView slug={slug} version={tick} onError={setError} focus={byHand.split(':')[1]} /> : <PlaceEditor slug={slug} place={byHand.split('@')[0]} focus={byHand.split('@')[1]} version={tick} onError={setError} />}
+          </section>
+        </div>
+      )}
+      {styleOpen && (
+        <div class="drawer-back" onClick={(e) => e.target === e.currentTarget && setStyleOpen(false)}>
+          <section class="drawer style" role="dialog" aria-label="Style">
+            <div class="row"><h2>Style</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setStyleOpen(false)}>✕</button></div>
+            <StyleView slug={slug} places={places.map((p) => p.key)} version={tick} sample={places.find((p) => p.image)?.image ? fileUrl(slug, places.find((p) => p.image)!.image!.file, places.find((p) => p.image)!.image!.v) : undefined} onError={setError} onDone={() => setStyleOpen(false)} />
           </section>
         </div>
       )}
@@ -1194,4 +1197,4 @@ function Shell() {
   );
 }
 
-render(<><App /><Tips /><Lightbox /></>, document.getElementById('app')!);
+render(<><App /><Tips /><Lightbox /><Sure /></>, document.getElementById('app')!);

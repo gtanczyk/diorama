@@ -1009,3 +1009,25 @@ select:not([multiple]) { padding-right: 28px !important; }
 .history-list li { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .convo header small.to-build { cursor: pointer; }
 .convo header small.to-build:hover { color: var(--text); text-decoration: underline; }
+/* The Studio's own "are you sure": a card over a dimmed page; typing the slug wakes a delete. */
+.sure-back { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 16px; background: rgba(28, 24, 20, 0.45); animation: enter-fade .12s ease-out; }
+.sure { width: min(460px, 100%); display: flex; flex-direction: column; gap: 12px; padding: 22px 22px 18px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(40, 25, 10, 0.3); }
+.sure h2 { margin: 0; font-size: 20px; }
+.sure p { margin: 0; color: var(--muted); }
+.sure label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.sure code { color: var(--text); font-weight: 600; }
+.sure input { font-size: 15px; }
+/* Style in its own drawer: now beside a picture of it, presets as cards, wide words. */
+.drawer.style { width: min(760px, 94vw); display: flex; flex-direction: column; }
+.style-view { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+.sv-now { display: flex; gap: 14px; align-items: flex-start; }
+.sv-now img { width: 220px; aspect-ratio: 1200 / 896; object-fit: cover; border-radius: 10px; cursor: zoom-in; flex: none; }
+.sv-now p { margin: 4px 0; }
+.sv-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); gap: 10px; }
+.sv-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-height: 0; padding: 12px; text-align: left; border-radius: 12px; border: 1px solid var(--line); background: var(--raised); color: var(--text); white-space: normal; }
+.sv-card span { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.sv-card.on { border-color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); background: var(--panel); }
+.sv-words { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.sv-words textarea { width: 100%; font-size: 15px; color: var(--text); }
+.sv-est { margin: 0; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--amber) 14%, transparent); }
+@media (max-width: 600px) { .sv-now { flex-direction: column; } .sv-now img { width: 100%; } }

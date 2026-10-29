@@ -13,14 +13,15 @@ const PRESETS: Array<[string, string]> = [
   ['Cartoon', 'bright flat cartoon with thick dark outlines, bold simple shapes, saturated colours, even sunny light'],
 ];
 
-export function StyleMenu({ slug, places, version, onError }: { slug: string; places: string[]; version: number; onError: (m: string) => void }) {
-  const [open, setOpen] = useState(false);
+/** The world's style in its own drawer: what it is painted in now beside a picture of it, the presets as cards, a wide
+ * field for your own words, what to repaint, and the cost before anything runs. */
+export function StyleView({ slug, places, version, sample, onError, onDone }: { slug: string; places: string[]; version: number; sample?: string; onError: (m: string) => void; onDone: () => void }) {
   const [now, setNow] = useState<Styles | null>(null);
   const [style, setStyle] = useState('');
   const [scope, setScope] = useState('world');
   const [est, setEst] = useState<Estimate | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => void (open && call<Styles>('style_get', { slug }).then((s) => (setNow(s), setStyle((v) => v || s.style))).catch((e) => onError(e.message))), [open, slug, version]);
+  useEffect(() => void call<Styles>('style_get', { slug }).then((s) => (setNow(s), setStyle((v) => v || s.style))).catch((e) => onError(e.message)), [slug, version]);
   // A new style or scope needs a new estimate before it runs.
   useEffect(() => setEst(null), [style, scope]);
   const input = () => {
@@ -31,7 +32,7 @@ export function StyleMenu({ slug, places, version, onError }: { slug: string; pl
     setBusy(true);
     try {
       const r = await call<Estimate>('style_set', { ...input(), go });
-      if (go) (setOpen(false), setEst(null));
+      if (go) (setEst(null), onDone());
       else setEst(r);
     } catch (e) {
       onError((e as Error).message);
@@ -41,33 +42,40 @@ export function StyleMenu({ slug, places, version, onError }: { slug: string; pl
   };
   const cast = Object.keys(now?.cast ?? {});
   return (
-    <div class="share">
-      <button type="button" class="ghost" aria-expanded={open} title="The style every place and character is painted in, and changing it: the pictures are repainted keeping where everything is. Shows the cost first" onClick={() => setOpen(!open)}>Style</button>
-      {open && (
-        <div class="share-menu style-menu" role="menu">
-          <p class="menu-head">Painted in</p>
-          <p class="detail">{now?.style ?? 'Reading the style…'}</p>
+    <div class="style-view">
+      <section class="sv-now">
+        {sample && <img src={sample} alt="" data-lightbox={sample} title="Click: large" />}
+        <div>
+          <p class="menu-head">Painted in now</p>
+          <p>{now?.style ?? 'Reading the style…'}</p>
           {now?.kids && <p class="detail">Made from children's drawings: they stay the reference, so the children still know their things.</p>}
-          <p class="menu-head">New style</p>
-          <div class="row wrap">
-            {PRESETS.map(([name, text]) => <button key={name} type="button" class={`${style === text ? 'primary' : 'ghost'} tiny`} title={text} onClick={() => setStyle(text)}>{name}</button>)}
-          </div>
-          <textarea rows={3} value={style} aria-label="New style" title="Medium, palette, light, in a few words. No artist names" onInput={(e) => setStyle(e.currentTarget.value)} />
-          <select value={scope} aria-label="What to restyle" title="The whole world, one place, or the characters" onChange={(e) => setScope(e.currentTarget.value)}>
-            <option value="world">The whole world</option>
-            {places.map((p) => <option key={p} value={`place:${p}`}>Place: {p}</option>)}
-            <option value="cast">All characters</option>
-            {cast.map((k) => <option key={k} value={`cast:${k}`}>Character: {k}</option>)}
-          </select>
-          {est && <p class="detail">{est.line}</p>}
-          <div class="row">
-            <span class="grow" />
-            {est
-              ? <button type="button" class="primary small" disabled={busy} title={`Repaint now: ${est.line}. History takes it back`} onClick={() => ask(true)}>Restyle</button>
-              : <button type="button" class="ghost small" disabled={busy || style.trim().length < 10 || style.trim() === now?.style} title="What it repaints and about what it costs. Free" onClick={() => ask(false)}>What it costs</button>}
-          </div>
         </div>
-      )}
+      </section>
+      <p class="menu-head">A new style</p>
+      <div class="sv-presets">
+        {PRESETS.map(([name, text]) => (
+          <button key={name} type="button" class={`sv-card${style === text ? ' on' : ''}`} title="Use this style: you can still change the words below" onClick={() => setStyle(text)}>
+            <strong>{name}</strong>
+            <span>{text}</span>
+          </button>
+        ))}
+      </div>
+      <label class="sv-words">Or in your own words (medium, palette, light; no artist names)
+        <textarea rows={3} value={style} aria-label="New style" onInput={(e) => setStyle(e.currentTarget.value)} />
+      </label>
+      <div class="row wrap">
+        <label>Repaint <select value={scope} aria-label="What to restyle" title="The whole world, one place, or the characters" onChange={(e) => setScope(e.currentTarget.value)}>
+          <option value="world">the whole world</option>
+          {places.map((p) => <option key={p} value={`place:${p}`}>place: {p}</option>)}
+          <option value="cast">all characters</option>
+          {cast.map((k) => <option key={k} value={`cast:${k}`}>character: {k}</option>)}
+        </select></label>
+        <span class="grow" />
+        {est
+          ? <button type="button" class="primary" disabled={busy} title={`Repaint now: ${est.line}. History takes it back`} onClick={() => ask(true)}>Restyle</button>
+          : <button type="button" class="ghost" disabled={busy || style.trim().length < 10 || style.trim() === now?.style} title="What it repaints and about what it costs. Free" onClick={() => ask(false)}>{busy ? 'Counting…' : 'What it costs'}</button>}
+      </div>
+      {est && <p class="sv-est">{est.line}{est.note ? ` · ${est.note}` : ''}. Everything keeps its place; History takes it back.</p>}
     </div>
   );
 }
