@@ -2,15 +2,16 @@
 // pipeline uses final quality unless an author explicitly requests a cheaper draft.
 import os from 'node:os';
 import path from 'node:path';
+import { readSoundQuality } from './settings.ts';
 
-/** Final by default; DIORAMA_SOUND=draft or --draft opts into cheaper development audio. */
+/** CLI flags > DIORAMA_SOUND > Studio Setup > final. */
 export type Quality = 'draft' | 'final';
 
 export function soundQuality(args: string[] = []): Quality {
   if (args.includes('--draft') && args.includes('--final')) throw new Error('choose --draft or --final, not both');
   if (args.includes('--final')) process.env.DIORAMA_SOUND = 'final';
   if (args.includes('--draft')) process.env.DIORAMA_SOUND = 'draft';
-  const quality = process.env.DIORAMA_SOUND ?? 'final';
+  const quality = process.env.DIORAMA_SOUND ?? readSoundQuality();
   if (quality !== 'final' && quality !== 'draft') throw new Error('DIORAMA_SOUND must be final or draft');
   return quality;
 }

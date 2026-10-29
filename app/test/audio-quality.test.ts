@@ -29,7 +29,7 @@ const profile = { gender: 'male' as const, age: 'child' as const, language: 'Pol
 const actor = () => Cast.parse({ hero: { voice: 'voice', profile } }).hero;
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'diorama-audio-'));
-  vi.stubEnv('DIORAMA_CACHE', root); vi.stubEnv('DIORAMA_SOUND', 'final');
+  vi.stubEnv('DIORAMA_CACHE', root); vi.stubEnv('DIORAMA_CONFIG_DIR', root); vi.stubEnv('DIORAMA_SOUND', 'final');
   memo = new Memo(path.join(root, 'memo'));
   vi.clearAllMocks();
   vi.mocked(decode).mockReturnValue(tone());

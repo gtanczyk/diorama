@@ -6,6 +6,7 @@ import type { ChatNotice, SessionTurn } from 'genaicode/react';
 import { agentDefault, askAgent, call, type AgentDefaults, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
 import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
+import { AudioSetup } from './audio-setup.tsx';
 import { base64, Camera, shrink } from './camera.tsx';
 import { StoryView } from './story.tsx';
 import { StyleView } from './style-menu.tsx';
@@ -243,6 +244,7 @@ function Setup() {
           <button type="button" class="ghost" disabled={!!busy || checks?.find((c) => c.id === 'META_API_KEY')?.state === 'missing'} title="Send one tiny request to Meta to see the key works. 1 small Meta call" onClick={() => run('setup_check')}>{busy === 'setup_check' ? 'Calling Meta…' : 'Test the Meta key live'}</button>
         </div>
         <DefaultAgent />
+        <AudioSetup />
         <BudgetBox />
         </div>
         <ol class="checks">

@@ -16,7 +16,8 @@ defineCommand({
   name: 'sound',
   usage: 'sound <slug>             plan and generate ambience, loops, footsteps, one-shots and music [--replan] [--plan-only] [--only bed,loop,step,shot,music] [--music auto|musicgen|eleven] [--draft: shorter loops and cheaper speech; final quality is the default]',
   async run(args) {
-    soundQuality(args);
+    // Keep this generation at one quality even if Setup changes while it runs.
+    process.env.DIORAMA_SOUND = soundQuality(args);
     const replan = args.includes('--replan');
     const planOnly = args.includes('--plan-only');
     const only = takeOption(args, 'only', '');

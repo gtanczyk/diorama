@@ -4,6 +4,29 @@ import { z } from 'zod';
 import { runChecks } from '../setup/checks.ts';
 import { Slug } from '../world/schema.ts';
 import { defineAction } from './registry.ts';
+import { soundQuality } from '../sound/cost.ts';
+import { writeSoundQuality } from '../sound/settings.ts';
+
+const audioState = () => ({ quality: soundQuality(), env: process.env.DIORAMA_SOUND ?? null });
+
+defineAction({
+  name: 'audio_get',
+  reads: true,
+  description: 'Audio quality for new generations: final or draft, and any DIORAMA_SOUND override.',
+  input: z.object({}),
+  async run() { return audioState(); },
+});
+
+defineAction({
+  name: 'audio_set',
+  description: 'Save the machine-wide audio quality for future sound and voices generations. Existing recordings are unchanged.',
+  input: z.object({ quality: z.enum(['final', 'draft']) }),
+  async run({ quality }) {
+    if (process.env.DIORAMA_SOUND !== undefined) throw new Error('DIORAMA_SOUND overrides Setup. Unset it and restart Studio to choose audio quality here.');
+    writeSoundQuality(quality);
+    return audioState();
+  },
+});
 
 defineAction({
   name: 'setup_status',

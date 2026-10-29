@@ -12,6 +12,8 @@ The Meta Model API has no audio model, so effects come from ElevenLabs (`ELEVENL
 
 **Validation and reuse.** Paid responses remain in the memo. Shared effects require an exact prompt match and sufficient quality; a generic ID such as `shot-ending` cannot substitute another world's finale. Older assets are revalidated on rebuild. Silence, clipping, unusable steps, persistently noisy/noncontinuous loops and failed speech transcripts are rejected. A partial result records `failures` in `sound/sounds.json` or `voices.json` and the command fails visibly. Files already generated are retained on disk; rejected recordings are not published in the manifest. Cast cards show unavailable lines and casting warnings. Technical checks do not establish that acting, timbre or artistic sound design is good: audition representative lines and gameplay audio before release.
 
+Studio Setup → Audio → Audio quality saves Final or Draft for future generations in all worlds and CLI commands (`~/.config/diorama/sound.json`). CLI flags override `DIORAMA_SOUND`, which overrides the saved choice. Setup shows and locks the selector when the environment overrides it. A running sound or voices step keeps the quality it started with.
+
 To rebuild an existing world's audio: `diorama voices <slug>` and `diorama sound <slug>`. Rewriting the script is a separate `story` step; changing voice quality alone does not rewrite existing dialogue.
 
 In the page, loops pan and fade with where the hero stands, footsteps follow the floor under him, and `m` mutes. `diorama playthrough --video` records the page's sound too and writes an mp4.

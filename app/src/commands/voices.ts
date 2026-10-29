@@ -14,7 +14,8 @@ defineCommand({
   name: 'voices',
   usage: 'voices <slug>            cast a voice per character (stock, or designed by ElevenLabs Voice Design for children, teens and the old) and speak every story line, checked by Muse Voice Transcribe; conversations, intro and endings [--all: every line; always for a world for kids, whose players cannot read] [--recast] [--draft: Flash and 2 takes; default final uses Multilingual v2 and up to 3 takes]',
   async run(args) {
-    soundQuality(args);
+    // Keep this generation at one quality even if Setup changes while it runs.
+    process.env.DIORAMA_SOUND = soundQuality(args);
     const recast = args.includes('--recast');
     const [slug] = args.filter((a) => !a.startsWith('--'));
     if (!slug) throw new Error('usage: diorama voices <slug>');
