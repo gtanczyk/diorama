@@ -1,6 +1,6 @@
 // One Studio job: plan and validate first, then build only the anchor and additions.
 import fs from 'node:fs';
-import { defineCommand, registry } from '../registry.ts';
+import { defineCommand, emit, registry } from '../registry.ts';
 import { readDrawn } from '../world/drawings.ts';
 import { designExtension } from '../world/extend.ts';
 import { stagedExtension } from '../world/extend-stage.ts';
@@ -40,18 +40,22 @@ export async function extendWorld(slug: string, selected: string[], wish: string
   files.write(files.path('story.json'), designed.story);
   files.write(files.path('routes.json'), checked.routes);
   console.log(`extension planned: ${designed.changed.join(', ')}; ${checked.states} story states checked`);
+  const newPlaces = designed.changed.filter(key => !oldWorld.places.some(place => place.key === key));
+  emit('extension.progress', { phase: 'places', total: designed.changed.length, newPlaces, ...(newNpc.length && { task: 'characters' }) });
   // Builds run in the private copy; the original remains playable until the whole job succeeds.
   if (newNpc.length) {
     await registry.get('cast')!.run([slug, ...newNpc]);
     const missing = newNpc.filter(key => !fs.existsSync(files.path('cast', `${key}.png`)));
     if (missing.length) throw new Error(`characters could not be painted: ${missing.join(', ')}`);
   }
-  for (const place of designed.changed) {
+  for (const [index, place] of designed.changed.entries()) {
+    emit('extension.progress', { phase: 'places', place, index: index + 1, total: designed.changed.length });
     console.log(`building ${place}`);
     process.exitCode = 0;
     await registry.get('build')!.run([slug, '--from', 'layout', '--to', 'verify', '--place', place]);
     if (process.exitCode) throw new Error(`${place} is not playable; extension was not installed`);
   }
+  emit('extension.progress', { phase: 'audio' });
   if (newItems.length) await registry.get('icons')!.run([slug, ...newItems]);
   await registry.get('voices')!.run([slug]);
   await registry.get('sound')!.run([slug]);
@@ -65,6 +69,7 @@ defineCommand({
     if (!slug || !json || !wish) throw new Error('usage: diorama extend <slug> <JSON drawing paths> <wish>');
     const selected: unknown = JSON.parse(json);
     if (!Array.isArray(selected) || !selected.length || !selected.every(f => typeof f === 'string' && /^drawings\/[a-z0-9-]+\.png$/.test(f))) throw new Error('drawings must be an array of drawings/*.png paths');
+    emit('extension.progress', { phase: 'plan' });
     await stagedExtension(slug, () => extendWorld(slug, selected, wish));
   },
 });

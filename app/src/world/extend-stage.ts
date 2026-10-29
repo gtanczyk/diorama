@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { emit } from '../registry.ts';
 
 function files(dir: string, rel = ''): Map<string, string> {
   const out = new Map<string, string>();
@@ -63,6 +64,7 @@ export async function stagedExtension<T>(slug: string, run: () => Promise<T>): P
     // Any source change can invalidate the staged build, even if that source file itself was not rewritten.
     const conflicts = [...new Set([...before.keys(), ...current.keys()])].filter(key => current.get(key) !== before.get(key));
     if (conflicts.length) throw new Error(`world changed during extension (${conflicts.slice(0, 5).join(', ')}); nothing was installed, try again`);
+    emit('extension.progress', { phase: 'install' });
     // Place the world and script last, after their new visual assets.
     changed.sort((a, b) => Number(a === 'world.json' || a === 'story.json') - Number(b === 'world.json' || b === 'story.json'));
     const backup = path.join(temp, 'backup');

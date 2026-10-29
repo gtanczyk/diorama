@@ -6,6 +6,7 @@ import { signal } from '@preact/signals';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
 import { timeLeft } from '../src/world/schedule.ts';
+import type { ExtensionProgress } from '../src/world/extension-progress.ts';
 
 export type Layer = { file: string; v: number | null };
 export type LayerName = 'blockin' | 'first' | 'painting' | 'masks' | 'depth' | 'walk';
@@ -28,7 +29,7 @@ export const PHASES = [
   { key: 'space', title: 'Depth and walk', by: ['Depth Anything', 'code'], steps: ['derive', 'backdrop', 'weather'] },
   { key: 'cast', title: 'Cast', by: ['Muse Image', '3D'], steps: ['cast', 'model', 'sprites'] },
   { key: 'sound', title: 'Sound', by: ['ElevenLabs'], steps: ['sound', 'voices'] },
-  { key: 'verify', title: 'Play test', by: ['code'], steps: ['verify'] },
+  { key: 'verify', title: 'Checks', by: ['code'], steps: ['verify'] },
 ] as const;
 
 /** memo/calls.jsonl's model names as people know them. */
@@ -87,9 +88,24 @@ export type Live = {
   /** Per place, the things SAM has cut out so far in this job (from its `mask:place/thing` calls). */
   cut: Record<string, string[]>;
   tail: string;
+  extension?: ExtensionProgress;
 };
 
-type JobLike = { label: string; by: string; state: string; startedAt?: string };
+type JobLike = { label: string; by: string; state: string; startedAt?: string; args?: string[]; extension?: ExtensionProgress };
+
+const EXTENSION_PHASES = [
+  { key: 'plan', title: 'Plan and story' },
+  { key: 'places', title: 'Places and characters' },
+  { key: 'audio', title: 'Sound and items' },
+  { key: 'install', title: 'Apply changes' },
+] as const;
+
+export function extensionDetail(progress?: ExtensionProgress, step?: string): string {
+  if (!progress) return step ? `Working: ${step}` : 'Working; waiting for progress';
+  if (progress.phase === 'places' && progress.task === 'characters') return 'Preparing new characters';
+  if (progress.phase === 'places' && progress.place) return `Place ${progress.index} of ${progress.total}: ${progress.place}${step ? ` · ${step}` : ''}`;
+  return ({ plan: 'Planning and checking the story', places: 'Building places', audio: 'Preparing sound and items', install: 'Applying the checked changes' })[progress.phase];
+}
 
 /**
  * The one progress display: phases as a bar, each as wide as it usually takes, filled as its steps finish.
@@ -110,9 +126,9 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
   const took = (s: string) => build[s]?.seconds ?? typical[s] ?? 30;
   const state = (s: string): 'ok' | 'run' | 'fail' | 'todo' | 'skip' => {
     if (running[s] === 'fail') return 'fail';
-    if (done[s] !== undefined) return 'ok';
     if (running[s] === 'run') return 'run';
-    if (job && plan.length && !plan.includes(s)) return build[s] ? 'ok' : 'skip';
+    if (done[s] !== undefined) return 'ok';
+    if (job && plan.length && !plan.includes(s)) return 'skip';
     return !job && build[s] ? 'ok' : 'todo';
   };
   const started = job?.startedAt ? Date.parse(job.startedAt) : null;
@@ -129,6 +145,21 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
   const weight = (p: (typeof phases)[number]) => p.steps.reduce((sum, s) => sum + took(s), 0);
   const calls = Object.entries(live.calls).filter(([, n]) => n > 0).sort(([a], [b]) => Number(META.has(b)) - Number(META.has(a)));
   const fresh = live.lastCall && now - live.lastCall.at < 4000;
+  if (job?.args?.[0] === 'extend') {
+    const progress = live.extension ?? job.extension;
+    const active = progress ? EXTENSION_PHASES.findIndex(p => p.key === progress.phase) : -1;
+    const failed = job.state === 'failed' || job.state === 'cancelled';
+    return <section class="pipeline on extension-pipeline" aria-live="polite">
+      <div class="row head"><strong>{job.by === 'agent' ? 'Agent: ' : ''}{job.label}</strong><span class="detail tail">{failed ? 'Build did not finish' : extensionDetail(progress, runStep)}</span><span class="detail when">{clock(elapsed)}</span></div>
+      <ol class="phases" aria-label="Extension progress">
+        {EXTENSION_PHASES.map((p, i) => {
+          const phase = active < 0 ? 'todo' : i < active ? 'ok' : i === active ? failed ? 'fail' : 'run' : 'todo';
+          return <li class={phase} style={{ flexGrow: 1 }} aria-label={`${p.title}: ${phase === 'ok' ? 'done' : phase === 'run' ? 'in progress' : phase === 'fail' ? 'failed' : 'waiting'}`}><span class="bar"><span class="fill" style={{ width: phase === 'todo' ? '0%' : '100%' }} /></span><span class="label"><span class="name">{p.title}</span></span></li>;
+        })}
+      </ol>
+      <span class="detail">The current world is shown; changes appear after the build succeeds. Finished steps do not confirm visual quality or a playthrough.</span>
+    </section>;
+  }
   return (
     <section class={`pipeline${job ? ' on' : ''}`} aria-live="polite">
       <div class="row head">

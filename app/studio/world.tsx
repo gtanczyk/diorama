@@ -29,7 +29,7 @@ const nice = (key: string) => key.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.
 export { nice };
 
 /** The places as small paintings; one not painted yet shows its name. */
-export function PlacesCard({ slug, places, stage, onStage }: { slug: string; places: CardPlace[]; stage: StageView; onStage: (s: StageView) => void }) {
+export function PlacesCard({ slug, places, pending = [], stage, onStage }: { slug: string; places: CardPlace[]; pending?: string[]; stage: StageView; onStage: (s: StageView) => void }) {
   return (
     <Card kind="Places" by="Muse Image · SAM 3.1" on={stage.kind === 'place'} opening>
       <div class="thumbs">
@@ -39,6 +39,7 @@ export function PlacesCard({ slug, places, stage, onStage }: { slug: string; pla
             {!p.image && <span>{nice(p.key)}</span>}
           </button>
         ))}
+        {pending.map(key => <button type="button" class="thumb pending-place" title={`${nice(key)}: being built; not in the game yet. Show build progress`} onClick={() => onStage({ kind: 'build' })}><span>{nice(key)}<br />Building…</span></button>)}
       </div>
     </Card>
   );
@@ -60,7 +61,7 @@ export function CastCard({ slug, version, stage, onStage }: { slug: string; vers
  * The world at a glance, pinned over a long conversation once its first cards scrolled away: the story, the places
  * and the cast, each a click from the stage as on its card.
  */
-export function WorldStrip({ slug, version, title, places, stage, onStage }: { slug: string; version: number; title?: string; places: CardPlace[]; stage: StageView; onStage: (s: StageView) => void }) {
+export function WorldStrip({ slug, version, title, places, pending = [], stage, onStage }: { slug: string; version: number; title?: string; places: CardPlace[]; pending?: string[]; stage: StageView; onStage: (s: StageView) => void }) {
   const cast = useCast(slug, version)?.filter((c) => c.figure) ?? [];
   return (
     <div class="world-strip">
@@ -70,6 +71,7 @@ export function WorldStrip({ slug, version, title, places, stage, onStage }: { s
           <button type="button" class={`ws-thumb${stage.kind === 'place' && stage.place === p.key ? ' on' : ''}${p.trouble ? ' trouble' : ''}`} title={nice(p.key)} onClick={() => onStage({ kind: 'place', place: p.key })}
             style={p.image ? { backgroundImage: `url("${fileUrl(slug, p.image.file, p.image.v)}")` } : undefined} />
         ))}
+        {pending.map(key => <button type="button" class="ws-pending" title={`${nice(key)}: being built; not in the game yet. Show build progress`} aria-label={`${nice(key)}: being built, not in the game yet`} onClick={() => onStage({ kind: 'build' })}><span aria-hidden="true">◌</span><span class="ws-pending-name">{nice(key)}</span><span>Building</span></button>)}
       </span>
       {cast.length > 0 && (
         <button type="button" class={`ws-cast${stage.kind === 'cast' ? ' on' : ''}`} title="The cast and the items" onClick={() => onStage({ kind: 'cast' })}>

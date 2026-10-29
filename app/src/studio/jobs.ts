@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { redact } from '../secrets.ts';
 import type { Events } from './events.ts';
+import type { ExtensionProgress } from '../world/extension-progress.ts';
 
 const BIN = fileURLToPath(new URL('../../bin/diorama.mjs', import.meta.url));
 
@@ -22,6 +23,8 @@ export type Job = {
   step?: string;
   /** Each step running now, in the order it started. */
   steps?: string[];
+  /** Last confirmed extension milestone, available when a client opens mid-job. */
+  extension?: ExtensionProgress;
   error?: string;
   /** A queued addition reserves its key before its source correction is applied. */
   addedThing?: { place: string; key: string };
@@ -160,6 +163,10 @@ export class Jobs {
       try {
         const { type, ...data } = JSON.parse(line.slice('@@diorama '.length)) as { type: string };
         const step = (data as { step?: string }).step;
+        if (type === 'extension.progress') {
+          const next = data as ExtensionProgress;
+          job.extension = { ...next, newPlaces: next.newPlaces ?? job.extension?.newPlaces };
+        }
         if (step && type === 'step.start') job.steps = [...(job.steps ?? []).filter((s) => s !== step), step];
         if (step && (type === 'step.end' || type === 'step.fail')) job.steps = (job.steps ?? []).filter((s) => s !== step);
         // A failed step stays shown, so the job says where it broke; a finished one leaves the steps still running.

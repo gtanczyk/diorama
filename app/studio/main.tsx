@@ -12,7 +12,8 @@ import { StoryView } from './story.tsx';
 import { StyleView } from './style-menu.tsx';
 import { askSure, Sure } from './sure.tsx';
 import { PlaceEditor } from './place.tsx';
-import { callBy, MODEL_NAME, named, Pipeline, standIn, viaName, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
+import { callBy, extensionDetail, MODEL_NAME, named, Pipeline, standIn, viaName, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
+import type { ExtensionProgress } from '../src/world/extension-progress.ts';
 import { Bell, Logo, Rail, forgetWorld, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
 import { CAST_STEPS, castFile, castLine, CastWorkStage, type CastWork } from './cast-work.tsx';
 import { SayIt } from './say-it.tsx';
@@ -37,7 +38,7 @@ type PlaceDetail = {
   verdict: { ok: boolean; errors: Array<Finding & { play?: { look: string; tools: string[]; last?: string } }>; flags: Finding[] } | null;
   trouble?: { why: string; from: string | null } | null;
 };
-type Job = { id: string; label: string; args: string[]; unplayable?: Array<{ place: string; errors: string[] }>; state: string; by: string; step?: string; error?: string; startedAt?: string; endedAt?: string; tail: string[] };
+type Job = { id: string; label: string; args: string[]; unplayable?: Array<{ place: string; errors: string[] }>; state: string; by: string; step?: string; extension?: ExtensionProgress; error?: string; startedAt?: string; endedAt?: string; tail: string[] };
 type Note = { id: string; at: string; by: string; place?: string; point?: [number, number]; text: string; state: 'open' | 'done'; reply?: string };
 type Spend = { usd: number; priced: boolean; calls: Record<string, number> };
 type Budget = { total: Spend; today: Spend; limitUsd: number | null; creditsLeft: number | null; sparkTier: string; sparkVia: string | null; imageVia: string | null; elsewhere: { calls: number; usd: number }; over: boolean; prices: Record<string, number> };
@@ -589,6 +590,7 @@ function Workshop({ slug }: { slug: string }) {
   const [since, setSince] = useState<Record<string, number>>({});
   const [jobCalls, setJobCalls] = useState<Record<string, number>>({});
   const [lastCall, setLastCall] = useState<Live['lastCall']>(null);
+  const [extension, setExtension] = useState<{ job: string; progress: ExtensionProgress } | null>(null);
   const [cut, setCut] = useState<Record<string, string[]>>({});
   /** The characters the running job paints or models, picture by picture (the live cast view). */
   const [castWork, setCastWork] = useState<CastWork>({});
@@ -630,9 +632,16 @@ function Workshop({ slug }: { slug: string }) {
           return add(e, line, e.stream === 'err' ? 'err' : 'out');
         }
         case 'build.start': return setJobPlan(e.steps as string[]);
-        case 'step.start': setSince((t) => ({ ...t, [String(e.step)]: Date.parse(e.at) })); setRunning((r) => ({ ...r, [String(e.step)]: 'run' })); return;
+        case 'step.start': setJobDone((d) => { const n = { ...d }; delete n[String(e.step)]; return n; }); setSince((t) => ({ ...t, [String(e.step)]: Date.parse(e.at) })); setRunning((r) => ({ ...r, [String(e.step)]: 'run' })); return;
         case 'step.end': setJobDone((d) => ({ ...d, [String(e.step)]: Number(e.seconds) })); setRunning((r) => { const n = { ...r }; delete n[String(e.step)]; return n; }); soon(); return add(e, `✓ ${e.step} · ${e.seconds}s`, 'step');
         case 'step.fail': setRunning((r) => ({ ...r, [String(e.step)]: 'fail' })); return add(e, `✕ ${e.step}: ${e.error}`, 'err');
+        case 'extension.progress': {
+          if (typeof e.job === 'string' && ['plan', 'places', 'audio', 'install'].includes(String(e.phase))) {
+            const jobId = e.job;
+            setExtension(previous => ({ job: jobId, progress: { phase: e.phase as ExtensionProgress['phase'], ...(typeof e.place === 'string' && { place: e.place }), ...(typeof e.index === 'number' && { index: e.index }), ...(typeof e.total === 'number' && { total: e.total }), ...(e.task === 'characters' && { task: 'characters' }), newPlaces: Array.isArray(e.newPlaces) ? e.newPlaces.filter((key): key is string => typeof key === 'string') : previous?.job === jobId ? previous.progress.newPlaces : undefined } }));
+          }
+          return;
+        }
         case 'call': {
           // A mask from the memo is still a thing cut out: the stage fills its box either way.
           const m = /^mask:([^/]+)\/([^~#]+)/.exec(String(e.label ?? ''));
@@ -655,7 +664,7 @@ function Workshop({ slug }: { slug: string }) {
         }
         case 'feedback.changed': return soon();
         case 'job.start': case 'job.end': case 'job.queued': {
-          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setCut({}), setCastWork({}));
+          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setExtension(null), setCut({}), setCastWork({}));
           const job = e.job as Job;
           soon();
           // What the agent changed shows in an open game at once; after the person's own builds the banner offers it.
@@ -703,6 +712,7 @@ function Workshop({ slug }: { slug: string }) {
   const job = status?.jobs.findLast((j) => j.state === 'running' || j.state === 'queued');
   const last = status?.jobs.at(-1);
   const failed = last && last.state === 'failed' ? last : null;
+  const pipelineJob = job ?? (failed?.args[0] === 'extend' ? failed : undefined);
   
   const playable = !!status?.placeDetail.some((p) => p.stages.layout);
   // A build, or one step run on its own (the agent's story_redo): the stage shows its bar.
@@ -738,6 +748,7 @@ function Workshop({ slug }: { slug: string }) {
     running: loneRuns ? { ...running, [lone!]: 'run' } : running,
     since: loneRuns && job!.startedAt ? { ...since, [lone!]: Date.parse(job!.startedAt) } : since,
     calls: jobCalls, lastCall, tail: jobTail, cut,
+    extension: job && extension?.job === job.id ? { ...extension.progress, newPlaces: extension.progress.newPlaces ?? job.extension?.newPlaces } : job?.extension,
   };
   // On stage: the place picked; else a new picture as it lands; else, in turn, the places a step is working on.
   const busy = building ? (status?.placeDetail ?? []).filter((p) => working(p, liveBuild)).map((p) => p.key) : [];
@@ -767,6 +778,7 @@ function Workshop({ slug }: { slug: string }) {
   const playLine = (text: string) => setLines((l) => [...l.slice(-600), { seq: -Date.now() - Math.random(), text, kind: 'play', at: Date.now() }]);
 
   const places = status?.placeDetail ?? [];
+  const pendingPlaces = job?.args[0] === 'extend' ? (liveBuild.extension?.newPlaces ?? []).filter(key => !places.some(place => place.key === key)) : [];
   const shownView: StageView = playing ? { kind: 'play' } : stage ?? (building ? { kind: 'build' } : { kind: 'place', place: places[0]?.key });
   const onStage = (s: StageView) => {
     setStage(s.kind === 'play' ? null : s);
@@ -789,7 +801,7 @@ function Workshop({ slug }: { slug: string }) {
         {status.pitch && <p>{status.pitch}</p>}
       </Card>
     ) },
-    places.length > 0 && { id: 'places', afterTurn: 0, text: <PlacesCard slug={slug} places={places} stage={shownView} onStage={onStage} /> },
+    places.length > 0 && { id: 'places', afterTurn: 0, text: <PlacesCard slug={slug} places={places} pending={pendingPlaces} stage={shownView} onStage={onStage} /> },
     castDone && { id: 'cast', afterTurn: 0, text: <CastCard slug={slug} version={tick} stage={shownView} onStage={onStage} /> },
   ].filter(Boolean) as ChatNotice[];
   // What a turn of the agent changed: the places it touched, to look at, and its undo.
@@ -845,8 +857,10 @@ function Workshop({ slug }: { slug: string }) {
         </Card>
         ) : (
         <Card kind={job.by === 'agent' ? 'The agent is building' : 'Building'} by={MODEL_FOR[liveBuild.plan.find((s) => running[s] === 'run') ?? ''] } on={shownView.kind === 'build'} onClick={() => onStage({ kind: 'build' })}>
-          <p>{job.label}{job.step ? `: ${job.step}` : ''}{total ? (left > 30 ? ` · about ${Math.max(1, Math.round(left / 60))} min left` : left > 0 ? ' · almost done' : ' · longer than last time') : ''}</p>
-          <div class="bar"><i style={{ width: `${Math.round((total ? 1 - left / total : 0.05) * 100)}%` }} /></div>
+          {job.args[0] === 'extend' ? <p>{extensionDetail(liveBuild.extension, Object.keys(liveBuild.running).find(s => liveBuild.running[s] === 'run') ?? job.step)}</p> : <>
+            <p>{job.label}{job.step ? `: ${job.step}` : ''}{total ? (left > 30 ? ` · about ${Math.max(1, Math.round(left / 60))} min left` : left > 0 ? ' · almost done' : ' · longer than last time') : ''}</p>
+            <div class="bar"><i style={{ width: `${Math.round((total ? 1 - left / total : 0.05) * 100)}%` }} /></div>
+          </>}
           {jobTail && <p class="detail">{jobTail}</p>}
           <div class="btns"><button type="button" class="ghost small" title={`Stop ${job.label}`} onClick={(e) => (e.stopPropagation(), call('job_cancel', { id: job.id }))}>Stop</button></div>
         </Card>
@@ -908,7 +922,7 @@ function Workshop({ slug }: { slug: string }) {
             <h1 title={status?.pitch ?? undefined}>{status?.title ?? slug}</h1>
             <small class="to-build" role="button" tabIndex={0} title="The build bar: every step, clickable" onClick={() => onStage({ kind: 'build' })}>{places.length ? `${places.length} places` : 'being made'}{status && status.playable ? ` · ${status.playable} playable` : ''}{job ? ' · building' : playable ? ' · ready to play' : ''}{live ? '' : ' · reconnecting…'}</small>
           </header>
-          <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} notices={opening} pinned={places.length > 0 && <WorldStrip slug={slug} version={tick} title={status?.title} places={places} stage={shownView} onStage={onStage} />} afterTurn={afterTurn} footer={footer} picked={picked} onUnpick={() => setPicked(null)}
+          <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} notices={opening} pinned={places.length > 0 && <WorldStrip slug={slug} version={tick} title={status?.title} places={places} pending={pendingPlaces} stage={shownView} onStage={onStage} />} afterTurn={afterTurn} footer={footer} picked={picked} onUnpick={() => setPicked(null)}
             empty={<span />} />
         </section>
         <section class="theatre" ref={stageRef}>
@@ -939,13 +953,13 @@ function Workshop({ slug }: { slug: string }) {
             {shownView.kind === 'play' && <Play slug={slug} place={playing?.place} round={playing?.round ?? 0} full={playing?.full} onRestart={() => setPlaying({ ...playing, round: (playing?.round ?? 0) + 1 })} version={tick} onLine={playLine} onError={setError} />}
             {shownView.kind === 'build' && status && (
               <div class="build-on-stage">
-                <Pipeline job={job} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
+                <Pipeline job={pipelineJob} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
                 {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} hold={hold} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? named('Muse Spark is dreaming up the places…')}</span></div></div></figure>}
               </div>
             )}
             {shownView.kind === 'work' && status && (
               <div class="build-on-stage">
-                <Pipeline job={job} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
+                <Pipeline job={pipelineJob} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
                 <CastWorkStage slug={slug} step={shownView.step ?? 'cast'} work={castWork} running={liveBuild.running[shownView.step ?? ''] === 'run'}
                   failed={liveBuild.running[shownView.step ?? ''] === 'fail' || (!job && failed?.args[0] === shownView.step) ? plainError(failed?.error ?? 'the step failed') : undefined} since={liveBuild.since[shownView.step ?? '']} took={took(shownView.step ?? 'cast')} version={tick}
                   only={job && job.args[0] === shownView.step ? job.args[2] : undefined} onOpen={(key) => setByHand(`#cast:${key}`)} />
