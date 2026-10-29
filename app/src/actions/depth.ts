@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { Depth } from '../scene/layers.ts';
+import { parseCell } from '../scene/locate.ts';
 import { agentBlocked } from '../studio/locks.ts';
 import { Slug } from '../world/schema.ts';
 import { ActionError, defineAction } from './registry.ts';
@@ -29,6 +30,37 @@ defineAction({
     return ctx.jobs.start(slug, ['backdrop', slug, place], `water ${place}: ${flow}`, ctx.by, () => {
       const was = fs.existsSync(file) ? Depth.parse(JSON.parse(fs.readFileSync(file, 'utf8'))) : Depth.parse({});
       const depth: Depth = { ...was, flow, ...(hint !== undefined && { flowHint: hint }) };
+      fs.writeFileSync(file, `${JSON.stringify(depth, null, 2)}\n`);
+    });
+  },
+});
+
+const Cell = z.string().refine((c) => !!parseCell(c), 'a grid cell like C12: a letter per 60 px column from A, a number per 60 px row from 1');
+
+defineAction({
+  name: 'water_area',
+  description: 'Say which 60 px grid cells are water that should move (add) or are not water (remove), when the person says only part of '
+    + 'a river, lake or sea moves, or something that is not water ripples. Cells are named like C12 (column letter from A at the left, '
+    + 'row number from 1 at the top, as on the grid of place_view). An added cell flows along the edge SAM sees there, or whole. '
+    + 'Kept in places/<place>/depth.json across rebuilds; reruns the backdrop step of that place as a job.',
+  input: z.object({ slug: Slug, place: z.string().min(1), add: z.array(Cell).optional(), remove: z.array(Cell).optional() }),
+  job: true,
+  async run({ slug, place, add, remove }, ctx) {
+    if (!add?.length && !remove?.length) throw new ActionError(400, 'give cells to add or remove');
+    const dir = path.join(ctx.root, slug);
+    const blocked = agentBlocked(dir, ctx.by);
+    if (blocked) throw new ActionError(423, blocked);
+    const placeDir = path.join(dir, 'places', place);
+    if (!fs.existsSync(path.join(placeDir, 'geometry.json'))) throw new ActionError(404, `${slug}/${place} has no geometry yet: build it first`);
+    const file = path.join(placeDir, 'depth.json');
+    const up = (cells?: string[]) => (cells ?? []).map((c) => c.trim().toUpperCase());
+    return ctx.jobs.start(slug, ['backdrop', slug, place], `water area ${place}`, ctx.by, () => {
+      const was = fs.existsSync(file) ? Depth.parse(JSON.parse(fs.readFileSync(file, 'utf8'))) : Depth.parse({});
+      const depth: Depth = {
+        ...was,
+        waterAdd: [...new Set([...was.waterAdd.filter((c) => !up(remove).includes(c)), ...up(add)])],
+        waterRemove: [...new Set([...was.waterRemove.filter((c) => !up(add).includes(c)), ...up(remove)])],
+      };
       fs.writeFileSync(file, `${JSON.stringify(depth, null, 2)}\n`);
     });
   },

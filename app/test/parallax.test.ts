@@ -51,7 +51,7 @@ test('a post SAM cut into a cap and a foot becomes one card standing on the foot
 
 test('depth.json: flow and fog settings default to auto and reject unknown values', async () => {
   const { Depth } = await import('../src/scene/layers.ts');
-  expect(Depth.parse({})).toEqual({ flow: 'auto', fog: 'auto' });
+  expect(Depth.parse({})).toEqual({ flow: 'auto', fog: 'auto', waterAdd: [], waterRemove: [] });
   expect(Depth.parse({ fog: 'left', fogSpeed: 2 })).toMatchObject({ fog: 'left', fogSpeed: 2 });
   expect(() => Depth.parse({ fog: 'up' })).toThrow();
   expect(() => Depth.parse({ fogSpeed: 9 })).toThrow();

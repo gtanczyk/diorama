@@ -6,13 +6,14 @@
 import sharp from 'sharp';
 import { z } from 'zod';
 import { maskArea, maskToPng, emptyMask, type Mask } from '../image/mask.ts';
-import { dilate, intersect, subtract, unionAll } from '../image/raster.ts';
+import { dilate, intersect, subtract, union, unionAll } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import { samFind } from '../meta/sam.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import type { Place } from '../world/schema.ts';
 import { smearFill } from './backdrop.ts';
 import { FRAME } from './layout.ts';
+import { cellsMask } from './locate.ts';
 
 /** How far a flat grows under the nearer ones: more than two neighbouring flats ever slide apart. */
 export const FLAT_GROW = 24;
@@ -152,11 +153,6 @@ Answer with JSON only: {"flows": true, "from": [x, y], "to": [x, y]}, two points
   return len < 1 ? [0, 0] : [Math.round((dx / len) * 1000) / 1000, Math.round((dy / len) * 1000) / 1000];
 }
 
-/**
- * The water of a place (a river, a canal, the sea) for the runtime to set flowing: its pixels, carried past
- * its edges from its own colours so a shifted copy never shows the bank, and its mask. None without water.
- * `notWater`: the floors and the cards, which SAM's water may take in when they are wet.
- */
 /** How the author wants a place's depth: places/<key>/depth.json, set by the water_flow and fog_drift actions, kept across rebuilds. */
 export const Depth = z.object({
   /** auto: as Spark reads it; reverse: the other way round; still: the water does not flow. */
@@ -167,20 +163,67 @@ export const Depth = z.object({
   fog: z.enum(['auto', 'left', 'right', 'still']).default('auto'),
   /** How fast it drifts, 0.25 (barely) .. 3 (rolling); 1 by default. */
   fogSpeed: z.number().min(0.25).max(3).optional(),
+  /** 60 px grid cells (like C12) that are water SAM missed (water_area add), or are not water at all (water_area remove). */
+  waterAdd: z.array(z.string()).default([]),
+  waterRemove: z.array(z.string()).default([]),
 });
 export type Depth = z.infer<typeof Depth>;
 
-export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer, notWater: Mask, depth: Depth = Depth.parse({})): Promise<Water | undefined> {
+/** A floor is taken to have swallowed the water when it holds this share of what SAM found, and is this much water itself. */
+const SWALLOWED_WATER = 0.5;
+const SWALLOWED_FLOOR = 0.3;
+/** An added cell keeps SAM's water edge when SAM saw this much water in it; otherwise the whole cell flows. */
+const ADDED_SEEN = 0.3;
+
+/**
+ * Where the water flows, from what SAM found: the cards (standing things) never flow, nor the floors, since
+ * SAM's "water" also takes wet planks and shiny cobbles. But a floor that holds most of the water and is mostly
+ * water itself (a "far bank" that took in the river in front of it) is wrong about it: the water wins there,
+ * or only a strip at the bank would move. Then the author's cells (water_area): added cells flow (along SAM's
+ * edge where it saw water there), removed ones never do. `swallowed` names the floors the water won over.
+ */
+export function waterMask(found: Mask, cards: Mask, floors: Array<{ key: string; mask: Mask }>, depth: Pick<Depth, 'waterAdd' | 'waterRemove'>): { mask: Mask; swallowed: string[] } {
+  const { width: W, height: H } = found;
+  const all = maskArea(found);
+  const swallowed: string[] = [];
+  const dry = floors.filter(({ key, mask }) => {
+    const both = maskArea(intersect(mask, found));
+    const takes = all > 0 && both / all >= SWALLOWED_WATER && both / Math.max(1, maskArea(mask)) >= SWALLOWED_FLOOR;
+    if (takes) swallowed.push(key);
+    return !takes;
+  });
+  let mask = subtract(found, dilate(unionAll(W, H, [...dry.map((f) => f.mask), cards]), 6));
+  for (const cell of depth.waterAdd) {
+    const at = cellsMask([cell]);
+    const seen = intersect(found, at);
+    mask = union(mask, maskArea(seen) >= ADDED_SEEN * maskArea(at) ? seen : at);
+  }
+  if (depth.waterRemove.length) mask = subtract(mask, cellsMask(depth.waterRemove));
+  return { mask, swallowed };
+}
+
+/**
+ * The water of a place (a river, a canal, the sea) for the runtime to set flowing: its pixels, carried past
+ * its edges from its own colours so a shifted copy never shows the bank, and its mask. None without water.
+ * `cards` and `floors` may be wet in SAM's eyes: see waterMask.
+ */
+export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer, cards: Mask, floors: Array<{ key: string; mask: Mask }>, depth: Depth = Depth.parse({})): Promise<Water | undefined> {
   const [W, H]: [number, number] = [FRAME.width, FRAME.height];
   let mask: Mask | undefined;
   let phrase = '';
+  let swallowed: string[] = [];
   for (const p of ['water', 'river', 'sea']) {
     const hits = await samFind(memo, { label: `water:${place.key}/${p}`, image: backdrop, prompt: p });
-    // SAM's "water" also takes wet planks and shiny cobbles: the floors and the standing things never flow.
-    const m = subtract(unionAll(W, H, hits.map((f) => f.mask)), notWater);
-    if (maskArea(m) >= 8000) [mask, phrase] = [m, p];
+    const m = waterMask(unionAll(W, H, hits.map((f) => f.mask)), cards, floors, depth);
+    if (maskArea(m.mask) >= 8000) [mask, phrase, swallowed] = [m.mask, p, m.swallowed];
     if (mask) break;
   }
+  // Water SAM did not see at all, only where the author marked it.
+  if (!mask && depth.waterAdd.length) {
+    const m = waterMask(emptyMask(W, H), cards, floors, depth);
+    if (maskArea(m.mask) > 0) [mask, phrase] = [m.mask, 'water'];
+  }
+  if (mask && swallowed.length) console.log(`  ${place.key}: the floor ${swallowed.join(', ')} took in the ${phrase}: it flows there anyway`);
   if (!mask) return undefined;
   const [mx0, my0, mx1, my1] = boxOf(mask);
   // Carried past the edges on all sides: water running into the depth also moves up and down the frame.

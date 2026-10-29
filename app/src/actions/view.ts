@@ -10,6 +10,7 @@ import { maskBox } from '../image/raster.ts';
 import { Geometry } from '../play/geometry.ts';
 import { diagnose, diagnosisPicture } from '../scene/diagnose.ts';
 import { readCorrections } from '../scene/corrections.ts';
+import { Depth } from '../scene/layers.ts';
 import { gridImage } from '../scene/locate.ts';
 import { Slug } from '../world/schema.ts';
 import { ActionError, defineAction } from './registry.ts';
@@ -49,8 +50,9 @@ defineAction({
     + 'the cells of its gap and the things in it, spots off the floor with the nearest reachable point. '
     + 'layer "masks": each thing\'s mask tinted and labelled, its mask box solid and the box it should be in dashed (the fixed box, else the one Spark saw); in words per thing its kind, '
     + 'SAM phrase, how the mask was found and how well it overlaps that box (low overlap: SAM cut out the wrong thing, fix with mask_fix box or phrase). '
+    + 'layer "water": where the water moves (tinted magenta), with the grid water_area takes; in words which way it flows and the cells the author added or removed. '
     + 'layer "painting": the painting alone with the grid.',
-  input: z.object({ slug: Slug, place: z.string().min(1), layer: z.enum(['walk', 'masks', 'painting']).optional() }),
+  input: z.object({ slug: Slug, place: z.string().min(1), layer: z.enum(['walk', 'masks', 'water', 'painting']).optional() }),
   async run({ slug, place, layer = 'walk' }, ctx) {
     const dir = path.join(ctx.root, slug, 'places', place);
     const at = (f: string) => path.join(dir, f);
@@ -63,6 +65,21 @@ defineAction({
       return { ...words, picture: `places/${place}/${file}`, images: [{ mimeType: 'image/jpeg', data: jpeg.toString('base64') }] };
     };
     if (layer === 'painting') return shown(await gridImage(fs.readFileSync(painting)), 'view-painting.png', { layer });
+    if (layer === 'water') {
+      const depth = Depth.parse(fs.existsSync(at('depth.json')) ? JSON.parse(fs.readFileSync(at('depth.json'), 'utf8')) : {});
+      const water = fs.existsSync(at('layers.json')) ? (JSON.parse(fs.readFileSync(at('layers.json'), 'utf8')) as { water?: { mask: string; box: Box; flow?: [number, number] } }).water : undefined;
+      const words = { layer, flow: depth.flow, flowHint: depth.flowHint, added: depth.waterAdd, removed: depth.waterRemove };
+      const grid = await gridImage(fs.readFileSync(painting));
+      if (!water || !fs.existsSync(at(water.mask))) return shown(grid, 'view-water.png', { ...words, moving: 'none: no water moves here (SAM found none, or the backdrop step has not run); water_area add marks it' });
+      // The mask is white with the water as alpha, over the water's box.
+      const alpha = await sharp(fs.readFileSync(at(water.mask))).ensureAlpha().extractChannel(3).toBuffer();
+      const [x0, y0, x1, y1] = water.box;
+      const tint = await sharp({ create: { width: x1 - x0, height: y1 - y0, channels: 3, background: { r: 255, g: 0, b: 200 } } }).joinChannel(await sharp(alpha).linear(0.55, 0).toBuffer()).png().toBuffer();
+      const picture = await sharp(grid).composite([{ input: tint, left: x0, top: y0 }]).png().toBuffer();
+      const [ux, uy] = water.flow ?? [1, 0];
+      const way = !ux && !uy ? 'still (sways in place)' : `flowing ${Math.abs(ux) >= Math.abs(uy) ? (ux > 0 ? 'left to right' : 'right to left') : uy > 0 ? 'toward the viewer' : 'away into the picture'}`;
+      return shown(picture, 'view-water.png', { ...words, moving: `${way}, in the box ${water.box.join(',')}` });
+    }
     if (layer === 'masks') {
       if (!fs.existsSync(at('masks.json'))) throw new ActionError(404, `${slug}/${place} has no masks yet: build it up to masks first`);
       const things = await thingMasks(dir);

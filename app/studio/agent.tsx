@@ -16,7 +16,7 @@ export const SAYS: Record<string, string> = {
   world_list: 'List worlds', world_status: 'World status', place_status: 'Look at a place', job_list: 'List jobs',
   job_wait: 'Wait for a job', job_cancel: 'Stop a job', job_retry: 'Run a job again', world_build: 'Build', run_step: 'Run a step',
   corrections_get: 'Read fixes', corrections_clear: 'Take fixes back', mask_fix: 'Fix a mask', thing_remove: 'Remove a thing', thing_add: 'Add a thing', mask_brush: 'Brush a mask',
-  floor_cells: 'Fix floor cells', stand_set: 'Move a stand spot', repaint_region: 'Repaint a region', water_flow: 'Set water flow', fog_drift: 'Set fog drift', weather_set: 'Set weather',
+  floor_cells: 'Fix floor cells', stand_set: 'Move a stand spot', repaint_region: 'Repaint a region', water_flow: 'Set water flow', water_area: 'Fix where water moves', fog_drift: 'Set fog drift', weather_set: 'Set weather',
   feedback_pending: 'Read open notes', feedback_list: 'Read notes', feedback_done: 'Close a note', feedback_add: 'Leave a note', feedback_reopen: 'Reopen a note',
   history_list: 'Read history', history_undo: 'Undo a job', history_redo: 'Redo', lock_set: 'Change a lock', ui_focus: 'Show a place', ask_person: 'Ask you', budget: 'Check budget', setup_status: 'Check Setup',
   cast_status: 'Look at the cast', cast_redo: 'Repaint a character', voice_list: 'List voices', voice_set: 'Change a voice',
