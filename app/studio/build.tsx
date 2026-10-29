@@ -2,6 +2,7 @@
 // where the place being worked on is painted, cut out, measured in depth and laid out for walking, picture over
 // picture; the story growing beside it; and every place as a strip below. Everything comes from world_status,
 // the live feed (step, call and file events) and the story, icons and cast actions the other tabs read too.
+import { signal } from '@preact/signals';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
 import { timeLeft } from '../src/world/schedule.ts';
@@ -35,8 +36,26 @@ export const MODEL_NAME: Record<string, string> = { spark: 'Muse Spark', muse: '
 const META = new Set(['Muse Spark', 'Muse Image', 'SAM 3.1']);
 const tone = (by: string) => ({ 'Muse Spark': 'spark', 'Muse Image': 'image', 'SAM 3.1': 'sam' })[by] ?? 'other';
 
+/** A model another than Meta's, by a short name: what a call's `via` or Setup's pick names. */
+export function viaName(via: string): string {
+  if (/claude/i.test(via)) return 'Claude';
+  if (/banana/i.test(via)) return 'Nano Banana';
+  if (/gemini|google/i.test(via)) return 'Gemini';
+  return via.replace(/^openrouter:/, '');
+}
+
+/** Who stands in for Spark and Muse Image (Setup's pick); the labels follow it. */
+export const standIn = signal<{ spark: string | null; image: string | null }>({ spark: null, image: null });
+
+/** A model's name as it works now: "Muse Spark" reads "Claude" while Claude answers Spark's asks. */
+export const nowBy = (by: string) => (by === 'Muse Spark' && standIn.value.spark) || (by === 'Muse Image' && standIn.value.image) || by;
+
+/** memo/calls.jsonl's model and via as people know them. */
+export const callBy = (model: string, via?: unknown) => (typeof via === 'string' && via !== 'contributor' ? viaName(via) : MODEL_NAME[model] ?? model);
+
 export function ModelTag({ by }: { by: string }) {
-  return <span class={`model ${tone(by)}${META.has(by) ? ' meta' : ''}`}>{by}</span>;
+  const name = nowBy(by);
+  return <span class={`model ${tone(by)}${META.has(name) ? ' meta' : ''}`}>{name}</span>;
 }
 
 const clock = (ms: number) => {

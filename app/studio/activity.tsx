@@ -1,7 +1,7 @@
 // Activity: what ran in this world, newest first. Each job is one row (what, who, how it went, how long, which
 // models it called) with its steps folded under it; the agent's and your clicks fold into one line per run of them.
 import { SAYS } from './agent.tsx';
-import { MODEL_NAME } from './build.tsx';
+import { MODEL_NAME, nowBy } from './build.tsx';
 
 export type ActivityJob = { id: string; label: string; args: string[]; state: string; by: string; error?: string; queuedAt?: string; startedAt?: string; endedAt?: string };
 export type ActivityLine = { seq: number; text: string; kind: string; at?: number; job?: string; info?: ActivityJob; who?: 'you' | 'agent'; act?: string };
@@ -89,7 +89,7 @@ export function Activity({ lines, costs, all }: { lines: ActivityLine[]; costs: 
               <details open={j.state === 'running' || j.state === 'failed'}>
                 <summary>
                   <span class="a-sign">{sign(j)}</span>
-                  <span class="a-what"><strong>{j.label}</strong><small>{j.by === 'agent' ? 'the agent' : 'you'} · {time(Date.parse(j.queuedAt ?? '') || g.at)}{took ? ` · ${clock(took)}` : ''}{models.length ? ` · ${models.map(([m, n]) => `${MODEL_NAME[m] ?? m} ${n}`).join(', ')}` : ''}</small></span>
+                  <span class="a-what"><strong>{j.label}</strong><small>{j.by === 'agent' ? 'the agent' : 'you'} · {time(Date.parse(j.queuedAt ?? '') || g.at)}{took ? ` · ${clock(took)}` : ''}{models.length ? ` · ${models.map(([m, n]) => `${nowBy(MODEL_NAME[m] ?? m)} ${n}`).join(', ')}` : ''}</small></span>
                   <span class={`a-state ${j.state}`} title={st.word}>{st.mark} {st.word}</span>
                   {(g.lines.length > 0 || j.error) && <span class="a-more" aria-hidden="true" />}
                 </summary>

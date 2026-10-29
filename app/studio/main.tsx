@@ -10,7 +10,7 @@ import { base64, Camera, shrink } from './camera.tsx';
 import { StoryView } from './story.tsx';
 import { StyleMenu } from './style-menu.tsx';
 import { PlaceEditor } from './place.tsx';
-import { MODEL_NAME, Pipeline, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
+import { callBy, MODEL_NAME, Pipeline, standIn, viaName, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
 import { Bell, Logo, Rail, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
 import { CAST_STEPS, castFile, castLine, CastWorkStage, type CastWork } from './cast-work.tsx';
 import { SayIt } from './say-it.tsx';
@@ -279,6 +279,12 @@ const MODEL_NAMES: Record<string, string> = { spark: 'Muse Spark', muse: 'Muse I
 type Pick = { id: string; label: string; ready: boolean };
 type Models = { spark: string; image: string; env: { spark: string | null; image: string | null }; options: { spark: Pick[]; image: Pick[] } };
 
+/** Setup's model pick into the labels everywhere (build bar, stage, feed). */
+function showModels(m: Models) {
+  standIn.value = { spark: m.spark === 'meta' ? null : viaName(m.spark), image: m.image === 'meta' ? null : viaName(m.image) };
+  return m;
+}
+
 /**
  * Who works on a world: the agent a new world's conversation starts with (a world keeps the one it last talked
  * with), the model for Spark's asks and the one that paints. One row, so Setup still fits the screen.
@@ -289,11 +295,11 @@ function DefaultAgent() {
   const [error, setError] = useState('');
   useEffect(() => {
     void agentDefault().then(setD).catch((e) => setError(e.message));
-    void call<Models>('models_get').then(setM).catch((e) => setError(e.message));
+    void call<Models>('models_get').then((x) => setM(showModels(x))).catch((e) => setError(e.message));
   }, []);
   if (!d) return error ? <p class="error">{error}</p> : null;
   const pick = d.agents.find((a) => a.default)?.name;
-  const choose = (kind: 'spark' | 'image', id: string) => void call<Models>('models_set', { [kind]: id }).then(setM).catch((x) => setError(x.message));
+  const choose = (kind: 'spark' | 'image', id: string) => void call<Models>('models_set', { [kind]: id }).then((x) => setM(showModels(x))).catch((x) => setError(x.message));
   const select = (kind: 'spark' | 'image', label: string, title: string) => m && (
     <label title={m.env[kind] ? `Set by DIORAMA_${kind === 'spark' ? 'SPARK' : 'IMAGE'}_VIA=${m.env[kind]} where the Studio was started` : title}>{label}
       <select value={m[kind]} disabled={!!m.env[kind]} onChange={(e) => choose(kind, e.currentTarget.value)}>
@@ -630,7 +636,7 @@ function Workshop({ slug }: { slug: string }) {
           if (e.hit) return;
           setCalls((c) => c + 1);
           if (typeof e.job === 'string') setCosts((c) => ({ ...c, [e.job as string]: { ...c[e.job as string], [String(e.model)]: (c[e.job as string]?.[String(e.model)] ?? 0) + 1 } }));
-          const by = MODEL_NAME[String(e.model)] ?? String(e.model);
+          const by = callBy(String(e.model), e.via);
           setJobCalls((c) => ({ ...c, [by]: (c[by] ?? 0) + 1 }));
           return setLastCall({ by, label: String(e.label ?? '').replace(/#\d+$/, ''), at: Date.now() });
         }
@@ -1143,6 +1149,8 @@ function App() {
         steps = list.find((a) => a.name === 'run_step')?.input.properties?.step?.enum ?? [];
         quiet = new Set(list.filter((a) => a.reads).map((a) => a.name));
         setReady('ok');
+        // The model labels say who works now, from the first screen on.
+        void call<Models>('models_get').then(showModels).catch(() => {});
       })
       .catch((e) => setReady(e.message));
     // The agent can move the view to another world.

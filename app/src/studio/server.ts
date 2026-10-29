@@ -119,8 +119,8 @@ class WorldWatch {
     for (const line of text.slice(0, complete).split('\n')) {
       if (!line) continue;
       try {
-        const { model, label, ms, hit } = JSON.parse(line) as Record<string, unknown>;
-        this.events.publish('call', { world: this.slug, model, label, ms, hit });
+        const { model, label, ms, hit, via } = JSON.parse(line) as Record<string, unknown>;
+        this.events.publish('call', { world: this.slug, model, label, ms, hit, via });
       } catch {}
     }
   }
