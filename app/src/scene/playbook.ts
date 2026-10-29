@@ -60,6 +60,10 @@ export const PLAYBOOK: Record<string, Play> = {
     tools: ['mask_fix box: the box from the error (or the one you see)', 'mask_fix phrase: a name SAM tells apart from its neighbour'],
     last: 'repaint_region: when the thing is not painted at all (one Muse edit)',
   },
+  CARD_CUT: {
+    look: 'place_view layer masks: the thing\'s mask leaves out a part of it (what is in or on it: fish over a bucket\'s rim, a lamp on its post); the flag\'s box is where its outline cuts through that part',
+    tools: ['mask_fix box: a box around the whole thing with the part; masks asks SAM by that box and joins what it finds to the mask, then derive and backdrop follow', 'mask_brush: paint the part onto its mask'],
+  },
   THING_NOT_PAINTED: {
     look: 'place_view layer painting: the thing\'s box shows something else, and Spark found the thing nowhere in the painting',
     tools: ['mask_fix box: when you do see it painted somewhere else'],

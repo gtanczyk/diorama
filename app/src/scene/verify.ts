@@ -29,6 +29,9 @@ export function gridOf(g: Pick<Geometry, 'walk' | 'zone'>): Grid {
 /** plates.json: whether SAM still finds the thing on its plate. */
 export type PlateNotes = Record<string, { stillThere: boolean }>;
 
+/** backdrop.json: per card, whether its outline cuts through a painted part of its thing. */
+export type BackdropNotes = Record<string, { cut?: { px: number; box: [number, number, number, number] | null } }>;
+
 const words = (text: string) => text.toLowerCase().match(/[a-z]{3,}/g)?.map((w) => w.replace(/(es|s)$/, '')) ?? [];
 
 /** What a thing is, in a word or two: its key's words and the head noun of its looks ("a chestnut horse in its stall" -> horse). */
@@ -43,7 +46,7 @@ export function sameKind(seen: string, key: string, looks?: string): boolean {
   return words(seen).some((w) => kind.has(w));
 }
 
-export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates: PlateNotes = {}): Verdict {
+export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates: PlateNotes = {}, backdrop: BackdropNotes = {}): Verdict {
   const errors: Finding[] = [];
   const flags: Finding[] = [];
   const grid = gridOf(g);
@@ -122,6 +125,11 @@ export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates:
 
   for (const [key, p] of Object.entries(plates)) {
     if (p.stillThere) flags.push({ code: 'PLATE_NOT_CLEAN', key, detail: 'SAM still finds it on its plate; taking it may leave it painted' });
+  }
+
+  // With parallax a card slides against the backdrop: a part its mask left out stays behind and splits off.
+  for (const [key, b] of Object.entries(backdrop)) {
+    if (b.cut) flags.push({ code: 'CARD_CUT', key, detail: `its mask leaves out a painted part of it (${b.cut.px} px of its outline cut through it), which stays on the backdrop when the card slides; mask it again with a box around the whole thing`, ...(b.cut.box && { box: b.cut.box }) });
   }
 
   for (const line of g.flagged ?? []) flags.push({ code: 'DERIVE', detail: line });

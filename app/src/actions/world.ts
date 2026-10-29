@@ -139,7 +139,7 @@ defineAction({
         image: image ? { file: `places/${p.key}/${image}`, v: stamp(at(image)) } : null,
         // The pictures each step leaves, in build order: Studio stacks them as the place is built.
         layers: Object.fromEntries(LAYERS.map(([name, ...fs]) => [name, fs.find((f) => stamp(at(f)))]).filter(([, f]) => f).map(([name, f]) => [name, { file: `places/${p.key}/${f}`, v: stamp(at(f!)) }])),
-        verdict: verdict && { ok: verdict.ok, errors: verdict.errors.map((e) => withPlay(e, verdict.flags)), flags: verdict.flags },
+        verdict: verdict && { ok: verdict.ok, errors: verdict.errors.map((e) => withPlay(e, verdict.flags)), flags: verdict.flags.map((f) => withPlay(f, verdict.flags)) },
         /** Why the place is not playable in one line, and the step place_fix rebuilds it from (null: the agent's). */
         trouble: placeTrouble(dir, p.key),
       };
