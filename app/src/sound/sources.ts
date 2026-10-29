@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inputHash, type Memo } from '../meta/memo.ts';
-import { checkCredits, noteRefusal } from './cost.ts';
+import { checkCredits, noteRefusal, ttsModel } from './cost.ts';
 
 const ELEVEN = 'https://api.elevenlabs.io/v1';
 
@@ -69,6 +69,6 @@ export function musicgen(memo: Memo, label: string, prompt: string, seconds: num
 
 /** Speech in any language ElevenLabs reads (Flash v2.5: cheap and quick), as mp3. */
 export function elevenSpeech(memo: Memo, label: string, text: string, voice: string): Promise<Buffer> {
-  const body = { text, model_id: 'eleven_flash_v2_5' };
+  const body = { text, model_id: ttsModel() };
   return memo.remember('voice', label, inputHash('eleven-tts', voice, JSON.stringify(body)), 'mp3', () => elevenPost(`/text-to-speech/${voice}?output_format=mp3_44100_128`, body));
 }

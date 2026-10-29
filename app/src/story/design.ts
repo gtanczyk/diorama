@@ -5,6 +5,7 @@ import { askSparkJson } from '../meta/spark.ts';
 import type { World } from '../world/schema.ts';
 import { BREVITY, brevityIssues, checkStory, paintingIssues, questionIssues, type StoryReport } from './check.ts';
 import type { Story } from './schema.ts';
+import { z } from 'zod';
 
 const MIN_STEPS = 6;
 
@@ -47,7 +48,9 @@ Write story.json for it. Rules:
 - No ending may be reachable in fewer than ${MIN_STEPS} clicks; each ending needs a solved puzzle.
 - Every ending must be reachable, and from any state the player must still be able to reach an ending.
 - Only a dialogue line with choices may ask the player something. A "say", and a line without choices, ends on a statement, never a question: the player has no way to answer it.
-- Say little. Players read or hear every line, so be terse: the intro at most ${BREVITY.intro} words, a "say" at most ${BREVITY.say}, an npc line at most ${BREVITY.npcLine}, an answer choice at most ${BREVITY.choice}, an ending at most ${BREVITY.ending}, an item's \"nope\" at most ${BREVITY.nope} (the hero's own remark about that item, true wherever it is tried, with a little character and never the words \"won't help\": for a crust of bread, \"Crumbs. Nobody here wants crumbs.\"), and at most ${BREVITY.linesPerDialogue} lines per conversation. One idea per line; no small talk.
+- Write for actors, not a task checklist. Give each character a distinct personality, motive and way of talking, grounded in the drawings and this story. Include brief reactions, gentle humour and reciprocal exchanges. Let relationships develop when the player helps; do not make every character simply order an item and redirect the player.
+- The hero speaks in first person, reacting in their own voice: "Oof, this can is heavy!", never player-facing narration such as "You take the watering can" or "Bierzesz konewkę". NPCs speak as themselves; only the intro and endings are narrated. Do not put stage directions or emotion tags into spoken text.
+- Keep each line easy to follow, with room for personality: the intro at most ${BREVITY.intro} words, a "say" at most ${BREVITY.say}, an npc line at most ${BREVITY.npcLine}, an answer choice at most ${BREVITY.choice}, an ending at most ${BREVITY.ending}, an item's \"nope\" at most ${BREVITY.nope}, and at most ${BREVITY.linesPerDialogue} lines per conversation. One idea per line; concise does not mean robotic or purely instructional.
 - Text is ${world.language ?? 'English'}, short and specific to this world. No names from existing films, books, games or brands.${world.audience === 'kids' ? KIDS : ''}
 
 Reply with JSON only, shaped like:
@@ -66,9 +69,25 @@ export async function designStory(memo: Memo, world: World, wish?: string): Prom
     for (const r of report.routes) {
       if (r.steps.length < MIN_STEPS) report.issues.push(`ending "${r.ending}" is reached in only ${r.steps.length} clicks: ${r.steps.join(' → ')}`);
     }
-    if (report.story && report.issues.length === 0) return { story: report.story, report };
+    if (report.story && report.issues.length === 0) {
+      report.issues.push(...await dialogueIssues(memo, world, report.story));
+      if (!report.issues.length) return { story: report.story, report };
+    }
     console.log(`  story try ${attempt}: ${report.issues.length} issue(s): ${report.issues.slice(0, 3).join('; ')}`);
     prompt = `${ask(world)}\n\nYour last answer was:\n${JSON.stringify(answer)}\n\nA checker played every possible state and found these problems. Fix every one and reply with the whole JSON again:\n- ${report.issues.join('\n- ')}`;
   }
   throw new Error('Spark gave no playable story in 4 tries');
+}
+
+/** Editorial review is separate from reachability: a playable checklist can still be a poor conversation. */
+export async function dialogueIssues(memo: Memo, world: World, story: Story): Promise<string[]> {
+  const review = await askSparkJson(memo, {
+    label: 'story-dialogue-review',
+    prompt: `Review the spoken script of this game in ${world.language ?? 'English'} for ${world.audience === 'kids' ? 'children aged 5–7' : 'its intended audience'}.
+World: ${JSON.stringify(world)}
+Script: ${JSON.stringify(story)}
+Check native natural phrasing, consistent speaker perspective, distinct character personalities, reactions and meaningful exchanges beyond fetching items. Hero remarks and choices must be things the hero says, not a narrator telling the player what they do. Keep age-appropriate simplicity without making every voice generic or babyish. Do not demand longer dialogue just for length. Check that humour and reactions stay consistent with the story and do not obscure the next action.
+Return JSON {"issues": ["exact text path and concrete correction needed"]}; [] if it works. At most 6 substantive issues. Do not judge mechanics or rewrite the story here.`,
+  });
+  return z.object({ issues: z.array(z.string()).max(6) }).parse(review).issues;
 }

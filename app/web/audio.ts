@@ -1,7 +1,7 @@
 // The play page's sound: a music bed, the place's ambience, loops that pan and fade with where the hero
 // stands, footsteps on the floor under him, and one-shots for what happens in the story. Web Audio only.
 import { personPx, type GeoThing, type Geometry } from '../src/play/geometry.ts';
-import { levelGain, placeSound, zoneAt, type SoundData } from '../src/play/sound.ts';
+import { levelGain, placeSound, spokenLine, zoneAt, type SoundData } from '../src/play/sound.ts';
 import { holds, type State } from '../src/story/engine.ts';
 
 /** What the mixer reads from the game each frame. */
@@ -58,7 +58,7 @@ export class Mixer {
       if (event === 'use') this.lastUsed = String(detail.thing);
       if (event === 'exit' && this.lastUsed) this.shot(`exit:${this.lastUsed}`);
       if (event === 'ending') this.shot('ending');
-      if (event === 'say') void this.speak(String(detail.text));
+      if (event === 'say') void this.speak(String(detail.text), false, typeof detail.who === 'string' ? detail.who : 'narrator');
       if (event === 'enter') this.hush();
     });
   }
@@ -127,27 +127,31 @@ export class Mixer {
 
   /** Says an answer card aloud as it is pointed at, even with no line up (the cards are voiced as the hero's lines). */
   hear(text: string) {
-    void this.speak(text, true);
+    void this.speak(text, true, this.game.data.world?.hero.key);
   }
 
   /** Says a line in its cast voice, cutting off the one before. */
-  private async speak(text: string, card = false) {
+  private async speak(text: string, card = false, speaker?: string) {
     this.hush();
-    const line = this.sound?.lines?.[text];
+    const request = this.speechRequest;
+    const line = spokenLine(this.sound, text, speaker);
     if (!line || this.voiced === '0') return;
     if (this.voiced === 'npc' && (line.speaker === 'narrator' || line.speaker === this.game.data.world?.hero.key)) return;
-    if (!this.lines.has(text)) this.lines.set(text, fetch(this.url(line.file)).then((r) => r.arrayBuffer()).then((b) => this.ctx.decodeAudioData(b)).catch(() => undefined));
-    const buf = await this.lines.get(text);
-    if (!buf || (this.game.speech === null && !card)) return;
+    if (!this.lines.has(line.file)) this.lines.set(line.file, fetch(this.url(line.file)).then((r) => r.arrayBuffer()).then((b) => this.ctx.decodeAudioData(b)).catch(() => undefined));
+    const buf = await this.lines.get(line.file);
+    if (!buf || request !== this.speechRequest || (this.game.speech === null && !card)) return;
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     src.connect(this.voiceBus);
     src.start();
     this.speaking = src;
+    src.onended = () => { if (this.speaking === src) this.speaking = undefined; };
     this.log.push({ at: this.ctx.currentTime, id: text.slice(0, 40), kind: 'line' });
   }
 
+  private speechRequest = 0;
   private hush() {
+    this.speechRequest++;
     try {
       this.speaking?.stop();
     } catch {

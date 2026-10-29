@@ -15,6 +15,8 @@ type Character = {
   stamps: { rig: number | null; model: number | null; sprites: number | null };
   voice: { voice: string; why: string; stability: number; style: number } | null;
   lines: number; flagged: number; sample: { text: string; file: string } | null;
+  voiceFailures?: Array<{ text: string; reason: string }>;
+  voiceWarnings?: string[];
 };
 type Voice = { id: string; name: string; sounds: string; fits?: boolean };
 
@@ -139,6 +141,8 @@ function Card({ slug, c, onError, focused }: { slug: string; c: Character; onErr
             : <span class="detail">{c.lines ? `${c.lines} lines, no voice yet` : 'no spoken lines'}</span>}
         </div>
         {c.sample && <div class="sample"><audio controls preload="none" src={fileUrl(slug, c.sample.file)} /><span class="detail">“{c.sample.text}”</span></div>}
+        {!!c.voiceFailures?.length && <p class="detail" role="status">{c.voiceFailures.length} spoken lines unavailable: {c.voiceFailures[0].reason}</p>}
+        {c.voiceWarnings?.map((w) => <p class="detail" role="status">{w}</p>)}
       </div>
       {moving && <FigurePreview slug={slug} who={c.key} stamps={c.stamps} />}
     </li>

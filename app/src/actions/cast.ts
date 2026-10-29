@@ -89,6 +89,8 @@ defineAction({
         voice: voices?.success ? voices.data.cast[c.key] ?? null : null,
         lines: lines.length,
         flagged: lines.filter((l) => l.flags.some((f) => f.startsWith('heard'))).length,
+        voiceFailures: voices?.success ? voices.data.failures.filter((l) => l.speaker === c.key) : [],
+        voiceWarnings: voices?.success ? voices.data.cast[c.key]?.warnings ?? [] : [],
         sample: lines[0] ? { text: lines[0].text, file: lines[0].file } : null,
       };
     });

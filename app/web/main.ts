@@ -12,7 +12,7 @@ import { Mixer, type Listened } from './audio.ts';
 import { PLAYER_COLOURS, readEachPad, readPads, Turns, type PadButton, type PadFrame } from './pad.ts';
 import { Answers, Bag, displayName, fitHud, showEnding, type ItemLook } from './ui.ts';
 import { useLanguage, words } from './words.ts';
-import type { SoundData } from '../src/play/sound.ts';
+import { spokenLine, type SoundData } from '../src/play/sound.ts';
 import type { Figure3D, ModelInfo } from './hero3d.ts';
 import type { Weather } from '../src/play/weather.ts';
 import { WeatherFx } from './weather.ts';
@@ -746,10 +746,10 @@ class Game {
   /** Shows (and voices) a line; `who` (a cast key) gestures while it lasts. */
   say(text: string, who?: string): Promise<void> {
     // A voiced line stays up until it has been said.
-    const voiced = this.data.sound?.lines?.[text]?.seconds ?? 0;
+    const voiced = spokenLine(this.data.sound, text, who ?? 'narrator')?.seconds ?? 0;
     const seconds = Math.max(2.2 + text.length * 0.045, voiced + 0.5);
     this.speech = { text, until: this.time + seconds, who, from: this.time };
-    this.emit('say', { text });
+    this.emit('say', { text, who: who ?? 'narrator' });
     return new Promise((resolve) => {
       const done = this.speech;
       const check = () => (this.speech !== done ? resolve() : setTimeout(check, 50));

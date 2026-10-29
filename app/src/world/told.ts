@@ -7,8 +7,7 @@ import type { Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import { transcribe } from '../meta/voice.ts';
 import { decode } from '../sound/pcm.ts';
-import { elevenSpeech } from '../sound/sources.ts';
-import { pcm24k, stockVoices } from '../sound/voices.ts';
+import { Cast, pcm24k, stockVoices, voiceCandidates, voiceLine } from '../sound/voices.ts';
 import { keptName, type Drawn } from './drawings.ts';
 import type { WorldFiles } from './files.ts';
 
@@ -92,10 +91,15 @@ Reply with JSON only: {"language": "the language they spoke, in English, like Po
 
 /** The story read aloud to the children by a warm storyteller voice (idea.mp3; not in told/, which holds only what the children said), as soon as it is written. */
 export async function narrate(files: WorldFiles, idea: Idea): Promise<string> {
-  const voices = await stockVoices();
+  const profile = { gender: 'female' as const, age: 'middle_aged' as const, sound: 'a warm natural storyteller', language: idea.language };
+  const voices = voiceCandidates(await stockVoices(), profile);
   const voice = voices.find((v) => /narrat|story/i.test(`${v.labels?.use_case ?? ''} ${v.labels?.description ?? ''} ${v.description ?? ''}`) && v.labels?.gender === 'female')
     ?? voices.find((v) => v.labels?.gender === 'female') ?? voices[0];
   if (!voice) throw new Error('no ElevenLabs voice to read the story');
-  files.write(files.path('idea.mp3'), await elevenSpeech(files.memo, 'told-idea', `${idea.title}. ${idea.idea}`, voice.voice_id));
+  const actor = Cast.parse({ narrator: { voice: voice.voice_id, profile } }).narrator;
+  await voiceLine(files.memo, { speaker: 'narrator', text: `${idea.title}. ${idea.idea}` }, actor, (_, mp3) => {
+    files.write(files.path('idea.mp3'), mp3);
+    return 'idea.mp3';
+  });
   return 'idea.mp3';
 }

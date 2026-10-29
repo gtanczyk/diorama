@@ -81,7 +81,7 @@ test('conversations, intro and endings are spoken; the hero\'s remarks on things
   } as unknown as Story;
   expect(storyLines(world, story)).toEqual([
     { speaker: 'narrator', text: 'Fog.' }, { speaker: 'girl', text: 'A can.' }, { speaker: 'liss', text: 'Hello, love.' },
-    { speaker: 'girl', text: 'Hi.' }, { speaker: 'narrator', text: 'Light.' },
+    { speaker: 'girl', text: 'Hi.', previousText: 'Hello, love.' }, { speaker: 'narrator', text: 'Light.' },
   ].filter((l) => l.text !== 'A can.'));
   expect(storyLines(world, story, true).map((l) => l.text)).toEqual(expect.arrayContaining(['A can.', 'Cans open nothing.']));
 });
@@ -104,10 +104,11 @@ test('children and the old get a designed voice, described without the words Ele
   expect(needsDesign(kid)).toBe(true);
   expect(needsDesign({ ...kid, age: 'middle_aged' })).toBe(false);
   const [d, plain] = designDescriptions(kid);
-  expect(d).toMatch(/youthful high-pitched female/i);
+  expect(d).toMatch(/youthful female/i);
+  expect(d).not.toMatch(/high-pitched/i);
   expect(d).not.toMatch(/child|girl|boy|\d|year|little/i);
   expect(d).toMatch(/eager/);
-  expect(plain).not.toMatch(/eager/);
+  expect(plain).toMatch(/eager/); // A fallback keeps the character's personality.
   expect(designDescriptions({ gender: 'male', age: 'old', sound: 'gravelly' })[0]).toMatch(/very old man.*gravelly/);
 });
 

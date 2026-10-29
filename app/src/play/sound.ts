@@ -17,7 +17,13 @@ export type SoundData = {
   shots: Record<string, string>;
   /** Spoken lines (diorama voices): the text the page says → its recording. */
   lines?: Record<string, { file: string; seconds: number; speaker?: string }>;
+  /** Speaker-specific recordings; older worlds can still use lines keyed only by text. */
+  bySpeaker?: Record<string, NonNullable<SoundData['lines']>>;
 };
+
+export function spokenLine(sound: SoundData | undefined, text: string, speaker?: string) {
+  return (speaker ? sound?.bySpeaker?.[speaker]?.[text] : undefined) ?? sound?.lines?.[text];
+}
 
 /** Mixer gain per kind and level, before distance: the bed sits under loops, music under both. */
 export const BUS: Record<SoundKind, number> = { music: 0.32, bed: 0.55, loop: 0.8, step: 0.55, shot: 0.85 };

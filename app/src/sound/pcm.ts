@@ -54,6 +54,21 @@ export function pitchShift(pcm: Pcm, semitones: number): Pcm {
 
 export const seconds = (pcm: Pcm) => pcm.left.length / RATE;
 
+/** Objective recording defects, before normalisation can disguise silence or clipping. */
+export function audioProblem(pcm: Pcm): string | undefined {
+  if (pcm.left.length !== pcm.right.length || seconds(pcm) < 0.08) return 'empty or too short';
+  let energy = 0, clipped = 0;
+  for (const channel of [pcm.left, pcm.right]) for (const v of channel) {
+    if (!Number.isFinite(v)) return 'non-finite audio samples';
+    energy += v * v;
+    if (Math.abs(v) >= 0.999) clipped++;
+  }
+  const count = pcm.left.length * 2;
+  if (Math.sqrt(energy / count) < 0.0001) return 'nearly silent';
+  if (clipped / count > 0.01) return 'clipped recording';
+  return undefined;
+}
+
 /**
  * The median pitch of a voice in Hz (autocorrelation over voiced 40 ms frames): about 100-130 for a man,
  * 180-230 for a woman, 260 and up for a child. 0 when nothing voiced is found.

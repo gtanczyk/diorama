@@ -38,8 +38,8 @@ defineAction({
     if (!story) return { start: world.start, hero: world.hero.key, places, story: null, fixes, issues: [], routes: [], states: 0, long: [], unvoiced: [], unpainted: [] };
     const report = checkStory(world, story);
     const voices = fs.existsSync(files.path('voices.json')) ? Voices.safeParse(files.readJson(files.path('voices.json'))) : null;
-    const said = new Set(voices?.success ? voices.data.lines.map((l) => l.text) : []);
-    const unvoiced = voices?.success ? storyLines(world, story).filter((l) => !said.has(l.text)).map((l) => l.text) : [];
+    const said = new Set(voices?.success ? voices.data.lines.filter((l) => !l.flags.some((f) => f.startsWith('heard')) && fs.existsSync(files.path(l.file))).map((l) => JSON.stringify([l.speaker, l.text])) : []);
+    const unvoiced = storyLines(world, story, world.audience === 'kids').filter((l) => !said.has(JSON.stringify([l.speaker, l.text]))).map((l) => l.text);
     const unpainted = story.changes.flatMap((c, i) => {
       const plate = files.path('places', c.place, 'changes', `${i}.png`);
       const worded = fixes.texts[`changes.${i}.looks`]?.at;

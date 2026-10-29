@@ -1,15 +1,18 @@
 // What sound costs. ElevenLabs bills every effect, line and design, so while a world is being developed the
-// pipeline spends little: draft quality by default (cheaper speech model, shorter beds and loops, fewer takes,
-// no ElevenLabs music), one cache for every world on this machine, and a stop when credits run out.
+// pipeline uses final quality unless an author explicitly requests a cheaper draft.
 import os from 'node:os';
 import path from 'node:path';
 
-/** draft while developing; final (DIORAMA_SOUND=final or --final) for the film and a release. */
+/** Final by default; DIORAMA_SOUND=draft or --draft opts into cheaper development audio. */
 export type Quality = 'draft' | 'final';
 
 export function soundQuality(args: string[] = []): Quality {
+  if (args.includes('--draft') && args.includes('--final')) throw new Error('choose --draft or --final, not both');
   if (args.includes('--final')) process.env.DIORAMA_SOUND = 'final';
-  return process.env.DIORAMA_SOUND === 'final' ? 'final' : 'draft';
+  if (args.includes('--draft')) process.env.DIORAMA_SOUND = 'draft';
+  const quality = process.env.DIORAMA_SOUND ?? 'final';
+  if (quality !== 'final' && quality !== 'draft') throw new Error('DIORAMA_SOUND must be final or draft');
+  return quality;
 }
 
 /** Speech: Flash v2.5 costs half of Multilingual v2 per character. */

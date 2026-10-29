@@ -14,7 +14,7 @@ import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
   name: 'sound',
-  usage: 'sound <slug>             plan and generate ambience, loops, footsteps, one-shots and music [--replan] [--plan-only] [--only bed,loop,step,shot,music] [--music auto|musicgen|eleven] [--final: full lengths and takes for the film; default draft spends less, reuses footsteps and UI sounds across worlds]',
+  usage: 'sound <slug>             plan and generate ambience, loops, footsteps, one-shots and music [--replan] [--plan-only] [--only bed,loop,step,shot,music] [--music auto|musicgen|eleven] [--draft: shorter loops and cheaper speech; final quality is the default]',
   async run(args) {
     soundQuality(args);
     const replan = args.includes('--replan');
@@ -61,7 +61,7 @@ defineCommand({
     if (musicFrom === 'musicgen' && !python) throw new Error('--music musicgen needs DIORAMA_PYTHON pointing at a Python with torch, transformers and scipy');
     console.log(`music: ${python ? 'MusicGen (Meta open weights) on this machine' : 'ElevenLabs (set DIORAMA_PYTHON to a Python with torch + transformers for MusicGen)'}`);
     const manifestFile = files.path('sound', 'sounds.json');
-    const made0 = fs.existsSync(manifestFile) ? SoundManifest.parse(files.readJson(manifestFile)) : { sounds: {} };
+    const made0: SoundManifest = fs.existsSync(manifestFile) ? SoundManifest.parse(files.readJson(manifestFile)) : { sounds: {}, failures: {} };
     const kinds = only ? only.split(',').map((k) => Kind.parse(k.trim())) : undefined;
     const made = await makeSounds(files.memo, plan, (id, mp3) => {
       files.write(files.path('sound', `${id}.mp3`), mp3);
@@ -69,9 +69,14 @@ defineCommand({
     }, { python, only: kinds, log: (line) => console.log(line), old: made0.sounds, have: (e) => fs.existsSync(files.path(e.file)) });
     // A partial run keeps what it did not touch.
     const sounds = { ...(kinds ? made0.sounds : {}), ...made.sounds };
-    files.write(manifestFile, { sounds });
+    // Failed replacements cannot silently retain the rejected prior asset in a partial rebuild.
+    for (const id of Object.keys(made.failures)) delete sounds[id];
+    const failures = { ...(kinds && 'failures' in made0 ? made0.failures : {}), ...made.failures };
+    for (const id of Object.keys(made.sounds)) delete failures[id];
+    files.write(manifestFile, { sounds, failures });
     for (const [id, e] of Object.entries(sounds)) if (fs.existsSync(files.path(e.file))) seedLibrary(id, e, fs.readFileSync(files.path(e.file)));
     const s = files.memo.sent;
     console.log(`sound ${slug}: ${Object.keys(sounds).length} sounds · sent: spark ${s.spark}, sound ${s.sound}, music ${s.music} · ${await guard.report()} · ${manifestFile}`);
+    if (Object.keys(failures).length) throw new Error(`${Object.keys(failures).length} sounds failed quality or generation; see sound/sounds.json failures`);
   },
 });
