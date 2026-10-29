@@ -4,7 +4,7 @@ import type { Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import type { World } from '../world/schema.ts';
 import { BREVITY, brevityIssues, checkStory, paintingIssues, questionIssues, type StoryReport } from './check.ts';
-import { Story } from './schema.ts';
+import { fromWire, WireStory, type Story } from './schema.ts';
 import { z } from 'zod';
 
 const MIN_STEPS = 6;
@@ -65,7 +65,8 @@ export async function designStory(memo: Memo, world: World, wish?: string): Prom
   // A story every ending of which plays, kept in case the editor never runs out of notes on its wording.
   let playable: { story: Story; report: StoryReport; notes: string[] } | undefined;
   for (let attempt = 1; attempt <= 4; attempt++) {
-    const answer = await askSparkJson(memo, { label: `story#${attempt}`, prompt, schema: Story });
+    // Claude is held to the wire shape (effects as {op, key}); Spark answers in Story's own shape. Both read the same.
+    const answer = fromWire(await askSparkJson(memo, { label: `story#${attempt}`, prompt, schema: WireStory }));
     const report = checkStory(world, answer);
     if (report.story) report.issues.push(...brevityIssues(report.story), ...questionIssues(report.story), ...paintingIssues(world, report.story));
     for (const r of report.routes) {
