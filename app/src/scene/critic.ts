@@ -24,9 +24,10 @@ export async function critique(memo: Memo, place: Place, brief: Brief, painting:
   const expected = place.things.filter((t) => t.role !== 'npc').map((t) => `- ${t.key}: ${brief.looks[t.key] ?? t.looks}`);
   const prompt = `This is a painted background (${FRAME.width}x${FRAME.height} px) for a 2D point-and-click adventure. It should show:
 ${expected.join('\n')}
+The whole picture is meant to be: ${place.shows}
 
 List at most 4 problems a player would notice, worst first:
-- missing: a listed thing is not there
+- missing: a listed thing is not there, or a big part of the scene above is (a tall tower, a castle with two towers, a house on top): key "scene" for that
 - wrong: it is there but does not look like its description
 - flat: it is a plain block or smear instead of a painted object
 - unwanted: people, ${paintedAnimals(brief).length ? 'animals other than the listed ones' : 'animals'}, text, letters or a border that should not be there

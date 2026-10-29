@@ -83,12 +83,18 @@ export async function rigCast(files: WorldFiles, key: string, painting: Buffer) 
     for (const [file, png] of Object.entries(parts)) files.write(files.path('cast', key, file), png);
     rig.check = rig.sheet ? await checkSheet(rig, parts[rig.sheet.file]) : undefined;
     files.write(files.path('cast', key, 'rig.json'), rig);
+    files.write(rigAttemptFile(files, key), { ok: true, reason: issues.length ? issues.join('; ') : null, at: new Date().toISOString() });
     const verdict = rig.check && !rig.check.ok ? ` · walk torn (${rig.check.why}): slides as one piece` : '';
     console.log(`${key}: ${files.path('cast', `${key}.png`)} · walk sheet ${rig.sheet?.frames ?? 0} frames${verdict}${issues.map((i) => ` · ${i}`).join('')}`);
   } catch (error) {
-    console.log(`${key}: ${files.path('cast', `${key}.png`)} · no rig: ${error instanceof Error ? error.message : error}`);
+    const reason = error instanceof Error ? error.message : String(error);
+    // Kept for cast_status (rigIssue): the figure still shows, sliding as one piece, and the person sees why.
+    files.write(rigAttemptFile(files, key), { ok: false, reason, at: new Date().toISOString() });
+    console.log(`${key}: ${files.path('cast', `${key}.png`)} · no rig: ${reason}; moves as one cut-out (cast_animate gives it a 3D model)`);
   }
 }
+
+export const rigAttemptFile = (files: WorldFiles, key: string) => files.path('cast', key, 'rig-attempt.json');
 
 defineCommand({
   name: 'rig',

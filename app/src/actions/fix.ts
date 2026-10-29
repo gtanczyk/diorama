@@ -145,6 +145,19 @@ defineAction({
 });
 
 defineAction({
+  name: 'hero_start_set',
+  description: 'Set where the hero begins in a place (painting pixels, on walkable floor; the nearest roomy cell of the main floor is used): '
+    + 'when the hero starts in front of an NPC or a thing and hides it, or somewhere odd. Kept across rebuilds. No repaint: reruns derive to verify for that place.',
+  input: z.object({ slug: Slug, place: z.string().min(1), at: XY }),
+  job: true,
+  async run({ slug, place, at }, ctx) {
+    return fixPlace(ctx, slug, place, 'derive', 'hero start', (c) => {
+      c.start = at;
+    });
+  },
+});
+
+defineAction({
   name: 'repaint_region',
   description: 'Repaint one region of a place with Muse ("make the lantern brass, not glass"): only that region changes. Costs one Muse edit; '
     + 'reruns paint to verify for that place (masks and walking are measured again).',

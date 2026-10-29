@@ -167,8 +167,14 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer, style
   const find = async (prompt: string) => (await samFind(memo, { label: `rig:${key}:${prompt}`, image: png, prompt })).map((f) => f.mask);
   const [people, arms, boots, legsFound, trousers, heads] = await Promise.all(['person', 'arm', 'boot', 'leg', 'trousers', 'head'].map(find));
   const issues: string[] = [];
-  const person = people.sort((a, b) => maskArea(b) - maskArea(a))[0];
-  if (!person) throw new Error(`${key}: SAM found no person to rig`);
+  // A child's drawing (a mushroom girl, a box-bodied man) is often no "person" to SAM: it is asked as a character next.
+  let person = people.sort((a, b) => maskArea(b) - maskArea(a))[0];
+  for (const prompt of ['cartoon character', 'figure']) {
+    if (person) break;
+    person = (await find(prompt)).sort((a, b) => maskArea(b) - maskArea(a))[0];
+    if (person) issues.push(`found as a ${prompt}, not a person`);
+  }
+  if (!person) throw new Error(`${key}: SAM found no person or character to rig`);
   const { width: W, height: Hh } = person;
   const [px0, top, px1, bottom] = maskBox(person)!;
   const ground = bottom - 1;

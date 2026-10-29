@@ -8,19 +8,21 @@ import { Kind, makeSounds, seedLibrary, SoundManifest } from '../sound/make.ts';
 import { inputHash } from '../meta/memo.ts';
 import { planIssues, SoundPlan, withoutStrayLoops, withoutSilentLoops, writeSoundPlan, type PlaceSources } from '../sound/plan.ts';
 import { creditGuard, soundQuality } from '../sound/cost.ts';
+import { readSoundFixes } from '../sound/fixes.ts';
 import { elevenKey, musicgenPython } from '../sound/sources.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
   name: 'sound',
-  usage: 'sound <slug>             plan and generate ambience, loops, footsteps, one-shots and music [--replan] [--plan-only] [--only bed,loop,step,shot,music] [--music auto|musicgen|eleven] [--draft: shorter loops and cheaper speech; final quality is the default]',
+  usage: 'sound <slug>             plan and generate ambience, loops, footsteps, one-shots and music [--replan] [--plan-only] [--only bed,loop,step,shot,music] [--redo <id,id>: make only these sounds again, with their hints from sound/fixes.json (sound_redo)] [--music auto|musicgen|eleven] [--draft: shorter loops and cheaper speech; final quality is the default]',
   async run(args) {
     // Keep this generation at one quality even if Setup changes while it runs.
     process.env.DIORAMA_SOUND = soundQuality(args);
     const replan = args.includes('--replan');
     const planOnly = args.includes('--plan-only');
     const only = takeOption(args, 'only', '');
+    const redo = takeOption(args, 'redo', '');
     // auto: MusicGen when DIORAMA_PYTHON is set up for it, else ElevenLabs.
     const musicFrom = takeOption(args, 'music', 'auto');
     if (!['auto', 'musicgen', 'eleven'].includes(musicFrom)) throw new Error('--music takes auto, musicgen or eleven');
@@ -65,15 +67,18 @@ defineCommand({
     const manifestFile = files.path('sound', 'sounds.json');
     const made0: SoundManifest = fs.existsSync(manifestFile) ? SoundManifest.parse(files.readJson(manifestFile)) : { sounds: {}, failures: {} };
     const kinds = only ? only.split(',').map((k) => Kind.parse(k.trim())) : undefined;
+    const ids = redo ? redo.split(',').map((id) => id.trim()).filter(Boolean) : undefined;
+    const fixes = readSoundFixes(files);
     const made = await makeSounds(files.memo, plan, (id, mp3) => {
       files.write(files.path('sound', `${id}.mp3`), mp3);
       return `sound/${id}.mp3`;
-    }, { python, only: kinds, log: (line) => console.log(line), old: made0.sounds, have: (e) => fs.existsSync(files.path(e.file)) });
+    }, { python, only: kinds, ids, fixes, log: (line) => console.log(line), old: made0.sounds, failedBefore: made0.failures, have: (e) => fs.existsSync(files.path(e.file)) });
+    const partial = !!(kinds || ids);
     // A partial run keeps what it did not touch.
-    const sounds = { ...(kinds ? made0.sounds : {}), ...made.sounds };
+    const sounds = { ...(partial ? made0.sounds : {}), ...made.sounds };
     // Failed replacements cannot silently retain the rejected prior asset in a partial rebuild.
     for (const id of Object.keys(made.failures)) delete sounds[id];
-    const failures = { ...(kinds && 'failures' in made0 ? made0.failures : {}), ...made.failures };
+    const failures = { ...(partial ? made0.failures : {}), ...made.failures };
     for (const id of Object.keys(made.sounds)) delete failures[id];
     files.write(manifestFile, { sounds, failures });
     for (const [id, e] of Object.entries(sounds)) if (fs.existsSync(files.path(e.file))) seedLibrary(id, e, fs.readFileSync(files.path(e.file)));

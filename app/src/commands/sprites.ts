@@ -4,18 +4,16 @@ import fs from 'node:fs';
 import { gestureIndex } from '../play/gestures.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { planSprites, type CharacterPlan } from '../model/plan.ts';
-import { cutSheet, FACINGS, flatGuide, onGrey, paintSheet, renderGuides, modelSheet, SHEET, TRACED, type Facing } from '../model/sprites.ts';
+import { cutSheet, FACINGS, flatGuide, onGrey, paintSheet, POSE_OK, renderGuides, modelSheet, SHEET, TRACED, type Facing } from '../model/sprites.ts';
 import { animationSettings, animationOptions, saveAnimationSettings, type AnimationSettings } from '../model/animation.ts';
 import { Story } from '../story/schema.ts';
-import { fixedLooks } from '../scene/cast-fixes.ts';
+import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
 import { refitIfOld } from '../model/fit.ts';
 import { modelProblem } from '../model/glb.ts';
 import { castStyle, readStyled } from '../world/styled.ts';
 import { WorldFiles } from '../world/files.ts';
 
 const LEGS_OK = 0.6;
-// Below this mean pose IoU a walk take has frames facing the wrong way or legs that hardly walk.
-const POSE_OK = 0.85;
 // Walk takes painted again at most, while the best one is traced or left the pose.
 const RETAKES = 4;
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
@@ -25,7 +23,7 @@ defineCommand({
   usage: 'sprites <slug> [key]     walk and talk sheets for what the story uses: automatic UV/16 for new textured models, painted/8 fallback (cast/<key>/sprites/; needs `diorama model` first) [--texture model|views] [--coat-correction on|off] [--frames 8|16|32: model texture only; choices persist per character] [--plan: only print what would be drawn] [--take N] [--tries N: up to N takes per walk facing while a frame has its legs wrong]',
   async run(args) {
     const options = animationOptions(takeOption(args, 'texture', ''), takeOption(args, 'frames', ''), takeOption(args, 'coat-correction', ''));
-    const take = Number(takeOption(args, 'take', '0'));
+    const takeArg = takeOption(args, 'take', '');
     const tries = Number(takeOption(args, 'tries', '1'));
     const planOnly = args.includes('--plan');
     const [slug, keyArg] = args.filter((a) => !a.startsWith('--'));
@@ -36,15 +34,17 @@ defineCommand({
     if (!plans.length) throw new Error(keyArg ? `${keyArg} needs no sprites (not the hero, says no lines)` : 'nobody needs sprites');
     const settings = new Map(plans.map((p) => [p.key, animationSettings(files, p.key, options)]));
     if (!planOnly) files.write(files.path('cast', 'sprites-plan.json'), plans);
+    // Whether a usable 3D model is there: a creature without one (flat reconstructions) moves as its cut-out.
+    const modelled = (key: string) => fs.existsSync(files.path('cast', key, 'model', 'model.json')) && !modelProblem(files.path('cast', key, 'model'));
     for (const p of plans) {
       const talk = Object.entries(p.talk).map(([f, g]) => `${f} [${g.join(', ')}]`).join('; ');
-      console.log(p.creature ? `${p.key}: a creature · 0 Muse sheets (its 3D model moves)` : `${p.key}: ${settings.get(p.key)!.texture === 'model' ? `UV ${settings.get(p.key)!.frames} frames` : 'painted 8 frames'} · walk ${p.walk.join(', ') || '-'} · talk ${talk || '-'} · ${settings.get(p.key)!.texture === 'model' ? 0 : p.walk.length + Object.keys(p.talk).length} Muse sheets`);
+      console.log(p.creature ? `${p.key}: a creature · 0 Muse sheets (${modelled(p.key) ? 'its 3D model moves' : 'no usable 3D model: the cut-out moves as one piece'})` : `${p.key}: ${settings.get(p.key)!.texture === 'model' ? `UV ${settings.get(p.key)!.frames} frames` : 'painted 8 frames'} · walk ${p.walk.join(', ') || '-'} · talk ${talk || '-'} · ${settings.get(p.key)!.texture === 'model' ? 0 : p.walk.length + Object.keys(p.talk).length} Muse sheets`);
     }
     if (planOnly) return;
     for (const p of plans) {
       // A creature has no walk or gestures to paint: its 3D model hops, squashes and blinks in the game itself.
       if (p.creature) {
-        console.log(`${p.key}: a creature, no sheets: it moves as its 3D model (diorama model ${slug} ${p.key})`);
+        console.log(modelled(p.key) ? `${p.key}: a creature, no sheets: it moves as its 3D model` : `${p.key}: a creature, no sheets and no usable 3D model: the cut-out moves as one piece (cast_animate, or diorama model ${slug} ${p.key}, tries a model)`);
         continue;
       }
       if (!fs.existsSync(files.path('cast', p.key, 'model', 'model.json'))) {
@@ -58,7 +58,11 @@ defineCommand({
       }
       const selected = settings.get(p.key)!;
       if (selected.texture === 'model') await drawModelCharacter(files, p, selected);
-      else await drawCharacter(files, p, take, tries, selected);
+      else {
+        // The person's sprites_redo rounds (cast/fixes.json) start past the takes painted before, also in a rebuild.
+        const take = takeArg ? Number(takeArg) : (RETAKES + 1) * (readCastFixes(files)[p.key]?.spriteTake ?? 0);
+        await drawCharacter(files, p, take, tries, selected);
+      }
       if (selected.texture === 'model' || Object.keys(options).length || fs.existsSync(files.path('cast', p.key, 'animation.json'))) saveAnimationSettings(files, p.key, selected);
       const modelFile = files.path('cast', p.key, 'model', 'model.json');
       const model = files.readJson(modelFile) as Record<string, unknown>;

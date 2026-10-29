@@ -8,13 +8,16 @@ import { DESIGNED, designDescriptions, needsDesign, stockVoices, voiceCandidates
 import { agentBlocked } from '../studio/locks.ts';
 import { players } from '../world/drawings.ts';
 import { modelProblem } from '../model/glb.ts';
+import { POSE_OK } from '../model/sprites.ts';
 import { readBodies } from '../scene/cast.ts';
 import { WorldFiles } from '../world/files.ts';
+import { liveVoiceFailures } from '../sound/data.ts';
 import { Slug } from '../world/schema.ts';
 import { ActionError, defineAction, type ActionContext } from './registry.ts';
 
 const stamp = (file: string) => (fs.existsSync(file) ? Math.round(fs.statSync(file).mtimeMs) : null);
 const ModelAttempt = z.object({ state: z.enum(['ready', 'fallback', 'failed']), reason: z.string().nullable(), at: z.string() });
+const RigAttempt = z.object({ ok: z.boolean(), reason: z.string().nullable(), at: z.string() });
 
 function pendingModel(ctx: ActionContext, slug: string, key: string) {
   return ctx.jobs.list(slug).find((j) => (j.state === 'queued' || j.state === 'running')
@@ -49,7 +52,9 @@ function prepareFix(ctx: ActionContext, slug: string, key: string, change: (f: C
 defineAction({
   name: 'cast_status',
   reads: true,
-  description: 'Every character of a world (hero and NPCs): how they look (and the person\'s fixes), which parts exist (cut-out figure, rig, 3D model, sprite sheets; modelIssue says why a model is not used, e.g. flat), their voice and how many lines they speak, with a sample.',
+  description: 'Every character of a world (hero and NPCs): how they look (and the person\'s fixes), which parts exist (cut-out figure, rig, 3D model, sprite sheets; '
+    + 'rigIssue says why there is no 2D walk, modelIssue why a model is not used, e.g. flat), how the game moves them (moves: sprites, 3D model, 2D rig or the cut-out sliding as one piece), '
+    + 'their voice and how many lines they speak, with a sample, and voiceFailures for lines the story still has that have no recording.',
   input: z.object({ slug: Slug }),
   async run({ slug }, ctx) {
     const files = new WorldFiles(slug, ctx.root);
@@ -58,6 +63,7 @@ defineAction({
     const voices = fs.existsSync(files.path('voices.json')) ? Voices.safeParse(files.readJson(files.path('voices.json'))) : null;
     const pic = (f: string) => (fs.existsSync(files.path(f)) ? { file: f, v: stamp(files.path(f)) } : null);
     const bodies = readBodies(files, fs.existsSync);
+    const failures = liveVoiceFailures(files);
     const narrator = voices?.success && voices.data.cast.narrator ? [{ key: 'narrator', looks: 'reads the intro and the endings', role: 'narrator' as const, place: null }] : [];
     return [...characters(files), ...narrator].map((c) => {
       const lines = voices?.success ? voices.data.lines.filter((l) => l.speaker === c.key) : [];
@@ -68,6 +74,11 @@ defineAction({
         figure: pic(`cast/${c.key}.png`),
         painting: pic(`cast/${c.key}-painting.png`),
         rig: fs.existsSync(files.path('cast', c.key, 'rig.json')),
+        ...(() => {
+          const file = files.path('cast', c.key, 'rig-attempt.json');
+          const a = fs.existsSync(file) ? RigAttempt.safeParse(files.readJson(file)) : null;
+          return { rigIssue: a?.success && !a.data.ok ? a.data.reason : null };
+        })(),
         // Metres tall and whether upright on two legs; not upright (a creature) moves as one body, no 2D rig or sheets.
         body: bodies[c.key] ?? null,
         ...(() => {
@@ -79,8 +90,18 @@ defineAction({
           const modelIssue = has ? modelProblem(files.path('cast', c.key, 'model')) : modelAttempt?.reason ?? null;
           const pending = pendingModel(ctx, slug, c.key);
           const sprites = !modelIssue && fs.existsSync(files.path('cast', c.key, 'sprites', 'sprites.json'));
+          const rigged = fs.existsSync(files.path('cast', c.key, 'rig.json'));
+          const creature = bodies[c.key]?.upright === false;
+          // What the game does with them, in the order it prefers: the person sees the fallback, not a silent gap.
+          const moves = !fs.existsSync(files.path('cast', `${c.key}.png`)) ? 'not painted: a stand-in'
+            : sprites ? 'walks with painted sprite sheets' : has && !modelIssue ? (creature ? 'moves as its 3D model (hops, breathes, blinks)' : 'walks as its 3D model')
+              : rigged ? 'walks with its 2D rig (the painting bent by its bones)' : 'the cut-out slides as one piece (no rig, no model)';
+          // Walk sheets whose frames left the pose (Muse turned some frames to another facing): the walk stutters there.
+          const sheet = sprites ? z.object({ facings: z.record(z.string(), z.object({ iou: z.array(z.number()).optional() })).optional() }).safeParse(files.readJson(files.path('cast', c.key, 'sprites', 'sprites.json'))) : null;
+          const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+          const spriteIssues = sheet?.success ? Object.entries(sheet.data.facings ?? {}).filter(([, f]) => f.iou?.length && mean(f.iou) < POSE_OK).map(([f, x]) => `walk ${f}: frames left the pose (pose IoU ${mean(x.iou!).toFixed(2)}); sprites_redo paints new takes`) : [];
           return {
-            model: has && !modelIssue, sprites, modelIssue, modelAttempt,
+            model: has && !modelIssue, sprites, modelIssue, modelAttempt, moves, spriteIssues,
             modelJob: pending ? { id: pending.id, state: pending.state } : null,
             // When each was last written, so Studio's preview reloads them after a rebuild.
             stamps: { rig: stamp(files.path('cast', c.key, 'rig.json')), model: has && !modelIssue ? stamp(files.path('cast', c.key, 'model', 'model.json')) : null, sprites: sprites ? stamp(files.path('cast', c.key, 'sprites', 'sprites.json')) : null },
@@ -89,7 +110,7 @@ defineAction({
         voice: voices?.success ? voices.data.cast[c.key] ?? null : null,
         lines: lines.length,
         flagged: lines.filter((l) => l.flags.some((f) => f.startsWith('heard'))).length,
-        voiceFailures: voices?.success ? voices.data.failures.filter((l) => l.speaker === c.key) : [],
+        voiceFailures: failures.filter((l) => l.speaker === c.key),
         voiceWarnings: voices?.success ? voices.data.cast[c.key]?.warnings ?? [] : [],
         sample: lines[0] ? { text: lines[0].text, file: lines[0].file } : null,
       };
@@ -137,6 +158,23 @@ defineAction({
   job: true,
   async run({ slug, key }, ctx) {
     return ctx.jobs.start(slug, ['rig', slug, ...(key ? [key] : [])], key ? `walk ${key}` : 'walk the cast', ctx.by);
+  },
+});
+
+defineAction({
+  name: 'sprites_redo',
+  description: 'Paint a character\'s walk and talk sprite sheets again over their 3D model (new Muse takes, the picture of the character stays): '
+    + 'for cast_status spriteIssues (walk frames that left the pose) or when the person says the walk looks wrong in one direction. '
+    + 'Up to 5 takes per facing, the one that keeps the pose wins; kept across rebuilds. About 2-10 Muse Image calls per facing. Runs as a job; then play_reload.',
+  input: z.object({ slug: Slug, key: z.string().min(1) }),
+  job: true,
+  async run({ slug, key }, ctx) {
+    const files = new WorldFiles(slug, ctx.root);
+    if (!fs.existsSync(files.path('cast', key, 'model', 'model.json')) || modelProblem(files.path('cast', key, 'model'))) {
+      throw new ActionError(409, `${key} has no usable 3D model, so no sheets to paint: cast_animate makes one first`);
+    }
+    const prepare = prepareFix(ctx, slug, key, (f) => void (f.spriteTake = (f.spriteTake ?? 0) + 1));
+    return ctx.jobs.start(slug, ['sprites', slug, key, '--tries', '3'], `sheets ${key}`, ctx.by, prepare);
   },
 });
 

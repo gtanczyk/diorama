@@ -81,6 +81,19 @@ test('Voice Design auditions the actual language and does not select the highest
   expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({ text: sample, voice_description: expect.stringContaining('Native Polish') });
 });
 
+const spokenSample = previewText(['Cześć! Szukam jabłka. Pomożesz mi?']);
+
+test('a busy transcriber does not fail a designed voice: it stays pending, and the paid previews are kept', async () => {
+  vi.mocked(transcribe).mockRejectedValue(new Error('transcribe voice-preview:a: closed 4000 Audio processing backlog too large'));
+  vi.mocked(decode).mockReturnValue(tone(260));
+  const fetch = vi.fn().mockResolvedValue(Response.json({ previews: [{ generated_voice_id: 'kept', language: 'pl', audio_base_64: 'YQ==' }] }));
+  vi.stubGlobal('fetch', fetch);
+  await expect(designVoice(memo, profile, ['Cześć! Szukam jabłka. Pomożesz mi?'])).rejects.toThrow(/validation pending/);
+  vi.mocked(transcribe).mockResolvedValue(spokenSample);
+  expect((await designVoice(memo, profile, ['Cześć! Szukam jabłka. Pomożesz mi?'])).generated).toBe('kept');
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
 test('speech sends dialogue context separately, and only supported models receive language_code', () => {
   const line = { speaker: 'hero', text: 'Pomogę ci!', previousText: 'Zgubiłem jabłko.', nextText: 'Dziękuję!' };
   const final = speechRequest(line, actor(), 'eleven_multilingual_v2', 1);
@@ -145,7 +158,8 @@ test('clipped effects and hissy ambience are rejected before normalisation can h
   const write = vi.fn();
   const shot = await makeSounds(memo, plan('bell'), write, { only: ['shot'] });
   expect(shot.failures['shot-ending']).toContain('clipped');
-  const noise = Float32Array.from({ length: RATE * 2 }, (_, i) => i % 2 ? .1 : -.1);
+  let seed = 7;
+  const noise = Float32Array.from({ length: RATE * 2 }, () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648 - 0.5) * 0.2);
   vi.mocked(decode).mockReturnValue({ left: noise, right: noise.slice() });
   const bed = await makeSounds(memo, { ...plan('bell'), places: { garden: { bed: 'gentle birds', loops: [], floors: {} } } }, write, { only: ['bed'] });
   expect(bed.failures['garden-bed']).toContain('hiss');

@@ -2,7 +2,7 @@
 import sharp from 'sharp';
 import type { Mask } from '../image/mask.ts';
 import { maskBox } from '../image/raster.ts';
-import { silhouette } from './warp.ts';
+import { companions, silhouette } from './warp.ts';
 import type { Memo } from '../meta/memo.ts';
 import { museEdit, musePaint } from '../meta/muse.ts';
 import { askSparkJson } from '../meta/spark.ts';
@@ -28,7 +28,8 @@ export async function cutHero(painting: Buffer, mask: Mask): Promise<Buffer> {
   if (!maskBox(mask)) throw new Error('figure: the mask is empty');
   const { data, info } = await sharp(painting).resize(mask.width, mask.height, { fit: 'fill' }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   // SAM's person leaves out what they hold (a lantern, a net of fish) and leaves holes where it hangs over them.
-  const whole = silhouette(data, mask);
+  // ... and what floats beside them as part of who they are (a heart, the bubble they are in).
+  const whole = companions(data, silhouette(data, mask));
   for (let i = 0; i < whole.bits.length; i++) if (!whole.bits[i]) data[i * info.channels + 3] = 0;
   const [x0, y0, x1, y1] = maskBox(whole)!;
   return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })

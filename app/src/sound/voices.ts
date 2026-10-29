@@ -14,6 +14,7 @@ import { decode, encodeMp3, normalise, pitchHz, pitchShift, audioProblem, RATE, 
 import { checkCredits, FINAL_TTS, lineTakes, noteRefusal, sharedDir, ttsModel } from './cost.ts';
 import { elevenKey } from './sources.ts';
 import { languageKey } from './language.ts';
+import { numberWords, spokenText } from './spoken.ts';
 
 export const VOICE_PIPELINE = 2;
 
@@ -140,11 +141,14 @@ export const needsDesign = (p: Profile) => p.age === 'child' || p.age === 'teen'
  * age in years. Describe a youthful animated performance without forcing a squeak or changing the language.
  */
 export function designDescriptions(p: Profile): string[] {
-  const sound = p.sound.replace(/\b(child(ren)?|kids?|girls?|boys?|little|young(ster)?|tiny|baby|teen(age(r|d)?)?|\d+[- ]?(years?|yo)[- ]?(old)?|year[- ]old|aged? \d+)\b/gi, '')
-    .replace(/\s+/g, ' ').replace(/\s*,\s*(,\s*)+/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '');
+  const sound = p.sound.replace(/\b(child(ren|ish|like)?|kid(s|dy|die)?|girl(s|ish)?|boy(s|ish)?|little|young(ster)?|tiny|baby|teen(age(r|d)?)?|\d+[- ]?(years?|yo)[- ]?(old)?|year[- ]old|aged? \d+)\b/gi, '')
+    .replace(/\s+/g, ' ').replace(/\s*,\s*(,\s*)*/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '');
   const tail = sound ? ` Persona and delivery: ${sound}.` : '';
   const sex = p.gender === 'female' ? 'female' : 'male';
-  const ladder = (base: string, fallback: string) => [base, fallback].map((text) => `Native ${p.language ?? 'English'} speaker. Studio-quality clean recording. ${text}.${tail} Natural conversational intonation, clear diction, comfortable pitch, no forced squeak.`);
+  // The last rung drops the persona: ElevenLabs refuses some words in it (blocked_generation), and a voice of the
+  // right age without the persona is better than none.
+  const ladder = (base: string, fallback: string) => [...[base, fallback].map((text) => `Native ${p.language ?? 'English'} speaker. Studio-quality clean recording. ${text}.${tail} Natural conversational intonation, clear diction, comfortable pitch, no forced squeak.`),
+    `Native ${p.language ?? 'English'} speaker. Studio-quality clean recording. ${fallback}. Natural conversational intonation, clear diction.`];
   if (p.age === 'child') return ladder(`Youthful ${sex} character voice for an animated adventure game, warm and expressive`, `Warm cheerful animated ${sex} voice, clear and expressive`);
   if (p.age === 'teen') return ladder(`Youthful ${sex} character voice for an animated adventure game, not yet adult, light`, `Youthful cheerful cartoon ${sex === 'female' ? 'heroine' : 'hero'} voice, light and eager.`);
   if (p.age === 'old') return ladder(`A very old ${p.gender === 'female' ? 'woman' : 'man'} in their late seventies, aged weathered voice, slower and a little creaky`, `An elderly ${p.gender === 'female' ? 'woman' : 'man'}, aged thin voice, slow.`);
@@ -164,7 +168,7 @@ export function previewText(says: string[]): string {
 
 /** Preview selection checks intelligibility and recording integrity; it does not claim to judge acting. */
 export async function designVoice(memo: Memo, p: Profile, says: string[], description?: string): Promise<NonNullable<Cast[string]['design']>> {
-  const text = previewText(says);
+  const text = spokenText(previewText(says), p.language);
   const tries = [...new Set(description ? [`Native ${p.language ?? 'English'} speaker. ${description}`, ...designDescriptions(p).slice(1)] : designDescriptions(p))];
   let last: unknown;
   for (const d of tries) {
@@ -192,7 +196,7 @@ export async function designVoice(memo: Memo, p: Profile, says: string[], descri
             else throw new Error(`Voice Design validation pending: ${error instanceof Error ? error.message : error}`);
           }
         }
-        const match = heardMatch(text, heard ?? '');
+        const match = spokenMatch(text, heard ?? '', p.language);
         if (!heardOk(text, match)) continue;
         // Pitch is diagnostic only. Highest pitch is not evidence of a convincing character.
         if (!best || match > best.match) best = { generated: v.generated_voice_id, hz: pitchHz(pcm), match };
@@ -210,7 +214,7 @@ export async function designVoice(memo: Memo, p: Profile, says: string[], descri
       last = error;
     }
   }
-  throw new Error(`Voice Design failed quality checks: ${last instanceof Error ? last.message : last}`);
+  throw new Error(`Voice Design failed: ${last instanceof Error ? last.message : last}`);
 }
 
 /** Whether the ElevenLabs account can hold one more voice (a designed voice needs it while its lines are read). */
@@ -405,6 +409,19 @@ export function heardMatch(line: string, heard: string): number {
   return Math.max(0, 1 - prev[b.length] / a.length);
 }
 
+/**
+ * heardMatch on what is said, not what is written: "10+10=20" is compared as "dziesięć plus dziesięć równa się
+ * dwadzieścia", and a transcript that writes digits is read as words too. Numbers must be the same numbers: a take
+ * that says another number than the line fails however close the letters are.
+ */
+export function spokenMatch(line: string, heard: string, language?: string): number {
+  const said = spokenText(line, language);
+  const got = spokenText(heard, language);
+  const want = numberWords(said, language);
+  if (want.length && want.join(' ') !== numberWords(got, language).join(' ')) return Math.min(heardMatch(said, got), 0.5);
+  return heardMatch(said, got);
+}
+
 /** 16-bit mono PCM at 24 kHz, what the transcriber takes. */
 export function pcm24k(pcm: Pcm): Buffer {
   const step = RATE / 24000;
@@ -421,7 +438,8 @@ export function pcm24k(pcm: Pcm): Buffer {
 /** Context stays in API fields, never in the spoken text. Multilingual v2 has no language_code support. */
 export function speechRequest(line: Line, voice: Cast[string], model: string, take: number) {
   const language = languageKey(voice.profile?.language);
-  return { text: line.text, model_id: model,
+  // The actor reads the spoken form: "10+10=20" as words, in the line's language.
+  return { text: spokenText(line.text, voice.profile?.language), model_id: model,
     voice_settings: { stability: voice.stability, similarity_boost: 0.8, style: voice.style, speed: voice.speed ?? 1, use_speaker_boost: true },
     ...(model !== FINAL_TTS && /^[a-z]{2}$/.test(language) && { language_code: language }),
     ...(line.previousText && { previous_text: line.previousText }), ...(line.nextText && { next_text: line.nextText }),
@@ -449,17 +467,18 @@ export const heardOk = (line: string, match: number) => match >= 0.9 || (match >
 /** Reads one line, listens back, and reads it again (up to 3 takes, 2 in draft) until the transcript matches. */
 export async function voiceLine(memo: Memo, line: Line, voice: Cast[string], write: (id: string, mp3: Buffer) => string, designed?: DesignedVoices): Promise<z.infer<typeof VoiceLine>> {
   const id = lineId(line);
+  const spoken = spokenText(line.text, voice.profile?.language);
   let best: { pcm: Pcm; heard: string; match: number; take: number } | undefined;
   const takes = lineTakes();
   for (let take = 1; take <= takes; take++) {
     const pcm = pitchShift(trim(decode(await speak(memo, `${id}-${take}`, line, voice, take, designed)), 0.005), voice.pitch ?? 0);
     if (audioProblem(pcm)) continue;
     const heard = await transcribe(memo, `${id}-${take}`, pcm24k(pcm), 10);
-    const match = heardMatch(line.text, heard);
+    const match = spokenMatch(line.text, heard, voice.profile?.language);
     if (!best || match > best.match) best = { pcm, heard, match, take };
-    if (heardOk(line.text, match)) break;
+    if (heardOk(spoken, match)) break;
   }
-  if (!best || !heardOk(line.text, best.match)) throw new Error(`speech rejected after ${takes} takes: ${best ? `heard ${Math.round(best.match * 100)}% of the line: "${best.heard}"` : 'no clean audible recording'}`);
+  if (!best || !heardOk(spoken, best.match)) throw new Error(`speech rejected after ${takes} takes: ${best ? `heard ${Math.round(best.match * 100)}% of the line: "${best.heard}"` : 'no clean audible recording'}`);
   const flags = best.take > 1 ? [`take ${best.take} used`] : [];
   const pcm = normalise(best!.pcm, -18);
   return { speaker: line.speaker, text: line.text, file: write(id, encodeMp3(pcm, 128)), seconds: Math.round(seconds(pcm) * 100) / 100, heard: best!.heard, match: Math.round(best!.match * 100) / 100, flags };

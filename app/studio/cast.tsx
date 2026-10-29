@@ -11,6 +11,7 @@ type Character = {
   key: string; role: 'hero' | 'npc' | 'player' | 'narrator'; place: string | null; looks: string; looksNow: string;
   fix: { looks?: string; take?: number; voice?: { voice: string } } | null;
   figure: Pic; painting: Pic; rig: boolean; model: boolean; sprites: boolean; modelIssue: string | null;
+  rigIssue?: string | null; spriteIssues?: string[]; moves?: string;
   modelJob: { id: string; state: 'queued' | 'running' } | null;
   modelAttempt: { state: 'ready' | 'fallback' | 'failed'; reason: string | null; at: string } | null;
   body: { height: number; upright: boolean } | null;
@@ -102,7 +103,7 @@ function Card({ slug, c, onError, focused }: { slug: string; c: Character; onErr
   // What the game has of this character, as small signs; each says what it is on hover.
   const parts = ([
     creature && ['paw', 'A creature: moves as one body (hops, squashes, leans), no skeleton'],
-    c.figure && ['figure', 'Figure: painted by Muse Image and cut out by SAM'],
+    c.figure && ['figure', `Figure: painted by Muse Image and cut out by SAM${c.moves ? `. In the game it ${c.moves.replace(/^the /, 'is the ')}` : ''}`],
     c.rig && ['bone', '2D rig: the figure cut into parts that walk; used when there is no 3D model or sprites'],
     c.model && ['cube', '3D model: built by TRELLIS from four painted sides'],
     c.sprites && ['film', 'Sprites: painted walk and talk frames, what the game draws first'],
@@ -117,6 +118,8 @@ function Card({ slug, c, onError, focused }: { slug: string; c: Character; onErr
           <span class="grow" />
           {parts.length > 0 && <span class="has">{parts.map(([sign, what]) => <span class="sign" title={named(what)}><Icon name={sign} /></span>)}</span>}
           {c.modelIssue && <span class="detail">Using 2D: {c.modelIssue}</span>}
+          {c.rigIssue && !c.model && !c.sprites && <span class="detail">No 2D walk: {c.rigIssue}</span>}
+          {!!c.spriteIssues?.length && <button type="button" class="ghost small" disabled={busy} title={named(`${c.spriteIssues.join('; ')}. Muse paints new walk and talk sheets over the 3D model, the character stays as painted. Kept across rebuilds. About 2-10 Muse Image calls per direction`)} onClick={() => act('sprites_redo', {})}>New walk sheets</button>}
           {c.model && c.modelAttempt?.state === 'failed' && <span class="detail">Keeping previous model: {c.modelAttempt.reason}</span>}
           {c.role !== 'narrator' && c.figure && !c.model && <button type="button" class="ghost small" disabled={busy || !!c.modelJob} title={named(`Muse paints ${c.key} from 4 sides and TRELLIS builds a 3D model${creature ? ': no skeleton, in the game it hops, squashes, leans and blinks as one body' : ''}. Animation settings are chosen automatically and kept across rebuilds.`)} onClick={() => act('cast_animate', {})}>{c.modelJob ? c.modelJob.state === 'queued' ? '3D queued…' : 'Building 3D…' : c.modelIssue ? 'Retry 3D' : 'Animate in 3D'}</button>}
           {(c.rig || c.model || c.sprites) && <button type="button" class={`ghost small round${moving ? ' on' : ''}`} aria-label={moving ? 'Close the preview' : 'See it move'} title={moving ? 'Close the preview' : 'See it move: walk, stand and talk as the game draws it. Free'} onClick={() => setMoving(!moving)}>{moving ? '■' : '▶'}</button>}

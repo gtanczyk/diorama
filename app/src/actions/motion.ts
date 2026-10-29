@@ -37,14 +37,22 @@ defineAction({
     let shows: Record<string, unknown> = {};
     try {
       const page = (await browser.newPage({ viewport: { width: 1200, height: 896 } })) as unknown as Shot;
-      await page.goto(`http://localhost:${(server.address() as AddressInfo).port}/?place=${encodeURIComponent(place)}&capture=1&cursor=0&sound=0`);
+      await page.goto(`http://localhost:${(server.address() as AddressInfo).port}/?place=${encodeURIComponent(place)}&capture=1&cursor=0&sound=0&parallax=1`);
       await page.waitForFunction('window.diorama && window.diorama.place', undefined, { timeout: 30000 });
+      // parallax=1: the game as played. Capture mode leaves parallax off by default, and without it the page loads no
+      // backdrop, so no water or mist layer either: every place then read "mist: none" however its fog was painted.
       // The place fades in and the hero lands: let it settle first.
       await page.waitForTimeout(1500);
       // What the game loaded to move here: a 0% with no layer means the layer never reached the game.
       shows = await page.evaluate<Record<string, unknown>>('(() => { const p = window.diorama.place; return { water: p.water ? `flowing ${p.water.flow.join(",") === "0,0" ? "still (swells)" : p.water.flow.join(",")}` : "none", mist: p.mist ? "drifting" : "none", weather: (() => { const w = window.diorama.data && window.diorama.data.places[p.key] && window.diorama.data.places[p.key].weather; return w ? `${w.fall}${w.fall !== "none" ? ` ${w.strength}` : ""}, fog ${w.fog}` : "none"; })() }; })()');
+      // Frames EVERY_MS of game time apart, not wall time: a headless browser draws ~12 frames a second, and capture
+      // mode steps 1/60 s per frame, so 2 s of waiting showed 0.4 s of the game and slow swells or drifting mist
+      // looked still.
       for (let i = 0; i < FRAMES; i++) {
-        if (i) await page.waitForTimeout(EVERY_MS);
+        if (i) {
+          const t = await page.evaluate<number>('window.diorama.time');
+          await page.waitForFunction(`window.diorama.time >= ${t + EVERY_MS / 1000}`, undefined, { timeout: 30000 });
+        }
         frames.push(await page.screenshot({ type: 'png' }));
       }
     } finally {
@@ -90,11 +98,19 @@ defineAction({
       .composite(await Promise.all(picks.map(async (k, i) => ({ input: await sharp(frames[k]).resize(tile, tileH).png().toBuffer(), left: i * tile, top: 0 }))))
       .jpeg({ quality: 72 }).toBuffer();
     fs.writeFileSync(files.path('places', place, 'view-motion.jpg'), whatMoved);
+    // What the game loaded to move by itself: only then is a still frame a fault.
+    const expected = [
+      ...(shows.water && shows.water !== 'none' ? [`water (${shows.water})`] : []),
+      ...(shows.mist && shows.mist !== 'none' ? ['drifting mist'] : []),
+      ...(typeof shows.weather === 'string' && shows.weather !== 'none' && !/^none, fog 0$/.test(shows.weather) ? [`weather (${shows.weather})`] : []),
+    ];
     return {
       place,
       inTheGame: shows,
       moved: `${total}% of the picture changed over ${(FRAMES - 1) * EVERY_MS / 1000} s`,
-      ...(total < 1 && { note: 'almost nothing moves: a flow, fog or animation set for this place is not showing (inTheGame says which layers the game loaded)' }),
+      ...(total < 1 && { note: expected.length
+        ? `almost nothing moves, though the game loaded ${expected.join(', ')}: that motion is not showing`
+        : 'nothing here is set to move by itself (no water, mist, weather or fog): a still frame while the hero stands is expected, not a fault. The place still moves with the camera and the hero as it is played.' }),
       things,
       picture: `places/${place}/view-motion.jpg`,
       images: [{ mimeType: 'image/jpeg', data: whatMoved.toString('base64') }, { mimeType: 'image/jpeg', data: strip.toString('base64') }],

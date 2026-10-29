@@ -10,6 +10,7 @@ import path from 'node:path';
 export type ModelName = 'spark' | 'muse' | 'sam' | 'sound' | 'music' | 'voice' | 'space';
 
 const SHARED = new Set<ModelName>(['sound', 'music', 'voice']);
+const sharedFile = (model: ModelName, hash: string, ext: string) => path.join(process.env.DIORAMA_CACHE || path.join(os.homedir(), '.cache', 'diorama'), 'memo', model, `${hash}.${ext}`);
 
 export function inputHash(...parts: (string | Buffer)[]): string {
   const h = createHash('sha256');
@@ -29,7 +30,7 @@ export class Memo {
   async remember(model: ModelName, label: string, hash: string, ext: string, ask: () => Promise<Buffer | Paid>): Promise<Buffer> {
     const file = path.join(this.dir, model, `${hash}.${ext}`);
     // Paid audio is also kept for every world on this machine: another world asking the same pays nothing.
-    const shared = SHARED.has(model) ? path.join(process.env.DIORAMA_CACHE || path.join(os.homedir(), '.cache', 'diorama'), 'memo', model, `${hash}.${ext}`) : undefined;
+    const shared = SHARED.has(model) ? sharedFile(model, hash, ext) : undefined;
     for (const f of [file, shared]) {
       if (!f || !fs.existsSync(f)) continue;
       this.log({ model, label, hash, ms: 0, hit: true });
@@ -48,12 +49,16 @@ export class Memo {
 
   /** Whether an answer is kept, here or in the cache every world shares. */
   has(model: ModelName, hash: string, ext: string): boolean {
-    return fs.existsSync(path.join(this.dir, model, `${hash}.${ext}`)) || (SHARED.has(model) && fs.existsSync(path.join(process.env.DIORAMA_CACHE || path.join(os.homedir(), '.cache', 'diorama'), 'memo', model, `${hash}.${ext}`)));
+    return fs.existsSync(path.join(this.dir, model, `${hash}.${ext}`)) || (SHARED.has(model) && fs.existsSync(sharedFile(model, hash, ext)));
   }
 
-  /** Forgets one answer, e.g. a reply that failed its gate and must be asked again. */
+  /**
+   * Forgets one answer, e.g. a reply that failed its gate and must be asked again. Also the copy every world shares:
+   * left there, the next run would read the rejected take back from it and never ask again.
+   */
   forget(model: ModelName, hash: string, ext: string) {
     fs.rmSync(path.join(this.dir, model, `${hash}.${ext}`), { force: true });
+    if (SHARED.has(model)) fs.rmSync(sharedFile(model, hash, ext), { force: true });
   }
 
   private log(entry: { model: ModelName; label: string; hash: string; ms: number; hit: boolean; usd?: number; via?: string }) {

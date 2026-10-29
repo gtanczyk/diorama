@@ -5,7 +5,7 @@ import { inputHash } from '../meta/memo.ts';
 import { defineCommand } from '../registry.ts';
 import { creditGuard, soundQuality } from '../sound/cost.ts';
 import { elevenKey } from '../sound/sources.ts';
-import { castVoices, DESIGNED, freeVoiceSlot, voiceCandidates, DesignedVoices, designDescriptions, designVoice, needsDesign, stockVoices, storyLines, voiceLine, Voices, VOICE_PIPELINE, type Cast } from '../sound/voices.ts';
+import { castVoices, DESIGNED, PENDING_DESIGN, freeVoiceSlot, voiceCandidates, DesignedVoices, designDescriptions, designVoice, needsDesign, stockVoices, storyLines, voiceLine, Voices, VOICE_PIPELINE, type Cast } from '../sound/voices.ts';
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
@@ -96,6 +96,13 @@ defineCommand({
       await designed.close();
     }
     async function read(i: number) {
+      // A child, teen or old speaker whose designed voice is not made yet waits: no stock adult reads for them, and
+      // no request goes out with a voice id that does not exist.
+      const voice = cast[lines[i].speaker];
+      if (voice.voice === PENDING_DESIGN) {
+        failures.push({ speaker: lines[i].speaker, text: lines[i].text, reason: `waiting for a designed voice: ${voice.pending ?? 'Voice Design pending'}` });
+        return;
+      }
       try {
         done[i] = await voiceLine(files.memo, lines[i], cast[lines[i].speaker], (id, mp3) => {
           files.write(files.path('sound', 'voice', `${id}.mp3`), mp3);

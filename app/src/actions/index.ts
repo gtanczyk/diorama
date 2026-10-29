@@ -20,3 +20,4 @@ import './extend.ts';
 import './share.ts';
 import './pictures.ts';
 import './start.ts';
+import './sound.ts';

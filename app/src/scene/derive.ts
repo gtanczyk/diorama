@@ -3,7 +3,7 @@
 // standing thing, minus each standing thing's footprint. Then the grid is joined up, the hero's
 // size is measured, and every thing gets a spot to stand at.
 import { emptyMask, maskArea, type Mask } from '../image/mask.ts';
-import { dilate, maskBox, polygonMask, subtract, union, unionAll } from '../image/raster.ts';
+import { dilate, maskBox, polygonMask, rectMask, subtract, union, unionAll } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import type { Geometry } from '../play/geometry.ts';
 import type { Place } from '../world/schema.ts';
@@ -24,7 +24,9 @@ export type ThingIn = { key: string; kind: Kind; phrase?: string; source: MaskSo
  * carry: after a small repaint, each question whose region the change does not reach is asked about the old painting; lastScale: the scale it had.
  * previousScale: the scale the place had before this run, whatever ran; kept when Spark cannot be asked now.
  */
-export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors: Mask[]; painting: Buffer; plates?: string[]; carry?: Carry; lastScale?: Scale; previousScale?: Scale };
+export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors: Mask[]; painting: Buffer; plates?: string[]; carry?: Carry; lastScale?: Scale; previousScale?: Scale;
+  /** Where the person wants the hero to begin (hero_start_set): the nearest roomy cell of the main floor. */
+  start?: [number, number] };
 export type Derived = { geometry: Geometry; grid: Grid; blobs: Blob[]; footprint: Mask; probes: Sample[]; shadows: Shadows };
 
 const { width: W, height: H } = FRAME;
@@ -154,7 +156,11 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   };
   // The start is clear of every thing (by about a hero's width), so nobody begins standing in a lamp.
   // Walk-on and flat things (a jetty, a rug) are floor: near them is fine.
-  const nearThings = dilate(unionAll(W, H, things.filter((t) => t.kind !== 'walk-on' && t.kind !== 'flat').map((t) => t.mask)), 24);
+  // NPCs are drawn by the game, not painted, so they have no mask: the ground just in front of one is kept clear
+  // too, or the hero starts standing over them and hides them in the first frame.
+  const npcZones = layout.things.filter((l) => role.get(l.key) === 'npc' && !things.some((t) => t.key === l.key))
+    .map((l) => rectMask(W, H, [Math.round(l.x - l.width / 2 - 60), Math.round(l.footY - l.height), Math.round(l.x + l.width / 2 + 60), Math.round(l.footY + 0.6 * l.height)]));
+  const nearThings = union(dilate(unionAll(W, H, things.filter((t) => t.kind !== 'walk-on' && t.kind !== 'flat').map((t) => t.mask)), 24), unionAll(W, H, npcZones));
   // The start is on the biggest stretch of floor, as near the front middle as it can be: a strip of
   // quay cut off by the river is not where the game begins.
   const startOf = (): number | undefined => {
@@ -165,7 +171,8 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     const biggest = islands(grid, clear).sort((a, b) => b.length - a.length)[0] ?? [];
     const main = new Uint8Array(clear.length);
     biggest.forEach((i) => (main[i] = 1));
-    return nearestRoomy(grid, W / 2, H - 40, main) ?? nearestRoomy(grid, W / 2, H - 40, clear) ?? nearestRoomy(grid, W / 2, H - 40);
+    const [sx, sy] = input.start ?? [W / 2, H - 40];
+    return nearestRoomy(grid, sx, sy, main) ?? nearestRoomy(grid, sx, sy, clear) ?? nearestRoomy(grid, sx, sy);
   };
   let startCell = startOf();
   if (startCell === undefined) throw new Error(`${place.key}: no walkable floor at all`);

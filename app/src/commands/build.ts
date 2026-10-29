@@ -15,6 +15,7 @@ import { toldFiles } from '../world/told.ts';
 import { NEEDS, needs, PLACE_STEPS, STEPS, type Step } from '../world/schedule.ts';
 import { itemSources } from '../scene/icons.ts';
 import { Story } from '../story/schema.ts';
+import { assetReport } from '../scene/assets.ts';
 
 export { PLACE_STEPS, STEPS } from '../world/schedule.ts';
 
@@ -280,6 +281,13 @@ defineCommand({
         for (const f of r.flagged) console.log(`  flag   ${f}`);
       }
       if (report.some((r) => !r.ok)) process.exitCode = 1;
+    }
+    // The cast and the sound, which verify does not look at: a character with no walk, a sound that stayed silent.
+    if (['cast', 'model', 'sprites', 'sound', 'voices'].some((s) => run(s as Step))) {
+      try {
+        const assets = assetReport(files);
+        if (assets.length) console.log(`\n# made\n${assets.map((l) => `  ${l}`).join('\n')}`);
+      } catch { /* a report only */ }
     }
 
     /**

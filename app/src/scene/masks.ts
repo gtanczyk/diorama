@@ -247,7 +247,10 @@ export function reachesEdge(found: Rect, asked: Rect): boolean {
  */
 async function wholeThings(memo: Memo, place: Place, painting: Buffer, masked: Array<ThingMask & { prior?: Rect }>, log: (line: string) => void): Promise<ThingMask[]> {
   const out: ThingMask[] = masked.map(({ prior: _, ...t }) => t);
-  let asked = masked.filter((t) => t.source === 'sam-text' && t.kind !== 'walk-on' && t.kind !== 'flat').map((t) => ({ key: t.key, box: wholeBox(t.box, t.prior) }));
+  // A way out set in a wall (a door, an arch, a gate) has nothing in or on it: SAM by its grown box finds the house
+  // around it, and the door, joined with part of the house, then reads far taller than a person can pass.
+  const opening = (t: ThingMask) => t.kind === 'wall' && place.things.find((p) => p.key === t.key)?.role === 'exit';
+  let asked = masked.filter((t) => t.source === 'sam-text' && t.kind !== 'walk-on' && t.kind !== 'flat' && !opening(t)).map((t) => ({ key: t.key, box: wholeBox(t.box, t.prior) }));
   for (let round = 0; round < 2 && asked.length; round++) {
     const boxed = await samBoxes(memo, `mask-whole${round ? round + 1 : ''}:${place.key}`, painting, asked.map((a) => a.box));
     const again: typeof asked = [];

@@ -3,7 +3,7 @@
 // with the legs instead of tearing, and a leg never comes off its trousers. The walk is drawn here once into a
 // sheet of frames (and the untouched painting as the standing frame); the runtime only plays the cells.
 import sharp from 'sharp';
-import { emptyMask, type Mask } from '../image/mask.ts';
+import { emptyMask, maskArea, type Mask } from '../image/mask.ts';
 import { components, dilate, maskBox } from '../image/raster.ts';
 import { swingPose, type PartName, type PartPose, type Pose, type Rig } from '../play/rig.ts';
 
@@ -306,6 +306,37 @@ export function silhouette(rgba: Buffer, person: Mask, tolerance = 64): Mask {
     else c.bits.forEach((b, i) => b && rim.bits[i] && (out.bits[i] = 1));
   }
   return fillHoles(out);
+}
+
+/**
+ * What floats around a figure as part of who they are (a heart beside them, the bubble they sit in, a halo): ink on
+ * the plain ground near the figure that does not touch it, so silhouette leaves it out. A figure is painted alone on
+ * plain grey, so a sizeable mark close by is theirs (a heart 10%+ of the figure, a bubble's rings 25%); watercolour splashes
+ * around the figure (1-2%) are not. Added as drawn, holes not filled: a bubble's
+ * outline comes along, not the grey inside it.
+ */
+export function companions(rgba: Buffer, figure: Mask, tolerance = 64): Mask {
+  const { width: W, height: H } = figure;
+  const box = maskBox(figure);
+  if (!box) return figure;
+  const border: number[][] = [];
+  for (let x = 0; x < W; x += 4) for (const y of [0, H - 1]) border.push([...rgba.subarray((y * W + x) * 4, (y * W + x) * 4 + 3)]);
+  for (let y = 0; y < H; y += 4) for (const x of [0, W - 1]) border.push([...rgba.subarray((y * W + x) * 4, (y * W + x) * 4 + 3)]);
+  const ground = [0, 1, 2].map((c) => border.map((p) => p[c]).sort((a, b) => a - b)[border.length >> 1]);
+  const ink = emptyMask(W, H);
+  for (let i = 0; i < W * H; i++) ink.bits[i] = !figure.bits[i] && Math.hypot(rgba[i * 4] - ground[0], rgba[i * 4 + 1] - ground[1], rgba[i * 4 + 2] - ground[2]) > tolerance ? 1 : 0;
+  const [x0, y0, x1, y1] = box;
+  const reach = 0.35 * (y1 - y0);
+  const area = maskArea(figure);
+  const out = { width: W, height: H, bits: figure.bits.slice() };
+  for (const c of components(ink)) {
+    const b = maskBox(c)!;
+    const near = b[0] < x1 + reach && b[2] > x0 - reach && b[1] < y1 + reach && b[3] > y0 - reach;
+    // Not the picture's frame or a strip along its edge: that is the painting, not the figure.
+    const edge = b[0] <= 1 || b[1] <= 1 || b[2] >= W - 1 || b[3] >= H - 1;
+    if (near && !edge && maskArea(c) >= 0.04 * area) c.bits.forEach((v, i) => v && (out.bits[i] = 1));
+  }
+  return out;
 }
 
 /** The mask with every gap it closes round (not reaching the picture's edge) filled. */

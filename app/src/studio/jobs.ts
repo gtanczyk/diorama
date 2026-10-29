@@ -18,7 +18,10 @@ export type Job = {
   queuedAt: string;
   startedAt?: string;
   endedAt?: string;
+  /** The steps running now, joined ("model + verify"): a build runs independent steps side by side. */
   step?: string;
+  /** Each step running now, in the order it started. */
+  steps?: string[];
   error?: string;
   /** A queued addition reserves its key before its source correction is applied. */
   addedThing?: { place: string; key: string };
@@ -156,7 +159,12 @@ export class Jobs {
     if (line.startsWith('@@diorama ')) {
       try {
         const { type, ...data } = JSON.parse(line.slice('@@diorama '.length)) as { type: string };
-        if (type === 'step.start') job.step = (data as { step?: string }).step;
+        const step = (data as { step?: string }).step;
+        if (step && type === 'step.start') job.steps = [...(job.steps ?? []).filter((s) => s !== step), step];
+        if (step && (type === 'step.end' || type === 'step.fail')) job.steps = (job.steps ?? []).filter((s) => s !== step);
+        // A failed step stays shown, so the job says where it broke; a finished one leaves the steps still running.
+        if (step && type === 'step.fail') job.step = step;
+        else if (type === 'step.start' || (type === 'step.end' && job.steps?.length)) job.step = job.steps!.join(' + ');
         if (type === 'step.fail') job.error = String((data as { error?: unknown }).error ?? '');
         if (type === 'place.verdict') {
           const v = data as { place: string; ok: boolean; errors?: string[] };

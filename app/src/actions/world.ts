@@ -7,7 +7,8 @@ import { currentVerdict } from '../scene/status.ts';
 import type { Verdict } from '../scene/verify.ts';
 import { readCorrections } from '../scene/corrections.ts';
 import { placeTrouble } from '../studio/trouble.ts';
-import { withThingEdits } from '../world/files.ts';
+import { withThingEdits, WorldFiles } from '../world/files.ts';
+import { liveVoiceFailures } from '../sound/data.ts';
 import { Slug, World } from '../world/schema.ts';
 import { storyNeeds } from '../story/check.ts';
 import { ActionError, defineAction } from './registry.ts';
@@ -152,15 +153,16 @@ defineAction({
       typical: typicalSeconds(ctx.root),
       calls: callCounts(dir),
       jobs: ctx.jobs.list(slug).slice(-10),
-      audioMisses: audioMisses(dir),
+      audioMisses: audioMisses(ctx.root, slug, dir),
     };
   },
 });
 
 /** Sounds and spoken lines the last run could not make: the game plays without them, Studio offers a retry. */
-function audioMisses(dir: string) {
+function audioMisses(root: string, slug: string, dir: string) {
   const sounds = readJson<{ failures?: Record<string, string> }>(path.join(dir, 'sound', 'sounds.json'))?.failures ?? {};
-  const lines = readJson<{ failures?: Array<{ speaker: string; text: string; reason: string }> }>(path.join(dir, 'voices.json'))?.failures ?? [];
+  // Only lines the story still says: a rewritten line's old failure is history.
+  const lines = fs.existsSync(path.join(dir, 'world.json')) ? liveVoiceFailures(new WorldFiles(slug, root)) : [];
   return { sounds: Object.entries(sounds).map(([id, reason]) => ({ id, reason })), lines };
 }
 

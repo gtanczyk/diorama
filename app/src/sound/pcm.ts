@@ -122,7 +122,9 @@ export function loopProblem(pcm: Pcm, opts: { beats?: boolean } = {}): string | 
   const env = envelope(pcm, 100);
   if (env.length < 10) return 'shorter than a second';
   const median = quantile(env, 0.5);
-  if (Math.max(...env) < 0.003) return 'nearly silent';
+  // ElevenLabs makes a room hum or distant birds at -50..-65 dBFS; levelling raises them to the bed's loudness, so only
+  // takes with nothing in them fail here (a classroom hum peaking at 0.002 was a usable bed, not silence).
+  if (Math.max(...env) < 0.0005) return 'nearly silent';
   // A thing's own loop may be a beat (a clock ticking, a drip, a blinker): even events with quiet between are its sound.
   if (opts.beats && regularBeats(pcm)) return undefined;
   // Most of the take far under its loudest moments: an event in silence, not a bed.
@@ -166,6 +168,35 @@ export function hiss(pcm: Pcm): number {
     d += (x - y) ** 2;
   }
   return e > 0 ? d / e : 0;
+}
+
+/**
+ * How much of the sound's high end is tones rather than noise: the share of loud 12 ms frames whose sample-to-sample
+ * change repeats itself (autocorrelation over 2-80 samples above 0.5). Crickets, birdsong and a whistle are tones and
+ * score high; hiss, air and rustle have no period and score near 0. `hiss` alone cannot tell them apart: a cricket
+ * at 4.5 kHz changes from sample to sample as much as white noise does.
+ */
+export function tonalShare(pcm: Pcm): number {
+  const N = 512;
+  const frames: Array<{ e: number; tonal: boolean }> = [];
+  for (let at = 1; at + N <= pcm.left.length; at += N) {
+    const d = new Float32Array(N);
+    for (let i = 0; i < N; i++) d[i] = (pcm.left[at + i] + pcm.right[at + i] - pcm.left[at + i - 1] - pcm.right[at + i - 1]) / 2;
+    let e = 0;
+    for (const v of d) e += v * v;
+    if (e <= 0) continue;
+    let best = 0;
+    for (let lag = 2; lag <= 80; lag++) {
+      let r = 0;
+      for (let i = lag; i < N; i++) r += d[i] * d[i - lag];
+      best = Math.max(best, r / e);
+    }
+    frames.push({ e, tonal: best > 0.5 });
+  }
+  if (!frames.length) return 0;
+  // Only frames that carry the sound count: the quiet gaps between chirps are noise floor.
+  const loud = frames.filter((f) => f.e >= frames.map((x) => x.e).sort((a, b) => a - b)[Math.floor(frames.length / 2)]);
+  return loud.filter((f) => f.tonal).length / loud.length;
 }
 
 /** Takes off what is above `hz`: two passes of a one-pole low-pass, each way. */

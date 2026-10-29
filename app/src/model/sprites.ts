@@ -17,6 +17,9 @@ import { components, dilate, maskBox, maskIou } from '../image/raster.ts';
 const WEB = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../web');
 
 /** The five facings drawn; the three facing left are these mirrored. yaw 0 faces the viewer, PI/2 screen right. */
+
+/** Below this mean pose IoU a walk take has frames facing the wrong way or legs that hardly walk. */
+export const POSE_OK = 0.85;
 export const FACINGS = { front: 0, 'front-right': Math.PI / 4, right: Math.PI / 2, 'back-right': (3 * Math.PI) / 4, back: Math.PI } as const;
 export type Facing = keyof typeof FACINGS;
 

@@ -5,9 +5,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { inputHash, type Memo } from '../meta/memo.ts';
 import { sharedDir, soundQuality } from './cost.ts';
-import { audioProblem, decode, encodeMp3, hiss, loopProblem, normalise, seamless, seconds, steps, trim, type Pcm } from './pcm.ts';
+import { audioProblem, decode, encodeMp3, hiss, loopProblem, tonalShare, normalise, seamless, seconds, steps, trim, type Pcm } from './pcm.ts';
 import { soundIds, type SoundPlan } from './plan.ts';
 import { elevenKey, elevenMusic, forgetEffect, musicgen, MUSICGEN_MODEL, soundEffect, type EffectAsk } from './sources.ts';
+import type { SoundFixes } from './fixes.ts';
 
 export const Kind = z.enum(['music', 'bed', 'loop', 'step', 'shot']);
 export type Kind = z.infer<typeof Kind>;
@@ -40,7 +41,17 @@ export const MIX = 3;
 export const AUDIO_VALIDATION = 1;
 /** Above this a bed or loop is mostly hiss (energy of the sample-to-sample change over the energy: white noise is 2, music 0.06). */
 export const HISS = 0.4;
-const NO_HISS = '. Not wind, not rustling, no hiss or air noise: soft distant life and warm low tones, gentle and quiet';
+const NO_HISS = '. Not wind, not rustling, no hiss or air noise: soft distant life and warm low tones';
+/** Mostly hiss: high-frequency energy that is noise. Crickets, birdsong and other tones are not hiss, however bright. */
+export const hissy = (pcm: Pcm) => hiss(pcm) > HISS && tonalShare(pcm) < 0.3;
+/**
+ * What the next take asks for, from what was wrong with the last one: only a hissy take is asked for no hiss. Asking
+ * a quiet one to be "gentle and quiet" (or even "clearly audible": the level does not follow the words) does not help.
+ */
+export function retakePrompt(prompt: string, take: number, problem: string): string {
+  if (take === 1) return prompt;
+  return prompt + STEADY + (/hiss/.test(problem) ? NO_HISS : '');
+}
 const LENGTH: Record<Exclude<Kind, 'shot'>, number> = { music: 30, bed: 20, loop: 10, step: 6 };
 /** Draft lengths: ElevenLabs bills effects by the second, and a seamless loop repeats fine at half the length. */
 const DRAFT: Record<Exclude<Kind, 'shot'>, number> = { music: 30, bed: 10, loop: 6, step: 4 };
@@ -74,9 +85,18 @@ function toLibrary(id: string, made: Made) {
 }
 const STEADY = ', continuous and steady throughout, no single standout events, no silence, seamless loop';
 
-export type Job = { id: string; kind: Kind; prompt: string; seconds: number; level: number };
+/** `retake`: rounds of takes asked for again (sound_redo); each round asks for new takes instead of replaying cached ones. */
+export type Job = { id: string; kind: Kind; prompt: string; seconds: number; level: number; retake?: number };
 
-export function jobsOf(plan: SoundPlan): Job[] {
+/** The sounds a plan asks for, with the person's hints (sound/fixes.json) added to their prompts. */
+export function jobsOf(plan: SoundPlan, fixes: SoundFixes = {}): Job[] {
+  return planJobs(plan).map((j) => {
+    const fix = fixes[j.id];
+    return fix ? { ...j, ...(fix.hint && { prompt: `${j.prompt}. ${fix.hint}` }), ...(fix.take && { retake: fix.take }) } : j;
+  });
+}
+
+function planJobs(plan: SoundPlan): Job[] {
   const jobs: Job[] = [{ id: soundIds.music(), kind: 'music', prompt: plan.music.prompt, seconds: length('music'), level: 2 }];
   for (const [place, p] of Object.entries(plan.places)) {
     jobs.push({ id: soundIds.bed(place), kind: 'bed', prompt: p.bed, seconds: length('bed'), level: 2 });
@@ -110,11 +130,12 @@ async function makeOne(memo: Memo, job: Job, music: { python?: string }): Promis
 
   if (job.kind === 'bed' || job.kind === 'loop') {
     let problem = '';
+    const round = 3 * (job.retake ?? 0);
     for (let take = 1; take <= 3; take++) {
-      const prompt = job.prompt + (take > 1 ? STEADY : '') + (take > 2 ? NO_HISS : '');
-      const ask: EffectAsk = { label: `${job.id}-${take}`, prompt, seconds: job.seconds, loop: true, take };
+      const prompt = retakePrompt(job.prompt, take, problem);
+      const ask: EffectAsk = { label: `${job.id}-${round + take}`, prompt, seconds: job.seconds, loop: true, take: round + take };
       const pcm = decode(await soundEffect(memo, ask));
-      problem = audioProblem(pcm) ?? loopProblem(pcm, { beats: job.kind === 'loop' }) ?? (hiss(pcm) > HISS ? 'mostly hiss' : '');
+      problem = audioProblem(pcm) ?? loopProblem(pcm, { beats: job.kind === 'loop' }) ?? (hissy(pcm) ? 'mostly hiss' : '');
       if (problem) forgetEffect(memo, ask);
       if (!problem) return entry(normalise(seamless(pcm, job.kind === 'bed' ? 1.5 : 0.8), TARGET_DB[job.kind]), 'elevenlabs', { mix: MIX });
     }
@@ -122,10 +143,11 @@ async function makeOne(memo: Memo, job: Job, music: { python?: string }): Promis
   }
 
   if (job.kind === 'step') {
-    let pcm = decode(await soundEffect(memo, { label: job.id, prompt: job.prompt, seconds: job.seconds, loop: false }));
+    const round = 2 * (job.retake ?? 0);
+    let pcm = decode(await soundEffect(memo, { label: job.id, prompt: job.prompt, seconds: job.seconds, loop: false, ...(round ? { take: round + 1 } : {}) }));
     let slices = audioProblem(pcm) ? [] : steps(pcm);
     if (slices.length < 3) {
-      const retry = decode(await soundEffect(memo, { label: `${job.id}-2`, prompt: `${job.prompt}, clearly separated single footsteps with short pauses`, seconds: job.seconds, loop: false, take: 2 }));
+      const retry = decode(await soundEffect(memo, { label: `${job.id}-${round + 2}`, prompt: `${job.prompt}, clearly separated single footsteps with short pauses`, seconds: job.seconds, loop: false, take: round + 2 }));
       const again = audioProblem(retry) ? [] : steps(retry);
       flags.push(`first take had ${slices.length} separate steps${again.length > slices.length ? ', second take used' : ''}`);
       if (again.length > slices.length) [pcm, slices] = [retry, again];
@@ -138,7 +160,8 @@ async function makeOne(memo: Memo, job: Job, music: { python?: string }): Promis
 
   let problem = '';
   for (let take = 1; take <= 2; take++) {
-    const ask: EffectAsk = { label: `${job.id}-${take}`, prompt: job.prompt, seconds: job.seconds, loop: false, take };
+    const t = 2 * (job.retake ?? 0) + take;
+    const ask: EffectAsk = { label: `${job.id}-${t}`, prompt: job.prompt, seconds: job.seconds, loop: false, take: t };
     const pcm = trim(decode(await soundEffect(memo, ask)));
     problem = audioProblem(pcm) ?? '';
     if (problem) forgetEffect(memo, ask);
@@ -164,17 +187,21 @@ async function pool<T, R>(items: T[], size: number, run: (item: T) => Promise<R>
  * Makes the plan's sounds. A sound the world already has (same id, kind and prompt, file present, at least this
  * quality) is kept as it is: a rebuild pays only for what the plan changed.
  */
-export async function makeSounds(memo: Memo, plan: SoundPlan, write: (id: string, mp3: Buffer) => string, opts: { python?: string; only?: Kind[]; log?: (line: string) => void; have?: (entry: SoundEntry) => boolean; old?: Record<string, SoundEntry> }): Promise<SoundManifest> {
+export async function makeSounds(memo: Memo, plan: SoundPlan, write: (id: string, mp3: Buffer) => string, opts: { python?: string; only?: Kind[]; ids?: string[]; fixes?: SoundFixes; log?: (line: string) => void; have?: (entry: SoundEntry) => boolean; old?: Record<string, SoundEntry>; failedBefore?: Record<string, string> }): Promise<SoundManifest> {
   if (!elevenKey()) throw new Error('no ElevenLabs key: set ELEVENLABS_API_KEY to generate sounds (the plan is written without it)');
   const sounds: Record<string, SoundEntry> = {};
   const failures: Record<string, string> = {};
-  const jobs = jobsOf(plan).filter((j) => !opts.only || opts.only.includes(j.kind)).filter((j) => {
+  const jobs = jobsOf(plan, opts.fixes).filter((j) => (!opts.only || opts.only.includes(j.kind)) && (!opts.ids || opts.ids.includes(j.id))).filter((j) => {
     const old = opts.old?.[j.id];
-    const keep = old && old.validation === AUDIO_VALIDATION && old.kind === j.kind && old.prompt === j.prompt && (old.quality === 'final' || soundQuality() === 'draft') && ((j.kind !== 'bed' && j.kind !== 'loop') || (old.mix ?? 0) >= MIX) && opts.have?.(old);
+    // A sound asked for by id (sound_redo) is made again even when its prompt did not change.
+    const keep = !opts.ids && old && old.validation === AUDIO_VALIDATION && old.kind === j.kind && old.prompt === j.prompt && (old.quality === 'final' || soundQuality() === 'draft') && ((j.kind !== 'bed' && j.kind !== 'loop') || (old.mix ?? 0) >= MIX) && opts.have?.(old);
     if (keep) sounds[j.id] = old;
     return !keep;
   });
   if (Object.keys(sounds).length) opts.log?.(`  ${Object.keys(sounds).length} sounds kept from the last run (prompt unchanged)`);
+  // Rejected last time: say so, since this run asks for new takes (the rejected ones were forgotten) and pays again.
+  const again = jobs.filter((j) => opts.failedBefore?.[j.id]);
+  if (again.length) opts.log?.(`  ${again.length} sounds rejected last time, asked for new takes: ${again.map((j) => `${j.id} (${opts.failedBefore![j.id]})`).join('; ')}`);
   await pool(jobs, 3, async (job) => {
     try {
       const made = fromLibrary(job) ?? (await makeOne(memo, job, { python: opts.python }));

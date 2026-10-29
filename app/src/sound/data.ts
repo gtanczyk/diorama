@@ -6,7 +6,28 @@ import type { WorldFiles } from '../world/files.ts';
 import { SoundManifest } from './make.ts';
 import { SoundPlan, soundIds } from './plan.ts';
 import { jobsOf } from './make.ts';
-import { Voices } from './voices.ts';
+import { readSoundFixes } from './fixes.ts';
+import { storyLines, Voices } from './voices.ts';
+import { Story } from '../story/schema.ts';
+
+/**
+ * The spoken lines the last voices run could not make that the story still has. A line rewritten since (story_text)
+ * is history, not a missing recording: story_status unvoiced lists the new wording until voices runs again.
+ */
+export function liveVoiceFailures(files: WorldFiles): Voices['failures'] {
+  const voicesFile = files.path('voices.json');
+  if (!fs.existsSync(voicesFile)) return [];
+  const voices = Voices.safeParse(files.readJson(voicesFile));
+  if (!voices.success) return [];
+  try {
+    const world = files.world();
+    const story = Story.parse(files.readJson(files.path('story.json')));
+    const live = new Set(storyLines(world, story, true).map((l) => JSON.stringify([l.speaker, l.text])));
+    return voices.data.failures.filter((f) => live.has(JSON.stringify([f.speaker, f.text])));
+  } catch {
+    return voices.data.failures;
+  }
+}
 
 export function soundData(files: WorldFiles): SoundData | undefined {
   const sound = effects(files);
@@ -30,7 +51,7 @@ function effects(files: WorldFiles): SoundData | undefined {
   if (!fs.existsSync(planFile) || !fs.existsSync(madeFile)) return undefined;
   const plan = SoundPlan.parse(files.readJson(planFile));
   const made = SoundManifest.parse(files.readJson(madeFile)).sounds;
-  const wanted = new Map(jobsOf(plan).map((j) => [j.id, j.prompt]));
+  const wanted = new Map(jobsOf(plan, readSoundFixes(files)).map((j) => [j.id, j.prompt]));
   const have = (id: string) => (made[id] && made[id].prompt === wanted.get(id)
     && !made[id].flags.some((f) => /does not loop well|still hissy|only \d+ footstep/.test(f))
     && fs.existsSync(files.path(made[id].file)) ? id : undefined);
