@@ -118,11 +118,13 @@ function quantile(values: number[], q: number) {
  * Whether a take meant to loop is really one event (a crash, a single gust) with silence around it.
  * A loop needs sound all the way through: its quiet windows stay near its loud ones, and neither end dies out.
  */
-export function loopProblem(pcm: Pcm): string | undefined {
+export function loopProblem(pcm: Pcm, opts: { beats?: boolean } = {}): string | undefined {
   const env = envelope(pcm, 100);
   if (env.length < 10) return 'shorter than a second';
   const median = quantile(env, 0.5);
   if (Math.max(...env) < 0.003) return 'nearly silent';
+  // A thing's own loop may be a beat (a clock ticking, a drip, a blinker): even events with quiet between are its sound.
+  if (opts.beats && regularBeats(pcm)) return undefined;
   // Most of the take far under its loudest moments: an event in silence, not a bed.
   const steady = median / quantile(env, 0.98);
   if (steady < 0.06) return `one event and silence, not a bed (median/peak ${steady.toFixed(2)})`;
@@ -132,6 +134,26 @@ export function loopProblem(pcm: Pcm): string | undefined {
   if (tail < median * 0.25) return `dies out at the end (${(tail / median).toFixed(2)} of its median)`;
   if (head < median * 0.25) return `fades in from silence (${(head / median).toFixed(2)} of its median)`;
   return undefined;
+}
+
+/** Four or more clear events at an even pace (gaps within 30% of their mean): ticking, not one event in silence. */
+export function regularBeats(pcm: Pcm): boolean {
+  const env = envelope(pcm, 20);
+  const peak = quantile(env, 0.98);
+  if (peak < 0.003) return false;
+  const onsets: number[] = [];
+  let armed = true;
+  env.forEach((v, i) => {
+    if (armed && v > peak * 0.4) {
+      onsets.push(i);
+      armed = false;
+    } else if (v < peak * 0.15) armed = true;
+  });
+  if (onsets.length < 4) return false;
+  const gaps = onsets.slice(1).map((o, i) => o - onsets[i]);
+  const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  const spread = Math.sqrt(gaps.reduce((a, g) => a + (g - mean) ** 2, 0) / gaps.length);
+  return mean >= 5 && spread / mean < 0.3;
 }
 
 /** How much of the sound is hiss: the energy of the change from sample to sample over the energy (white noise 2, music about 0.06). */

@@ -78,6 +78,11 @@ defineCommand({
     for (const [id, e] of Object.entries(sounds)) if (fs.existsSync(files.path(e.file))) seedLibrary(id, e, fs.readFileSync(files.path(e.file)));
     const s = files.memo.sent;
     console.log(`sound ${slug}: ${Object.keys(sounds).length} sounds · sent: spark ${s.spark}, sound ${s.sound}, music ${s.music} · ${await guard.report()} · ${manifestFile}`);
-    if (Object.keys(failures).length) throw new Error(`${Object.keys(failures).length} sounds failed quality or generation; see sound/sounds.json failures`);
+    // A thing's own loop that never passed stays silent under its place's bed (a lamp's hum is near silence anyway);
+    // music, beds, steps and one-shots carry the world, so those fail the step.
+    const failed = Object.keys(failures).filter((id) => !id.endsWith('-loop'));
+    const quiet = Object.keys(failures).filter((id) => id.endsWith('-loop'));
+    if (quiet.length) console.log(`  silent: ${quiet.join(', ')} (their loops failed the quality checks; the place bed plays)`);
+    if (failed.length) throw new Error(`${failed.length} sounds failed quality or generation; see sound/sounds.json failures`);
   },
 });

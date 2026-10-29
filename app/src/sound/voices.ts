@@ -428,7 +428,7 @@ export async function voiceLine(memo: Memo, line: Line, voice: Cast[string], wri
     if (!best || match > best.match) best = { pcm, heard, match, take };
     if (heardOk(line.text, match)) break;
   }
-  if (!best || !heardOk(line.text, best.match)) throw new Error(`speech rejected after ${takes} takes: ${best ? `heard ${Math.round(best.match * 100)}% of the line` : 'no clean audible recording'}`);
+  if (!best || !heardOk(line.text, best.match)) throw new Error(`speech rejected after ${takes} takes: ${best ? `heard ${Math.round(best.match * 100)}% of the line: "${best.heard}"` : 'no clean audible recording'}`);
   const flags = best.take > 1 ? [`take ${best.take} used`] : [];
   const pcm = normalise(best!.pcm, -18);
   return { speaker: line.speaker, text: line.text, file: write(id, encodeMp3(pcm, 128)), seconds: Math.round(seconds(pcm) * 100) / 100, heard: best!.heard, match: Math.round(best!.match * 100) / 100, flags };

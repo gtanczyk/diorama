@@ -114,7 +114,7 @@ async function makeOne(memo: Memo, job: Job, music: { python?: string }): Promis
       const prompt = job.prompt + (take > 1 ? STEADY : '') + (take > 2 ? NO_HISS : '');
       const ask: EffectAsk = { label: `${job.id}-${take}`, prompt, seconds: job.seconds, loop: true, take };
       const pcm = decode(await soundEffect(memo, ask));
-      problem = audioProblem(pcm) ?? loopProblem(pcm) ?? (hiss(pcm) > HISS ? 'mostly hiss' : '');
+      problem = audioProblem(pcm) ?? loopProblem(pcm, { beats: job.kind === 'loop' }) ?? (hiss(pcm) > HISS ? 'mostly hiss' : '');
       if (problem) forgetEffect(memo, ask);
       if (!problem) return entry(normalise(seamless(pcm, job.kind === 'bed' ? 1.5 : 0.8), TARGET_DB[job.kind]), 'elevenlabs', { mix: MIX });
     }

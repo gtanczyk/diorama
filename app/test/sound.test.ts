@@ -18,6 +18,13 @@ test('a steady take loops; one event in silence does not', () => {
   expect(loopProblem(pcm(() => 0, 6))).toBe('nearly silent');
 });
 
+test('a clock tick passes as a thing loop; one knock does not', () => {
+  const tick = (t: number) => (t % 0.5 < 0.04 ? 0.3 * Math.sin(t * 2 * Math.PI * 1800) : 0);
+  expect(loopProblem(pcm(tick, 6))).toMatch(/one event/);
+  expect(loopProblem(pcm(tick, 6), { beats: true })).toBeUndefined();
+  expect(loopProblem(pcm((t) => (t < 0.3 ? noise(t) : 0), 6), { beats: true })).toMatch(/one event|dies out/);
+});
+
 test('seamless folds the tail over the head, so the end runs on into the start', () => {
   const ramp = pcm((t) => t / 10, 4);
   const loop = seamless(ramp, 1);
