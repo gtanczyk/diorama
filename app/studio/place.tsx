@@ -3,6 +3,7 @@
 // the next build and the agent can do the same with words.
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
+import { named } from './build.tsx';
 
 const W = 1200;
 const H = 896;
@@ -154,13 +155,13 @@ export function PlaceEditor({ slug, place, version, onError, focus }: { slug: st
         <h2>{place}</h2>
         <span class="grow" />
         <div class="seg" role="group" aria-label="Picture">
-          {(['painting', 'masks', 'walk'] as const).map((l) => <button type="button" title={LAYER_TIPS[l]} class={layer === l ? 'on' : ''} disabled={!st?.pictures[l]} onClick={() => setLayer(l)}>{l}</button>)}
+          {(['painting', 'masks', 'walk'] as const).map((l) => <button type="button" title={named(LAYER_TIPS[l])} class={layer === l ? 'on' : ''} disabled={!st?.pictures[l]} onClick={() => setLayer(l)}>{l}</button>)}
         </div>
       </div>
       <div class="seg tools" role="group" aria-label="Tool">
-        {TOOLS.map(([t, label, hint]) => <button type="button" title={hint} class={tool === t ? 'on' : ''} onClick={() => setTool(t)}>{label}</button>)}
+        {TOOLS.map(([t, label, hint]) => <button type="button" title={named(hint)} class={tool === t ? 'on' : ''} onClick={() => setTool(t)}>{label}</button>)}
       </div>
-      {tool !== 'look' && <p class="detail">{TOOLS.find(([t]) => t === tool)![2]}.</p>}
+      {tool !== 'look' && <p class="detail">{named(TOOLS.find(([t]) => t === tool)![2])}.</p>}
       {(tool === 'box' || tool === 'brush' || tool === 'stand' || tool === 'move') && (
         <div class="row">
           <label title={tool === 'brush' ? 'The thing or floor whose mask the brush paints' : tool === 'move' ? 'The NPC to move' : 'The thing this tool fixes'}>{tool === 'brush' ? 'Mask of' : tool === 'move' ? 'NPC' : 'Thing'} <select value={target} onChange={(e) => setTarget(e.currentTarget.value)}>
@@ -190,8 +191,8 @@ export function PlaceEditor({ slug, place, version, onError, focus }: { slug: st
       {tool === 'brush' && strokes.length > 0 && <div class="row"><span class="detail">{strokes.length} stroke{strokes.length > 1 ? 's' : ''} on {target}</span><span class="grow" /><button type="button" class="ghost small" title="Take back the last stroke" onClick={() => setStrokes((s) => s.slice(0, -1))}>Undo stroke</button><button type="button" class="primary small" disabled={busy || !target} title="Keep the strokes and rebuild this place from its masks. Kept across rebuilds. Free, saved answers are reused" onClick={() => act('mask_brush', { layer: isFloor ? 'floor' : 'thing', key: target, strokes })}>Apply and rebuild</button></div>}
       {((tool === 'note' && point) || (tool === 'repaint' && big)) && (
         <form class="say" onSubmit={(e) => { e.preventDefault(); if (tool === 'note') void act('feedback_add', { point, text: text.trim() }); else void act('repaint_region', { region: box, fix: text.trim() }); }}>
-          <textarea rows={2} placeholder={tool === 'note' ? 'What is wrong here?' : 'How should Muse paint this region?'} value={text} onInput={(e) => setText(e.currentTarget.value)} />
-          <div class="row"><span class="grow" /><button type="submit" class="primary small" disabled={busy || text.trim().length < 3} title={tool === 'note' ? 'Keep the note on this spot, for you or the agent. Free' : 'Muse repaints only this region your way, then the place is measured again. 1 Muse Image edit'}>{tool === 'note' ? 'Leave note' : 'Repaint (1 Muse edit)'}</button></div>
+          <textarea rows={2} placeholder={tool === 'note' ? 'What is wrong here?' : named('How should Muse paint this region?')} value={text} onInput={(e) => setText(e.currentTarget.value)} />
+          <div class="row"><span class="grow" /><button type="submit" class="primary small" disabled={busy || text.trim().length < 3} title={tool === 'note' ? 'Keep the note on this spot, for you or the agent. Free' : named('Muse repaints only this region your way, then the place is measured again. 1 Muse Image edit')}>{tool === 'note' ? 'Leave note' : named('Repaint (1 Muse edit)')}</button></div>
         </form>
       )}
       {things.length > 0 && (
@@ -206,7 +207,7 @@ export function PlaceEditor({ slug, place, version, onError, focus }: { slug: st
       {floors.some((f) => f.coarse) && <p class="flag">Coarse floors: {floors.filter((f) => f.coarse).map((f) => f.key).join(', ')}. Brush them, or ask the agent to fix their cells.</p>}
       {(fixList.length > 0 || (fixes?.repaint.length ?? 0) > 0) && (
         <div class="fixes">
-          <div class="row"><strong>Your fixes</strong><span class="detail">kept across rebuilds</span><span class="grow" /><button type="button" class="ghost small" disabled={busy} title={(fixes?.repaint.length ?? 0) > 0 ? 'Take back every fix of this place. It is painted again: 1 Muse Image call' : 'Take back every fix of this place and rebuild it from its masks. Free'} onClick={() => act('corrections_clear', {})}>Clear all</button></div>
+          <div class="row"><strong>Your fixes</strong><span class="detail">kept across rebuilds</span><span class="grow" /><button type="button" class="ghost small" disabled={busy} title={named((fixes?.repaint.length ?? 0) > 0 ? 'Take back every fix of this place. It is painted again: 1 Muse Image call' : 'Take back every fix of this place and rebuild it from its masks. Free')} onClick={() => act('corrections_clear', {})}>Clear all</button></div>
           <ul>
             {fixList.map((f) => <li><code>{f.key}</code> {f.what}<button type="button" class="ghost small" disabled={busy} title={`Take back the fixes of ${f.key} and rebuild this place from its masks. Free`} onClick={() => act('corrections_clear', { key: f.key })}>Clear</button></li>)}
             {fixes!.repaint.map((r) => <li>repaint [{r.region.join(', ')}]: {r.fix}</li>)}
@@ -252,7 +253,7 @@ function ThingLine({ t, focused, busy, fix, remove }: { t: ThingRow; focused?: b
           <span class="row">
             <span class="detail">Take <code>{t.key}</code> off the list:</span>
             <button type="button" class="ghost small" disabled={busy} title="It stays in the picture, but is no longer a thing of its own. Free" onClick={() => (setAsking(false), remove(false))}>Keep it painted</button>
-            <button type="button" class="ghost small danger" disabled={busy} title="Muse paints it out of the picture, then the place is checked again. 1 Muse Image edit" onClick={() => (setAsking(false), remove(true))}>Paint it out</button>
+            <button type="button" class="ghost small danger" disabled={busy} title={named('Muse paints it out of the picture, then the place is checked again. 1 Muse Image edit')} onClick={() => (setAsking(false), remove(true))}>Paint it out</button>
             <button type="button" class="ghost small" onClick={() => setAsking(false)}>Cancel</button>
           </span>
         </td>

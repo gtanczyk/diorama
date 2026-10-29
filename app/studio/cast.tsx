@@ -2,6 +2,7 @@
 // their voice. Every change is an action (cast_redo, voice_set) kept in cast/fixes.json.
 import { useEffect, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
+import { named } from './build.tsx';
 import { FigurePreview } from './figure.tsx';
 import { Icon, type IconName } from './icons.tsx';
 
@@ -63,11 +64,11 @@ function Items({ slug, version, onError }: { slug: string; version: number; onEr
             {it.icon ? <img src={fileUrl(slug, it.icon.file, it.icon.v)} alt={it.name} /> : <div class="noimg">no icon yet</div>}
             <div class="body">
               <strong>{it.name}</strong>
-              <span class="detail">{it.from ? `picked up: ${it.from.place} / ${it.from.thing}` : 'handed over'}{it.how ? ` · ${HOW[it.how]}` : ''}</span>
+              <span class="detail">{it.from ? `picked up: ${it.from.place} / ${it.from.thing}` : 'handed over'}{it.how ? ` · ${named(HOW[it.how])}` : ''}</span>
               <form class="row" onSubmit={(e) => (e.preventDefault(), (hints[it.key] ?? '').trim().length >= 3 && void act('icon_redo', { item: it.key, hint: hints[it.key].trim() }))}>
                 <input value={hints[it.key] ?? it.fix?.hint ?? ''} placeholder="How it should look" title="Your words for the icon, e.g. 'a rusty brass key'. Press Redraw to use them" aria-label={`How ${it.name} should look`} onInput={(e) => setHints({ ...hints, [it.key]: e.currentTarget.value })} />
-                <button type="button" class="ghost small" title={it.how === 'cut' ? 'This icon is cut from the painting, so another take comes out the same. Write how it should look and press Redraw.' : `Muse ${it.how === 'paint' ? 'paints' : 'redraws'} the icon again, a new version of the same thing. 1 Muse Image call`} onClick={() => act('icon_redo', { item: it.key, anotherTake: true })}>Another take</button>
-                <button type="submit" class={`${(hints[it.key] ?? '').trim().length >= 3 ? 'primary' : 'ghost'} small`} title="Muse redraws the icon the way you wrote, kept across rebuilds. 1 Muse Image call">Redraw</button>
+                <button type="button" class="ghost small" title={named(it.how === 'cut' ? 'This icon is cut from the painting, so another take comes out the same. Write how it should look and press Redraw.' : `Muse ${it.how === 'paint' ? 'paints' : 'redraws'} the icon again, a new version of the same thing. 1 Muse Image call`)} onClick={() => act('icon_redo', { item: it.key, anotherTake: true })}>Another take</button>
+                <button type="submit" class={`${(hints[it.key] ?? '').trim().length >= 3 ? 'primary' : 'ghost'} small`} title={named('Muse redraws the icon the way you wrote, kept across rebuilds. 1 Muse Image call')}>Redraw</button>
               </form>
             </div>
           </li>
@@ -114,10 +115,10 @@ function Card({ slug, c, onError, focused }: { slug: string; c: Character; onErr
           <strong>{c.key}</strong>
           <span class="badge">{c.role === 'hero' ? 'hero' : c.role === 'player' ? 'hero for another gamepad' : c.role === 'narrator' ? 'narrator' : `NPC · ${c.place}`}</span>
           <span class="grow" />
-          {parts.length > 0 && <span class="has">{parts.map(([sign, what]) => <span class="sign" title={what}><Icon name={sign} /></span>)}</span>}
+          {parts.length > 0 && <span class="has">{parts.map(([sign, what]) => <span class="sign" title={named(what)}><Icon name={sign} /></span>)}</span>}
           {c.modelIssue && <span class="detail">Using 2D: {c.modelIssue}</span>}
           {c.model && c.modelAttempt?.state === 'failed' && <span class="detail">Keeping previous model: {c.modelAttempt.reason}</span>}
-          {c.role !== 'narrator' && c.figure && !c.model && <button type="button" class="ghost small" disabled={busy || !!c.modelJob} title={`Muse paints ${c.key} from 4 sides and TRELLIS builds a 3D model${creature ? ': no skeleton, in the game it hops, squashes, leans and blinks as one body' : ''}. Kept across rebuilds. 4 Muse Image calls + TRELLIS (needs the HF token)`} onClick={() => act('cast_animate', {})}>{c.modelJob ? c.modelJob.state === 'queued' ? '3D queued…' : 'Building 3D…' : c.modelIssue ? 'Retry 3D' : 'Animate in 3D'}</button>}
+          {c.role !== 'narrator' && c.figure && !c.model && <button type="button" class="ghost small" disabled={busy || !!c.modelJob} title={named(`Muse paints ${c.key} from 4 sides and TRELLIS builds a 3D model${creature ? ': no skeleton, in the game it hops, squashes, leans and blinks as one body' : ''}. Kept across rebuilds. 4 Muse Image calls + TRELLIS (needs the HF token)`)} onClick={() => act('cast_animate', {})}>{c.modelJob ? c.modelJob.state === 'queued' ? '3D queued…' : 'Building 3D…' : c.modelIssue ? 'Retry 3D' : 'Animate in 3D'}</button>}
           {(c.rig || c.model || c.sprites) && <button type="button" class={`ghost small round${moving ? ' on' : ''}`} aria-label={moving ? 'Close the preview' : 'See it move'} title={moving ? 'Close the preview' : 'See it move: walk, stand and talk as the game draws it. Free'} onClick={() => setMoving(!moving)}>{moving ? '■' : '▶'}</button>}
         </div>
         {c.role !== 'narrator' && (
@@ -126,8 +127,8 @@ function Card({ slug, c, onError, focused }: { slug: string; c: Character; onErr
             <div class="row">
               {c.fix?.looks && <span class="detail">your description{c.fix.take ? ` · take ${c.fix.take + 1}` : ''}</span>}
               <span class="grow" />
-              <button type="button" class="ghost small" disabled={busy} title="Muse paints this character again from the same description and SAM cuts the figure out. 1 Muse Image + 1 SAM call. Sprites and the 3D model are not remade" onClick={() => act('cast_redo', { anotherTake: true })}>Another take</button>
-              <button type="submit" class="primary small" disabled={busy || !changed} title={changed ? 'Muse paints the character from your new description, kept across rebuilds. 1 Muse Image + 1 SAM call' : 'Change the description first (at least 10 letters)'}>Repaint</button>
+              <button type="button" class="ghost small" disabled={busy} title={named('Muse paints this character again from the same description and SAM cuts the figure out. 1 Muse Image + 1 SAM call. Sprites and the 3D model are not remade')} onClick={() => act('cast_redo', { anotherTake: true })}>Another take</button>
+              <button type="submit" class="primary small" disabled={busy || !changed} title={named(changed ? 'Muse paints the character from your new description, kept across rebuilds. 1 Muse Image + 1 SAM call' : 'Change the description first (at least 10 letters)')}>Repaint</button>
             </div>
           </form>
         )}

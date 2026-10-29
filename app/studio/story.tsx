@@ -3,6 +3,7 @@
 // happens there; anything that changes what the player can do is asked of the agent (story_redo).
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { call } from './api.ts';
+import { named } from './build.tsx';
 
 type Effect = Record<string, string>;
 type Interaction = { place: string; thing: string; verb: string; with?: string; when: string[]; say: string; do: Effect[]; once: boolean };
@@ -76,7 +77,7 @@ function Verdict({ status, onStep, onFirst }: { status: Status; onStep: (step: s
       {(status.unvoiced.length > 0 || status.unpainted.length > 0) && (
         <div class="row">
           {status.unvoiced.length > 0 && <button type="button" class="ghost small" title={`ElevenLabs speaks the new lines, 1 call each:\n${status.unvoiced.join('\n')}`} onClick={() => onStep('voices')}>Speak {status.unvoiced.length} new line{status.unvoiced.length === 1 ? '' : 's'}</button>}
-          {status.unpainted.length > 0 && <button type="button" class="ghost small" title={`Muse paints how each changed thing looks after it changes. ${status.unpainted.length} Muse Image edit${status.unpainted.length === 1 ? '' : 's'}`} onClick={() => onStep('plates')}>Paint {status.unpainted.length} change{status.unpainted.length === 1 ? '' : 's'}</button>}
+          {status.unpainted.length > 0 && <button type="button" class="ghost small" title={named(`Muse paints how each changed thing looks after it changes. ${status.unpainted.length} Muse Image edit${status.unpainted.length === 1 ? '' : 's'}`)} onClick={() => onStep('plates')}>Paint {status.unpainted.length} change{status.unpainted.length === 1 ? '' : 's'}</button>}
         </div>
       )}
       {(status.unseen?.length ?? 0) > 0 && <details open><summary class="detail">{status.unseen!.length} part{status.unseen!.length === 1 ? '' : 's'} of the story the painting will not show (ask the agent to redo)</summary><ul class="issues">{status.unseen!.map((l) => <li>{l}</li>)}</ul></details>}

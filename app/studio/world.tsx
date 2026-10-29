@@ -4,6 +4,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
+import { named } from './build.tsx';
 import { Icon } from './icons.tsx';
 
 export type StageView = { kind: 'build' | 'place' | 'cast' | 'story' | 'play' | 'work'; place?: string; step?: string };
@@ -18,7 +19,7 @@ export function Card({ kind, by, on, onClick, children, tone, opening }: { kind:
   return (
     <div class={`wcard${on ? ' on' : ''}${tone ? ` ${tone}` : ''}${onClick ? ' click' : ''}`} data-opening={opening || undefined} onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}
       onKeyDown={(e) => onClick && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onClick())}>
-      <div class="k">{kind}{by && <span class="by">{by}</span>}</div>
+      <div class="k">{kind}{by && <span class="by">{named(by)}</span>}</div>
       {children}
     </div>
   );
@@ -108,7 +109,7 @@ export function PlaceStage({ slug, place, version, picked, onPick, onOpen, child
     <div class="mat">
       <div class="frame">
         <div class="pic">
-          {place.image ? <img src={fileUrl(slug, place.image.file, place.image.v)} alt={place.shows} /> : <div class="empty"><strong>{nice(place.key)}</strong><span>Muse Image paints it next</span></div>}
+          {place.image ? <img src={fileUrl(slug, place.image.file, place.image.v)} alt={place.shows} /> : <div class="empty"><strong>{nice(place.key)}</strong><span>{named('Muse Image paints it next')}</span></div>}
           {(hover ?? (picked?.place === place.key ? picked.thing : null)) && (
             <div class="glow" style={{ maskImage: `url("${fileUrl(slug, `places/${place.key}/masks/${hover ?? picked!.thing}.png`)}")`, WebkitMaskImage: `url("${fileUrl(slug, `places/${place.key}/masks/${hover ?? picked!.thing}.png`)}")` }} />
           )}
