@@ -14,7 +14,7 @@ test('a slow old voice fetch cannot start over a newer line, and the same text u
       const w = window as unknown as { AudioGame: { Mixer: new (g: unknown, url: (f: string) => string) => { ctx: AudioContext; log: Array<{ id: string }> } } };
       let event: (e: string, d: object) => void = () => {};
       const game = { data: { world: { hero: { key: 'hero' } }, sound: { files: {}, places: {}, shots: {}, bySpeaker: {
-        hero: { 'Cześć!': { file: 'slow-hero', seconds: 1, speaker: 'hero' } },
+        hero: { 'Cześć!': { file: 'slow-hero', seconds: 1, speaker: 'hero' }, 'Bye.': { file: 'cancelled', seconds: 1, speaker: 'hero' } },
         owl: { 'Cześć!': { file: 'fast-owl', seconds: 1, speaker: 'owl' } },
       } } }, speech: {}, on: (f: typeof event) => { event = f; } };
       const mixer = new w.AudioGame.Mixer(game, (f) => f);
@@ -30,11 +30,21 @@ test('a slow old voice fetch cannot start over a newer line, and the same text u
       release();
       await new Promise((resolve) => setTimeout(resolve, 30));
       const after = mixer.log.length;
+      // A cancelled, still-loading line must not start after the player picks another action.
+      let releaseCancelled!: () => void;
+      const cancelled = new Promise<void>((resolve) => { releaseCancelled = resolve; });
+      window.fetch = async () => { await cancelled; return new Response(new ArrayBuffer(8)); };
+      event('say', { text: 'Bye.', who: 'hero' });
+      event('silent', {});
+      releaseCancelled();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const afterCancel = mixer.log.length;
       await mixer.ctx.close();
-      return { before, after, requests };
+      return { before, after, afterCancel, requests };
     });
     expect(result.requests).toEqual(['slow-hero', 'fast-owl']);
     expect(result.before).toBe(1);
     expect(result.after).toBe(1);
+    expect(result.afterCancel).toBe(1);
   } finally { await browser.close(); }
 }, 30_000);

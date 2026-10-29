@@ -8,7 +8,7 @@ import { drawingFiles, keptName, Kind, normaliseDrawing, oneHero, PICTURE, readD
 import { WorldFiles } from '../world/files.ts';
 import { Slug } from '../world/schema.ts';
 import { hear, hearAll, Idea, ideaFromTold, narrate, SOUND, toldFiles } from '../world/told.ts';
-import { ActionError, defineAction } from './registry.ts';
+import { ActionError, defineAction, runAction } from './registry.ts';
 
 /** One change at a time per world: photos arrive together, and each takes the next number and joins drawings.json. */
 const queues = new Map<string, Promise<unknown>>();
@@ -76,7 +76,9 @@ defineAction({
       const drawn = await readDrawing(files.memo, image, file, [...new Set(readDrawn(files).map((d) => d.key))]);
       await serial(slug, async () => {
         const kind = readKinds(files)[file];
-        files.write(files.path('drawings.json'), oneHero([...readDrawn(files).filter((d) => d.file !== file), { ...drawn, ...(kind && { kind }) }], kind === 'hero' ? drawn.key : undefined));
+        const all = [...readDrawn(files).filter((d) => d.file !== file), { ...drawn, ...(kind && { kind }) }];
+        // An existing game's hero is already fixed. Do not promote its first newly drawn NPC to hero.
+        files.write(files.path('drawings.json'), fs.existsSync(files.path('world.json')) && kind !== 'hero' ? all : oneHero(all, kind === 'hero' ? drawn.key : undefined));
       });
       return { file: `drawings/${file}`, drawn };
     }
@@ -87,6 +89,43 @@ defineAction({
       return clip;
     });
     return { clip, text: await hear(files, clip) };
+  },
+});
+
+// A chat picture is already on disk: the agent must not have to read or transmit its base64 itself.
+const pictureAdds = new Map<string, Promise<unknown>>();
+defineAction({
+  name: 'kids_from_picture',
+  description: 'Save and read a drawing already attached to the Studio conversation. Pass its studio/pictures/NN.jpg path from the message. Returns the drawings/ path for kids_status and world_extend; repeated calls for the same picture reuse it.',
+  input: z.object({ slug: Slug, picture: z.string().regex(/^studio\/pictures\/[0-9]{2,4}\.jpg$/) }),
+  async run({ slug, picture }, ctx) {
+    const key = `${ctx.root}/${slug}/${picture}`;
+    const pending = pictureAdds.get(key);
+    if (pending) return pending;
+    const task = (async () => {
+      const files = new WorldFiles(slug, ctx.root);
+      const source = files.path(picture);
+      if (!fs.existsSync(source)) throw new ActionError(404, `${slug} has no ${picture}`);
+      const index = files.path('drawings', 'picture-sources.json');
+      const read = (): Record<string, string> => fs.existsSync(index) ? JSON.parse(fs.readFileSync(index, 'utf8')) as Record<string, string> : {};
+      const old = read()[picture];
+      if (old && fs.existsSync(files.path(old))) {
+        const drawn = readDrawn(files).find(d => `drawings/${d.file}` === old);
+        if (drawn) return { file: old, drawn, reused: true };
+      }
+      const normalised = await normaliseDrawing(fs.readFileSync(source));
+      const match = readDrawn(files).find(d => fs.existsSync(files.path('drawings', d.file)) && fs.readFileSync(files.path('drawings', d.file)).equals(normalised));
+      if (match) {
+        const file = `drawings/${match.file}`;
+        files.write(index, { ...read(), [picture]: file });
+        return { file, drawn: match, reused: true };
+      }
+      const added = await runAction('kids_add', { slug, kind: 'drawing', name: path.basename(picture), data: fs.readFileSync(source).toString('base64') }, ctx) as { file: string; drawn: unknown };
+      files.write(index, { ...read(), [picture]: added.file });
+      return { ...added, reused: false };
+    })();
+    pictureAdds.set(key, task);
+    try { return await task; } finally { pictureAdds.delete(key); }
   },
 });
 

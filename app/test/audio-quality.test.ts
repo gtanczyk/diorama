@@ -96,6 +96,8 @@ test('different speakers keep identical text, and ambiguous branches do not leak
     { key: 'reply', says: 'Witaj.', choices: [] },
   ] }] });
   const lines = storyLines(world, story);
+  expect(lines).toContainEqual({ speaker: 'hero', text: 'Goodbye.' });
+  expect(storyLines({ ...world, language: 'Polish' }, story)).toContainEqual({ speaker: 'hero', text: 'Do widzenia.' });
   expect(lines.filter((l) => l.text === 'Cześć!').map((l) => l.speaker)).toEqual(['owl', 'hero']);
   expect(lines.find((l) => l.text === 'Witaj.')).not.toHaveProperty('previousText');
   const sound = { files: {}, shots: {}, places: {}, bySpeaker: { owl: { 'Cześć!': { file: 'owl.mp3', seconds: 1 } }, hero: { 'Cześć!': { file: 'hero.mp3', seconds: 2 } } } };

@@ -78,6 +78,17 @@ test('a locked exit refuses with its line and does not move', () => {
   expect(apply(world, s, start, { kind: 'go', via: 'door' })).toEqual({ state: start, say: ['Too dark to go out without a light.'] });
 });
 
+test('leaving a conversation says goodbye once in the world language', () => {
+  const s = Story.parse(story);
+  const polish = { ...world, language: 'Polish' };
+  const atShore = { ...startState(polish), place: 'shore' };
+  const talking = apply(polish, s, atShore, { kind: 'talk', npc: 'ferryman' }).state;
+  const left = apply(polish, s, talking, { kind: 'leave' });
+  expect(left.say).toEqual(['Do widzenia.']);
+  expect(left.state.talk).toBeUndefined();
+  expect(apply(polish, s, left.state, { kind: 'leave' }).say).toEqual([]);
+});
+
 test('a taken item is listed for a clean plate and hidden once taken', () => {
   const s = Story.parse(story);
   expect(removableThings(s)).toEqual([{ place: 'hut', thing: 'lamp' }]);

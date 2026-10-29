@@ -137,7 +137,7 @@ export class Answers {
   private texts = '';
   /** The card a gamepad would pick; lit only once a pad has been used. */
   private focus = 0;
-  /** Says an answer aloud when it is pointed at or lit by a pad (a world for kids, who cannot read the cards). */
+  /** Reads an answer when deliberately navigating with keys or a pad. */
   hear?: (text: string) => void;
 
   constructor() {
@@ -175,8 +175,6 @@ export class Answers {
       if (o.action) b.dataset.action = o.action;
       b.append(el('span', 'key', String(i + 1)), document.createTextNode(o.text));
       b.onclick = o.pick;
-      b.onpointerenter = () => this.hear?.(o.text);
-      b.onfocus = () => this.hear?.(o.text);
       return b;
     });
     // Walking away ends the talk as Goodbye does; said once under answers that are not just a goodbye.
@@ -192,8 +190,6 @@ export class Answers {
         { duration: 900, delay: 250 + i * 90, iterations: 2, easing: 'ease-out' },
       ));
     }
-    // Playing with a pad, the lit card is said as soon as the answers come up.
-    if (fresh && document.body.classList.contains('pad')) this.hear?.(options[0].text);
   }
 
   /** Moves the lit card up (-1) or down (1), round from the last to the first; `keys` lights it without a pad. */

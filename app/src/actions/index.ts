@@ -16,6 +16,7 @@ import './style.ts';
 import './items.ts';
 import './story.ts';
 import './kids.ts';
+import './extend.ts';
 import './share.ts';
 import './pictures.ts';
 import './start.ts';

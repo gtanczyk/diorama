@@ -59,6 +59,7 @@ export class Mixer {
       if (event === 'exit' && this.lastUsed) this.shot(`exit:${this.lastUsed}`);
       if (event === 'ending') this.shot('ending');
       if (event === 'say') void this.speak(String(detail.text), false, typeof detail.who === 'string' ? detail.who : 'narrator');
+      if (event === 'silent') this.hush();
       if (event === 'enter') this.hush();
     });
   }

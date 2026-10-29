@@ -7,6 +7,7 @@ import { inputHash, type Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import { transcribe } from '../meta/voice.ts';
 import { speakerOf } from '../story/engine.ts';
+import { goodbye } from '../story/phrases.ts';
 import type { Story } from '../story/schema.ts';
 import type { World } from '../world/schema.ts';
 import { decode, encodeMp3, normalise, pitchHz, pitchShift, audioProblem, RATE, seconds, trim, type Pcm } from './pcm.ts';
@@ -44,6 +45,7 @@ export function storyLines(world: World, story: Story, all = false): Line[] {
       }
     }
   }
+  if (story.dialogues.length) lines.push({ speaker: world.hero.key, text: goodbye(world.language) });
   for (const e of story.endings) lines.push({ speaker: NARRATOR, text: e.text });
   const unique = new Map<string, Line>();
   for (const line of lines) {
@@ -80,6 +82,8 @@ export const Cast = z.record(z.string(), z.object({
   /** Semitones the takes are raised. Only a stand-in: raising an adult voice sounds sped up, not young. */
   pitch: z.number().default(0),
   warnings: z.array(z.string()).optional(),
+  /** No substitute is spoken while the required design or voice slot is unavailable. */
+  pending: z.string().optional(),
   /**
    * A voice made for this character by ElevenLabs Voice Design (voice is then DESIGNED): no stock voice is a child or
    * truly old. `generated` is the design ElevenLabs returned; the voice is created from it only while lines are read.
@@ -126,6 +130,7 @@ export async function stockVoices(): Promise<Voice[]> {
 
 /** The voice id of a character whose voice is designed for them rather than picked from stock. */
 export const DESIGNED = 'design';
+export const PENDING_DESIGN = 'pending-design';
 
 /** Who stock voices cannot play: every stock voice is an adult, and the old ones are mature narrators, not old people. */
 export const needsDesign = (p: Profile) => p.age === 'child' || p.age === 'teen' || p.age === 'old';
@@ -164,15 +169,30 @@ export async function designVoice(memo: Memo, p: Profile, says: string[], descri
   let last: unknown;
   for (const d of tries) {
     try {
-      const res = await eleven('/text-to-voice/design', { method: 'POST', body: JSON.stringify({ voice_description: d, model_id: 'eleven_multilingual_ttv_v2', text, auto_generate_text: false }) });
-      const body = (await res.json()) as { previews: Array<{ generated_voice_id: string; audio_base_64: string; language?: string }> };
+      // Keep the paid previews until validation finishes; a transcriber outage must not buy a new design.
+      const pendingFile = path.join(memo.dir, 'voice-design', `${inputHash(elevenKey() ?? '', d, text)}.json`);
+      let body: { previews: Array<{ generated_voice_id: string; audio_base_64: string; language?: string }> };
+      if (fs.existsSync(pendingFile)) body = JSON.parse(fs.readFileSync(pendingFile, 'utf8'));
+      else {
+        const res = await eleven('/text-to-voice/design', { method: 'POST', body: JSON.stringify({ voice_description: d, model_id: 'eleven_multilingual_ttv_v2', text, auto_generate_text: false }) });
+        body = await res.json() as typeof body;
+        fs.mkdirSync(path.dirname(pendingFile), { recursive: true });
+        fs.writeFileSync(pendingFile, JSON.stringify(body));
+      }
       let best: { generated: string; hz: number; match: number } | undefined;
       for (const v of body.previews ?? []) {
         if (v.language && languageKey(v.language) !== languageKey(p.language)) continue;
         const pcm = decode(Buffer.from(v.audio_base_64, 'base64'));
         if (audioProblem(pcm)) continue;
-        const heard = await transcribe(memo, `voice-preview:${v.generated_voice_id}`, pcm24k(pcm), 10);
-        const match = heardMatch(text, heard);
+        let heard: string | undefined;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try { heard = await transcribe(memo, `voice-preview:${v.generated_voice_id}`, pcm24k(pcm), 10); break; }
+          catch (error) {
+            if (attempt < 2 && /backlog|temporar|socket|timed out/i.test(String(error))) await new Promise((r) => setTimeout(r, 250 * 2 ** attempt));
+            else throw new Error(`Voice Design validation pending: ${error instanceof Error ? error.message : error}`);
+          }
+        }
+        const match = heardMatch(text, heard ?? '');
         if (!heardOk(text, match)) continue;
         // Pitch is diagnostic only. Highest pitch is not evidence of a convincing character.
         if (!best || match > best.match) best = { generated: v.generated_voice_id, hz: pitchHz(pcm), match };
@@ -180,10 +200,15 @@ export async function designVoice(memo: Memo, p: Profile, says: string[], descri
       if (best) {
         const design = { description: d, generated: best.generated, hz: best.hz, profileKey: description ? inputHash(profileKey(p), description) : profileKey(p), ...(description && { request: description }) };
         keepDesign(p, design);
+        fs.rmSync(pendingFile, { force: true });
         return design;
       }
+      fs.rmSync(pendingFile, { force: true });
       last = new Error('no intelligible, clean preview in the story language');
-    } catch (error) { last = error; }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Voice Design validation pending:')) throw error;
+      last = error;
+    }
   }
   throw new Error(`Voice Design failed quality checks: ${last instanceof Error ? last.message : last}`);
 }
@@ -305,16 +330,18 @@ export async function castVoices(memo: Memo, world: World, lines: Line[], voices
     if (d) taken.add(d.generated);
     return d ? [[k, d] as const] : [];
   }));
+  const designErrors: Record<string, string> = {};
   const designs = Object.fromEntries(await Promise.all(keys.filter(wantsDesign).map(async (k) => {
     if (reused[k]) return [k, reused[k]] as const;
     try {
       return [k, await designVoice(memo, profiles[k], lines.filter((l) => l.speaker === k).map((l) => l.text))] as const;
     } catch (error) {
-      console.log(`  ${k}: ${error instanceof Error ? error.message : error}; a stock voice stands in`);
+      designErrors[k] = error instanceof Error ? error.message : String(error);
+      console.log(`  ${k}: ${designErrors[k]}; voice remains pending`);
       return [k, undefined] as const;
     }
   })));
-  const stock = keys.filter((k) => !designs[k]);
+  const stock = keys.filter((k) => !wantsDesign(k));
   const candidates = Object.fromEntries(keys.map((k) => [k, voiceCandidates(voices, profiles[k])]));
   const sample = (key: string) => lines.filter((l) => l.speaker === key).slice(0, 2).map((l) => `"${l.text}"`).join(' ');
   const describe = (v: Voice) => `${v.voice_id}: ${v.name}; ${Object.values(v.labels ?? {}).join(', ')}; ${v.description ?? ''}`;
@@ -334,6 +361,10 @@ Reply with JSON only: {"<character key>": {"voice": "<voice id>", "why": "few wo
     const design = designs[k];
     if (design) {
       cast[k] = { voice: DESIGNED, why: design.description, stability: 0.45, style: 0.2, speed: 1, profile: p, pitch: 0, design };
+      continue;
+    }
+    if (wantsDesign(k)) {
+      cast[k] = { voice: PENDING_DESIGN, why: 'Voice Design pending', stability: 0.45, style: 0.2, speed: 1, profile: p, pitch: 0, pending: designErrors[k] ?? 'Voice Design pending' };
       continue;
     }
     const allowed = candidates[k];

@@ -2,6 +2,7 @@
 // and the checker walks every state with them, so what the checker proves is what the player gets.
 import type { World } from '../world/schema.ts';
 import type { Effect, Story } from './schema.ts';
+import { goodbye } from './phrases.ts';
 
 export type State = {
   place: string;
@@ -123,6 +124,7 @@ export function apply(world: World, story: Story, state: State, action: Action):
       break;
     }
     case 'leave':
+      if (state.talk) say.push(goodbye(world.language));
       next.talk = undefined;
       break;
   }

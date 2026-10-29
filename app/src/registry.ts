@@ -17,5 +17,7 @@ export function takeOption(args: string[], name: string, fallback: string): stri
 
 /** With DIORAMA_EVENTS=1 (a job run by diorama studio), a line the studio reads as a live event; otherwise nothing. */
 export function emit(type: string, data: Record<string, unknown> = {}) {
+  // A staged extension is not the live world: do not report its provisional verdict as a live place or trigger auto-repair.
+  if (process.env.DIORAMA_STAGED_BUILD === '1' && type === 'place.verdict') return;
   if (process.env.DIORAMA_EVENTS === '1') process.stdout.write(`@@diorama ${JSON.stringify({ type, ...data })}\n`);
 }

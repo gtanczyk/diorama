@@ -664,6 +664,10 @@ class Game {
     const story = this.data.story;
     const from = this.state.place;
     const before = this.state;
+    // A new action supersedes speech from the previous one, including replies that have not started yet.
+    const speechTurn = ++this.speechTurn;
+    this.speech = null;
+    this.emit('silent', {});
     let say: string[];
     if (story) {
       const step = apply(this.data.world, story, this.state, action);
@@ -688,10 +692,12 @@ class Game {
     // A person talked to without a conversation answers with their own talk line.
     const answers = action.kind === 'do' && speakerOf(this.data.world, { place: from, thing: action.thing, verb: action.verb }) !== hero;
     const after = this.state;
-    // The next answers show at once, so a pick can come while this action's lines are still being said:
-    // each action's lines wait for the ones before, so a quick pick never talks over (or is talked over by) the reply.
+    // Keep action side effects in order, but skip outdated speech if another action was picked in the meantime.
     const turn = this.saying.then(async () => {
-      for (const [i, line] of say.entries()) await this.say(line, answers ? (action as { thing: string }).thing : npc && (action.kind === 'talk' || i > 0) ? npc : hero);
+      for (const [i, line] of say.entries()) {
+        if (speechTurn !== this.speechTurn) break;
+        await this.say(line, answers ? (action as { thing: string }).thing : npc && (action.kind === 'talk' || i > 0) ? npc : hero);
+      }
       if (after.place !== from) {
         this.emit('exit', { from, to: after.place });
         await this.fadeOut();
@@ -704,8 +710,9 @@ class Game {
     await turn;
   }
 
-  /** The lines of earlier actions still being said; the next action's lines follow them. */
+  /** Action effects stay ordered; a new action invalidates older speech. */
   private saying: Promise<void> = Promise.resolve();
+  private speechTurn = 0;
 
   /** An item tried where it does not help: the story's own line for it, else a plain one. */
   private nopeLine(item: string): string {
@@ -2317,7 +2324,7 @@ function drawFigure(c: CanvasRenderingContext2D, h: number, colour: string) {
 const game = new Game();
 // ?sound=0 plays silent; m mutes.
 const mixer = params.get('sound') === '0' ? undefined : new Mixer(game as unknown as Listened, files);
-// Children who cannot read hear each answer card as they point at it or light it with a pad.
+// Children who cannot read can hear answers by navigating with keys or a pad.
 game.answers.hear = (text) => {
   if (game.data?.world.audience === 'kids') mixer?.hear(text);
 };

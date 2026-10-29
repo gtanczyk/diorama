@@ -1,6 +1,7 @@
 // Command modules; each one calls defineCommand.
 import './doctor.ts';
 import './world.ts';
+import './extend.ts';
 import './story.ts';
 import './playthrough.ts';
 import './layout.ts';
