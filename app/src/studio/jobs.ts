@@ -34,11 +34,17 @@ export type Job = {
   tail: string[];
 };
 
+type Activity = { at: string; type: string; message?: string; stream?: string; kind?: string; label?: string; outcome?: string; ms?: number; error?: string };
+type Operation = { id: string; kind: string; label: string; startedAt: string };
+type Progress = { completed: number; total: number; failed: number; kept?: number };
+type Diagnostics = { lastActivityAt: string; recent: Activity[]; failures: Activity[]; active: Map<string, Operation>; progress: Record<string, Progress>; operations: Record<string, { started: number; completed: number; failed: number }> };
+
 export class Jobs {
   private readonly all: Job[] = [];
   private readonly children = new Map<string, ChildProcess>();
   private readonly waiters = new Map<string, Array<(job: Job) => void>>();
   private readonly prepare = new Map<string, () => void>();
+  private readonly diagnostics = new Map<string, Diagnostics>();
 
   /** echo: also print the job's output (the CLI runs jobs in the foreground). */
   /** beforeStart runs as a job leaves the queue (the Studio snapshots the world there, for undo). */
@@ -56,6 +62,7 @@ export class Jobs {
     if (same) return same;
     const job: Job = { id: randomBytes(4).toString('hex'), world, label, args, by, state: 'queued', queuedAt: new Date().toISOString(), tail: [], ...(addedThing && { addedThing }) };
     this.all.push(job);
+    this.diagnostics.set(job.id, { lastActivityAt: job.queuedAt, recent: [], failures: [], active: new Map(), progress: {}, operations: {} });
     if (prepare) this.prepare.set(job.id, prepare);
     this.events.publish('job.queued', { world, job: { ...job } });
     this.next(world);
@@ -68,6 +75,39 @@ export class Jobs {
 
   get(id: string): Job | undefined {
     return this.all.find((j) => j.id === id);
+  }
+
+  /** A bounded, timestamped view of this job, including work in flight in its own process. */
+  inspect(id: string, limit = 40) {
+    const job = this.get(id);
+    const data = this.diagnostics.get(id);
+    if (!job || !data) throw new Error(`no job ${id}`);
+    const now = Date.now();
+    const end = job.endedAt ? Date.parse(job.endedAt) : now;
+    return {
+      id: job.id, world: job.world, label: job.label, state: job.state,
+      startedAt: job.startedAt ?? null, endedAt: job.endedAt ?? null,
+      elapsedSeconds: job.startedAt ? Math.max(0, Math.round((end - Date.parse(job.startedAt)) / 1000)) : 0,
+      lastActivityAt: data.lastActivityAt,
+      quietSeconds: Math.max(0, Math.round((end - Date.parse(data.lastActivityAt)) / 1000)),
+      steps: [...(job.steps ?? [])], extension: job.extension ?? null, error: job.error ?? null,
+      activeOperations: [...data.active.values()].map(op => ({ ...op, elapsedSeconds: Math.max(0, Math.round((end - Date.parse(op.startedAt)) / 1000)) })),
+      operations: { ...data.operations }, progress: { ...data.progress }, recentFailures: data.failures.slice(-20), recent: data.recent.slice(-limit),
+      note: 'Active operations are observed in this process, not proof of the remote service state. Operations may be nested; their counts are not billing. Silence alone does not prove a hang.',
+    };
+  }
+
+  private activity(job: Job, event: Omit<Activity, 'at'>, at = new Date().toISOString()) {
+    const data = this.diagnostics.get(job.id);
+    if (!data) return;
+    data.lastActivityAt = at;
+    const record = { at, ...event };
+    data.recent.push(record);
+    if (event.outcome === 'failed' || event.type === 'step.fail' || event.type === 'place.fail' || event.stream === 'err' || (event.type === 'log' && /^\s*(?:FAIL\b|warning:|.*\bFAILED\b)/i.test(event.message ?? ''))) {
+      data.failures.push(record);
+      if (data.failures.length > 20) data.failures.shift();
+    }
+    if (data.recent.length > 200) data.recent.splice(0, data.recent.length - 200);
   }
 
   /** A cancelled queued edit has not changed its source yet; retry keeps that pending edit. */
@@ -132,6 +172,7 @@ export class Jobs {
     }
     job.state = 'running';
     job.startedAt = new Date().toISOString();
+    this.activity(job, { type: 'job.start' }, job.startedAt);
     this.events.publish('job.start', { world, job: { ...job } });
     const child = spawn(process.execPath, [this.opts.bin ?? BIN, ...job.args], {
       cwd: this.opts.cwd,
@@ -161,8 +202,32 @@ export class Jobs {
     const line = redact(raw);
     if (line.startsWith('@@diorama ')) {
       try {
-        const { type, ...data } = JSON.parse(line.slice('@@diorama '.length)) as { type: string };
+        const { type, ...data } = JSON.parse(line.slice('@@diorama '.length)) as { type: string } & Record<string, unknown>;
         const step = (data as { step?: string }).step;
+        const diagnostics = this.diagnostics.get(job.id);
+        const at = new Date().toISOString();
+        if (diagnostics && type === 'operation.start' && typeof data.id === 'string' && typeof data.kind === 'string' && typeof data.label === 'string') {
+          const operation = { id: data.id, kind: data.kind.slice(0, 80), label: data.label.slice(0, 160), startedAt: at };
+          diagnostics.active.set(data.id, operation);
+          (diagnostics.operations[operation.kind] ??= { started: 0, completed: 0, failed: 0 }).started++;
+          this.activity(job, { type, kind: operation.kind, label: operation.label }, at);
+        } else if (diagnostics && type === 'operation.end' && typeof data.id === 'string') {
+          const op = diagnostics.active.get(data.id);
+          diagnostics.active.delete(data.id);
+          if (op) {
+            const count = diagnostics.operations[op.kind];
+            if (data.outcome === 'failed') count.failed++;
+            else count.completed++;
+          }
+          this.activity(job, { type, ...(op && { kind: op.kind, label: op.label }), ...(typeof data.outcome === 'string' && { outcome: data.outcome }), ...(typeof data.ms === 'number' && { ms: data.ms }), ...(typeof data.error === 'string' && { error: data.error.slice(0, 500) }) }, at);
+        } else if (diagnostics && type === 'work.progress' && typeof data.kind === 'string' && typeof data.completed === 'number' && typeof data.total === 'number' && typeof data.failed === 'number') {
+          diagnostics.progress[data.kind] = { completed: data.completed, total: data.total, failed: data.failed, ...(typeof data.kept === 'number' && { kept: data.kept }) };
+          this.activity(job, { type, kind: data.kind, message: `${data.completed}/${data.total}, ${data.failed} failed` }, at);
+        } else if (['step.start', 'step.end', 'step.fail', 'extension.progress', 'place.fail', 'place.verdict', 'repair.start', 'repair.end'].includes(type)) {
+          const failure = (type === 'place.verdict' || type === 'repair.end') && data.ok === false;
+          const reason = typeof data.error === 'string' ? data.error : failure && Array.isArray(data.errors) ? data.errors.join('; ') : undefined;
+          this.activity(job, { type, message: String(step ?? data.phase ?? data.place ?? '').slice(0, 160), ...(failure && { outcome: 'failed' }), ...(reason && { error: reason.slice(0, 500) }) }, at);
+        }
         if (type === 'extension.progress') {
           const next = data as ExtensionProgress;
           job.extension = { ...next, newPlaces: next.newPlaces ?? job.extension?.newPlaces };
@@ -171,7 +236,7 @@ export class Jobs {
         if (step && (type === 'step.end' || type === 'step.fail')) job.steps = (job.steps ?? []).filter((s) => s !== step);
         // A failed step stays shown, so the job says where it broke; a finished one leaves the steps still running.
         if (step && type === 'step.fail') job.step = step;
-        else if (type === 'step.start' || (type === 'step.end' && job.steps?.length)) job.step = job.steps!.join(' + ');
+        else if (type === 'step.start' || type === 'step.end') job.step = job.steps?.length ? job.steps.join(' + ') : job.error ? job.step : undefined;
         if (type === 'step.fail') job.error = String((data as { error?: unknown }).error ?? '');
         if (type === 'place.verdict') {
           const v = data as { place: string; ok: boolean; errors?: string[] };
@@ -182,6 +247,7 @@ export class Jobs {
       } catch {}
     }
     if (stream === 'err' && line.startsWith('diorama ')) job.error = line;
+    if (line.trim()) this.activity(job, { type: 'log', stream, message: line.slice(0, 1200) });
     job.tail.push(line);
     if (job.tail.length > 40) job.tail.shift();
     if (this.opts.echo) (stream === 'out' ? process.stdout : process.stderr).write(`${line}\n`);
@@ -192,6 +258,8 @@ export class Jobs {
     job.state = state;
     job.endedAt = new Date().toISOString();
     if (error) job.error = error;
+    this.diagnostics.get(job.id)?.active.clear();
+    this.activity(job, { type: 'job.end', outcome: state, ...(error && { error }) }, job.endedAt);
     this.events.publish('job.end', { world: job.world, job: { ...job } });
     for (const resolve of this.waiters.get(job.id) ?? []) resolve({ ...job });
     this.waiters.delete(job.id);

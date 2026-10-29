@@ -3,6 +3,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { readSoundQuality } from './settings.ts';
+import { trackOperation } from '../studio/operation.ts';
 
 /** CLI flags > DIORAMA_SOUND > Studio Setup > final. */
 export type Quality = 'draft' | 'final';
@@ -47,10 +48,12 @@ export type Credits = { used: number; limit: number; left: number };
 export async function credits(key: string | undefined): Promise<Credits | undefined> {
   if (!key) return undefined;
   try {
-    const res = await fetch('https://api.elevenlabs.io/v1/user/subscription', { headers: { 'xi-api-key': key } });
-    if (!res.ok) return undefined;
-    const s = (await res.json()) as { character_count: number; character_limit: number };
-    return { used: s.character_count, limit: s.character_limit, left: s.character_limit - s.character_count };
+    return await trackOperation('elevenlabs', 'check subscription', async () => {
+      const res = await fetch('https://api.elevenlabs.io/v1/user/subscription', { headers: { 'xi-api-key': key } });
+      if (!res.ok) return undefined;
+      const s = (await res.json()) as { character_count: number; character_limit: number };
+      return { used: s.character_count, limit: s.character_limit, left: s.character_limit - s.character_count };
+    });
   } catch {
     return undefined;
   }

@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import { trackOperation } from '../studio/operation.ts';
 import { inputHash, type Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import { transcribe } from '../meta/voice.ts';
@@ -110,14 +111,17 @@ export type Voice = { voice_id: string; name: string; category?: string; labels?
 
 async function eleven(route: string, init?: RequestInit): Promise<Response> {
   if (init?.method === 'POST') checkCredits();
-  for (let n = 1; ; n++) {
-    const res = await fetch(`https://api.elevenlabs.io/v1${route}`, { ...init, headers: { 'xi-api-key': elevenKey() ?? '', 'Content-Type': 'application/json' } });
-    if (res.ok) return res;
-    const text = (await res.text()).slice(0, 300);
-    noteRefusal(res.status, text);
-    if (![429, 500, 502, 503].includes(res.status) || n === 4) throw new Error(`ElevenLabs ${route}: ${res.status} ${text}`);
-    await new Promise((r) => setTimeout(r, 1000 * 2 ** n));
-  }
+  const operation = route.startsWith('/text-to-speech/') ? 'speech response headers' : route.startsWith('/text-to-voice') ? 'voice design response headers' : route.startsWith('/voices') ? 'voices response headers' : 'API response headers';
+  return trackOperation('elevenlabs', operation, async () => {
+    for (let n = 1; ; n++) {
+      const res = await fetch(`https://api.elevenlabs.io/v1${route}`, { ...init, headers: { 'xi-api-key': elevenKey() ?? '', 'Content-Type': 'application/json' } });
+      if (res.ok) return res;
+      const text = (await res.text()).slice(0, 300);
+      noteRefusal(res.status, text);
+      if (![429, 500, 502, 503].includes(res.status) || n === 4) throw new Error(`ElevenLabs ${route}: ${res.status} ${text}`);
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** n));
+    }
+  });
 }
 
 /**
@@ -125,8 +129,10 @@ async function eleven(route: string, init?: RequestInit): Promise<Response> {
  * (from the voice library or made before) that say their gender and age. Using them costs nothing extra.
  */
 export async function stockVoices(): Promise<Voice[]> {
-  const body = (await (await eleven('/voices')).json()) as { voices: Voice[] };
-  return body.voices.filter((v) => v.category === 'premade' || (!v.name.startsWith('diorama ') && !!v.labels?.gender && !!v.labels?.age));
+  return trackOperation('elevenlabs', 'load available voices', async () => {
+    const body = (await (await eleven('/voices')).json()) as { voices: Voice[] };
+    return body.voices.filter((v) => v.category === 'premade' || (!v.name.startsWith('diorama ') && !!v.labels?.gender && !!v.labels?.age));
+  });
 }
 
 /** The voice id of a character whose voice is designed for them rather than picked from stock. */
@@ -168,6 +174,10 @@ export function previewText(says: string[]): string {
 
 /** Preview selection checks intelligibility and recording integrity; it does not claim to judge acting. */
 export async function designVoice(memo: Memo, p: Profile, says: string[], description?: string): Promise<NonNullable<Cast[string]['design']>> {
+  return trackOperation('voice-design', 'create and validate voice', () => prepareVoice(memo, p, says, description));
+}
+
+async function prepareVoice(memo: Memo, p: Profile, says: string[], description?: string): Promise<NonNullable<Cast[string]['design']>> {
   const text = spokenText(previewText(says), p.language);
   const tries = [...new Set(description ? [`Native ${p.language ?? 'English'} speaker. ${description}`, ...designDescriptions(p).slice(1)] : designDescriptions(p))];
   let last: unknown;

@@ -2,7 +2,7 @@
 // ElevenLabs reads, Muse Voice Transcribe checks each take says its line.
 import fs from 'node:fs';
 import { inputHash } from '../meta/memo.ts';
-import { defineCommand } from '../registry.ts';
+import { defineCommand, emit } from '../registry.ts';
 import { creditGuard, soundQuality } from '../sound/cost.ts';
 import { elevenKey } from '../sound/sources.ts';
 import { castVoices, DESIGNED, PENDING_DESIGN, freeVoiceSlot, voiceCandidates, DesignedVoices, designDescriptions, designVoice, needsDesign, stockVoices, storyLines, voiceLine, Voices, VOICE_PIPELINE, type Cast } from '../sound/voices.ts';
@@ -79,6 +79,9 @@ defineCommand({
     }
     const done: Voices['lines'] = new Array(lines.length);
     const failures: Voices['failures'] = [];
+    let completed = 0;
+    const progress = () => emit('work.progress', { kind: 'voices', completed, total: lines.length, failed: failures.length });
+    progress();
     // Designed voices live on the account only while their character's lines are read, one character at a time,
     // so a world needs a single free voice slot.
     const designed = new DesignedVoices(`diorama ${slug}`);
@@ -101,6 +104,8 @@ defineCommand({
       const voice = cast[lines[i].speaker];
       if (voice.voice === PENDING_DESIGN) {
         failures.push({ speaker: lines[i].speaker, text: lines[i].text, reason: `waiting for a designed voice: ${voice.pending ?? 'Voice Design pending'}` });
+        completed++;
+        progress();
         return;
       }
       try {
@@ -113,6 +118,9 @@ defineCommand({
       } catch (error) {
         failures.push({ speaker: lines[i].speaker, text: lines[i].text, reason: error instanceof Error ? error.message : String(error) });
         console.log(`  FAIL ${lines[i].speaker}: ${lines[i].text.slice(0, 50)}: ${error instanceof Error ? error.message : error}`);
+      } finally {
+        completed++;
+        progress();
       }
     }
     const spoken = done.filter(Boolean);

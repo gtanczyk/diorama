@@ -69,12 +69,24 @@ defineAction({
 });
 
 defineAction({
+  name: 'job_inspect',
+  reads: true,
+  description: 'Inspect a job without waiting: elapsed and quiet time, timestamped recent logs and failures, current locally observed model/API operations and their duration, and voice/sound item counts. These describe the Studio process, not the remote provider internals; silence alone does not prove a hang. Use this when a job appears slow, and before deciding what to do. A staged extension is not in the game until it succeeds.',
+  input: z.object({ id: z.string().min(1), limit: z.number().int().min(1).max(100).optional() }),
+  async run({ id, limit }, ctx) {
+    if (!ctx.jobs.get(id)) throw new ActionError(404, `no job ${id}`);
+    return ctx.jobs.inspect(id, limit ?? 40);
+  },
+});
+
+defineAction({
   name: 'job_wait',
   reads: true,
-  description: 'Wait for a job to end (or up to timeoutSeconds, default 120) and return it with its last output lines and the steps running now (steps: a build runs independent steps side by side, so verify can run while models are still made).',
+  description: 'Wait for a job to end (or up to timeoutSeconds, default 120) and return its state plus recent activity, locally observed operations and progress counts. A return with state running means it is still running. job_inspect shows more activity without waiting.',
   input: z.object({ id: z.string().min(1), timeoutSeconds: z.number().int().min(1).max(600).optional() }),
   async run({ id, timeoutSeconds }, ctx) {
-    return ctx.jobs.wait(id, (timeoutSeconds ?? 120) * 1000);
+    const job = await ctx.jobs.wait(id, (timeoutSeconds ?? 120) * 1000);
+    return { ...job, telemetry: ctx.jobs.inspect(id, 12) };
   },
 });
 

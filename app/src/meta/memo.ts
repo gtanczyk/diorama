@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { trackOperation } from '../studio/operation.ts';
 
 /** sound: ElevenLabs effects and music; music: MusicGen run locally; voice: speech and its Muse Voice transcript. */
 /** space: a Hugging Face Space (TRELLIS, auto-rig), not a Meta model; its answers are kept the same way. */
@@ -39,7 +40,7 @@ export class Memo {
       return answer;
     }
     const started = Date.now();
-    const got = await ask();
+    const got = await trackOperation(model, label, ask);
     const { data: answer, usd, via } = Buffer.isBuffer(got) ? { data: got } as Paid : got;
     for (const f of [file, shared]) if (f) (fs.mkdirSync(path.dirname(f), { recursive: true }), fs.writeFileSync(f, answer));
     this.sent[model]++;

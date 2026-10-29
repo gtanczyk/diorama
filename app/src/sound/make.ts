@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import fs from 'node:fs';
 import path from 'node:path';
+import { emit } from '../registry.ts';
 import { inputHash, type Memo } from '../meta/memo.ts';
 import { sharedDir, soundQuality } from './cost.ts';
 import { audioProblem, decode, encodeMp3, hiss, loopProblem, tonalShare, normalise, seamless, seconds, steps, trim, type Pcm } from './pcm.ts';
@@ -202,6 +203,10 @@ export async function makeSounds(memo: Memo, plan: SoundPlan, write: (id: string
   // Rejected last time: say so, since this run asks for new takes (the rejected ones were forgotten) and pays again.
   const again = jobs.filter((j) => opts.failedBefore?.[j.id]);
   if (again.length) opts.log?.(`  ${again.length} sounds rejected last time, asked for new takes: ${again.map((j) => `${j.id} (${opts.failedBefore![j.id]})`).join('; ')}`);
+  let completed = 0;
+  const kept = Object.keys(sounds).length;
+  const progress = () => emit('work.progress', { kind: 'sounds', completed, total: jobs.length, failed: Object.keys(failures).length, kept });
+  progress();
   await pool(jobs, 3, async (job) => {
     try {
       const made = fromLibrary(job) ?? (await makeOne(memo, job, { python: opts.python }));
@@ -211,6 +216,9 @@ export async function makeSounds(memo: Memo, plan: SoundPlan, write: (id: string
     } catch (error) {
       failures[job.id] = error instanceof Error ? error.message : String(error);
       opts.log?.(`  ${job.id.padEnd(34)} FAILED, stays silent: ${error instanceof Error ? error.message : error}`);
+    } finally {
+      completed++;
+      progress();
     }
   });
   return { sounds, failures };
