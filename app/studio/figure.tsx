@@ -225,7 +225,7 @@ function SpritesView({ slug, dir, v }: { slug: string; dir: string; v: number | 
       <ul class="sheets">
         {sheets.map((s, k) => (
           <li key={s.name}>
-            <canvas ref={(el) => void (canvases.current[k] = el)} />
+            <canvas ref={(el) => void (canvases.current[k] = el)} data-lightbox={fileUrl(slug, `${dir}/${s.f.sheet}`, v)} title="Click: the whole sheet, large" />
             <span class="detail">{s.name} <span ref={(el) => void (labels.current[k] = el)} /></span>
           </li>
         ))}

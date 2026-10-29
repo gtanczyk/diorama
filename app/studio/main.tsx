@@ -69,37 +69,31 @@ type Snap = { id: string; at: string; label: string; by: string; files: number; 
  * History: every job the world went through, newest first, with who ran it and what it changed; any of them can
  * be gone back on, to the world as it was before it. The back step is itself kept, so Redo or a later pick undoes it.
  */
-function HistoryMenu({ slug, version, onError }: { slug: string; version: number; onError: (m: string) => void }) {
-  const [open, setOpen] = useState(false);
+/** The world's history in its own drawer: one row per job, newest first, who ran it, what it changed, and going back to before it. */
+function HistoryView({ slug, version, onError, onDone }: { slug: string; version: number; onError: (m: string) => void; onDone: () => void }) {
   const [snaps, setSnaps] = useState<Snap[] | null>(null);
   const [sure, setSure] = useState<string | null>(null);
-  useEffect(() => void (open && call<Snap[]>('history_list', { slug, limit: 20 }).then(setSnaps).catch((e) => onError(e.message))), [open, slug, version]);
-  const back = (id: string) => call('history_undo', { slug, id }).then(() => (setOpen(false), setSure(null))).catch((e) => onError(e.message));
+  useEffect(() => void call<Snap[]>('history_list', { slug, limit: 100 }).then(setSnaps).catch((e) => onError(e.message)), [slug, version]);
+  const back = (id: string) => call('history_undo', { slug, id }).then(() => (setSure(null), onDone())).catch((e) => onError(e.message));
+  if (!snaps) return <p class="detail">Reading the history…</p>;
+  // The job that made the world has no "before" to go back to: history starts with the job after it.
+  if (!snaps.length) return <p class="note">Nothing to go back to yet. The build that made this world has no "before"; from the next job on (yours or the agent's), each one can be taken back here.</p>;
   return (
-    <div class="share">
-      <button type="button" class="ghost" aria-expanded={open} title="Every job this world went through. Go back to before any of them. Free" onClick={() => (setOpen(!open), setSure(null))}>History</button>
-      {open && (
-        <div class="share-menu history" role="menu">
-          {!snaps && <p class="detail">Reading the history…</p>}
-          {snaps?.length === 0 && <p class="detail">Nothing to go back to yet.</p>}
-          <ol>
-            {snaps?.map((s) => (
-              <li key={s.id}>
-                <div class="row">
-                  <strong>{s.label.replace(/^before /, '')}</strong>
-                  <span class="grow" />
-                  <span class="detail">{s.by === 'agent' ? 'agent' : 'you'} · {ago(s.at)}</span>
-                </div>
-                {s.changed !== undefined && <p class="detail">{(s.changed ?? 0) + (s.added ?? 0) + (s.removed ?? 0) === 0 ? 'changed nothing' : `changed ${touched(s)} · ${(s.changed ?? 0) + (s.added ?? 0)} file${(s.changed ?? 0) + (s.added ?? 0) === 1 ? '' : 's'}${s.removed ? `, removed ${s.removed}` : ''}`}</p>}
-                {sure === s.id
-                  ? <div class="row"><span class="detail">Everything after it goes too.</span><span class="grow" /><button type="button" class="primary small" title="Put the world back as it was before this job. Redo takes it back. Free" onClick={() => back(s.id)}>Go back</button><button type="button" class="ghost small" onClick={() => setSure(null)}>Cancel</button></div>
-                  : <button type="button" class="ghost small" title="Asks once more before going back. Everything after this job goes too" onClick={() => setSure(s.id)}>Back to before this</button>}
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
-    </div>
+    <ol class="history-list">
+      {snaps.map((s) => (
+        <li key={s.id}>
+          <div class="row">
+            <strong>{s.label.replace(/^before /, '')}</strong>
+            <span class="grow" />
+            <span class="detail">{s.by === 'agent' ? 'the agent' : 'you'} · {ago(s.at)}</span>
+          </div>
+          {s.changed !== undefined && <p class="detail">{(s.changed ?? 0) + (s.added ?? 0) + (s.removed ?? 0) === 0 ? 'changed nothing' : `changed ${touched(s)} · ${(s.changed ?? 0) + (s.added ?? 0)} file${(s.changed ?? 0) + (s.added ?? 0) === 1 ? '' : 's'}${s.removed ? `, removed ${s.removed}` : ''}`}</p>}
+          {sure === s.id
+            ? <div class="row"><span class="detail">Everything after it goes too.</span><span class="grow" /><button type="button" class="primary small" title="Put the world back as it was before this job. Redo takes it back. Free" onClick={() => back(s.id)}>Go back</button><button type="button" class="ghost small" onClick={() => setSure(null)}>Cancel</button></div>
+            : <div class="row"><span class="grow" /><button type="button" class="ghost small" title="Asks once more before going back. Everything after this job goes too" onClick={() => setSure(s.id)}>Back to before this</button></div>}
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -562,6 +556,13 @@ function Workshop({ slug }: { slug: string }) {
   /** Activity, the raw record of what ran, opens as a drawer from the top bar. */
   const [logOpen, setLogOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  useEffect(() => {
+    if (!historyOpen) return;
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setHistoryOpen(false);
+    addEventListener('keydown', esc);
+    return () => removeEventListener('keydown', esc);
+  }, [historyOpen]);
   useEffect(() => {
     if (!notesOpen) return;
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && setNotesOpen(false);
@@ -878,16 +879,16 @@ function Workshop({ slug }: { slug: string }) {
   const stageTitle = shownView.kind === 'place' ? nice(stagedPlace?.key ?? '') : shownView.kind === 'cast' || shownView.kind === 'work' ? 'Cast' : shownView.kind === 'story' ? 'Story' : shownView.kind === 'build' ? (stagePlace ? nice(stagePlace.key) : 'Building') : status?.title ?? slug;
   const stageHint = shownView.kind === 'place' ? 'Click a thing to talk about it' : shownView.kind === 'cast' ? 'Click someone to talk about them' : shownView.kind === 'play' ? 'Click to walk, right click to look, or a gamepad' : '';
   // Story, Cast and a step at work sit over the places: ← (or Esc) goes back to the place last shown, or the build.
-  const away = shownView.kind === 'cast' || shownView.kind === 'story' || shownView.kind === 'work';
+  const away = shownView.kind === 'cast' || shownView.kind === 'story' || shownView.kind === 'work' || (shownView.kind === 'build' && !building);
   const lastPlace = useRef<string | undefined>(undefined);
   if (shownView.kind === 'place') lastPlace.current = shownView.place;
   const back = () => (lastPlace.current && places.some((p) => p.key === lastPlace.current) ? onStage({ kind: 'place', place: lastPlace.current }) : setStage(null));
   useEffect(() => {
-    if (!away || byHand || notesOpen || logOpen) return;
+    if (!away || byHand || notesOpen || logOpen || historyOpen) return;
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && !(e.target instanceof HTMLElement && e.target.closest('input, textarea, select')) && back();
     addEventListener('keydown', esc);
     return () => removeEventListener('keydown', esc);
-  }, [away, byHand, notesOpen, logOpen]);
+  }, [away, byHand, notesOpen, logOpen, historyOpen]);
 
   return (
     <>
@@ -895,7 +896,7 @@ function Workshop({ slug }: { slug: string }) {
         <section class="convo">
           <header>
             <h1 title={status?.pitch ?? undefined}>{status?.title ?? slug}</h1>
-            <small>{places.length ? `${places.length} places` : 'being made'}{status && status.playable ? ` · ${status.playable} playable` : ''}{job ? ' · building' : playable ? ' · ready to play' : ''}{live ? '' : ' · reconnecting…'}</small>
+            <small class="to-build" role="button" tabIndex={0} title="The build bar: every step, clickable" onClick={() => onStage({ kind: 'build' })}>{places.length ? `${places.length} places` : 'being made'}{status && status.playable ? ` · ${status.playable} playable` : ''}{job ? ' · building' : playable ? ' · ready to play' : ''}{live ? '' : ' · reconnecting…'}</small>
           </header>
           <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} notices={opening} pinned={places.length > 0 && <WorldStrip slug={slug} version={tick} title={status?.title} places={places} stage={shownView} onStage={onStage} />} afterTurn={afterTurn} footer={footer} picked={picked} onUnpick={() => setPicked(null)}
             empty={<span />} />
@@ -911,7 +912,8 @@ function Workshop({ slug }: { slug: string }) {
             <button type="button" class="ghost wide" title="The stage alone on the whole screen, for recording. Esc comes back" onClick={() => stageRef.current?.querySelector<HTMLElement>('.stage-body')?.requestFullscreen().catch((e) => setError(e.message))}>Film</button>
             <Bell />
             <Menu>
-              {!job && status && status.steps.length > 0 && <HistoryMenu slug={slug} version={tick} onError={setError} />}
+              {status && status.steps.length > 0 && <button type="button" class="mi go" title="The build bar again: every step, clickable for what it made. Free" onClick={() => onStage({ kind: 'build' })}>Build</button>}
+              {status && status.steps.length > 0 && <button type="button" class="mi go" title="Every job this world went through; go back to before any of them. Free" onClick={() => setHistoryOpen(true)}>History</button>}
               {!job && status && !status.issue && <StyleMenu slug={slug} places={places.map((p) => p.key)} version={tick} onError={setError} />}
               <hr />
               <button type="button" class="mi go" title="What the build, the agent and the game did, line by line" onClick={() => setLogOpen(true)}>Activity</button>
@@ -952,6 +954,14 @@ function Workshop({ slug }: { slug: string }) {
           <section class="drawer by-hand" role="dialog" aria-label="By hand">
             <div class="row"><h2>{byHand.startsWith('#cast') ? 'Cast' : `${nice(byHand.split('@')[0])}, by hand`}</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setByHand(null)}>✕</button></div>
             {byHand.startsWith('#cast') ? <CastView slug={slug} version={tick} onError={setError} focus={byHand.split(':')[1]} /> : <PlaceEditor slug={slug} place={byHand.split('@')[0]} focus={byHand.split('@')[1]} version={tick} onError={setError} />}
+          </section>
+        </div>
+      )}
+      {historyOpen && (
+        <div class="drawer-back" onClick={(e) => e.target === e.currentTarget && setHistoryOpen(false)}>
+          <section class="drawer history" role="dialog" aria-label="History">
+            <div class="row"><h2>History</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setHistoryOpen(false)}>✕</button></div>
+            {job ? <p class="note">{job.label} is running: going back waits until it is done.</p> : <HistoryView slug={slug} version={tick} onError={setError} onDone={() => setHistoryOpen(false)} />}
           </section>
         </div>
       )}

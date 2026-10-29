@@ -86,7 +86,7 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
   const left = Math.max(0, (only && step === 'model' ? STAGES.reduce((sum, x) => sum + x.s, 0) : took) - elapsed);
 
   return (
-    <div class="cast-work">
+    <div class="cast-work" data-lightbox-group>
       <div class="cw-head">
         <strong>{WHAT[step] ?? step}</strong>
         <span class="detail">
@@ -103,7 +103,7 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
         return (
           <section class={`cw-focus${st.done ? ' done' : ''}`}>
             <div class="cw-who">
-              {c?.figure ? <img src={fileUrl(slug, c.figure.file, w.files[c.figure.file] ?? c.figure.v)} alt="" /> : <div class="noimg" />}
+              {c?.figure ? <img src={fileUrl(slug, c.figure.file, w.files[c.figure.file] ?? c.figure.v)} data-lightbox={fileUrl(slug, c.figure.file, w.files[c.figure.file] ?? c.figure.v)} title="Click: large" alt="" /> : <div class="noimg" />}
               <div class="cw-text">
                 <h3>{nice(focus)}{c?.role === 'hero' ? ' · hero' : ''}</h3>
                 <span class="detail">{st.stopped ? `Stopped at: ${w.said || 'the start'}` : st.failed ? `No 3D model: ${st.failed}` : st.done ? (step === 'model' ? 'The 3D model is ready' : 'Done') : w.said || 'waiting for the first picture…'}{!st.done && !st.stopped && mine > 1 ? ` · ${clock(mine)}` : ''}</span>
@@ -123,7 +123,7 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
                 <div class="cw-slots">
                   {slots(step, focus, w).map((s) => (
                     <figure class={s.file ? 'in' : ''}>
-                      {s.file ? <img src={fileUrl(slug, s.file, s.v)} alt={s.name} /> : <div class={`to-come${failed ? ' still' : ''}`} />}
+                      {s.file ? <img src={fileUrl(slug, s.file, s.v)} data-lightbox={fileUrl(slug, s.file, s.v)} title="Click: large" alt={s.name} /> : <div class={`to-come${failed ? ' still' : ''}`} />}
                       <figcaption>{s.name}</figcaption>
                     </figure>
                   ))}

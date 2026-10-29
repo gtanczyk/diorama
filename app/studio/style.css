@@ -998,3 +998,14 @@ table.things tr.focus td { background: color-mix(in srgb, var(--amber) 16%, tran
 .editor > * { flex-shrink: 0; }
 /* Every select keeps room for its chevron, whatever padding a panel gives it. */
 select:not([multiple]) { padding-right: 28px !important; }
+.lightbox .prev, .lightbox .next { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 48px; padding: 0; border-radius: 50%; font-size: 26px; line-height: 1; background: var(--panel); border-color: var(--line); }
+.lightbox .prev { left: 16px; } .lightbox .next { right: 16px; }
+.lightbox .count { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 13px; }
+.cast-work img[data-lightbox], .figure-preview canvas[data-lightbox] { cursor: zoom-in; }
+/* History in its own drawer: one card per job, the newest on top. */
+.drawer.history { display: flex; flex-direction: column; }
+.drawer.history > .history-list, .drawer.history > .note { flex: 1; min-height: 0; overflow: auto; }
+.history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.history-list li { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.convo header small.to-build { cursor: pointer; }
+.convo header small.to-build:hover { color: var(--text); text-decoration: underline; }
