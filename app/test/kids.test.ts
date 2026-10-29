@@ -88,3 +88,10 @@ test('a class of drawings: new keys stay apart, drawn places over the asked numb
   expect(fitted.map((x) => x.kind)).toEqual(['place', 'hero', 'place', 'prop']);
   expect(fitted[3].key).toBe('beach');
 });
+
+test('doctor --now says when Meta or the network is too slow for a live build', async () => {
+  const { liveVerdict } = await import('../src/commands/doctor.ts');
+  expect(liveVerdict({ spark: 5000, 'muse paint': 20000, 'muse edit': 25000, sam: 3000 })).toMatch(/^fast enough/);
+  expect(liveVerdict({ spark: 5000, 'muse paint': 90000, 'muse edit': 25000, sam: 65000 })).toBe('SLOW: muse paint, sam. A live build may take 30+ min: play a world built beforehand, or build with fewer drawings and places');
+  expect(liveVerdict({ spark: 5000 })).toMatch(/^SLOW: muse paint, muse edit, sam/);
+});
