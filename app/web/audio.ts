@@ -12,6 +12,8 @@ export type Listened = {
   state: State;
   viewX: number;
   speech: unknown;
+  voiceStarted?(speech: unknown): void;
+  voiceEnded?(speech: unknown): void;
   gone(): Set<string>;
   on(fn: (event: string, detail: Record<string, unknown>) => void): void;
 };
@@ -135,6 +137,7 @@ export class Mixer {
   private async speak(text: string, card = false, speaker?: string) {
     this.hush();
     const request = this.speechRequest;
+    const speech = this.game.speech;
     const line = spokenLine(this.sound, text, speaker);
     if (!line || this.voiced === '0') return;
     if (this.voiced === 'npc' && (line.speaker === 'narrator' || line.speaker === this.game.data.world?.hero.key)) return;
@@ -146,7 +149,11 @@ export class Mixer {
     src.connect(this.voiceBus);
     src.start();
     this.speaking = src;
-    src.onended = () => { if (this.speaking === src) this.speaking = undefined; };
+    if (!card && !this.muted && this.ctx.state === 'running') this.game.voiceStarted?.(speech);
+    src.onended = () => {
+      if (this.speaking === src) this.speaking = undefined;
+      if (!card) this.game.voiceEnded?.(speech);
+    };
     this.log.push({ at: this.ctx.currentTime, id: text.slice(0, 40), kind: 'line' });
   }
 

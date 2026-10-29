@@ -270,7 +270,7 @@ class Game {
   party: Body[] = [];
   /** A walk-and-use is under way: the lead does not change hands until it ends. */
   busy = false;
-  speech: { text: string; until: number; who?: string; from: number } | null = null;
+  speech: { text: string; until: number; who?: string; from: number; audioUntil?: number } | null = null;
   state!: State;
   /** The inventory item the next click uses. */
   holding: string | undefined;
@@ -793,6 +793,16 @@ class Game {
     });
   }
 
+  /** The audio clock owns voiced lines; slow rendering must not lengthen their pauses. */
+  voiceStarted(speech: unknown) {
+    if (this.speech && this.speech === speech) this.speech.audioUntil = Infinity;
+  }
+
+  voiceEnded(speech: unknown) {
+    // Ignore completion of an interrupted line and audio that was muted/suspended.
+    if (this.speech && this.speech === speech && this.speech.audioUntil !== undefined) this.speech.audioUntil = performance.now() + 250;
+  }
+
   private fadeOut(): Promise<void> {
     this.darkTarget = 1;
     return new Promise((resolve) => {
@@ -858,7 +868,7 @@ class Game {
     const hero = this.hero;
     const step = dt / 0.3;
     this.dark = this.darkTarget > this.dark ? Math.min(this.darkTarget, this.dark + step) : Math.max(this.darkTarget, this.dark - step);
-    if (this.speech && this.time > this.speech.until) {
+    if (this.speech && (this.speech.audioUntil === undefined ? this.time > this.speech.until : performance.now() > this.speech.audioUntil)) {
       this.speech = null;
       this.emit('silent', {});
     }
