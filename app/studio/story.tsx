@@ -2,8 +2,7 @@
 // and the checker's verdict with a shortest route to each ending. Pick a place to read and reword what
 // happens there; anything that changes what the player can do is asked of the agent (story_redo).
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { call } from './api.ts';
-import { named } from './build.tsx';
+import { askAgent, call } from './api.ts';
 
 type Effect = Record<string, string>;
 type Interaction = { place: string; thing: string; verb: string; with?: string; when: string[]; say: string; do: Effect[]; once: boolean };
@@ -36,18 +35,36 @@ const effect = (e: Effect) => Object.entries(e).map(([k, v]) => (k === 'go' ? `g
 export function StoryView({ slug, version, onError }: { slug: string; version: number; onError: (m: string) => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [pick, setPick] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [asked, setAsked] = useState(false);
+  useEffect(() => setAsked(false), [slug]);
   const load = () => call<Status>('story_status', { slug }).then(setStatus).catch((e) => onError(e.message));
   useEffect(() => void load(), [slug, version]);
   if (!status) return <p class="detail">Reading the story…</p>;
   const { story } = status;
   if (!story) return <p class="detail">No story yet: it is written by the story step of the build.</p>;
   const save = (path: string, text: string) => call('story_text', { slug, path, text }).then(load).catch((e) => onError(e.message));
-  const step = (name: string) => call('run_step', { slug, step: name }).catch((e) => onError(e.message));
+  const ask = async (step: 'voices' | 'plates') => {
+    if (asking) return;
+    setAsking(true);
+    setAsked(false);
+    try {
+      await askAgent(slug,
+        `Review the story's missing ${step === 'voices' ? 'spoken audio' : 'painted changes'}. Read story_status to check what is currently missing, explain the scope and estimated generation cost (say if the cost is unknown), and ask me to confirm before making any paid generation calls. This request is for review only; do not run generation yet.`,
+        step === 'voices' ? 'Review missing story voices and cost' : 'Review missing story paintings and cost');
+      setAsked(true);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setAsking(false);
+    }
+  };
   const place = status.places.find((p) => p.key === pick);
   const ending = story.endings.find((e) => `ending:${e.key}` === pick);
   return (
     <div class="story">
-      <Verdict status={status} onStep={step} onFirst={() => call('story_redo', { slug }).catch((e) => onError(e.message))} />
+      <Verdict status={status} onAsk={ask} asking={asking} onFirst={() => call('story_redo', { slug }).catch((e) => onError(e.message))} />
+      {asked && <p class="detail" role="status">Sent to the agent. Review the scope and cost in the conversation before approving generation.</p>}
       <StoryMap status={status} story={story} pick={pick} onPick={(k) => setPick(pick === k ? null : k)} />
       {place
         ? <PlaceStory place={place} story={story} hero={status.hero} unpainted={status.unpainted} onSave={save} />
@@ -58,7 +75,7 @@ export function StoryView({ slug, version, onError }: { slug: string; version: n
   );
 }
 
-function Verdict({ status, onStep, onFirst }: { status: Status; onStep: (step: string) => void; onFirst: () => void }) {
+function Verdict({ status, onAsk, asking, onFirst }: { status: Status; onAsk: (step: 'voices' | 'plates') => void; asking: boolean; onFirst: () => void }) {
   const ok = status.issues.length === 0;
   return (
     <section class="verdict">
@@ -76,8 +93,8 @@ function Verdict({ status, onStep, onFirst }: { status: Status; onStep: (step: s
       {!ok && <ul class="issues">{status.issues.map((i) => <li>{i}</li>)}</ul>}
       {(status.unvoiced.length > 0 || status.unpainted.length > 0) && (
         <div class="row">
-          {status.unvoiced.length > 0 && <button type="button" class="ghost small" title={`ElevenLabs speaks the new lines, 1 call each:\n${status.unvoiced.join('\n')}`} onClick={() => onStep('voices')}>Speak {status.unvoiced.length} new line{status.unvoiced.length === 1 ? '' : 's'}</button>}
-          {status.unpainted.length > 0 && <button type="button" class="ghost small" title={named(`Muse paints how each changed thing looks after it changes. ${status.unpainted.length} Muse Image edit${status.unpainted.length === 1 ? '' : 's'}`)} onClick={() => onStep('plates')}>Paint {status.unpainted.length} change{status.unpainted.length === 1 ? '' : 's'}</button>}
+          {status.unvoiced.length > 0 && <button type="button" class="ghost small" disabled={asking} title={`Ask the agent to review missing voices and cost before you approve generation:\n${status.unvoiced.join('\n')}`} onClick={() => onAsk('voices')}>Ask agent about {status.unvoiced.length} missing voice{status.unvoiced.length === 1 ? '' : 's'}</button>}
+          {status.unpainted.length > 0 && <button type="button" class="ghost small" disabled={asking} title="Ask the agent to review missing paintings and cost before you approve generation" onClick={() => onAsk('plates')}>Ask agent about {status.unpainted.length} unpainted change{status.unpainted.length === 1 ? '' : 's'}</button>}
         </div>
       )}
       {(status.unseen?.length ?? 0) > 0 && <details open><summary class="detail">{status.unseen!.length} part{status.unseen!.length === 1 ? '' : 's'} of the story the painting will not show (ask the agent to redo)</summary><ul class="issues">{status.unseen!.map((l) => <li>{l}</li>)}</ul></details>}
