@@ -988,3 +988,9 @@ main.start .more .fields input:focus, main.start .more .fields select:focus { ou
 .cw-stages li.stop { background: #f3d9d2; color: #8a2b17; }
 .cw-slots .to-come.still { animation: none; opacity: 0.5; }
 .stage-top .back { flex: none; width: 36px; height: 36px; min-height: 0; padding: 0; border-radius: 50%; font-size: 18px; line-height: 1; }
+/* A thing picked on the place: the same chip as a picked character, under it (above it near the bottom edge). */
+.mat .who-acts.on-pic { position: absolute; z-index: 3; transform: translate(-50%, 8px); display: flex; align-items: center; gap: 10px; white-space: nowrap; padding: 4px 4px 4px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 18px rgba(80, 55, 25, 0.18); animation: drawer-in 0.15s ease-out; }
+.mat .who-acts.on-pic.above { transform: translate(-50%, calc(-100% - 8px)); }
+.mat .who-acts.on-pic .detail { font-size: 12px; }
+.mat .who-acts.on-pic button { min-height: 30px; padding: 0 12px; }
+table.things tr.focus td { background: color-mix(in srgb, var(--amber) 16%, transparent); }

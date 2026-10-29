@@ -59,9 +59,10 @@ const KIND_TIPS: Record<string, string> = {
 
 const norm = ([a, b, c, d]: Rect): Rect => [Math.round(Math.min(a, c)), Math.round(Math.min(b, d)), Math.round(Math.max(a, c)), Math.round(Math.max(b, d))];
 
-export function PlaceEditor({ slug, place, version, onError }: { slug: string; place: string; version: number; onError: (m: string) => void }) {
+export function PlaceEditor({ slug, place, version, onError, focus }: { slug: string; place: string; version: number; onError: (m: string) => void; focus?: string }) {
   const [st, setSt] = useState<PlaceStatus | null>(null);
-  const [layer, setLayer] = useState<'painting' | 'masks' | 'walk'>('painting');
+  // Opened on one thing (its Details on the stage): its mask shows and its row is in view.
+  const [layer, setLayer] = useState<'painting' | 'masks' | 'walk'>(focus ? 'masks' : 'painting');
   const [tool, setTool] = useState<Tool>('look');
   const [target, setTarget] = useState('');
   const [mode, setMode] = useState<'add' | 'erase'>('add');
@@ -84,6 +85,9 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
   }, [tool, place]);
 
   const things = st?.things ?? [];
+  useEffect(() => {
+    if (focus && st) document.getElementById(`thing-${focus}`)?.scrollIntoView({ block: 'center' });
+  }, [focus, !!st]);
   const floors = st?.floors ?? [];
   const isFloor = floors.some((f) => f.key === target);
   const npcs = st?.npcs ?? [];
@@ -194,7 +198,7 @@ export function PlaceEditor({ slug, place, version, onError }: { slug: string; p
         <table class="things">
           <thead><tr><th>Thing</th><th>Kind</th><th>SAM looks for</th><th>Mask</th><th /></tr></thead>
           <tbody>
-            {things.map((t) => <ThingLine key={t.key} t={t} busy={busy} fix={(input) => act('mask_fix', { thing: t.key, ...input })} remove={(paintOut) => act('thing_remove', { thing: t.key, paintOut })} />)}
+            {things.map((t) => <ThingLine key={t.key} t={t} focused={t.key === focus} busy={busy} fix={(input) => act('mask_fix', { thing: t.key, ...input })} remove={(paintOut) => act('thing_remove', { thing: t.key, paintOut })} />)}
             <AddThing busy={busy} add={(looks, kind) => act('thing_add', { looks, ...(kind && { kind }) })} />
           </tbody>
         </table>
@@ -227,13 +231,13 @@ function AddThing({ busy, add }: { busy: boolean; add: (looks: string, kind: str
   );
 }
 
-function ThingLine({ t, busy, fix, remove }: { t: ThingRow; busy: boolean; fix: (input: object) => void; remove: (paintOut: boolean) => void }) {
+function ThingLine({ t, focused, busy, fix, remove }: { t: ThingRow; focused?: boolean; busy: boolean; fix: (input: object) => void; remove: (paintOut: boolean) => void }) {
   const [asking, setAsking] = useState(false);
   const [phrase, setPhrase] = useState(t.phrase);
   useEffect(() => setPhrase(t.phrase), [t.phrase]);
   return (
     <>
-    <tr>
+    <tr id={`thing-${t.key}`} class={focused ? 'focus' : undefined}>
       <td><code>{t.key}</code></td>
       <td><select value={t.kind} disabled={busy} title={KIND_TIPS[t.kind] ?? 'What kind of thing it is'} onChange={(e) => fix({ kind: e.currentTarget.value })}>{KINDS.map((k) => <option value={k}>{k}</option>)}</select></td>
       <td><form class="row" onSubmit={(e) => (e.preventDefault(), phrase.trim() !== t.phrase && fix({ phrase: phrase.trim() }))}><input value={phrase} title="The words SAM searches the painting for. Change them and press Search" onInput={(e) => setPhrase(e.currentTarget.value)} />{phrase.trim() !== t.phrase && phrase.trim().length > 1 && <button type="submit" class="primary small" disabled={busy} title="SAM looks for the thing by these words. 1 SAM call">Search</button>}</form></td>

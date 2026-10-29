@@ -231,3 +231,23 @@ defineAction({
     }).sort((a, b) => String(b.started).localeCompare(String(a.started)));
   },
 });
+
+defineAction({
+  name: 'world_delete',
+  description: 'Delete a world: the person only, from the Studio\'s menu or the command line, never the agent. It is moved to worlds/.trash/<slug>-<time>, '
+    + 'so it can be brought back by moving the folder back. Refused while a job runs in it.',
+  input: z.object({ slug: Slug }),
+  async run({ slug }, ctx) {
+    if (ctx.by === 'agent') throw new ActionError(403, 'only the person deletes a world');
+    const dir = path.join(ctx.root, slug);
+    if (!fs.existsSync(dir)) throw new ActionError(404, `no world ${slug}`);
+    const busy = ctx.jobs.busy(slug);
+    if (busy) throw new ActionError(409, `${busy.label} is running in ${slug}: stop it first`);
+    const trash = path.join(ctx.root, '.trash');
+    fs.mkdirSync(trash, { recursive: true });
+    const to = path.join(trash, `${slug}-${new Date().toISOString().replace(/[:.]/g, '-')}`);
+    fs.renameSync(dir, to);
+    ctx.events.publish('world.deleted', { world: slug, by: ctx.by });
+    return { deleted: slug, movedTo: path.relative(ctx.root, to), restore: `move ${path.relative(process.cwd(), to)} back to ${path.relative(process.cwd(), dir)}` };
+  },
+});

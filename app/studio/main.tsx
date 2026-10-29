@@ -917,6 +917,10 @@ function Workshop({ slug }: { slug: string }) {
               <button type="button" class="mi go" title="What the build, the agent and the game did, line by line" onClick={() => setLogOpen(true)}>Activity</button>
               <button type="button" class="mi go" title="Your notes on this diorama, open and done" onClick={() => setNotesOpen(true)}>Notes{openNotes.length ? ` · ${openNotes.length}` : ''}</button>
               {!job && status && !status.issue && <><hr /><Rebuild slug={slug} again={status.steps.length >= steps.length - 1} onError={setError} /></>}
+              {!job && <><hr /><button type="button" class="mi danger" title="Moves the world to worlds/.trash, so it can be brought back by moving its folder back" onClick={() => {
+                if (!confirm(`Delete ${status?.title ?? slug}? It goes to worlds/.trash/, so you can still bring it back by moving the folder back.`)) return;
+                call('world_delete', { slug }).then(() => go('/')).catch((e) => setError(e.message));
+              }}>Delete this world…</button></>}
             </Menu>
           </div>
           <div class={`stage-body ${shownView.kind}`}>
@@ -935,7 +939,7 @@ function Workshop({ slug }: { slug: string }) {
                   only={job && job.args[0] === shownView.step ? job.args[2] : undefined} onOpen={(key) => setByHand(`#cast:${key}`)} />
               </div>
             )}
-            {shownView.kind === 'place' && stagedPlace && <PlaceStage slug={slug} place={stagedPlace} version={tick} picked={picked} onPick={setPicked} />}
+            {shownView.kind === 'place' && stagedPlace && <PlaceStage slug={slug} place={stagedPlace} version={tick} picked={picked} onPick={setPicked} onOpen={(thing) => setByHand(`${stagedPlace.key}@${thing}`)} />}
             {shownView.kind === 'place' && !stagedPlace && <div class="mat"><p class="detail">{status?.pitch ?? 'Muse Spark is dreaming up the places…'}</p></div>}
             {shownView.kind === 'cast' && <CastStage slug={slug} version={tick} picked={picked} onPick={setPicked} onOpen={(key) => setByHand(`#cast:${key}`)} />}
             {shownView.kind === 'place' && stagedPlace?.stages.painting && <button type="button" class="stage-tool" title="Masks, floors, stand spots and repaints for this place, by hand. Or just ask the agent" onClick={() => setByHand(stagedPlace.key)}>✎ Fix this place by hand</button>}
@@ -946,8 +950,8 @@ function Workshop({ slug }: { slug: string }) {
       {byHand && (
         <div class="drawer-back" onClick={(e) => e.target === e.currentTarget && setByHand(null)}>
           <section class="drawer by-hand" role="dialog" aria-label="By hand">
-            <div class="row"><h2>{byHand.startsWith('#cast') ? 'Cast' : `${nice(byHand)}, by hand`}</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setByHand(null)}>✕</button></div>
-            {byHand.startsWith('#cast') ? <CastView slug={slug} version={tick} onError={setError} focus={byHand.split(':')[1]} /> : <PlaceEditor slug={slug} place={byHand} version={tick} onError={setError} />}
+            <div class="row"><h2>{byHand.startsWith('#cast') ? 'Cast' : `${nice(byHand.split('@')[0])}, by hand`}</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setByHand(null)}>✕</button></div>
+            {byHand.startsWith('#cast') ? <CastView slug={slug} version={tick} onError={setError} focus={byHand.split(':')[1]} /> : <PlaceEditor slug={slug} place={byHand.split('@')[0]} focus={byHand.split('@')[1]} version={tick} onError={setError} />}
           </section>
         </div>
       )}

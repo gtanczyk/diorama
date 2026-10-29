@@ -10,6 +10,7 @@ import './feedback.ts';
 import './budget.ts';
 import './models.ts';
 import './view.ts';
+import './motion.ts';
 import './cast.ts';
 import './style.ts';
 import './items.ts';

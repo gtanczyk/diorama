@@ -91,7 +91,7 @@ type Masks = { things?: Record<string, { box?: Box; phrase?: string }> };
  * The place as a framed painting. Every thing SAM cut out is a spot to point at: hovering lights up its mask,
  * a click puts it into the next message. "Fix by hand" opens the old tools for whoever wants them.
  */
-export function PlaceStage({ slug, place, version, picked, onPick, children }: { slug: string; place: CardPlace; version: number; picked: Picked | null; onPick: (p: Picked) => void; children?: ComponentChildren }) {
+export function PlaceStage({ slug, place, version, picked, onPick, onOpen, children }: { slug: string; place: CardPlace; version: number; picked: Picked | null; onPick: (p: Picked) => void; onOpen?: (thing: string) => void; children?: ComponentChildren }) {
   const [masks, setMasks] = useState<Masks | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   useEffect(() => {
@@ -122,6 +122,19 @@ export function PlaceStage({ slug, place, version, picked, onPick, children }: {
               </button>
             );
           })}
+          {/* Picked, as in the cast: it goes into the next message, and its details are one click away. */}
+          {(() => {
+            const on = picked?.place === place.key ? spots.find(([k]) => k === picked.thing) : undefined;
+            if (!on) return null;
+            const [x0, , x1, y1] = on[1].box!;
+            const below = y1 / 896 < 0.86;
+            return (
+              <div class={`who-acts on-pic${below ? '' : ' above'}`} style={{ left: `${Math.min(80, Math.max(20, (((x0 + x1) / 2) / 1200) * 100))}%`, top: `${((below ? y1 : on[1].box![1]) / 896) * 100}%` }}>
+                <span class="detail">📍 {nice(on[0]).toLowerCase()} · in your next message</span>
+                {onOpen && <button type="button" class="ghost small" title="Its mask, kind, the words SAM looks for, where the hero stands to use it, remove it: by hand. Free to look" onClick={() => onOpen(on[0])}>✎ Details</button>}
+              </div>
+            );
+          })()}
         </div>
       </div>
       {children}
