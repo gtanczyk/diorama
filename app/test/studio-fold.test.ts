@@ -91,6 +91,16 @@ test('no screen or state scrolls the page', async () => {
     await page.locator('.bell').dispatchEvent('click');
     await check('bell');
     await page.keyboard.press('Escape');
+    // The place editor's drawer scrolls inside; none of its rows (the tool tabs) is squeezed shorter than its content.
+    const fix = page.locator('.stage-tool');
+    if (await fix.count()) {
+      await fix.first().dispatchEvent('click');
+      await page.locator('.drawer .editor .tools').waitFor();
+      await check('by hand');
+      const squeezed = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.drawer .editor > *')].filter((e) => e.scrollHeight - e.clientHeight > 2 && getComputedStyle(e).overflowY !== 'auto').map((e) => `${e.className} ${e.clientHeight}<${e.scrollHeight}`));
+      if (squeezed.length) spills.push(`${width}x${height} by hand: squeezed ${squeezed.join(', ')}`);
+      await page.keyboard.press('Escape');
+    }
     for (const item of ['History', 'Activity', /by hand/]) {
       await page.locator('.menu-button').dispatchEvent('click');
       const b = page.locator('.top-menu').getByRole('button', { name: item });

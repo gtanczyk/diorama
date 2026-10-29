@@ -994,3 +994,7 @@ main.start .more .fields input:focus, main.start .more .fields select:focus { ou
 .mat .who-acts.on-pic .detail { font-size: 12px; }
 .mat .who-acts.on-pic button { min-height: 30px; padding: 0 12px; }
 table.things tr.focus td { background: color-mix(in srgb, var(--amber) 16%, transparent); }
+/* The editor scrolls as a whole: none of its rows (the tool tabs above all) is squeezed to fit. */
+.editor > * { flex-shrink: 0; }
+/* Every select keeps room for its chevron, whatever padding a panel gives it. */
+select:not([multiple]) { padding-right: 28px !important; }
