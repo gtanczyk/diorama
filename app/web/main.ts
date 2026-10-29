@@ -2372,7 +2372,7 @@ canvas.addEventListener('contextmenu', (e) => {
 });
 canvas.addEventListener('mouseleave', () => (pointer = null));
 // The keyboard: WASD or the arrows walk, E, Space or Enter use the nearest thing in reach (it lights up),
-// 1 to 9 take an item from the bag when nobody is talking (in a conversation they pick an answer; walking or Esc leaves it).
+// 1 to 9 take an item from the bag when nobody is talking (in a conversation they pick an answer; Esc or a click away leaves it).
 const DIRS: Record<string, Point> = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
 const keys = new Set<string>();
 let keyboard = false;
@@ -2381,10 +2381,21 @@ addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
   if (k === 'shift') keys.add(k);
+  // In a talk the keys go through the answers: arrows or WASD light one, E, Space or Enter say it, Esc says goodbye.
+  if (game.state.talk && !game.state.ending) {
+    if (k in DIRS) {
+      e.preventDefault();
+      game.answers.move(DIRS[k][0] + DIRS[k][1] < 0 ? -1 : 1, true);
+      return;
+    }
+    if (k === 'e' || k === ' ' || k === 'enter') {
+      e.preventDefault();
+      game.answers.pick();
+      return;
+    }
+  }
   if (k in DIRS) {
     e.preventDefault();
-    // Walking off ends a talk (a key held from before it began does not).
-    if (!e.repeat) game.leave();
     keys.add(k);
     keyboard = true;
     return;

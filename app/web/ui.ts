@@ -156,6 +156,8 @@ export class Answers {
     const texts = options.map((o) => o.text).join('\n');
     const fresh = texts !== this.texts;
     if (fresh) [this.texts, this.focus] = [texts, 0];
+    // A card lit from the keys stays lit through the talk; a new talk starts unlit.
+    if (!options.length) this.root.classList.remove('lit');
     this.cards = [];
     if (!options.length) return this.root.replaceChildren();
     const who = el('div', 'who');
@@ -194,9 +196,16 @@ export class Answers {
     if (fresh && document.body.classList.contains('pad')) this.hear?.(options[0].text);
   }
 
-  /** Moves the lit card up (-1) or down (1), round from the last to the first. */
-  move(by: number) {
+  /** Moves the lit card up (-1) or down (1), round from the last to the first; `keys` lights it without a pad. */
+  move(by: number, keys = false) {
     if (!this.picks.length) return;
+    if (keys && !this.root.classList.contains('lit')) {
+      // The first press lights the first card, so the player sees where they are before moving on.
+      this.root.classList.add('lit');
+      this.focus = by > 0 ? 0 : this.picks.length - 1;
+      this.light();
+      return void this.hear?.(this.texts.split('\n')[this.focus]);
+    }
     this.focus = (this.focus + by + this.picks.length) % this.picks.length;
     this.light();
     this.hear?.(this.texts.split('\n')[this.focus]);
@@ -204,6 +213,8 @@ export class Answers {
 
   /** Picks the lit card; false when no answers are up. */
   pick(): boolean {
+    // Enter before any card was lit lights the first one rather than answering unseen.
+    if (!document.body.classList.contains('pad') && !this.root.classList.contains('lit')) return this.move(1, true), !!this.cards.length;
     const card = this.cards[this.focus];
     if (!card) return false;
     card.click();
