@@ -2,7 +2,7 @@
 // stage it is at (TRELLIS, skeleton) and the time left; when one is done, it moves right there.
 import { useEffect, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
-import { FigurePreview } from './figure.tsx';
+import { FigurePreview, Sides } from './figure.tsx';
 import { nice } from './world.tsx';
 import { named, nowBy } from './build.tsx';
 import { Icon } from './icons.tsx';
@@ -120,7 +120,11 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
               </div>
             </div>
             {st.done && c && (c.stamps.model || c.stamps.sprites || c.stamps.rig)
-              ? <FigurePreview key={`${focus}-${c.stamps.model}-${c.stamps.sprites}`} slug={slug} who={focus} stamps={c.stamps} />
+              ? <>
+                  {/* The sides stay in sight after the step: what TRELLIS built the body from. */}
+                  {step === 'model' && c.stamps.model && <Sides slug={slug} dir={`cast/${focus}/model`} v={c.stamps.model} />}
+                  <FigurePreview key={`${focus}-${c.stamps.model}-${c.stamps.sprites}`} slug={slug} who={focus} stamps={c.stamps} sides={step !== 'model'} />
+                </>
               : (
                 <div class="cw-slots">
                   {slots(step, focus, w).map((s) => (

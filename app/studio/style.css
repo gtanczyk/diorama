@@ -1040,3 +1040,10 @@ select:not([multiple]) { padding-right: 28px !important; }
 button > .icon, .detail > .icon, .pick-chip > .icon { margin-right: 2px; }
 .a-sign .icon { vertical-align: middle; }
 .cast .who .sign .icon { vertical-align: 0; }
+
+/* The 4 painted sides under a 3D model preview. */
+.fig-sides { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.fig-sides .row { gap: 8px; flex-wrap: wrap; }
+.fig-sides figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.fig-sides img { width: 96px; height: 128px; object-fit: contain; background: var(--raised); border-radius: 8px; cursor: zoom-in; }
+.fig-sides figcaption { font-size: 12px; color: var(--muted, inherit); }

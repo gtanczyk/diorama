@@ -6,6 +6,7 @@ import { GESTURES } from '../src/play/gestures.ts';
 import { pose, sheetCell, type PartName, type Rig } from '../src/play/rig.ts';
 import type { Figure3D, ModelInfo } from '../web/hero3d.ts';
 import { fileUrl } from './api.ts';
+import { named } from './build.tsx';
 
 type Stamps = { rig: number | null; model: number | null; sprites: number | null };
 type Facing = { sheet: string; yaw: number; stand?: number; off?: number[]; gestures?: string[] };
@@ -43,7 +44,7 @@ const FIGURE_TIPS = {
   sprites: 'The painted sprites for each facing, looping',
 };
 
-export function FigurePreview({ slug, who, stamps }: { slug: string; who: string; stamps: Stamps }) {
+export function FigurePreview({ slug, who, stamps, sides = true }: { slug: string; who: string; stamps: Stamps; sides?: boolean }) {
   const tabs = ([['sprites', 'Sprites'], ['rig', '2D walk'], ['model', '3D model']] as const).filter(([k]) => stamps[k]);
   const [tab, setTab] = useState(tabs[0]?.[0]);
   if (!tab) return <p class="detail">No rig, model or sprites yet: run the build's cast, model and sprites steps.</p>;
@@ -55,8 +56,29 @@ export function FigurePreview({ slug, who, stamps }: { slug: string; who: string
       {tab === 'model' && <ModelView slug={slug} dir={`cast/${who}/model`} v={stamps.model} />}
       {tab === 'rig' && stamps.sprites && <p class="detail">The game walks this character with its sprites; this walk is the fallback.</p>}
       {tab === 'model' && <p class="detail">Sprites are painted over this model; the game draws the model itself only with ?model=1.</p>}
+      {tab === 'model' && sides && <Sides slug={slug} dir={`cast/${who}/model`} v={stamps.model} />}
       {tab === 'rig' && <RigView slug={slug} who={who} v={stamps.rig} />}
       {tab === 'sprites' && <SpritesView slug={slug} dir={`cast/${who}/sprites`} v={stamps.sprites} />}
+    </div>
+  );
+}
+
+/** The four painted sides the 3D body was built from, kept after the build; a click opens them large. */
+export function Sides({ slug, dir, v }: { slug: string; dir: string; v: number | null }) {
+  const [gone, setGone] = useState<string[]>([]);
+  const sides = ['front', 'back', 'left', 'right'].filter((s) => !gone.includes(s));
+  if (!sides.length) return null;
+  return (
+    <div class="fig-sides" data-lightbox-group>
+      <span class="detail">{named('The 4 sides Muse Image painted for TRELLIS')}</span>
+      <div class="row">
+        {sides.map((s) => (
+          <figure>
+            <img src={fileUrl(slug, `${dir}/${s}.png`, v)} data-lightbox={fileUrl(slug, `${dir}/${s}.png`, v)} title="Click: large" alt={s} loading="lazy" onError={() => setGone((g) => [...g, s])} />
+            <figcaption>{s}</figcaption>
+          </figure>
+        ))}
+      </div>
     </div>
   );
 }
