@@ -39,15 +39,15 @@ function useFrames(draw: (t: number) => void, deps: unknown[]) {
 }
 
 const FIGURE_TIPS = {
-  model: 'The 3D model sprites are painted over (the game shows it only with ?model=1). Drag to turn it',
+  model: 'The model that supplies the animation poses. Drag to turn it',
   rig: 'The painting itself, walking: bent by its bones as one piece, so clothes stretch and never tear',
-  sprites: 'The painted sprites for each facing, looping',
+  sprites: 'The generated sprites for each facing, looping',
 };
 
 export function FigurePreview({ slug, who, stamps, sides = true }: { slug: string; who: string; stamps: Stamps; sides?: boolean }) {
   const tabs = ([['sprites', 'Sprites'], ['rig', '2D walk'], ['model', '3D model']] as const).filter(([k]) => stamps[k]);
   const [tab, setTab] = useState(tabs[0]?.[0]);
-  if (!tab) return <p class="detail">No rig, model or sprites yet: run the build's cast, model and sprites steps.</p>;
+  if (!tab) return <p class="detail">No animation yet. Build the character to generate its animation.</p>;
   return (
     <div class="figure-preview">
       <div class="tabs">
@@ -55,7 +55,7 @@ export function FigurePreview({ slug, who, stamps, sides = true }: { slug: strin
       </div>
       {tab === 'model' && <ModelView slug={slug} dir={`cast/${who}/model`} v={stamps.model} />}
       {tab === 'rig' && stamps.sprites && <p class="detail">The game walks this character with its sprites; this walk is the fallback.</p>}
-      {tab === 'model' && <p class="detail">Sprites are painted over this model; the game draws the model itself only with ?model=1.</p>}
+      {tab === 'model' && <p class="detail">This model supplies the animation poses. The game uses its sprites when available.</p>}
       {tab === 'model' && sides && <Sides slug={slug} dir={`cast/${who}/model`} v={stamps.model} />}
       {tab === 'rig' && <RigView slug={slug} who={who} v={stamps.rig} />}
       {tab === 'sprites' && <SpritesView slug={slug} dir={`cast/${who}/sprites`} v={stamps.sprites} />}
@@ -255,6 +255,7 @@ function SpritesView({ slug, dir, v }: { slug: string; dir: string; v: number | 
   return (
     <div class="moves">
       <Modes modes={['walk', 'stand']} mode={walking ? 'walk' : 'stand'} set={(m) => setWalking(m === 'walk')} />
+      {info && sheets.some((s) => !s.talk) && <p class="detail">{info.frames} frames per walking direction</p>}
       <ul class="sheets">
         {sheets.map((s, k) => (
           <li key={s.name}>

@@ -2,6 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import '../src/commands/sprites.ts';
+import { registry } from '../src/registry.ts';
+import { renderGuides, paintSheet } from '../src/model/sprites.ts';
 import { buildModel, buildModels } from '../src/commands/model.ts';
 import { worldData } from '../src/commands/play.ts';
 import { WorldFiles } from '../src/world/files.ts';
@@ -14,6 +17,7 @@ import { scene } from './fixtures/scene.ts';
 vi.mock('../src/model/build.ts', () => ({ reconstruct: vi.fn(), autoRig: vi.fn() }));
 vi.mock('../src/model/views.ts', () => ({ paintViews: vi.fn() }));
 vi.mock('../src/model/fit.ts', () => ({ fitViews: vi.fn(), refitIfOld: vi.fn() }));
+vi.mock('../src/model/sprites.ts', async (original) => ({ ...await original<typeof import('../src/model/sprites.ts')>(), renderGuides: vi.fn(), paintSheet: vi.fn() }));
 let root: string, files: WorldFiles;
 const valid = boxGlb([1.2, 1, 0.4]), flat = boxGlb([1, 0.043, 1]);
 beforeEach(async () => {
@@ -114,4 +118,25 @@ test('a humanoid rebuild preserves its trousers skinning preference in model met
   vi.mocked(autoRig).mockResolvedValue(valid);
   await buildModel(files, 'hero', 0, '');
   expect(files.readJson(files.path('cast', 'hero', 'model', 'model.json'))).toMatchObject({ texture: 'model', coatCorrection: false });
+});
+
+test('the Studio model job finishes a new hero with automatic UV sprites, without texture flags', async () => {
+  const cwd = process.cwd();
+  const texture = await (await import('sharp')).default({ create: { width: 1, height: 1, channels: 4, background: '#cc4433' } }).png().toBuffer();
+  const textured = boxGlb([1.2, 1, 0.4], 1, [0, 0, 0], texture);
+  files.write(files.path('cast', 'figures.json'), { hero: { height: 1.6, upright: true } });
+  vi.mocked(reconstruct).mockResolvedValue(textured);
+  vi.mocked(autoRig).mockResolvedValue(textured);
+  vi.mocked(renderGuides).mockImplementation(async (_dir, facings) => Object.fromEntries(facings.map((f) => [f, texture])));
+  fs.mkdirSync(path.join(root, 'worlds'));
+  fs.renameSync(files.dir, path.join(root, 'worlds', 'w'));
+  files = new WorldFiles('w', path.join(root, 'worlds'));
+  try {
+    process.chdir(root);
+    await registry.get('model')!.run(['w', 'hero']);
+    expect(files.readJson(files.path('cast', 'hero', 'animation.json'))).toEqual({ texture: 'model', frames: 16, automatic: true, coatCorrection: false });
+    expect(files.readJson(files.path('cast', 'hero', 'sprites', 'sprites.json'))).toMatchObject({ frames: 16, rows: 5 });
+    expect(paintSheet).not.toHaveBeenCalled();
+    expect(worldData(files).cast.hero).toHaveProperty('sprites');
+  } finally { process.chdir(cwd); }
 });

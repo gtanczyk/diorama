@@ -18,7 +18,7 @@ const ModelAttempt = z.object({ state: z.enum(['ready', 'fallback', 'failed']), 
 
 function pendingModel(ctx: ActionContext, slug: string, key: string) {
   return ctx.jobs.list(slug).find((j) => (j.state === 'queued' || j.state === 'running')
-    && j.args.length === 3 && j.args[0] === 'model' && j.args[1] === slug && j.args[2] === key);
+    && j.args.length >= 3 && j.args[0] === 'model' && j.args[1] === slug && j.args[2] === key);
 }
 
 function characters(files: WorldFiles) {
@@ -117,14 +117,14 @@ defineAction({
   name: 'cast_animate',
   description: 'Give a character a 3D model now, also one the build skips (an NPC with no lines, a creature or an animated object): '
     + 'Muse paints it from 4 sides, TRELLIS builds the model (HF, only where the HF token works). A creature (not upright, cast_status body) gets no skeleton: '
-    + 'in the game it hops, squashes as it lands, leans, breathes and blinks as one body. Kept across rebuilds (the model step builds it every time). 4 Muse Image calls + TRELLIS. Runs as a job.',
+    + 'in the game it hops, squashes as it lands, leans, breathes and blinks as one body. Kept across rebuilds (the model step builds it every time). For a walking or speaking person, the same job also builds sprites and chooses 16-frame UV automatically when supported. Runs as a job.',
   input: z.object({ slug: Slug, key: z.string().min(1) }),
   job: true,
   async run({ slug, key }, ctx) {
     const prepare = prepareFix(ctx, slug, key, (f) => void (f.animate = true));
     const pending = pendingModel(ctx, slug, key);
     if (pending) return pending;
-    return ctx.jobs.start(slug, ['model', slug, key], `animate ${key}`, ctx.by, prepare);
+    return ctx.jobs.start(slug, ['model', slug, key, '--sprites'], `animate ${key}`, ctx.by, prepare);
   },
 });
 

@@ -1,7 +1,7 @@
 // diorama model <slug> [key]: a character as a rigged 3D model, painted by Muse from four sides. Without a
 // key, everyone the sprites plan needs (the hero, NPCs who speak): the model is where their poses come from.
 import fs from 'node:fs';
-import { defineCommand, takeOption } from '../registry.ts';
+import { defineCommand, registry, takeOption } from '../registry.ts';
 import { autoRig, reconstruct } from '../model/build.ts';
 import { fitViews, refitIfOld } from '../model/fit.ts';
 import { badModel, lean, readShape, standUp } from '../model/glb.ts';
@@ -15,13 +15,15 @@ import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
   name: 'model',
-  usage: 'model <slug> [key]       Muse paints each character who needs sprites (or [key]) from 4 sides, TRELLIS + auto-rig make a 3D model (cast/<key>/model/) [--texture model|views: saved per character] [--glb rigged.glb: skip TRELLIS and the rig] [--coat-correction on|off: off for trousers] [--take N] [--refit: only fit the views onto the model again, no calls]',
+  usage: 'model <slug> [key]       with [key], also finishes its required sprites; Muse paints each character who needs sprites (or [key]) from 4 sides, TRELLIS + auto-rig make a 3D model (cast/<key>/model/) [--texture model|views: saved per character] [--glb rigged.glb: skip TRELLIS and the rig] [--coat-correction on|off: off for trousers] [--sprites: finish the character animation, used by Studio] [--take N] [--refit: only fit the views onto the model again, no calls]',
   async run(args) {
     const options = animationOptions(takeOption(args, 'texture', ''), '', takeOption(args, 'coat-correction', ''));
     const take = Number(takeOption(args, 'take', '0'));
     const given = takeOption(args, 'glb', '');
     const refit = args.includes('--refit');
-    const [slug, keyArg] = args.filter((a) => a !== '--refit');
+    const [slug, keyArg] = args.filter((a) => a !== '--refit' && a !== '--sprites');
+    // An individual Animate request includes its sprites, including older Studio clients.
+    const withSprites = !!keyArg || args.includes('--sprites');
     if (!slug) throw new Error('usage: diorama model <slug> [key] [--glb rigged.glb] [--refit]');
     if (refit) {
       if (Object.keys(options).length) throw new Error('--texture cannot be combined with --refit');
@@ -42,6 +44,10 @@ defineCommand({
     for (const key of keys) if (Object.keys(options).length) saveAnimationSettings(files, key, animationSettings(files, key, options));
     await buildModels(files, keys, take, given, !!keyArg);
     console.log(`calls sent: muse ${files.memo.sent.muse}, space ${files.memo.sent.space}`);
+    if (withSprites) {
+      const plans = await planSprites(files, story);
+      for (const key of keys) if (plans.some((p) => p.key === key && !p.creature)) await registry.get('sprites')!.run([slug, key]);
+    }
   },
 });
 
@@ -74,8 +80,11 @@ export async function buildModel(files: WorldFiles, key: string, take: number, g
 }
 
 async function makeModel(files: WorldFiles, key: string, take: number, given: string): Promise<string | null> {
-  const settings = animationSettings(files, key);
-  const texture = { ...(settings.texture === 'model' && { texture: 'model' as const }), ...(settings.coatCorrection !== undefined && { coatCorrection: settings.coatCorrection }) };
+  const finishSettings = (mesh: Buffer) => {
+    const settings = animationSettings(files, key, {}, mesh);
+    saveAnimationSettings(files, key, settings);
+    return { ...(settings.texture === 'model' && { texture: 'model' as const }), ...(settings.coatCorrection !== undefined && { coatCorrection: settings.coatCorrection }) };
+  };
   const world = files.world();
   const found = [world.hero, ...world.places.flatMap((p) => p.things)].find((w) => w.key === key);
   if (!found) throw new Error(`no hero or NPC called ${key}`);
@@ -122,7 +131,7 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
     const mesh = supplied ?? shell!;
     files.write(out('model.glb'), mesh);
     const fits = await fitViews(mesh, views);
-    files.write(out('model.json'), { glb: 'model.glb', creature: true, views: fits, ...texture });
+    files.write(out('model.json'), { glb: 'model.glb', creature: true, views: fits, ...finishSettings(mesh) });
     console.log(`${key}: ${out('model.glb')} · a creature, no skeleton: hops, squashes and blinks as one body · views ${Object.entries(fits).map(([v, f]) => `${v} ${f.iou}`).join(', ')}`);
     return null;
   }
@@ -137,7 +146,7 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
   files.write(out('model.glb'), rigged);
 
   const fits = await fitViews(rigged, views);
-  files.write(out('model.json'), { glb: 'model.glb', views: fits, ...texture });
+  files.write(out('model.json'), { glb: 'model.glb', views: fits, ...finishSettings(rigged) });
   const degrees = (slope: number) => Math.round(Math.atan(slope) * 180 / Math.PI * 10) / 10;
   console.log(`${key}: ${out('model.glb')} · stood up ${degrees(tilt.z)}° forward, ${degrees(tilt.x)}° sideways · views ${Object.entries(fits).map(([v, f]) => `${v} ${f.iou}`).join(', ')}`);
   return null;

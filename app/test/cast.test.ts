@@ -71,6 +71,7 @@ test('repeated animation requests reuse the queued or running job, but allow a n
     const again = await runAction('cast_animate', { slug: 'w', key: 'wren' }, ctx('user')) as { id: string };
     expect(again.id).toBe(first.id);
     expect(jobs.list().filter((j) => j.args[0] === 'model')).toHaveLength(1);
+    expect(jobs.list().find((j) => j.id === first.id)?.args).toEqual(['model', 'w', 'wren', '--sprites']);
     const cast = await runAction('cast_status', { slug: 'w' }, ctx('user')) as Array<{ modelJob: unknown }>;
     expect(cast[0].modelJob).toEqual({ id: first.id, state: 'queued' });
     jobs.cancel(blocker.id);

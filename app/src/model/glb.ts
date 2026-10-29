@@ -52,6 +52,25 @@ function readAccessor(gltf: Gltf, bin: Buffer, index: number): Float32Array | Ui
   return out;
 }
 
+/** Native sprite rendering needs UVs and a self-contained base-colour image on every mesh primitive. */
+export function hasModelTexture(glb: Buffer): boolean {
+  try {
+    if (glb.readUInt32LE(0) !== 0x46546c67) return false;
+    const length = glb.readUInt32LE(12);
+    const g = JSON.parse(glb.subarray(20, 20 + length).toString('utf8'));
+    const primitives = (g.meshes ?? []).flatMap((m: { primitives?: unknown[] }) => m.primitives ?? []);
+    return primitives.length > 0 && primitives.every((p: { attributes?: Record<string, number>; material?: number }) => {
+      const map = g.materials?.[p.material!]?.pbrMetallicRoughness?.baseColorTexture;
+      const uv = g.accessors?.[p.attributes?.[`TEXCOORD_${map?.texCoord ?? 0}`]!];
+      const position = g.accessors?.[p.attributes?.POSITION!];
+      const image = g.images?.[g.textures?.[map?.index]?.source];
+      const embedded = image && (typeof image.uri === 'string' && /^data:image\/(png|jpeg);base64,/.test(image.uri)
+        || Number.isInteger(image.bufferView) && g.bufferViews?.[image.bufferView]?.byteLength > 0);
+      return !!(map && (map.texCoord ?? 0) === 0 && uv?.type === 'VEC2' && uv.count > 0 && uv.count === position?.count && embedded);
+    });
+  } catch { return false; }
+}
+
 /** The first mesh in the file (the skinned one when there is a skin), in scene space. */
 export function readShape(glb: Buffer): Shape {
   if (glb.readUInt32LE(0) !== 0x46546c67) throw new Error('not a glTF binary');

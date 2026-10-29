@@ -103,8 +103,13 @@ Apache-2.0
 
 ### Per-character UV animation
 
-The existing painted sprite workflow remains the default (8 frames). To use a
-character's original GLB UV texture without repainting the sheets:
+Studio and the normal build choose animation settings automatically. A new
+character with a self-contained base-colour texture and UV coordinates uses
+16 walking frames plus a separate standing pose. Models without usable UV use
+the painted eight-frame workflow. Existing painted sheets and explicit saved
+choices are preserved. The Animate action builds the required sprites too.
+
+Optional developer overrides (not needed in Studio):
 
 ```sh
 npm run diorama -- sprites foggy-ferry-cat mara --texture model --frames 16
@@ -115,7 +120,7 @@ npm run diorama -- sprites foggy-ferry-cat mara --frames 32
 ```
 
 Choices are stored in `cast/<key>/animation.json`, outside the generated `model/`
-and `sprites/` directories. Model regeneration also retains the texture choice;
+and `sprites/` directories. Automatic choices are rechecked against replacement models; explicit choices persist.
 `diorama model <slug> <key> --texture model` can set it before building a model.
 UV sheets support 8, 16 or 32 walk frames, followed by a separate standing cell.
 Talking sheets use the same grid and preserve the story's gesture mapping. The
@@ -124,7 +129,8 @@ does not call Muse; existing line/gesture assignments are reused. New dialogue l
 for gesture planning.
 For trousers, pass `--coat-correction off` to `model` or `sprites` to preserve
 the original thigh skin weights. This choice also persists per character;
-omitting it preserves the legacy long-coat correction. New humanoid model views
+new automatic UV characters keep their original rig weights; existing characters
+retain their previous correction. New humanoid model views
 use an A-pose with hands separated from the thighs to avoid fused geometry.
 
 Use `--texture views` to return that character to painted 8-frame sheets.

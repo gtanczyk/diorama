@@ -22,7 +22,7 @@ const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.l
 
 defineCommand({
   name: 'sprites',
-  usage: 'sprites <slug> [key]     walk and talk sheets for what the story uses: the 3D model poses, Muse draws each sheet again (cast/<key>/sprites/; needs `diorama model` first) [--texture model|views] [--coat-correction on|off] [--frames 8|16|32: model texture only; choices persist per character] [--plan: only print what would be drawn] [--take N] [--tries N: up to N takes per walk facing while a frame has its legs wrong]',
+  usage: 'sprites <slug> [key]     walk and talk sheets for what the story uses: automatic UV/16 for new textured models, painted/8 fallback (cast/<key>/sprites/; needs `diorama model` first) [--texture model|views] [--coat-correction on|off] [--frames 8|16|32: model texture only; choices persist per character] [--plan: only print what would be drawn] [--take N] [--tries N: up to N takes per walk facing while a frame has its legs wrong]',
   async run(args) {
     const options = animationOptions(takeOption(args, 'texture', ''), takeOption(args, 'frames', ''), takeOption(args, 'coat-correction', ''));
     const take = Number(takeOption(args, 'take', '0'));
