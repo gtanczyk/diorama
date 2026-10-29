@@ -674,7 +674,8 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .bell-item { display: flex; gap: 10px; align-items: center; padding: 9px; border-radius: 8px; color: var(--text); text-decoration: none; font-size: 13.5px; }
 .bell-item:hover { background: var(--bg); }
 .bell-item .th { width: 48px; height: 36px; border-radius: 4px; flex: none; background: var(--raised) center / cover; }
-.bell-item small { display: block; color: var(--muted); font-size: 12px; }
+.bell-pop .bell-item small { display: block; color: var(--muted); font-size: 12px; white-space: normal; overflow: visible; }
+.bell-item > span:last-child { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .bell-item.needs strong { color: var(--bad); }
 .menu-wrap > .menu-button, .share-wrap > button { min-height: 38px; border-color: var(--line); background: var(--panel); }
 .top-menu { width: 280px; }
