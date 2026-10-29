@@ -9,7 +9,10 @@ export function AudioMissing({ misses, retry }: { misses: AudioMisses; retry: ()
   const labels = { validation: 'verification pending', design: 'voice creation pending', rejected: 'did not pass audio checks', unavailable: 'generation unavailable' };
   return <>
     {waiting.length > 0 && <p>Voice verification is pending for {waiting.length} {waiting.length === 1 ? 'voice' : 'voices'}, blocking {count} {count === 1 ? 'line' : 'lines'}. The verification service could not finish; this does not mean the voices sound bad.</p>}
-    {(other > 0 || misses.sounds.length > 0) && <p>{other} other spoken {other === 1 ? 'line' : 'lines'} and {misses.sounds.length} {misses.sounds.length === 1 ? 'sound' : 'sounds'} are missing.</p>}
+    {(other > 0 || misses.sounds.length > 0) && <p>{[
+      ...(other ? [`${other}${waiting.length ? ' other' : ''} spoken ${other === 1 ? 'line' : 'lines'}`] : []),
+      ...(misses.sounds.length ? [`${misses.sounds.length} ${misses.sounds.length === 1 ? 'sound' : 'sounds'}`] : []),
+    ].join(' and ')} {other + misses.sounds.length === 1 ? 'is' : 'are'} missing.</p>}
     <p class="note">You can play, but this audio is missing. Retry checks saved voice samples again and generates new audio only when needed.</p>
     <details><summary>Audio details · {groups.length} {groups.length === 1 ? 'group' : 'groups'}</summary>
       <ul>{groups.map((g) => <li key={`${g.kind}:${g.speaker ?? g.id}`}>

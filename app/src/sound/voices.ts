@@ -2,6 +2,7 @@
 // ElevenLabs reads each line, and Muse Voice Transcribe listens back: a take that does not say its line is read again.
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomInt } from 'node:crypto';
 import { z } from 'zod';
 import { trackOperation } from '../studio/operation.ts';
 import { inputHash, type Memo } from '../meta/memo.ts';
@@ -467,8 +468,8 @@ export function speechRequest(line: Line, voice: Cast[string], model: string, ta
     ...(take > 1 && { seed: 1000 + take }) };
 }
 
-function speak(memo: Memo, label: string, line: Line, voice: Cast[string], take: number, designed?: DesignedVoices): Promise<Buffer> {
-  const body = (model: string) => speechRequest(line, voice, model, take);
+function speak(memo: Memo, label: string, line: Line, voice: Cast[string], take: number, designed?: DesignedVoices, retrySeed?: number): Promise<Buffer> {
+  const body = (model: string) => ({ ...speechRequest(line, voice, model, take), ...(retrySeed !== undefined && { seed: retrySeed + take - 1 }) });
   // A designed voice gets a new id each time it is created, so its takes are remembered by the design.
   const hash = (model: string) => inputHash('eleven-tts', voice.design?.generated ?? voice.voice, JSON.stringify(body(model)));
   // A take already read by the better model is used in a draft too, so lowering the quality never pays again.
@@ -486,13 +487,28 @@ export const lineId = (line: Line) => `line-${inputHash(line.speaker, line.text)
 export const heardOk = (line: string, match: number) => match >= 0.9 || (match >= 0.7 && (1 - match) * letters(line).length <= 2.01);
 
 /** Reads one line, listens back, and reads it again (up to 3 takes, 2 in draft) until the transcript matches. */
-export async function voiceLine(memo: Memo, line: Line, voice: Cast[string], write: (id: string, mp3: Buffer) => string, designed?: DesignedVoices): Promise<z.infer<typeof VoiceLine>> {
+export async function voiceLine(memo: Memo, line: Line, voice: Cast[string], write: (id: string, mp3: Buffer) => string, designed?: DesignedVoices, opts: { retryRejected?: boolean } = {}): Promise<z.infer<typeof VoiceLine>> {
   const id = lineId(line);
+  // A rejected batch needs genuinely new seeds/cache keys. Persist the batch before requesting audio:
+  // a later ASR outage must resume these paid takes, not buy another batch or return to rejected ones.
+  const retryFile = path.join(memo.dir, 'voice-retakes', `${inputHash(voice.design?.generated ?? voice.voice, JSON.stringify(speechRequest(line, voice, ttsModel(), 1)), String(voice.pitch ?? 0))}.json`);
+  let retrySeed: number | undefined;
+  if (fs.existsSync(retryFile)) {
+    retrySeed = JSON.parse(fs.readFileSync(retryFile, 'utf8')).seed;
+    if (!Number.isInteger(retrySeed) || retrySeed! < 1 || retrySeed! > 0xfffffffc) throw new Error('invalid saved voice retake seed');
+  }
+  if (opts.retryRejected) {
+    retrySeed = randomInt(1, 0xfffffffc);
+    fs.mkdirSync(path.dirname(retryFile), { recursive: true });
+    const tmp = `${retryFile}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ seed: retrySeed }));
+    fs.renameSync(tmp, retryFile);
+  }
   const spoken = spokenText(line.text, voice.profile?.language);
   let best: { pcm: Pcm; heard: string; match: number; take: number } | undefined;
   const takes = lineTakes();
   for (let take = 1; take <= takes; take++) {
-    const pcm = pitchShift(trim(decode(await speak(memo, `${id}-${take}`, line, voice, take, designed)), 0.005), voice.pitch ?? 0);
+    const pcm = pitchShift(trim(decode(await speak(memo, `${id}-${take}`, line, voice, take, designed, retrySeed)), 0.005), voice.pitch ?? 0);
     if (audioProblem(pcm)) continue;
     const heard = await transcribe(memo, `${id}-${take}`, pcm24k(pcm));
     const match = spokenMatch(line.text, heard, voice.profile?.language);

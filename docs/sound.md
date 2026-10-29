@@ -18,4 +18,6 @@ Studio Setup → Audio → Audio quality saves Final or Draft for future generat
 
 To rebuild an existing world's audio: `diorama voices <slug>` and `diorama sound <slug>`. Rewriting the script is a separate `story` step; changing voice quality alone does not rewrite existing dialogue.
 
+For one missing line, use `voice_retry` with the speaker key and exact text from `cast_status.voiceFailures`, or `diorama voice-retry <slug> <speaker> "<exact text>"`. Studio's retry button selects this operation when only one line is missing. It keeps the selected voice and every other recording. After a failed audio-quality check, both single-line and full voices retries use a new persisted seed batch rather than replaying the same rejected cache entries. If transcription is unavailable, the next retry checks that batch's saved audio instead of paying for another one. Original cached recordings are retained.
+
 In the page, loops pan and fade with where the hero stands, footsteps follow the floor under him, and `m` mutes. `diorama playthrough --video` records the page's sound too and writes an mp4.

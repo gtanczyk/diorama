@@ -876,7 +876,10 @@ function Workshop({ slug }: { slug: string }) {
       )}
       {misses && !job && !agentBusy && (
         <Card kind="Audio incomplete">
-          <AudioMissing misses={misses} retry={() => { void call('world_build', { slug, from: misses.sounds.length ? 'sound' : 'voices', to: 'voices' }).catch((e) => setError(e.message)); }} />
+          <AudioMissing misses={misses} retry={() => {
+            const one = !misses.sounds.length && misses.lines.length === 1 && !/waiting for a designed voice/i.test(misses.lines[0].reason) ? misses.lines[0] : null;
+            void (one ? call('voice_retry', { slug, key: one.speaker, text: one.text }) : call('world_build', { slug, from: misses.sounds.length ? 'sound' : 'voices', to: 'voices' })).catch((e) => setError(e.message));
+          }} />
         </Card>
       )}
       {openNotes.length > 0 && !job && !agentBusy && (

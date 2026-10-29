@@ -135,6 +135,25 @@ test('failed speech transcripts never publish audio and Unicode text is actually
   expect(heardOk('Hi', 0)).toBe(false);
 });
 
+test('retrying rejected speech makes fresh takes, while an ASR outage resumes the same paid take', async () => {
+  const fetch = vi.fn().mockImplementation(async () => new Response('audio'));
+  vi.stubGlobal('fetch', fetch);
+  const line = { speaker: 'hero', text: 'Do widzenia.' }, voice = actor(), before = JSON.stringify(voice);
+  vi.mocked(transcribe).mockResolvedValue('inne zdanie');
+  await expect(voiceLine(memo, line, voice, () => 'out.mp3')).rejects.toThrow('speech rejected');
+  expect(fetch).toHaveBeenCalledTimes(3);
+  vi.mocked(transcribe).mockRejectedValue(new Error('transcribe: Audio processing backlog too large'));
+  await expect(voiceLine(memo, line, voice, () => 'out.mp3', undefined, { retryRejected: true })).rejects.toThrow('backlog');
+  expect(fetch).toHaveBeenCalledTimes(4);
+  const request = JSON.parse(fetch.mock.calls[3][1].body);
+  expect(request.seed).toEqual(expect.any(Number));
+  expect([1002, 1003]).not.toContain(request.seed);
+  vi.mocked(transcribe).mockResolvedValue(line.text);
+  expect((await voiceLine(memo, line, voice, () => 'out.mp3')).text).toBe(line.text);
+  expect(fetch).toHaveBeenCalledTimes(4);
+  expect(JSON.stringify(voice)).toBe(before);
+});
+
 const plan = (prompt: string): SoundPlan => ({ music: { prompt: 'warm music' }, places: {}, steps: {}, shots: [{ on: 'ending', prompt, level: 2, seconds: 2 }] });
 test('a library finale is reused only for the same prompt and quality', async () => {
   seedLibrary('shot-ending', { file: 'old.mp3', kind: 'shot', level: 2, seconds: 2, source: 'elevenlabs', prompt: 'drums and jars', quality: 'final', flags: [], validation: AUDIO_VALIDATION }, Buffer.from('old'));

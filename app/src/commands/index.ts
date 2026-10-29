@@ -14,6 +14,7 @@ import './backdrop.ts';
 import './weather.ts';
 import './sound.ts';
 import './voices.ts';
+import './voice-retry.ts';
 import './verify.ts';
 import './explore.ts';
 import './build.ts';

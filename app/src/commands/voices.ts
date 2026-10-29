@@ -113,7 +113,7 @@ defineCommand({
         done[i] = await voiceLine(files.memo, lines[i], cast[lines[i].speaker], (id, mp3) => {
           files.write(files.path('sound', 'voice', `${id}.mp3`), mp3);
           return `sound/voice/${id}.mp3`;
-        }, designed);
+        }, designed, { retryRejected: old?.failures.some((f) => f.speaker === lines[i].speaker && f.text === lines[i].text && f.reason.startsWith('speech rejected')) });
         const l = done[i];
         console.log(`  ${!l.flags.some((f) => f.startsWith('heard')) ? 'ok  ' : 'FLAG'} ${l.speaker.padEnd(14)} ${l.seconds.toFixed(1).padStart(5)} s  ${l.text.slice(0, 60)}${l.flags.length ? `  (${l.flags.join('; ')}; heard "${l.heard.slice(0, 60)}")` : ''}`);
       } catch (error) {

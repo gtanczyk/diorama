@@ -12,12 +12,27 @@ import { POSE_OK } from '../model/sprites.ts';
 import { readBodies } from '../scene/cast.ts';
 import { WorldFiles } from '../world/files.ts';
 import { liveVoiceFailures } from '../sound/data.ts';
+import { voiceRetryTarget } from '../sound/retry.ts';
 import { Slug } from '../world/schema.ts';
 import { ActionError, defineAction, type ActionContext } from './registry.ts';
 
 const stamp = (file: string) => (fs.existsSync(file) ? Math.round(fs.statSync(file).mtimeMs) : null);
 const ModelAttempt = z.object({ state: z.enum(['ready', 'fallback', 'failed']), reason: z.string().nullable(), at: z.string() });
 const RigAttempt = z.object({ ok: z.boolean(), reason: z.string().nullable(), at: z.string() });
+
+defineAction({
+  name: 'voice_retry',
+  description: 'Retry one missing spoken line using its exact speaker key and text from cast_status voiceFailures. Keeps the selected voice and all other recordings. Rejected takes get fresh seeds; a transcription outage reuses saved audio. Costs ElevenLabs/verification calls when needed; wait with job_wait, then check cast_status and play_reload.',
+  input: z.object({ slug: Slug, key: Slug, text: z.string().min(1).max(5000) }),
+  job: true,
+  async run({ slug, key, text }, ctx) {
+    const files = new WorldFiles(slug, ctx.root);
+    const blocked = agentBlocked(files.dir, ctx.by);
+    if (blocked) throw new ActionError(423, blocked);
+    voiceRetryTarget(files, key, text);
+    return ctx.jobs.start(slug, ['voice-retry', slug, key, text], `retry line ${key}`, ctx.by);
+  },
+});
 
 function pendingModel(ctx: ActionContext, slug: string, key: string) {
   return ctx.jobs.list(slug).find((j) => (j.state === 'queued' || j.state === 'running')
