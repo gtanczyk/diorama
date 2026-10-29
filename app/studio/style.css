@@ -226,21 +226,28 @@ section.agent .row { padding: 12px 14px 0; }
 .story { display: flex; flex-direction: column; gap: 14px; }
 .story .verdict { display: flex; flex-direction: column; gap: 8px; }
 .story .issues { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
-.story .map { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; padding: 8px; background: var(--panel); }
-.story svg { display: block; }
-.story .join line { stroke: var(--line-strong); stroke-width: 2; }
-.story .join.locked line { stroke: var(--accent); stroke-dasharray: 6 5; }
+.story-map { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.story .map { overflow: auto; max-height: 48vh; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overscroll-behavior: contain; }
+.story .map-tools label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; min-width: 0; }
+.story .map-tools select { max-width: min(280px, 100%); min-width: 0; }
+.story .map-help { margin: 0; }
+.story .map svg { display: block; max-width: none; }
+.story .join path { fill: none; stroke: var(--line-strong); stroke-width: 2; }
+.story .join.locked path { stroke: var(--accent); stroke-dasharray: 6 5; }
 .story .join text { fill: var(--accent); font-size: 11px; }
-.story .to-end { fill: none; stroke: var(--faint); stroke-width: 1.5; stroke-dasharray: 2 4; }
+.story .lock-label rect { fill: var(--panel); stroke: var(--accent); }
+.story .to-end path { stroke: var(--faint); stroke-width: 1.5; stroke-dasharray: 2 4; }
 .story .node { cursor: pointer; }
+.story .dim { opacity: 0.3; }
+.story .dim:hover, .story .dim:focus-visible { opacity: 1; }
 .story .node rect { fill: var(--raised); stroke: var(--line-strong); }
 .story .node.start rect { stroke: var(--ok); }
 .story .node.ending rect { fill: var(--panel); stroke: var(--accent); }
 .story .node.on rect { stroke: var(--text); stroke-width: 2; }
 .story .node:focus-visible { outline: none; }
 .story .node:focus-visible rect { stroke: var(--text); stroke-width: 2; }
-.story .node .name { fill: var(--text); font-size: 13px; font-weight: 600; }
-.story .node .sub { fill: var(--muted); font-size: 11px; }
+.story .map-name { color: var(--text); font-size: 13px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.story .map-sub { color: var(--muted); font-size: 11px; margin-top: 7px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .story-place { display: flex; flex-direction: column; gap: 12px; }
 .story-place h2 { margin: 0; }
 .story .beat { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
