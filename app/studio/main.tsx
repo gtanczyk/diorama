@@ -861,8 +861,7 @@ function Workshop({ slug }: { slug: string }) {
       )}
       {misses && !job && !agentBusy && (
         <Card kind="Plays without">
-          <p>{[misses.sounds.length && `${misses.sounds.length} sound${misses.sounds.length > 1 ? 's' : ''} stay silent`, misses.lines.length && `${misses.lines.length} line${misses.lines.length > 1 ? 's' : ''} stay text only`].filter(Boolean).join(', ')}: they did not pass the quality checks. The game plays fine without them.</p>
-          <p class="detail">{[...misses.sounds.map((s) => `${nice(s.id)}: ${s.reason}`), ...misses.lines.map((l) => `${nice(l.speaker)} „${l.text.slice(0, 40)}”: ${l.reason}`)].slice(0, 3).join(' · ')}</p>
+          <p title={[...misses.sounds.map((s) => `${nice(s.id)}: ${s.reason}`), ...misses.lines.map((l) => `${nice(l.speaker)} „${l.text}”: ${l.reason}`)].join('\n')}>{[...misses.sounds.map((s) => nice(s.id.replace(/-loop$/, ''))), ...misses.lines.map((l) => `${nice(l.speaker)}: „${l.text.slice(0, 30)}${l.text.length > 30 ? '…' : ''}”`)].slice(0, 3).join(', ')}{misses.sounds.length + misses.lines.length > 3 ? ` and ${misses.sounds.length + misses.lines.length - 3} more` : ''}. Sounds bad, left out; the game plays fine.</p>
           <div class="btns"><button type="button" class="ghost small" title="Make only the missing sounds and lines again (new ElevenLabs takes). Everything else is kept" onClick={() => call('world_build', { slug, from: 'sound', to: 'voices' }).catch((e) => setError(e.message))}>Try again</button></div>
         </Card>
       )}
