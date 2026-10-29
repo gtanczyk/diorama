@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import { gestureIndex } from '../play/gestures.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { planSprites, type CharacterPlan } from '../model/plan.ts';
-import { cutSheet, FACINGS, flatGuide, onGrey, paintSheet, renderGuides, SHEET, TRACED, type Facing } from '../model/sprites.ts';
+import { cutSheet, FACINGS, flatGuide, onGrey, paintSheet, renderGuides, modelSheet, SHEET, TRACED, type Facing } from '../model/sprites.ts';
+import { animationSettings, animationOptions, saveAnimationSettings, type AnimationSettings } from '../model/animation.ts';
 import { Story } from '../story/schema.ts';
 import { fixedLooks } from '../scene/cast-fixes.ts';
 import { refitIfOld } from '../model/fit.ts';
@@ -21,8 +22,9 @@ const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.l
 
 defineCommand({
   name: 'sprites',
-  usage: 'sprites <slug> [key]     walk and talk sheets for what the story uses: the 3D model poses, Muse draws each sheet again (cast/<key>/sprites/; needs `diorama model` first) [--plan: only print what would be drawn] [--take N] [--tries N: up to N takes per walk facing while a frame has its legs wrong]',
+  usage: 'sprites <slug> [key]     walk and talk sheets for what the story uses: the 3D model poses, Muse draws each sheet again (cast/<key>/sprites/; needs `diorama model` first) [--texture model|views] [--frames 8|16|32: model texture only; choices persist per character] [--plan: only print what would be drawn] [--take N] [--tries N: up to N takes per walk facing while a frame has its legs wrong]',
   async run(args) {
+    const options = animationOptions(takeOption(args, 'texture', ''), takeOption(args, 'frames', ''));
     const take = Number(takeOption(args, 'take', '0'));
     const tries = Number(takeOption(args, 'tries', '1'));
     const planOnly = args.includes('--plan');
@@ -32,10 +34,11 @@ defineCommand({
     const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : undefined;
     const plans = (await planSprites(files, story)).filter((p) => !keyArg || p.key === keyArg);
     if (!plans.length) throw new Error(keyArg ? `${keyArg} needs no sprites (not the hero, says no lines)` : 'nobody needs sprites');
-    files.write(files.path('cast', 'sprites-plan.json'), plans);
+    const settings = new Map(plans.map((p) => [p.key, animationSettings(files, p.key, options)]));
+    if (!planOnly) files.write(files.path('cast', 'sprites-plan.json'), plans);
     for (const p of plans) {
       const talk = Object.entries(p.talk).map(([f, g]) => `${f} [${g.join(', ')}]`).join('; ');
-      console.log(p.creature ? `${p.key}: a creature · 0 Muse sheets (its 3D model moves)` : `${p.key}: walk ${p.walk.join(', ') || '-'} · talk ${talk || '-'} · ${p.walk.length + Object.keys(p.talk).length} Muse sheets`);
+      console.log(p.creature ? `${p.key}: a creature · 0 Muse sheets (its 3D model moves)` : `${p.key}: ${settings.get(p.key)!.texture === 'model' ? `UV ${settings.get(p.key)!.frames} frames` : 'painted 8 frames'} · walk ${p.walk.join(', ') || '-'} · talk ${talk || '-'} · ${settings.get(p.key)!.texture === 'model' ? 0 : p.walk.length + Object.keys(p.talk).length} Muse sheets`);
     }
     if (planOnly) return;
     for (const p of plans) {
@@ -53,7 +56,15 @@ defineCommand({
         console.log(`${p.key}: model is ${bad}, skipped: walks with the 2D rig (diorama model ${slug} ${p.key} tries again)`);
         continue;
       }
-      await drawCharacter(files, p, take, tries);
+      const selected = settings.get(p.key)!;
+      if (selected.texture === 'model') await drawModelCharacter(files, p, selected);
+      else await drawCharacter(files, p, take, tries);
+      if (selected.texture === 'model' || Object.keys(options).length || fs.existsSync(files.path('cast', p.key, 'animation.json'))) saveAnimationSettings(files, p.key, selected);
+      const modelFile = files.path('cast', p.key, 'model', 'model.json');
+      const model = files.readJson(modelFile) as Record<string, unknown>;
+      if (selected.texture === 'model') model.texture = 'model';
+      else delete model.texture;
+      files.write(modelFile, model);
     }
     console.log(`calls sent: muse ${files.memo.sent.muse}, spark ${files.memo.sent.spark}`);
   },
@@ -67,6 +78,7 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
   // A world given another style names it, so the sheets follow the restyled character, not the gouache they were made for.
   const style = readStyled(files).from ? castStyle(files, world, key) : undefined;
   const modelDir = files.path('cast', key, 'model');
+  const projected: AnimationSettings = { texture: 'views', frames: 8 };
   // An older model's views were fitted on the whole silhouette only: the guides would show the profile's face twice.
   if (await refitIfOld(modelDir)) console.log(`${key}: views fitted again, slice by slice`);
   const view = (name: string) => fs.readFileSync(`${modelDir}/${name}.png`);
@@ -84,8 +96,8 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
   // whole take whose legs follow best wins (frames mixed from several takes do not match).
   const facings: Record<string, { sheet: string; yaw: number; stand: number; off: number[]; iou: number[]; legs: number[]; same: number[] }> = {};
   if (plan.walk.length) {
-    const guides = await renderGuides(modelDir, plan.walk);
-    const clay = await renderGuides(modelDir, plan.walk, undefined, true);
+    const guides = await renderGuides(modelDir, plan.walk, undefined, false, projected);
+    const clay = await renderGuides(modelDir, plan.walk, undefined, true, projected);
     const shown: Record<string, Buffer[]> = {};
     for (const f of plan.walk) {
       const grey = await onGrey(guides[f]);
@@ -135,7 +147,7 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
     // Muse redraws a half-empty grid as a few big figures, so the used gestures repeat to fill all 8
     // cells (the sheet costs the same); cell i < used.length is gestures[i].
     const cells = Array.from({ length: SHEET.cols * SHEET.rows }, (_, i) => used[i % used.length]);
-    const guide = (await renderGuides(modelDir, [f], cells))[f];
+    const guide = (await renderGuides(modelDir, [f], cells, false, projected))[f];
     const g = await onGrey(guide);
     files.write(out(`talk-guide-${f}.png`), g);
     const refs = [view('front'), view('right')];
@@ -164,4 +176,35 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
     // The gesture for each line this character says, by its text.
     lines: plan.lines,
   });
+}
+
+/** Direct UV sheets keep anatomy tied to the mesh; no Muse repainting or silhouette fitting. */
+export async function drawModelCharacter(files: WorldFiles, plan: CharacterPlan, settings: AnimationSettings) {
+  const modelDir = files.path('cast', plan.key, 'model');
+  const grid = modelSheet(settings.frames);
+  const facings: Record<string, { sheet: string; yaw: number; stand: number; off: number[] }> = {};
+  const talk: Record<string, { sheet: string; yaw: number; gestures: string[] }> = {};
+  const images: Record<string, Buffer> = {};
+  // Finish rendering everything before replacing any active sheet or its metadata.
+  if (plan.walk.length) {
+    const walk = await renderGuides(modelDir, plan.walk, undefined, false, settings);
+    for (const f of plan.walk) {
+      const sheet = `model-${settings.frames}-${f}.png`;
+      images[sheet] = walk[f];
+      facings[f] = { sheet, yaw: FACINGS[f], stand: settings.frames, off: [] };
+    }
+  }
+  for (const [facing, names] of Object.entries(plan.talk)) {
+    const f = facing as Facing;
+    const gestures = names.map(gestureIndex);
+    if (gestures.some((i) => i < 0)) throw new Error(`${plan.key}: unknown talking gesture`);
+    const sheet = `model-${settings.frames}-talk-${f}.png`;
+    images[sheet] = (await renderGuides(modelDir, [f], gestures, false, settings))[f];
+    talk[f] = { sheet, yaw: FACINGS[f], gestures: names };
+  }
+  const out = (name: string) => files.path('cast', plan.key, 'sprites', name);
+  for (const [name, image] of Object.entries(images)) files.write(out(name), image);
+  const { elevation: _elevation, ...layout } = grid;
+  files.write(out('sprites.json'), { ...layout, facings, talk, lines: plan.lines });
+  console.log(`${plan.key}: UV sprites · ${settings.frames} walk frames + standing · ${Object.keys(talk).length} talk sheets`);
 }

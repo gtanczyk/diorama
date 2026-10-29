@@ -100,3 +100,27 @@ Everything in this repository was written during the hackathon, from the kickoff
 ## License
 
 Apache-2.0
+
+### Per-character UV animation
+
+The existing painted sprite workflow remains the default (8 frames). To use a
+character's original GLB UV texture without repainting the sheets:
+
+```sh
+npm run diorama -- sprites foggy-ferry-cat mara --texture model --frames 16
+# Subsequent generation keeps the choice:
+npm run diorama -- sprites foggy-ferry-cat mara
+# Optional denser cycle:
+npm run diorama -- sprites foggy-ferry-cat mara --frames 32
+```
+
+Choices are stored in `cast/<key>/animation.json`, outside the generated `model/`
+and `sprites/` directories. Model regeneration also retains the texture choice;
+`diorama model <slug> <key> --texture model` can set it before building a model.
+UV sheets support 8, 16 or 32 walk frames, followed by a separate standing cell.
+Talking sheets use the same grid and preserve the story's gesture mapping. The
+GLB must contain a base-colour texture and UV coordinates. Rendering UV sheets
+does not call Muse; existing line/gesture assignments are reused. New dialogue lines still use Spark
+for gesture planning.
+Use `--texture views` to return that character to painted 8-frame sheets.
+`--plan` reports the selected mode without saving animation choices or sheets.

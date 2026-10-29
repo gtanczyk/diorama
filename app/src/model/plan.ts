@@ -114,12 +114,27 @@ export async function planSprites(files: WorldFiles, story: Story | undefined): 
     if (!plans.has(it.thing)) plans.set(it.thing, { key: it.thing, walk: [], talk: {}, lines: {} });
     spoken.push({ speaker: it.thing, text: it.say, facing: (g ? conversationFacings(g, it.thing) : { npc: 'front-right' as Facing }).npc });
   }
-  const gestures = await gesturesFor(files.memo, spoken);
+  // Keep existing line/gesture choices when rerendering a character's sheets. Only new or
+  // invalid assignments need planning; a frame-count change must not depend on an AI service.
+  const saved = new Map<string, Record<string, string>>();
+  for (const speaker of new Set(spoken.map((l) => l.speaker))) {
+    const file = files.path('cast', speaker, 'sprites', 'sprites.json');
+    const info = fs.existsSync(file) ? files.readJson(file) as { lines?: Record<string, string> } : undefined;
+    saved.set(speaker, info?.lines ?? {});
+  }
+  const gestures = spoken.map((l) => {
+    const name = saved.get(l.speaker)?.[l.text];
+    return typeof name === 'string' && gestureIndex(name) >= 0 ? name : undefined;
+  });
+  const missing = spoken.filter((_, i) => gestures[i] === undefined);
+  const planned = await gesturesFor(files.memo, missing);
+  let next = 0;
+  for (let i = 0; i < gestures.length; i++) gestures[i] ??= planned[next++];
   spoken.forEach((l, i) => {
     const plan = plans.get(l.speaker)!;
-    plan.lines[l.text] = gestures[i];
+    plan.lines[l.text] = gestures[i]!;
     const sheet = (plan.talk[l.facing] ??= ['listen']);
-    if (!sheet.includes(gestures[i]) && sheet.length < SHEET.cols * SHEET.rows) sheet.push(gestures[i]);
+    if (!sheet.includes(gestures[i]!) && sheet.length < SHEET.cols * SHEET.rows) sheet.push(gestures[i]!);
   });
   // A cat or a round eye has no person's poses to draw over: it gets a 3D model that moves as one body.
   const bodies = readBodies(files, fs.existsSync);

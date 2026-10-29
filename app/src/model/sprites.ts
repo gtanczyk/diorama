@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import sharp from 'sharp';
+import type { AnimationSettings } from './animation.ts';
 import { chromium } from '../commands/explore.ts';
 import { museEdit } from '../meta/muse.ts';
 import type { Memo } from '../meta/memo.ts';
@@ -21,6 +22,13 @@ export type Facing = keyof typeof FACINGS;
 
 /** One sheet: 8 frames of a full walk cycle in 4 columns and 2 rows, Muse's own size. */
 export const SHEET = { cols: 4, rows: 2, width: 1200, height: 896, feetAt: 0.95, px: 385, elevation: 0.18 } as const;
+/** One extra cell is reserved for standing; talk uses the same cell dimensions and grid. */
+export function modelSheet(frames: number) {
+  if (![8, 16, 32].includes(frames)) throw new Error('Model sprites require 8, 16 or 32 walk frames');
+  const rows = Math.ceil((frames + 1) / SHEET.cols);
+  return { ...SHEET, rows, frames, height: rows * (SHEET.height / SHEET.rows) };
+}
+
 const GREY = { r: 217, g: 217, b: 217 };
 
 type RoutePage = {
@@ -47,8 +55,9 @@ export const OFF_GAIT = 0.88;
  * The model walking (or, given `gestures`, standing in those talking poses of src/play/gestures.ts, one
  * per cell), one transparent sheet per facing, rendered in headless Chromium with WebGL.
  */
-export async function renderGuides(modelDir: string, facings: Facing[], gestures?: number[], /** grey clay, no textures */ plain = false): Promise<Record<string, Buffer>> {
+export async function renderGuides(modelDir: string, facings: Facing[], gestures?: number[], /** grey clay, no textures */ plain = false, animation?: AnimationSettings): Promise<Record<string, Buffer>> {
   const info = JSON.parse(fs.readFileSync(path.join(modelDir, 'model.json'), 'utf8'));
+  if (animation) info.texture = animation.texture;
   const js = (await build({ entryPoints: [path.join(WEB, 'sheet.ts')], bundle: true, format: 'esm', write: false, target: 'es2022' })).outputFiles[0].text;
   const browser = await (await chromium()).launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   try {
@@ -64,8 +73,9 @@ export async function renderGuides(modelDir: string, facings: Facing[], gestures
     });
     await page.goto('http://sprites.local/');
     const out: Record<string, Buffer> = {};
+    const direct = animation?.texture === 'model';
     for (const facing of facings) {
-      const ask = { info, base: 'http://sprites.local', yaw: FACINGS[facing], gestures, plain, ...SHEET };
+      const ask = { info, base: 'http://sprites.local', yaw: FACINGS[facing], gestures, plain, ...SHEET, ...(direct && modelSheet(animation.frames)), stand: direct && !gestures };
       const url = await page.evaluate<string>(`window.renderSheet(${JSON.stringify(ask)})`);
       if (errors.length) throw new Error(`sheet page: ${errors.join('; ')}`);
       out[facing] = Buffer.from(url.split(',')[1], 'base64');

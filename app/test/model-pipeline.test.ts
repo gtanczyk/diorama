@@ -94,3 +94,15 @@ test('an explicit animate request fails honestly when all models are rejected, w
   expect(files.readJson(files.path('cast', 'hero', 'model', 'attempt.json'))).toMatchObject({ state: 'fallback', reason: 'every reconstruction was flat or invalid' });
   await expect(buildModels(files, ['hero'], 0, '')).resolves.toBeUndefined();
 });
+
+
+test('regenerating a model keeps the character UV preference outside its output directory', async () => {
+  files.write(files.path('cast', 'hero', 'animation.json'), { texture: 'model', frames: 16 });
+  vi.mocked(reconstruct).mockResolvedValue(valid);
+  await buildModel(files, 'hero', 0, '');
+  expect(files.readJson(files.path('cast', 'hero', 'model', 'model.json'))).toMatchObject({ texture: 'model' });
+  expect(files.readJson(files.path('cast', 'hero', 'animation.json'))).toEqual({ texture: 'model', frames: 16 });
+  files.write(files.path('cast', 'hero', 'animation.json'), { texture: 'views', frames: 8 });
+  await buildModel(files, 'hero', 0, '');
+  expect(files.readJson(files.path('cast', 'hero', 'model', 'model.json'))).not.toHaveProperty('texture');
+});

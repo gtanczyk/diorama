@@ -1,0 +1,31 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { drawModelCharacter } from '../src/commands/sprites.ts';
+import { renderGuides, paintSheet, cutSheet } from '../src/model/sprites.ts';
+import { WorldFiles } from '../src/world/files.ts';
+vi.mock('../src/model/sprites.ts', async (original) => ({ ...await original<typeof import('../src/model/sprites.ts')>(), renderGuides: vi.fn(), paintSheet: vi.fn(), cutSheet: vi.fn() }));
+const plan = { key: 'hero', walk: ['right'] as ['right'], talk: { right: ['listen', 'explain'] }, lines: { Hello: 'explain' } };
+let root: string, files: WorldFiles;
+beforeEach(() => { vi.clearAllMocks(); root = fs.mkdtempSync(path.join(os.tmpdir(), 'model-sprites-')); files = new WorldFiles('w', root); });
+afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+test.each([16, 32] as const)('UV generation publishes %i walking poses, separate standing and compatible talk grid', async (frames) => {
+  vi.mocked(renderGuides).mockResolvedValue({ right: Buffer.from('rendered') });
+  await drawModelCharacter(files, plan, { texture: 'model', frames });
+  const info = files.readJson(files.path('cast', 'hero', 'sprites', 'sprites.json')) as any;
+  expect(info).toMatchObject({ frames, cols: 4, rows: frames / 4 + 1, width: 1200, height: (frames / 4 + 1) * 448, facings: { right: { stand: frames, off: [] } }, talk: { right: { gestures: ['listen', 'explain'] } }, lines: plan.lines });
+  expect(fs.existsSync(files.path('cast', 'hero', 'sprites', info.talk.right.sheet))).toBe(true);
+  expect(renderGuides).toHaveBeenNthCalledWith(1, files.path('cast', 'hero', 'model'), ['right'], undefined, false, { texture: 'model', frames });
+  expect(renderGuides).toHaveBeenNthCalledWith(2, files.path('cast', 'hero', 'model'), ['right'], [0, 2], false, { texture: 'model', frames });
+  expect(paintSheet).not.toHaveBeenCalled(); expect(cutSheet).not.toHaveBeenCalled();
+});
+test('a failed talk render preserves the previously active sheet and metadata', async () => {
+  const output = files.path('cast', 'hero', 'sprites');
+  files.write(path.join(output, 'sprites.json'), { previous: true });
+  files.write(path.join(output, 'model-16-right.png'), Buffer.from('previous'));
+  vi.mocked(renderGuides).mockResolvedValueOnce({ right: Buffer.from('new') }).mockRejectedValueOnce(new Error('render failed'));
+  await expect(drawModelCharacter(files, plan, { texture: 'model', frames: 16 })).rejects.toThrow('render failed');
+  expect(files.readJson(path.join(output, 'sprites.json'))).toEqual({ previous: true });
+  expect(fs.readFileSync(path.join(output, 'model-16-right.png'), 'utf8')).toBe('previous');
+});
