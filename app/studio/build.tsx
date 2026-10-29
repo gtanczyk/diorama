@@ -50,6 +50,17 @@ export const standIn = signal<{ spark: string | null; image: string | null }>({ 
 /** A model's name as it works now: "Muse Spark" reads "Claude" while Claude answers Spark's asks. */
 export const nowBy = (by: string) => (by === 'Muse Spark' && standIn.value.spark) || (by === 'Muse Image' && standIn.value.image) || by;
 
+/** Words that name a model ("Muse Image · SAM 3.1", "1 Muse Image call", "Muse paints…") as they work now. */
+export function named(text: string): string {
+  const { spark, image } = standIn.value;
+  if (!spark && !image) return text;
+  let out = text;
+  if (spark) out = out.replace(/\bMuse Spark\b/g, spark).replace(/\bSpark\b(?! names)/g, spark);
+  // A bare "Muse" is the painter ("Muse paints", "1 Muse edit"); Muse Voice (transcribing) never stands in.
+  if (image) out = out.replace(/\bMuse Image\b/g, image).replace(/\bMuse\b(?! (?:Voice|Spark|Image))/g, image);
+  return out;
+}
+
 /** memo/calls.jsonl's model and via as people know them. */
 export const callBy = (model: string, via?: unknown) => (typeof via === 'string' && via !== 'contributor' ? viaName(via) : MODEL_NAME[model] ?? model);
 
@@ -124,7 +135,7 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
         <strong>{job ? `${job.by === 'agent' ? 'Agent: ' : ''}${job.label}` : 'Build'}</strong>
         {job && calls.map(([by, n]) => <span class={`count ${tone(by)}${fresh && live.lastCall?.by === by ? ' hot' : ''}`}><ModelTag by={by} /> {n}</span>)}
         {/* A step's raw line is cut to what it is doing ("barn-interior layout try 1"); the whole line is on hover. */}
-        <span class="detail tail" title={job ? live.tail : undefined}>{job ? (fresh && live.lastCall ? `${live.lastCall.by}: ${live.lastCall.label}` : live.tail.split(/: |[.!?]\s/)[0].slice(0, 60)) : ''}</span>
+        <span class="detail tail" title={job ? live.tail : undefined}>{job ? (fresh && live.lastCall ? `${nowBy(live.lastCall.by)}: ${live.lastCall.label}` : live.tail.split(/: |[.!?]\s/)[0].slice(0, 60)) : ''}</span>
         {when && <span class="detail when">{when}</span>}
       </div>
       <ol class="phases" aria-label="Build phases">
@@ -137,7 +148,7 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
           // Something to show once a step has run (or runs now); a click puts it on the stage.
           // A phase only partly done (sprites still to come) shows what its done steps made too.
           const open = onOpen && states.some((x) => x === 'ok' || x === 'run' || x === 'fail');
-          const tip = `${p.title} · ${p.by.join(', ')}\n` + p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : '·'} ${s}${done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}`).join('\n');
+          const tip = `${p.title} · ${p.by.map(nowBy).join(', ')}\n` + p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : '·'} ${s}${done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}`).join('\n');
           let at = 0;
           return (
             <li class={`${phase}${open ? ' open' : ''}`} style={{ flexGrow: Math.max(1, all) }}>
@@ -276,7 +287,7 @@ export function Stage({ slug, place, live, building, hold }: { slug: string; pla
         {shown.length > 1 && (
           <div class="layers" role="tablist" aria-label="Layers">
             {shown.map((s) => (
-              <button type="button" role="tab" aria-selected={top === s.layer} class={`ghost small${top === s.layer ? ' on' : ''}`} title={`${LAYER_TIPS[s.layer] ?? s.title}, by ${s.by}. Click to hold it, again to let the stage cycle`} onClick={() => ((held.current = null), setPick(pick === s.layer ? null : s.layer))}>{s.title}</button>
+              <button type="button" role="tab" aria-selected={top === s.layer} class={`ghost small${top === s.layer ? ' on' : ''}`} title={named(`${LAYER_TIPS[s.layer] ?? s.title}, by ${s.by}. Click to hold it, again to let the stage cycle`)} onClick={() => ((held.current = null), setPick(pick === s.layer ? null : s.layer))}>{s.title}</button>
             ))}
           </div>
         )}
@@ -313,7 +324,7 @@ function FixIt({ slug, place, why }: { slug: string; place: string; why: string 
     <div class="fixit">
       <div class="panel">
         <span class="why" title={why}>{said ?? why}</span>
-        {!said && <button type="button" class="small" disabled={busy} title="Rebuild this place from the step it broke at (a refused painting is reworded by itself). Steps before it are free; a new painting is 1 Muse Image call. If it was built and still fails, the agent repairs it" onClick={fix}>Fix it</button>}
+        {!said && <button type="button" class="small" disabled={busy} title={named('Rebuild this place from the step it broke at (a refused painting is reworded by itself). Steps before it are free; a new painting is 1 Muse Image call. If it was built and still fails, the agent repairs it')} onClick={fix}>Fix it</button>}
       </div>
     </div>
   );
@@ -331,7 +342,7 @@ export function Strip({ slug, places, focus, live, building, repairing, onPick }
           <li class={`${focus === p.key ? 'focus' : ''}${busy ? ' busy' : ''}`}>
             <button type="button" class="card" title={`${p.shows}\n\nOpen this place to look at it and fix it; click again to close`} onClick={() => onPick(p.key)}>
               <span class="thumb">
-                {top ? <img src={fileUrl(slug, p.layers![top.layer]!.file, p.layers![top.layer]!.v)} alt={p.shows} loading="lazy" /> : <span class="noimg" title={p.shows}>{busy ? `${busy.by}…` : 'waiting to paint'}</span>}
+                {top ? <img src={fileUrl(slug, p.layers![top.layer]!.file, p.layers![top.layer]!.v)} alt={p.shows} loading="lazy" /> : <span class="noimg" title={p.shows}>{busy ? `${nowBy(busy.by)}…` : 'waiting to paint'}</span>}
                 {busy && <span class="scan" />}
               </span>
               <span class="name">
@@ -339,7 +350,7 @@ export function Strip({ slug, places, focus, live, building, repairing, onPick }
                 {repairing[p.key] ? <span class="badge run" title={repairing[p.key]}>repairing</span>
                   : p.trouble && !p.verdict ? <span class="badge fail">failed</span>
                   : p.verdict ? <span class={`badge ${p.verdict.ok ? 'ok' : 'fail'}`}>{p.verdict.ok ? 'playable' : `${p.verdict.errors.length} error${p.verdict.errors.length === 1 ? '' : 's'}`}</span>
-                  : busy ? <span class="badge run">{busy.by}</span>
+                  : busy ? <span class="badge run">{nowBy(busy.by)}</span>
                   : <span class="dots" aria-label={`${n} of ${SHOWN.length} layers`}>{SHOWN.map((s) => <i class={has(p, s.layer) ? 'on' : ''} />)}</span>}
               </span>
             </button>

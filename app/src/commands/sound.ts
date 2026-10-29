@@ -6,7 +6,7 @@ import { Brief } from '../scene/brief.ts';
 import { Layout } from '../scene/layout.ts';
 import { Kind, makeSounds, seedLibrary, SoundManifest } from '../sound/make.ts';
 import { inputHash } from '../meta/memo.ts';
-import { planIssues, SoundPlan, withoutStrayLoops, writeSoundPlan, type PlaceSources } from '../sound/plan.ts';
+import { planIssues, SoundPlan, withoutStrayLoops, withoutSilentLoops, writeSoundPlan, type PlaceSources } from '../sound/plan.ts';
 import { creditGuard, soundQuality } from '../sound/cost.ts';
 import { elevenKey, musicgenPython } from '../sound/sources.ts';
 import { Story } from '../story/schema.ts';
@@ -41,7 +41,8 @@ defineCommand({
     const from = inputHash(JSON.stringify(world), JSON.stringify(story), JSON.stringify(sources));
     const old = fs.existsSync(planFile) ? SoundPlan.parse(files.readJson(planFile)) : undefined;
     let plan: SoundPlan;
-    if (old && !replan && old.from === from) plan = old;
+    // A plan made before silent things lost their loops drops them here too, before anything is paid for.
+    if (old && !replan && old.from === from) plan = { ...old, ...withoutSilentLoops(old, sources) };
     else {
       if (old && !replan) console.log('the world, story or paintings changed since sound.json was planned: planning again (hand edits to it are replaced)');
       plan = { from, ...withoutStrayLoops(await writeSoundPlan(files.memo, world, story, sources), world) };

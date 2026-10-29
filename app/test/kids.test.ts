@@ -76,3 +76,22 @@ test('one hero: the one asked for, else the one leading, else the first characte
   expect(oneHero(set(), 'green-dragon').find((d) => d.key === 'girl-with-cat')!.kind).toBe('npc');
   expect(kinds(oneHero(set().map((d) => (d.kind === 'hero' ? { ...d, kind: 'npc' as const } : d))))).toEqual(['girl-with-cat']);
 });
+
+test('a class of drawings: new keys stay apart, drawn places over the asked number become props', async () => {
+  const { fitPlaces, ownKeys } = await import('../src/world/drawings.ts');
+  const d = (file: string, kind: Drawn['kind'], key: string): Drawn => ({ file, kind, key, looks: `${key} as drawn` });
+  const keys = ownKeys([d('01.png', 'npc', 'princess'), d('02.png', 'npc', 'princess'), d('03.png', 'npc', 'princess')]).map((x) => x.key);
+  expect(keys).toEqual(['princess', 'princess-2', 'princess-3']);
+  // A drawing read earlier as the same thing again (kids_add) keeps the shared key.
+  expect(ownKeys([d('01.png', 'npc', 'cat'), d('02.png', 'npc', 'cat'), d('03.png', 'npc', 'cat')], new Set(['01.png', '02.png'])).map((x) => x.key)).toEqual(['cat', 'cat', 'cat-2']);
+  const fitted = fitPlaces([d('01.png', 'place', 'castle'), d('02.png', 'hero', 'girl'), d('03.png', 'place', 'forest'), d('04.png', 'place', 'beach')], 2);
+  expect(fitted.map((x) => x.kind)).toEqual(['place', 'hero', 'place', 'prop']);
+  expect(fitted[3].key).toBe('beach');
+});
+
+test('doctor --now says when Meta or the network is too slow for a live build', async () => {
+  const { liveVerdict } = await import('../src/commands/doctor.ts');
+  expect(liveVerdict({ spark: 5000, 'muse paint': 20000, 'muse edit': 25000, sam: 3000 })).toMatch(/^fast enough/);
+  expect(liveVerdict({ spark: 5000, 'muse paint': 90000, 'muse edit': 25000, sam: 65000 })).toBe('SLOW: muse paint, sam. A live build may take 30+ min: play a world built beforehand, or build with fewer drawings and places');
+  expect(liveVerdict({ spark: 5000 })).toMatch(/^SLOW: muse paint, muse edit, sam/);
+});

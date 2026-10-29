@@ -63,3 +63,24 @@ export type Story = z.infer<typeof Story>;
 export type Effect = z.infer<typeof Effect>;
 export type Interaction = z.infer<typeof Interaction>;
 export type Dialogue = z.infer<typeof Dialogue>;
+
+/**
+ * The story as a model is held to it by structured outputs. The same story, except each effect is {op, key}: the
+ * six one-key objects of Effect, twice over, make a grammar Anthropic refuses to compile ("too large").
+ * fromWire turns the answer back; an answer already in Story's own shape passes through.
+ */
+const OPS = ['set', 'clear', 'give', 'take', 'go', 'ending'] as const;
+const WireEffect = z.object({ op: z.enum(OPS), key: Slug });
+export const WireStory = Story.extend({
+  interactions: z.array(Interaction.extend({ do: z.array(WireEffect).default([]) })),
+  dialogues: z.array(Dialogue.extend({ lines: z.array(Line.extend({ choices: z.array(Choice.extend({ do: z.array(WireEffect).default([]) })).max(4).default([]) })).min(1) })).default([]),
+});
+
+export function fromWire(answer: unknown): unknown {
+  if (Array.isArray(answer)) return answer.map(fromWire);
+  if (!answer || typeof answer !== 'object') return answer;
+  const o = answer as Record<string, unknown>;
+  const keys = Object.keys(o);
+  if (keys.length === 2 && typeof o.op === 'string' && (OPS as readonly string[]).includes(o.op) && 'key' in o) return { [o.op]: o.key };
+  return Object.fromEntries(keys.map((k) => [k, fromWire(o[k])]));
+}

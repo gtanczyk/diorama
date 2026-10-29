@@ -50,8 +50,15 @@ defineCommand({
         // A designed voice: from the person's description, or from the profile; designed again only when that changes.
         const description = wish ?? (cast[key].profile ? designDescriptions(cast[key].profile!)[0] : 'A clear warm voice.');
         const says = lines.filter((l) => l.speaker === key).map((l) => l.text);
-        entry.design = cast[key].design?.request === description ? cast[key].design : await designVoice(files.memo, cast[key].profile ?? { gender: 'any', age: 'middle_aged', sound: '', language: world.language ?? 'English' }, says, description);
-        entry.pitch = 0;
+        try {
+          entry.design = cast[key].design?.request === description ? cast[key].design : await designVoice(files.memo, cast[key].profile ?? { gender: 'any', age: 'middle_aged', sound: '', language: world.language ?? 'English' }, says, description);
+          entry.pitch = 0;
+        } catch (error) {
+          // The voice Spark cast stays: the lines are still read. Studio shows the note on the character's card.
+          console.log(`  ${key}: the designed voice could not be made (${error instanceof Error ? error.message : error}); the cast voice stays`);
+          cast = { ...cast, [key]: { ...cast[key], warnings: [...(cast[key].warnings ?? []), 'The designed voice could not be made this time; the cast voice reads the lines. Try the design again later.'] } };
+          continue;
+        }
       } else delete entry.design;
       cast = { ...cast, [key]: entry };
     }

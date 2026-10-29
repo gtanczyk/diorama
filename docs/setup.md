@@ -16,6 +16,7 @@ From a checkout, `npm install` once, then the common commands are npm scripts (a
 ```sh
 npm run setup
 npm run doctor
+npm run doctor -- --now        # before building in front of people: is the network and Meta fast enough today
 npm run studio                 # the GUI
 npm run build -- <slug> "<idea>"
 npm run play -- <slug>

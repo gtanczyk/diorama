@@ -82,6 +82,20 @@ export function withoutStrayLoops(plan: SoundPlan, world: World): SoundPlan {
   return { ...plan, places };
 }
 
+/**
+ * Things silent by nature (a lamp, a sign) or heard only when used (a ticket machine): a loop on them is three takes
+ * of hiss or one click in silence, all turned down. Dropped before anything is paid for, unless the brief animates
+ * the thing as fire, water or smoke (an oil lantern's flame).
+ */
+const SILENT = /(^|-)(lamp|lamps|lantern|lanterns|light|lights|streetlight|sign|signs|poster|posters|timetable|schedule|map|ticket|tickets|ticket-machine|validator|kasownik|latarnia|latarka|lampa|znak|plakat|rozklad|bilet|biletomat)(-|$)/;
+export function withoutSilentLoops(plan: SoundPlan, sources: Record<string, PlaceSources> = {}): SoundPlan {
+  const places = Object.fromEntries(Object.entries(plan.places).map(([key, p]) => {
+    const alive = new Set((sources[key]?.brief?.alive ?? []).filter((a) => ['water', 'fire', 'smoke'].includes(a.as)).map((a) => a.key));
+    return [key, { ...p, loops: p.loops.filter((l) => alive.has(l.thing) || !SILENT.test(l.thing)) }];
+  }));
+  return { ...plan, places };
+}
+
 function storyLines(story: Story | null): string[] {
   if (!story) return [];
   const lines = story.interactions.filter((i) => i.verb !== 'look').map((i) => `- ${i.place}: ${i.verb} ${i.thing}${i.with ? ` with ${i.with}` : ''} -> "${i.say}"`);
@@ -114,7 +128,7 @@ ${storyLines(story).join('\n') || '- (no story yet)'}
 Plan:
 - music: one instrumental music bed for the whole game, under everything: instruments, tempo, mood. No vocals.
 - per place: "bed", the quiet ambience of the place (water, distant life, birds far off, a room's warm hum) that loops for minutes without a single event standing out. Not wind, rustling leaves, "air tone" or breathing: those come out as hiss that tires the ear under the whole game. No footsteps, no voices, no music in it.
-- per place: "loops", up to 4 sounds that come from one of its things (thing key from its Things) and loop: water, fire, machines, animals. Only for things that would really sound; not trees, bushes or grass in the wind, and not someone breathing. "when" lists story facts that must hold for it to play, e.g. ["lamp-lit"] for a fire that starts in the story (use [] when always). level 1 quiet, 2 normal, 3 loud.
+- per place: "loops", at most 2 sounds that come from one of its things (thing key from its Things) and go on without stopping: running water, fire, a running engine or fan, a ticking clock, animals. Most places need 0 or 1. Only for things that make that sound all by themselves; every loop costs money to make. Never for lights, lamps, lanterns, signs, posters or timetables (they are silent), not for trees, bushes or grass in the wind, not for someone breathing, and not for things that sound only when used (a ticket machine, a door, a bell, a till): give those a "use:<thing>" shot instead. "when" lists story facts that must hold for it to play, e.g. ["lamp-lit"] for a fire that starts in the story (use [] when always). level 1 quiet, 2 normal, 3 loud.
 - per place: "floors", each floor key to a surface name such as "wood", "wet-wood", "stone", "gravel", "grass", "sand", "metal", "carpet". Reuse surface names across places.
 - "steps": each surface name used to a prompt for a few separate footsteps of one person walking on it, e.g. "slow footsteps of boots on wet wooden planks, 6 separate steps, dry close recording".
 - "shots": short one-shot effects. "on" is one of: ${SHOT_TRIGGERS.join(', ')}. Give one for "take" (picking up an item), "click" (a soft UI click), "talk" (a short sound as a conversation starts), "ending", one "exit:<thing>" per exit thing, and "use:<thing>" for things the story changes when used. "seconds" 0.5 to 4.
@@ -126,10 +140,10 @@ Reply with JSON only:
     const answer = await askSparkJson(memo, { label: `sound-plan${attempt > 1 ? `-${attempt}` : ''}`, prompt: prompt + feedback });
     const parsed = SoundPlan.safeParse(answer);
     const issues = parsed.success ? planIssues(parsed.data, world, sources) : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
-    if (!issues.length && parsed.success) return parsed.data;
+    if (!issues.length && parsed.success) return withoutSilentLoops(parsed.data, sources);
     if (attempt === 2) {
       if (!parsed.success) throw new Error(`sound plan: ${issues.join('; ')}`);
-      return withoutStrayLoops(parsed.data, world); // usable; the step prints what is still missing
+      return withoutSilentLoops(withoutStrayLoops(parsed.data, world), sources); // usable; the step prints what is still missing
     }
     feedback = `\n\nYour last plan had these problems, fix them:\n${issues.map((i) => `- ${i}`).join('\n')}`;
   }

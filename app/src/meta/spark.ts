@@ -77,7 +77,9 @@ const heldTo = (schema?: ZodType) => {
 };
 function refuse(label: string, format: object, why: string) {
   refused.add(JSON.stringify(format));
-  console.log(`  spark ${label}: structured output refused, asking without it: ${why.replace(/\s+/g, ' ').slice(0, 200)}`);
+  // Said in plain words on the progress card; the API's own message only says which limit.
+  const limit = /too large|too complex/i.test(why) ? 'the answer\'s shape is too big for it' : 'it did not accept the answer\'s shape';
+  console.log(`  ${label}: Claude asked for plain JSON instead (${limit})`);
 }
 
 async function askOpenRouter(model: string, { label, prompt, images, schema }: SparkAsk): Promise<Paid> {

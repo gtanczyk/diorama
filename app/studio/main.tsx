@@ -12,7 +12,7 @@ import { StoryView } from './story.tsx';
 import { StyleView } from './style-menu.tsx';
 import { askSure, Sure } from './sure.tsx';
 import { PlaceEditor } from './place.tsx';
-import { callBy, MODEL_NAME, Pipeline, standIn, viaName, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
+import { callBy, MODEL_NAME, named, Pipeline, standIn, viaName, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
 import { Bell, Logo, Rail, forgetWorld, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
 import { CAST_STEPS, castFile, castLine, CastWorkStage, type CastWork } from './cast-work.tsx';
 import { SayIt } from './say-it.tsx';
@@ -460,7 +460,7 @@ function Start() {
         <form class="hero" onSubmit={build}>
           <Logo size={44} />
           <h1>What should the <em>world</em> be?</h1>
-          <p class="lead">Say it in a sentence. Muse Spark writes the story, Muse Image paints the places, SAM 3.1 cuts out everything you can touch, and the agent looks after it with you.</p>
+          <p class="lead">{named('Say it in a sentence. Muse Spark writes the story, Muse Image paints the places, SAM 3.1 cuts out everything you can touch, and the agent looks after it with you.')}</p>
           <div class={`prompt${drop ? ' drop' : ''}`}
             onDragOver={(e) => (e.preventDefault(), setDrop(true))}
             onDragLeave={() => setDrop(false)}
@@ -861,8 +861,7 @@ function Workshop({ slug }: { slug: string }) {
       )}
       {misses && !job && !agentBusy && (
         <Card kind="Plays without">
-          <p>{[misses.sounds.length && `${misses.sounds.length} sound${misses.sounds.length > 1 ? 's' : ''} stay silent`, misses.lines.length && `${misses.lines.length} line${misses.lines.length > 1 ? 's' : ''} stay text only`].filter(Boolean).join(', ')}: they did not pass the quality checks. The game plays fine without them.</p>
-          <p class="detail">{[...misses.sounds.map((s) => `${nice(s.id)}: ${s.reason}`), ...misses.lines.map((l) => `${nice(l.speaker)} „${l.text.slice(0, 40)}”: ${l.reason}`)].slice(0, 3).join(' · ')}</p>
+          <p title={[...misses.sounds.map((s) => `${nice(s.id)}: ${s.reason}`), ...misses.lines.map((l) => `${nice(l.speaker)} „${l.text}”: ${l.reason}`)].join('\n')}>{[...misses.sounds.map((s) => nice(s.id.replace(/-loop$/, ''))), ...misses.lines.map((l) => `${nice(l.speaker)}: „${l.text.slice(0, 30)}${l.text.length > 30 ? '…' : ''}”`)].slice(0, 3).join(', ')}{misses.sounds.length + misses.lines.length > 3 ? ` and ${misses.sounds.length + misses.lines.length - 3} more` : ''}. Sounds bad, left out; the game plays fine.</p>
           <div class="btns"><button type="button" class="ghost small" title="Make only the missing sounds and lines again (new ElevenLabs takes). Everything else is kept" onClick={() => call('world_build', { slug, from: 'sound', to: 'voices' }).catch((e) => setError(e.message))}>Try again</button></div>
         </Card>
       )}
@@ -941,7 +940,7 @@ function Workshop({ slug }: { slug: string }) {
             {shownView.kind === 'build' && status && (
               <div class="build-on-stage">
                 <Pipeline job={job} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
-                {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} hold={hold} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? 'Muse Spark is dreaming up the places…'}</span></div></div></figure>}
+                {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} hold={hold} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? named('Muse Spark is dreaming up the places…')}</span></div></div></figure>}
               </div>
             )}
             {shownView.kind === 'work' && status && (
@@ -953,7 +952,7 @@ function Workshop({ slug }: { slug: string }) {
               </div>
             )}
             {shownView.kind === 'place' && stagedPlace && <PlaceStage slug={slug} place={stagedPlace} version={tick} picked={picked} onPick={setPicked} onOpen={(thing) => setByHand(`${stagedPlace.key}@${thing}`)} />}
-            {shownView.kind === 'place' && !stagedPlace && <div class="mat"><p class="detail">{status?.pitch ?? 'Muse Spark is dreaming up the places…'}</p></div>}
+            {shownView.kind === 'place' && !stagedPlace && <div class="mat"><p class="detail">{status?.pitch ?? named('Muse Spark is dreaming up the places…')}</p></div>}
             {shownView.kind === 'cast' && <CastStage slug={slug} version={tick} picked={picked} onPick={setPicked} onOpen={(key) => setByHand(`#cast:${key}`)} />}
             {shownView.kind === 'place' && stagedPlace?.stages.painting && <button type="button" class="stage-tool" title="Masks, floors, stand spots and repaints for this place, by hand. Or just ask the agent" onClick={() => setByHand(stagedPlace.key)}><Icon name="pencil" /> Fix this place by hand</button>}
             {shownView.kind === 'story' && <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} /></div>}

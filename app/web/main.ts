@@ -687,15 +687,25 @@ class Game {
     const npc = story && (action.kind === 'talk' ? action.npc : action.kind === 'choose' && before.talk ? story.dialogues[before.talk.dialogue]?.npc : undefined);
     // A person talked to without a conversation answers with their own talk line.
     const answers = action.kind === 'do' && speakerOf(this.data.world, { place: from, thing: action.thing, verb: action.verb }) !== hero;
-    for (const [i, line] of say.entries()) await this.say(line, answers ? (action as { thing: string }).thing : npc && (action.kind === 'talk' || i > 0) ? npc : hero);
-    if (this.state.place !== from) {
-      this.emit('exit', { from, to: this.state.place });
-      await this.fadeOut();
-      await this.enter(this.state.place, from);
-    }
-    if (this.state.ending) this.emit('ending', { ending: this.state.ending });
-    this.ui();
+    const after = this.state;
+    // The next answers show at once, so a pick can come while this action's lines are still being said:
+    // each action's lines wait for the ones before, so a quick pick never talks over (or is talked over by) the reply.
+    const turn = this.saying.then(async () => {
+      for (const [i, line] of say.entries()) await this.say(line, answers ? (action as { thing: string }).thing : npc && (action.kind === 'talk' || i > 0) ? npc : hero);
+      if (after.place !== from) {
+        this.emit('exit', { from, to: after.place });
+        await this.fadeOut();
+        await this.enter(after.place, from);
+      }
+      if (after.ending) this.emit('ending', { ending: after.ending });
+      this.ui();
+    });
+    this.saying = turn.catch(() => undefined);
+    await turn;
   }
+
+  /** The lines of earlier actions still being said; the next action's lines follow them. */
+  private saying: Promise<void> = Promise.resolve();
 
   /** An item tried where it does not help: the story's own line for it, else a plain one. */
   private nopeLine(item: string): string {

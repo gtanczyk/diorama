@@ -5,6 +5,7 @@ import { signal } from '@preact/signals';
 import { useEffect, useState } from 'preact/hooks';
 import { call, fileUrl, follow } from './api.ts';
 import { go, route } from './nav.ts';
+import { jobWords, stepWords } from './job-words.ts';
 
 /** The Diorama mark: an arched opening onto painted layers, a moon and the ground you walk on. */
 export function Logo({ size = 28 }: { size?: number }) {
@@ -156,6 +157,14 @@ export function Rail() {
   );
 }
 
+/** What a world's running job does, for the bell: who, what, which step now, how far. */
+function busyWords(b: Busy): string {
+  const what = jobWords(b.label);
+  const now = b.step ? `, now ${stepWords(b.step)}` : '';
+  const far = b.plan.length ? ` · step ${Math.min(b.done.length + 1, b.plan.length)} of ${b.plan.length}` : '';
+  return `${b.by === 'agent' ? 'The agent is ' : ''}${b.by === 'agent' ? what : what.replace(/^./, (c) => c.toUpperCase())}${now}${far}`;
+}
+
 /** What is building, what waits for you, and what finished since you last looked: one click goes there. */
 export function Bell() {
   const [open, setOpen] = useState(false);
@@ -170,8 +179,8 @@ export function Bell() {
   const list = worlds.value ?? [];
   const items = [
     ...list.flatMap((w) => (needs(w) ? [{ w, kind: 'needs', text: needs(w)! }] : [])),
-    ...list.flatMap((w) => { const b = busy.value[w.slug]; return b ? [{ w, kind: 'busy', text: `${b.by === 'agent' ? 'The agent: ' : ''}${b.label}${b.step ? `, ${b.step}` : ''}${b.plan.length ? ` · ${b.done.length} of ${b.plan.length} steps` : ''}` }] : []; }),
-    ...list.flatMap((w) => { const e = ended.value[w.slug]; return e?.ok && !busy.value[w.slug] && e.at > (seen.value[w.slug] ?? 0) ? [{ w, kind: 'done', text: `${e.label} finished` }] : []; }),
+    ...list.flatMap((w) => { const b = busy.value[w.slug]; return b ? [{ w, kind: 'busy', text: busyWords(b) }] : []; }),
+    ...list.flatMap((w) => { const e = ended.value[w.slug]; return e?.ok && !busy.value[w.slug] && e.at > (seen.value[w.slug] ?? 0) ? [{ w, kind: 'done', text: `Finished: ${jobWords(e.label)}` }] : []; }),
   ];
   const loud = items.filter((i) => i.kind !== 'busy').length;
   return (

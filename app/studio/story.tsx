@@ -1,8 +1,8 @@
 // The story at a glance: places as a map joined by their exits, locked exits marked, endings on the right,
 // and the checker's verdict with a shortest route to each ending. Pick a place to read and reword what
 // happens there; anything that changes what the player can do is asked of the agent (story_redo).
-import { useEffect, useMemo, useState } from 'preact/hooks';
-import { call } from './api.ts';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { askAgent, call } from './api.ts';
 
 type Effect = Record<string, string>;
 type Interaction = { place: string; thing: string; verb: string; with?: string; when: string[]; say: string; do: Effect[]; once: boolean };
@@ -35,19 +35,37 @@ const effect = (e: Effect) => Object.entries(e).map(([k, v]) => (k === 'go' ? `g
 export function StoryView({ slug, version, onError }: { slug: string; version: number; onError: (m: string) => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [pick, setPick] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [asked, setAsked] = useState(false);
+  useEffect(() => setAsked(false), [slug]);
   const load = () => call<Status>('story_status', { slug }).then(setStatus).catch((e) => onError(e.message));
   useEffect(() => void load(), [slug, version]);
   if (!status) return <p class="detail">Reading the story…</p>;
   const { story } = status;
   if (!story) return <p class="detail">No story yet: it is written by the story step of the build.</p>;
   const save = (path: string, text: string) => call('story_text', { slug, path, text }).then(load).catch((e) => onError(e.message));
-  const step = (name: string) => call('run_step', { slug, step: name }).catch((e) => onError(e.message));
+  const ask = async (step: 'voices' | 'plates') => {
+    if (asking) return;
+    setAsking(true);
+    setAsked(false);
+    try {
+      await askAgent(slug,
+        `Review the story's missing ${step === 'voices' ? 'spoken audio' : 'painted changes'}. Read story_status to check what is currently missing, explain the scope and estimated generation cost (say if the cost is unknown), and ask me to confirm before making any paid generation calls. This request is for review only; do not run generation yet.`,
+        step === 'voices' ? 'Review missing story voices and cost' : 'Review missing story paintings and cost');
+      setAsked(true);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setAsking(false);
+    }
+  };
   const place = status.places.find((p) => p.key === pick);
   const ending = story.endings.find((e) => `ending:${e.key}` === pick);
   return (
     <div class="story">
-      <Verdict status={status} onStep={step} onFirst={() => call('story_redo', { slug }).catch((e) => onError(e.message))} />
-      <StoryMap status={status} story={story} pick={pick} onPick={(k) => setPick(pick === k ? null : k)} />
+      <Verdict status={status} onAsk={ask} asking={asking} onFirst={() => call('story_redo', { slug }).catch((e) => onError(e.message))} />
+      {asked && <p class="detail" role="status">Sent to the agent. Review the scope and cost in the conversation before approving generation.</p>}
+      <StoryMap key={slug} status={status} story={story} pick={pick} onPick={(k) => setPick(pick === k ? null : k)} />
       {place
         ? <PlaceStory place={place} story={story} hero={status.hero} unpainted={status.unpainted} onSave={save} />
         : ending
@@ -57,7 +75,7 @@ export function StoryView({ slug, version, onError }: { slug: string; version: n
   );
 }
 
-function Verdict({ status, onStep, onFirst }: { status: Status; onStep: (step: string) => void; onFirst: () => void }) {
+function Verdict({ status, onAsk, asking, onFirst }: { status: Status; onAsk: (step: 'voices' | 'plates') => void; asking: boolean; onFirst: () => void }) {
   const ok = status.issues.length === 0;
   return (
     <section class="verdict">
@@ -75,8 +93,8 @@ function Verdict({ status, onStep, onFirst }: { status: Status; onStep: (step: s
       {!ok && <ul class="issues">{status.issues.map((i) => <li>{i}</li>)}</ul>}
       {(status.unvoiced.length > 0 || status.unpainted.length > 0) && (
         <div class="row">
-          {status.unvoiced.length > 0 && <button type="button" class="ghost small" title={`ElevenLabs speaks the new lines, 1 call each:\n${status.unvoiced.join('\n')}`} onClick={() => onStep('voices')}>Speak {status.unvoiced.length} new line{status.unvoiced.length === 1 ? '' : 's'}</button>}
-          {status.unpainted.length > 0 && <button type="button" class="ghost small" title={`Muse paints how each changed thing looks after it changes. ${status.unpainted.length} Muse Image edit${status.unpainted.length === 1 ? '' : 's'}`} onClick={() => onStep('plates')}>Paint {status.unpainted.length} change{status.unpainted.length === 1 ? '' : 's'}</button>}
+          {status.unvoiced.length > 0 && <button type="button" class="ghost small" disabled={asking} title={`Ask the agent to review missing voices and cost before you approve generation:\n${status.unvoiced.join('\n')}`} onClick={() => onAsk('voices')}>Ask agent about {status.unvoiced.length} missing voice{status.unvoiced.length === 1 ? '' : 's'}</button>}
+          {status.unpainted.length > 0 && <button type="button" class="ghost small" disabled={asking} title="Ask the agent to review missing paintings and cost before you approve generation" onClick={() => onAsk('plates')}>Ask agent about {status.unpainted.length} unpainted change{status.unpainted.length === 1 ? '' : 's'}</button>}
         </div>
       )}
       {(status.unseen?.length ?? 0) > 0 && <details open><summary class="detail">{status.unseen!.length} part{status.unseen!.length === 1 ? '' : 's'} of the story the painting will not show (ask the agent to redo)</summary><ul class="issues">{status.unseen!.map((l) => <li>{l}</li>)}</ul></details>}
@@ -86,92 +104,133 @@ function Verdict({ status, onStep, onFirst }: { status: Status; onStep: (step: s
   );
 }
 
-const COL = 300;
-const ROW = 84;
-const NODE = { w: 170, h: 58 };
+const COL = 280;
+const ROW = 100;
+const NODE = { w: 210, h: 72 };
 
-/** Columns by distance from the start through exits; endings in a last column, joined to where they fire. */
-function StoryMap({ status, story, pick, onPick }: { status: Status; story: Story; pick: string | null; onPick: (key: string) => void }) {
-  const layout = useMemo(() => {
-    const depth = new Map<string, number>([[status.start, 0]]);
-    const queue = [status.start];
-    while (queue.length) {
-      const at = queue.shift()!;
-      for (const e of status.places.find((p) => p.key === at)?.exits ?? []) if (!depth.has(e.to)) { depth.set(e.to, depth.get(at)! + 1); queue.push(e.to); }
-    }
-    let last = Math.max(0, ...depth.values());
-    for (const p of status.places) if (!depth.has(p.key)) depth.set(p.key, ++last);
-    const rows = new Map<number, number>();
-    const pos = new Map<string, { x: number; y: number }>();
-    for (const p of status.places) {
-      const col = depth.get(p.key)!;
-      const row = rows.get(col) ?? 0;
-      rows.set(col, row + 1);
-      pos.set(p.key, { x: 12 + col * COL, y: 12 + row * ROW });
-    }
-    const endCol = last + 1;
-    story.endings.forEach((e, i) => pos.set(`ending:${e.key}`, { x: 12 + endCol * COL, y: 12 + i * ROW }));
-    const height = 12 + Math.max(story.endings.length, ...rows.values()) * ROW;
-    // One line per pair of places; locked if a lock sits on either side's exit.
-    const joins: { a: string; b: string; locked: string[] }[] = [];
+/** Keep labels at reading size; a neighbourhood can be laid out independently of the whole world. */
+export function StoryMap({ status, story, pick, onPick }: { status: Status; story: Story; pick: string | null; onPick: (key: string) => void }) {
+  const [zoom, setZoom] = useState(1);
+  const [nearby, setNearby] = useState(false);
+  const viewport = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (!pick) setNearby(false); }, [pick]);
+  const graph = useMemo(() => {
+    const keys = new Set(status.places.map((p) => p.key));
+    const joins: { a: string; b: string; locked: string[]; ending?: boolean }[] = [];
     for (const p of status.places) for (const e of p.exits) {
+      if (!keys.has(e.to)) continue;
       const lock = story.locks.find((l) => l.place === p.key && l.via === e.via);
       const known = joins.find((j) => (j.a === e.to && j.b === p.key) || (j.a === p.key && j.b === e.to));
-      if (known) { if (lock) known.locked.push(lock.until.map(fact).join(', ')); }
-      else joins.push({ a: p.key, b: e.to, locked: lock ? [lock.until.map(fact).join(', ')] : [] });
+      const conditions = lock ? [`${p.key} → ${e.to}: ${lock.until.map(fact).join(', ')}`] : [];
+      if (known) known.locked.push(...conditions);
+      else joins.push({ a: p.key, b: e.to, locked: conditions });
     }
-    const ends = new Set<string>();
-    for (const it of story.interactions) for (const d of it.do) if (d.ending) ends.add(`${it.place}>${d.ending}`);
-    for (const dl of story.dialogues) for (const l of dl.lines) for (const c of l.choices) for (const d of c.do) if (d.ending) ends.add(`${dl.place}>${d.ending}`);
-    return { pos, joins, ends: [...ends].map((s) => s.split('>')), width: 12 + (endCol + 1) * COL - (COL - NODE.w), height };
+    const addEnding = (from: string, end: string) => {
+      const to = `ending:${end}`;
+      if (keys.has(from) && story.endings.some((e) => e.key === end) && !joins.some((j) => j.a === from && j.b === to)) {
+        joins.push({ a: from, b: to, locked: [], ending: true });
+      }
+    };
+    for (const it of story.interactions) for (const d of it.do) if (d.ending) addEnding(it.place, d.ending);
+    for (const dl of story.dialogues) for (const l of dl.lines) for (const c of l.choices) for (const d of c.do) if (d.ending) addEnding(dl.place, d.ending);
+    return joins;
   }, [status, story]);
-  const mid = (k: string) => { const p = layout.pos.get(k)!; return { x: p.x + NODE.w / 2, y: p.y + NODE.h / 2 }; };
-  const things = (p: Place, role: string) => p.things.filter((t) => t.role === role).map((t) => t.key);
+  const layout = useMemo(() => {
+    const visible = nearby && pick ? new Set([pick, ...graph.filter((j) => j.a === pick || j.b === pick).flatMap((j) => [j.a, j.b])]) : null;
+    const places = status.places.filter((p) => !visible || visible.has(p.key));
+    const endings = story.endings.filter((e) => !visible || visible.has(`ending:${e.key}`));
+    const depth = new Map<string, number>([[status.start, 0]]);
+    const queue = [status.start];
+    for (let i = 0; i < queue.length; i++) {
+      const at = queue[i];
+      for (const e of status.places.find((p) => p.key === at)?.exits ?? []) if (!depth.has(e.to)) { depth.set(e.to, depth.get(at)! + 1); queue.push(e.to); }
+    }
+    const last = Math.max(0, ...depth.values());
+    // Disconnected places share a column instead of making the map ever wider.
+    for (const p of status.places) if (!depth.has(p.key)) depth.set(p.key, last + 1);
+    const columns = [...new Set(places.map((p) => depth.get(p.key)!))].sort((a, b) => a - b);
+    const rows = new Map<number, number>();
+    const pos = new Map<string, { x: number; y: number }>();
+    for (const p of places) {
+      const col = columns.indexOf(depth.get(p.key)!);
+      const row = rows.get(col) ?? 0;
+      rows.set(col, row + 1);
+      pos.set(p.key, { x: 24 + col * COL, y: 24 + row * ROW });
+    }
+    endings.forEach((e, i) => pos.set(`ending:${e.key}`, { x: 24 + columns.length * COL, y: 24 + i * ROW }));
+    const base = 24 + Math.max(1, endings.length, ...rows.values()) * ROW;
+    let lane = 0;
+    const joins = graph.filter((j) => pos.has(j.a) && pos.has(j.b)).map((j) => {
+      let a = pos.get(j.a)!, b = pos.get(j.b)!;
+      if (a.x > b.x) [a, b] = [b, a];
+      const ay = a.y + NODE.h / 2, by = b.y + NODE.h / 2;
+      let path: string, x: number, y: number;
+      if (b.x - a.x === COL) {
+        x = (a.x + NODE.w + b.x) / 2; y = (ay + by) / 2;
+        path = `M${a.x + NODE.w} ${ay} C${x} ${ay},${x} ${by},${b.x} ${by}`;
+      } else {
+        // Route same-column, looping and skipping edges through gutters, never through cards.
+        y = base + lane++ * 24; x = (a.x + NODE.w + b.x + NODE.w) / 2 + 18;
+        path = `M${a.x + NODE.w} ${ay} H${a.x + NODE.w + 18} V${y} H${b.x + NODE.w + 30} V${by} H${b.x + NODE.w}`;
+      }
+      return { ...j, path, x, y };
+    });
+    return { places, endings, pos, joins, width: Math.max(1, columns.length + (endings.length ? 1 : 0)) * COL + 24, height: base + lane * 24 + 12 };
+  }, [status, story, graph, nearby, pick]);
+  useEffect(() => {
+    const at = pick && layout.pos.get(pick);
+    if (at && viewport.current) viewport.current.scrollTo({ left: Math.max(0, (at.x + NODE.w / 2) * zoom - viewport.current.clientWidth / 2), top: Math.max(0, (at.y + NODE.h / 2) * zoom - viewport.current.clientHeight / 2) });
+  }, [pick, nearby, zoom, layout]);
+  const related = new Set(pick ? [pick, ...graph.filter((j) => j.a === pick || j.b === pick).flatMap((j) => [j.a, j.b])] : []);
+  const nodes = [
+    ...layout.places.map((p) => {
+      const npcs = p.things.filter((t) => t.role === 'npc');
+      const items = p.things.filter((t) => t.role === 'item');
+      return { key: p.key, title: p.key, sub: [p.key === status.start && 'start', npcs.length && `${npcs.length} character${npcs.length === 1 ? '' : 's'}`, items.length && `${items.length} item${items.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ') || 'no characters or items', detail: npcs.map((t) => t.key).join(', '), ending: false };
+    }),
+    ...layout.endings.map((e) => ({ key: `ending:${e.key}`, title: e.title, sub: 'ending', detail: '', ending: true })),
+  ];
   return (
-    <div class="map" role="group" aria-label="Places, exits and endings">
-      <svg style={`width:100%;max-width:${layout.width}px;min-width:${Math.round(layout.width * 0.6)}px;height:auto`} viewBox={`0 0 ${layout.width} ${layout.height}`}>
-        {layout.joins.map((j) => {
-          const a = mid(j.a);
-          const b = mid(j.b);
-          return (
-            <g class={`join ${j.locked.length ? 'locked' : ''}`}>
-              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
-              {j.locked.length > 0 && <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 6} text-anchor="middle">until {j.locked.join(' / ')}</text>}
+    <section class="story-map" aria-label="Places, exits and endings">
+      <div class="row map-tools">
+        <label>Find a place or ending <select value={pick ?? ''} onChange={(e) => onPick(e.currentTarget.value)}>
+          <option value="" disabled>Choose…</option>
+          {status.places.map((p) => <option key={p.key} value={p.key}>{p.key}</option>)}
+          {story.endings.map((e) => <option key={e.key} value={`ending:${e.key}`}>{e.title} · ending</option>)}
+        </select></label>
+        <button type="button" class="small" disabled={!pick} aria-pressed={nearby} onClick={() => setNearby(!nearby)}>{nearby ? 'Show whole map' : 'Show neighbourhood'}</button>
+        <span class="grow" />
+        <button type="button" class="small" aria-label="Zoom out" disabled={zoom <= 0.25} onClick={() => setZoom(Math.max(0.25, zoom - 0.25))}>−</button>
+        <button type="button" class="small" title="Reset to reading size" onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
+        <button type="button" class="small" aria-label="Zoom in" disabled={zoom >= 2} onClick={() => setZoom(Math.min(2, zoom + 0.25))}>+</button>
+        <button type="button" class="small" onClick={() => setZoom(Math.min(1, (viewport.current?.clientWidth ?? layout.width) / layout.width, (viewport.current?.clientHeight ?? layout.height) / layout.height))}>Fit map</button>
+      </div>
+      <div class="map" ref={viewport} tabIndex={0} role="region" aria-label="Scrollable story map">
+        <svg width={layout.width * zoom} height={layout.height * zoom} viewBox={`0 0 ${layout.width} ${layout.height}`}>
+          {layout.joins.map((j) => (
+            <g key={`${j.a}>${j.b}`} class={`join ${j.locked.length ? 'locked' : ''} ${j.ending ? 'to-end' : ''} ${pick && j.a !== pick && j.b !== pick ? 'dim' : ''}`}>
+              <title>{j.locked.length ? j.locked.join('\n') : `${j.a} — ${j.b}`}</title>
+              <path d={j.path} />
+              {j.locked.length > 0 && <g class="lock-label"><rect x={j.x - 24} y={j.y - 10} width="48" height="20" rx="10" /><text x={j.x} y={j.y + 4} text-anchor="middle">locked</text></g>}
             </g>
-          );
-        })}
-        {layout.ends.map(([from, end]) => {
-          const a = mid(from);
-          const b = layout.pos.get(`ending:${end}`)!;
-          return <path class="to-end" d={`M${a.x + NODE.w / 2} ${a.y} C ${a.x + NODE.w / 2 + 40} ${a.y}, ${b.x - 40} ${b.y + NODE.h / 2}, ${b.x} ${b.y + NODE.h / 2}`} />;
-        })}
-        {status.places.map((p) => {
-          const at = layout.pos.get(p.key)!;
-          const npcs = things(p, 'npc');
-          const items = things(p, 'item');
-          return (
-            <g class={`node ${pick === p.key ? 'on' : ''} ${p.key === status.start ? 'start' : ''}`} transform={`translate(${at.x} ${at.y})`} tabIndex={0} role="button" aria-label={`Place ${p.key}`} title="See this place's lines"
-              onClick={() => onPick(p.key)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onPick(p.key))}>
-              <rect width={NODE.w} height={NODE.h} rx="10" />
-              <text x="12" y="22" class="name">{p.key}{p.key === status.start ? ' · start' : ''}</text>
-              <text x="12" y="42" class="sub">{[npcs.length && `${npcs.join(', ')}`, items.length && `${items.length} item${items.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ') || 'no one here'}</text>
-            </g>
-          );
-        })}
-        {story.endings.map((e) => {
-          const at = layout.pos.get(`ending:${e.key}`)!;
-          const k = `ending:${e.key}`;
-          return (
-            <g class={`node ending ${pick === k ? 'on' : ''}`} transform={`translate(${at.x} ${at.y})`} tabIndex={0} role="button" aria-label={`Ending ${e.title}`} title="See this ending and the shortest way to it"
-              onClick={() => onPick(k)} onKeyDown={(ev) => (ev.key === 'Enter' || ev.key === ' ') && (ev.preventDefault(), onPick(k))}>
-              <rect width={NODE.w} height={NODE.h} rx="29" />
-              <text x="16" y="22" class="name">{e.title.length > 22 ? `${e.title.slice(0, 21)}…` : e.title}</text>
-              <text x="16" y="42" class="sub">ending</text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
+          ))}
+          {nodes.map((n) => {
+            const at = layout.pos.get(n.key)!;
+            return (
+              <g key={n.key} class={`node ${n.ending ? 'ending' : ''} ${pick === n.key ? 'on' : ''} ${n.key === status.start ? 'start' : ''} ${pick && !related.has(n.key) ? 'dim' : ''}`} transform={`translate(${at.x} ${at.y})`} tabIndex={0} role="button" aria-label={`${n.ending ? 'Ending' : 'Place'} ${n.title}`} aria-pressed={pick === n.key}
+                onClick={() => onPick(n.key)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onPick(n.key))}>
+                <title>{[n.title, n.sub, n.detail].filter(Boolean).join('\n')}</title>
+                <rect width={NODE.w} height={NODE.h} rx={n.ending ? 28 : 10} />
+                <foreignObject x="14" y="12" width={NODE.w - 28} height={NODE.h - 20}>
+                  <div class="map-name">{n.title}</div><div class="map-sub">{n.sub}</div>
+                </foreignObject>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <p class="detail map-help">{layout.places.length} of {status.places.length} places · {layout.endings.length} endings. Select a place for its lines and lock conditions. Dotted lines lead to endings.</p>
+    </section>
   );
 }
 

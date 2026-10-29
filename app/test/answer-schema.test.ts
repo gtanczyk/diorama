@@ -25,3 +25,10 @@ describe('answerSchema', () => {
     expect(answerSchema(z.object({ box: z.tuple([z.number(), z.number()]) }))).toBeUndefined();
   });
 });
+
+describe('the story on the wire', () => {
+  it('reads {op, key} effects back as Story effects and leaves Story-shaped ones alone', async () => {
+    const { fromWire } = await import('../src/story/schema.ts');
+    expect(fromWire({ do: [{ op: 'give', key: 'ticket' }, { set: 'lit' }], op: 'x' })).toEqual({ do: [{ give: 'ticket' }, { set: 'lit' }], op: 'x' });
+  });
+});

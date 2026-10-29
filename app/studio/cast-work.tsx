@@ -2,8 +2,9 @@
 // stage it is at (TRELLIS, skeleton) and the time left; when one is done, it moves right there.
 import { useEffect, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
-import { FigurePreview } from './figure.tsx';
+import { FigurePreview, Sides } from './figure.tsx';
 import { nice } from './world.tsx';
+import { named, nowBy } from './build.tsx';
 import { Icon } from './icons.tsx';
 
 /** Per character: the files the running job wrote (world path → when) and what the build last said about them. */
@@ -95,7 +96,7 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
           {keys.length > 1 ? ` · ${keys.length} characters` : ''}
         </span>
       </div>
-      {!focus && <div class="cw-wait"><span>{cast === null ? 'Reading the cast…' : step === 'model' ? 'Muse Image is about to paint the first character from four sides…' : step === 'sprites' ? 'Muse Image is about to paint the first sprite sheet…' : 'Muse Image is painting the cast…'}</span></div>}
+      {!focus && <div class="cw-wait"><span>{cast === null ? 'Reading the cast…' : named(step === 'model' ? 'Muse Image is about to paint the first character from four sides…' : step === 'sprites' ? 'Muse Image is about to paint the first sprite sheet…' : 'Muse Image is painting the cast…')}</span></div>}
       {focus && (() => {
         const w = work[focus] ?? empty;
         const c = cast?.find((x) => x.key === focus);
@@ -110,7 +111,7 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
                 <span class="detail">{st.stopped ? `Stopped at: ${w.said || 'the start'}` : st.failed ? `No 3D model: ${st.failed}` : st.done ? (step === 'model' ? 'The 3D model is ready' : 'Done') : w.said || 'waiting for the first picture…'}{!st.done && !st.stopped && mine > 1 ? ` · ${clock(mine)}` : ''}</span>
                 {step === 'model' && (
                   <ol class="cw-stages">
-                    {STAGES.map((s, i) => <li class={i < st.at ? 'ok' : i === st.at && !st.done ? (st.stopped ? 'stop' : 'on') : ''} title={s.tip}>{i < st.at ? '✓' : i === st.at && !st.done ? (st.stopped ? '✕' : '●') : '○'} {s.word} <small>{s.by}</small></li>)}
+                    {STAGES.map((s, i) => <li class={i < st.at ? 'ok' : i === st.at && !st.done ? (st.stopped ? 'stop' : 'on') : ''} title={named(s.tip)}>{i < st.at ? '✓' : i === st.at && !st.done ? (st.stopped ? '✕' : '●') : '○'} {s.word} <small>{nowBy(s.by)}</small></li>)}
                   </ol>
                 )}
                 <div class="row">
@@ -119,7 +120,11 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
               </div>
             </div>
             {st.done && c && (c.stamps.model || c.stamps.sprites || c.stamps.rig)
-              ? <FigurePreview key={`${focus}-${c.stamps.model}-${c.stamps.sprites}`} slug={slug} who={focus} stamps={c.stamps} />
+              ? <>
+                  {/* The sides stay in sight after the step: what TRELLIS built the body from. */}
+                  {step === 'model' && c.stamps.model && <Sides slug={slug} dir={`cast/${focus}/model`} v={c.stamps.model} />}
+                  <FigurePreview key={`${focus}-${c.stamps.model}-${c.stamps.sprites}`} slug={slug} who={focus} stamps={c.stamps} sides={step !== 'model'} />
+                </>
               : (
                 <div class="cw-slots">
                   {slots(step, focus, w).map((s) => (

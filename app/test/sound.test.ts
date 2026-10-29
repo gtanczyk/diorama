@@ -134,3 +134,11 @@ test('hiss: white noise is mostly hiss, a low tone is not; the low-pass takes th
   expect(hiss(tone)).toBeLessThan(0.01);
   expect(hiss(lowpass(noise, 2500))).toBeLessThan(0.4);
 });
+
+test('lamps, signs and ticket machines get no loop; a lantern the brief sets on fire keeps its flame', async () => {
+  const { withoutSilentLoops } = await import('../src/sound/plan.ts');
+  const loop = (thing: string) => ({ thing, prompt: 'x', level: 2, when: [] });
+  const plan = { music: { prompt: 'm' }, steps: {}, shots: [], places: { stop: { bed: 'b', floors: {}, loops: [loop('stop-lamp'), loop('ticket-machine'), loop('fountain'), loop('oil-lantern')] } } } as unknown as SoundPlan;
+  const kept = withoutSilentLoops(plan, { stop: { brief: { alive: [{ key: 'oil-lantern', as: 'fire' }] } } } as never);
+  expect(kept.places.stop.loops.map((l) => l.thing)).toEqual(['fountain', 'oil-lantern']);
+});
