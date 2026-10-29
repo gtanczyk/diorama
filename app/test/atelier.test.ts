@@ -26,6 +26,27 @@ beforeAll(async () => {
 afterAll(async () => { await browser?.close(); await studio?.close(); if (root) fs.rmSync(root, { recursive: true, force: true }); });
 const open = async (page: Page) => { await page.goto(`${studio.url}w/w#${studio.token}`); await page.locator('.convo header h1').waitFor(); };
 
+test('Setup returns to the world that opened it, including after reload and browser navigation', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+  try {
+    await open(page);
+    await page.getByRole('button', { name: 'More' }).click();
+    await page.getByRole('link', { name: 'Setup', exact: true }).click();
+    await page.getByRole('link', { name: 'Back to world' }).waitFor();
+    await page.reload();
+    await page.getByRole('link', { name: 'Back to world' }).click();
+    await page.locator('.convo header h1').waitFor();
+    expect(new URL(page.url()).pathname).toBe('/w/w');
+    await page.goForward();
+    await page.getByRole('link', { name: 'Back to world' }).waitFor();
+    await page.goBack();
+    await page.locator('.convo header h1').waitFor();
+    await page.goto(`${studio.url}setup`);
+    await page.getByRole('link', { name: 'Back to Studio' }).click();
+    await expect.poll(() => new URL(page.url()).pathname).toBe('/');
+  } finally { await page.close(); }
+}, 30_000);
+
 test('the start form sends all 18 drawings in order and never silently drops excess attachments', async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.setDefaultTimeout(8000);

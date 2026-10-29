@@ -223,13 +223,18 @@ function Setup() {
   useEffect(() => void run('setup_status'), []);
   const ok = checks?.filter((c) => c.state === 'ok').length ?? 0;
   const blocking = checks?.filter((c) => c.state === 'missing' || c.state === 'fail') ?? [];
+  const from = history.state?.setupFrom as unknown;
+  const back = typeof from === 'string' && (from === '/' || /^\/w\/[a-z][a-z0-9-]*$/.test(from)) ? from : null;
   return (
     <>
       <Corner />
       {/* What to do on the left, the checks on the right, each scrolling on its own: the page itself never does. */}
       <main class="setup">
         <div class="side">
-        <h1>Setup</h1>
+        <div class="setup-heading">
+          <a href={back ?? '/'} class="setup-back" aria-label={back?.startsWith('/w/') ? 'Back to world' : 'Back to Studio'} title={back?.startsWith('/w/') ? 'Back to world' : 'Back to Studio'} onClick={(e) => { e.preventDefault(); if (back) history.back(); else go('/'); }}>←</a>
+          <h1>Setup</h1>
+        </div>
         <p class="lead">{!checks ? 'Checking this machine…' : blocking.length ? `${blocking.map((c) => c.label).join(' and ')} still ${blocking.length > 1 ? 'need' : 'needs'} you. Everything else is ready or optional.` : `Everything diorama needs is here.${ok < checks.length ? ' The unticked ones are optional.' : ''}`}</p>
         <p class="note">Keys are typed only in your terminal with <code>diorama setup</code>, hidden, and kept in your system keychain. This page never sees them.</p>
         {error && <p class="error">{error}</p>}

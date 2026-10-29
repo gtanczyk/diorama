@@ -8,7 +8,7 @@ export const movedFrom = signal<string | null>(null);
 
 export function go(path: string) {
   if (path === route.value) return;
-  history.pushState(null, '', path);
+  history.pushState(path === '/setup' ? { setupFrom: route.value } : null, '', path);
   route.value = path;
 }
 addEventListener('popstate', () => (route.value = location.pathname));
