@@ -4,7 +4,7 @@ import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity,
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, RIM_ALPHA, RIM_COLOUR, RIM_WIDTH, SEPARATE_ALPHA, SEPARATE_BLUR, SEPARATE_SHIFT } from '../src/play/focus.ts';
 import { catchers, decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
-import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
+import { CYCLE, pose, sheetCell, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, pickDialogue, pickInteraction, speakerOf, startState, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
@@ -54,7 +54,7 @@ export type SpriteInfo = {
 /** walk: the cells a walk steps through, without the ones the sprites step found off the gait (a crouch, a sit). */
 type Sheet = { yaw: number; stand: number; img: HTMLImageElement; gestures: string[]; walk: number[] };
 /** height: metres standing (a grown-up 1.62, a cat 0.3), so each is drawn at its own size; upright false: an animal, drawn as painted. */
-type Figure = { img: HTMLImageElement; height?: number; upright?: boolean; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
+type Figure = { img: HTMLImageElement; height?: number; upright?: boolean; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; sheet?: HTMLImageElement; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
 /** y: the floor row the cut stands on, which sets how far it slides with parallax. */
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number; y: number };
 
@@ -303,8 +303,9 @@ class Game {
       if (cast.rig && cast.parts) {
         const parts = new Map<PartName, HTMLImageElement>();
         await Promise.all(cast.rig.parts.map(async (p) => parts.set(p.name, await loadImage(files(`${cast.parts}/${p.file}`)))));
+        const sheet = cast.rig.sheet ? await loadImage(files(`${cast.parts}/${cast.rig.sheet.file}`)) : undefined;
         const canvas = Object.assign(document.createElement('canvas'), { width: cast.rig.size[0], height: cast.rig.size[1] });
-        figure.rig = { rig: cast.rig, parts, canvas };
+        figure.rig = { rig: cast.rig, parts, sheet, canvas };
       }
       if (cast.sprites && params.get('model') !== '1') {
         const { dir, info } = cast.sprites;
@@ -365,7 +366,7 @@ class Game {
     c.fillStyle = '#d8d4cc';
     c.fillRect(0, 0, sheet.width, h);
     for (let i = 0; i <= frames; i++) {
-      drawRig(rig, pose(rig.rig, i / frames, i < frames));
+      drawRig(rig, pose(rig.rig, i / frames, i < frames), i / frames, i < frames);
       c.drawImage(rig.canvas, i * w, 0);
       c.fillStyle = '#c33';
       c.fillRect(i * w, rig.rig.ground, w, 1);
@@ -1551,7 +1552,9 @@ class Game {
     const h = unit * ((figure?.height ?? 1.62) / 1.62);
     y = foot ?? stepFootY(g, x, y);
     const sprites = figure?.sprites;
-    let model = sprites ? undefined : figure?.model;
+    // A walk sheet warped from the painting looks like the painting; the bare 3D model (TRELLIS's textures up
+    // close) does not, so it walks a person only with ?model=1. A creature has no sheet and keeps its model.
+    let model = sprites || (figure?.rig?.rig.sheet && params.get('model') !== '1') ? undefined : figure?.model;
     let modelCanvas: HTMLCanvasElement | undefined;
     try {
       modelCanvas = model?.draw({ phase, walking, yaw, px: h, time: this.time, talk });
@@ -1567,7 +1570,7 @@ class Game {
     // A rig walks its legs; a plain cut-out (or the stand-in) only bobs and rocks as it slides.
     const bob = creature ? creature.lift * h : rig || model || sprites || !walking ? 0 : Math.abs(Math.sin(phase * Math.PI * 2)) * h * 0.025;
     const rock = creature ? creature.lean * (facing < 0 ? -1 : 1) : rig || model || sprites || !walking ? 0 : Math.sin(phase * Math.PI * 2) * 0.035;
-    if (rig) drawRig(rig, pose(rig.rig, phase, walking));
+    if (rig) drawRig(rig, pose(rig.rig, phase, walking), phase, walking);
     /** Draws the figure into c with its feet at c's origin; returns its half width. */
     const paint = (c: CanvasRenderingContext2D): number => {
       if (sprites) {
@@ -2179,9 +2182,17 @@ class Game {
 }
 
 /** Poses a rig's parts into its own canvas, back to front, in the figure's coordinates. */
-function drawRig(fig: NonNullable<Figure['rig']>, at: ReturnType<typeof pose>) {
+function drawRig(fig: NonNullable<Figure['rig']>, at: ReturnType<typeof pose>, phase = 0, walking = false) {
   const c = fig.canvas.getContext('2d')!;
   c.clearRect(0, 0, fig.canvas.width, fig.canvas.height);
+  const sheet = fig.rig.sheet;
+  if (sheet && fig.sheet) {
+    // The walk drawn ahead (src/scene/warp.ts): one cell, scaled back up to the rig's size.
+    const i = sheetCell(sheet, phase, walking);
+    const [cw, ch] = sheet.cell;
+    c.drawImage(fig.sheet, (i % sheet.cols) * cw, Math.floor(i / sheet.cols) * ch, cw, ch, 0, 0, fig.canvas.width, fig.canvas.height);
+    return;
+  }
   for (const part of fig.rig.parts) {
     const img = fig.parts.get(part.name);
     const p = at[part.name];

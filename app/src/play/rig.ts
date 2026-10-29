@@ -22,6 +22,13 @@ export const Rig = z.object({
   }),
   /** Drawn back to front; `at` is the part image's top-left in the figure. */
   parts: z.array(z.object({ name: z.enum(PART_NAMES), file: z.string(), at: XY })),
+  /**
+   * The walk drawn ahead as a sheet (src/scene/warp.ts): `frames` cells of one cycle, then the standing figure, each
+   * `cell` px (the rig's size times `scale`). Present, the parts are not used.
+   */
+  sheet: z.object({ file: z.string(), cols: z.number(), rows: z.number(), frames: z.number(), cell: XY, scale: z.number() }).optional(),
+  /** The walk measured when it was made (src/scene/rig-check.ts): not ok, the figure slides as one piece instead. */
+  check: z.object({ ok: z.boolean(), holes: z.number(), loose: z.number(), why: z.string().optional() }).optional(),
 });
 export type Rig = z.infer<typeof Rig>;
 
@@ -29,6 +36,11 @@ type P = [number, number];
 /** Where each part goes this frame: rotate by `turn` about `from`, then move `from` to `to`. */
 export type PartPose = { from: P; to: P; turn: number };
 export type Pose = Record<PartName, PartPose>;
+
+/** The sheet cell for walk phase `phase`, or the standing cell. */
+export function sheetCell(sheet: NonNullable<Rig['sheet']>, phase: number, walking: boolean): number {
+  return walking ? Math.floor((((phase % 1) + 1) % 1) * sheet.frames) % sheet.frames : sheet.frames;
+}
 
 /** Distance the figure travels per walk cycle, as a share of its height. */
 export const CYCLE = 0.55;
@@ -108,5 +120,53 @@ export function pose(rig: Rig, phase: number, walking: boolean): Pose {
   // Each arm swings against its own side's leg: near leg forward, near arm back (clockwise).
   out.nearArm = { from: rig.shoulder.near, to: lift(rig.shoulder.near), turn: swing('near') };
   out.farArm = { from: rig.shoulder.far, to: lift(rig.shoulder.far), turn: swing('far') };
+  return out;
+}
+
+const THIGH_SWING = 0.3;
+const KNEE_BEND = 0.55;
+const ARM_TURN = 0.22;
+
+const turnAbout = (p: P, about: P, a: number): P => {
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const d = sub(p, about);
+  return [about[0] + c * d[0] - s * d[1], about[1] + s * d[0] + c * d[1]];
+};
+
+/**
+ * A walk told in angles from the painted stance, not reached by solving for foot targets: each thigh swings a
+ * little either side of where it was painted and the knee bends while the foot is up. Whatever the painting's
+ * stance (feet wide apart, boots up to the knee), no limb turns further than THIGH_SWING + KNEE_BEND, so a figure
+ * warped as one mesh (src/scene/warp.ts) bends without folding over itself. The planted foot stays on the ground.
+ */
+export function swingPose(rig: Rig, phase: number): Pose {
+  const out = {} as Pose;
+  const legs = (['near', 'far'] as const).map((side) => {
+    const p = (((phase + (side === 'far' ? 0.5 : 0)) % 1) + 1) % 1;
+    // Forward is anticlockwise for a figure facing right (y down): the thigh comes forward for heel strike at 0.
+    const thigh = -THIGH_SWING * Math.cos(2 * Math.PI * p);
+    const lifted = p > 0.5 ? Math.sin(Math.PI * (p - 0.5) / 0.5) : 0;
+    const shin = thigh + KNEE_BEND * lifted;
+    const rest = rig.leg[side];
+    const knee = turnAbout(rest.knee, rig.hip, thigh);
+    const ankleAt: P = [knee[0] + Math.cos(shin) * (rest.ankle[0] - rest.knee[0]) - Math.sin(shin) * (rest.ankle[1] - rest.knee[1]), knee[1] + Math.sin(shin) * (rest.ankle[0] - rest.knee[0]) + Math.cos(shin) * (rest.ankle[1] - rest.knee[1])];
+    return { side, thigh, shin, knee, ankle: ankleAt, lifted, rest };
+  });
+  // The body sinks so the planted foot (the one not lifted, or the lower) stays on the ground.
+  const planted = legs.reduce((a, b) => (a.lifted < b.lifted || (a.lifted === b.lifted && a.ankle[1] > b.ankle[1]) ? a : b));
+  const drop = planted.rest.ankle[1] - planted.ankle[1];
+  const down = (q: P): P => [q[0], q[1] + drop];
+  const hip = down(rig.hip);
+  for (const l of legs) {
+    out[`${l.side}Thigh`] = { from: rig.hip, to: hip, turn: l.thigh };
+    out[`${l.side}Shin`] = { from: l.rest.knee, to: down(l.knee), turn: l.shin };
+    // A planted boot stays flat; a lifted one tips with the shin a little.
+    out[`${l.side}Boot`] = { from: l.rest.ankle, to: down(l.ankle), turn: l.lifted * l.shin * 0.5 };
+  }
+  out.torso = { from: rig.hip, to: hip, turn: 0 };
+  const arm = ARM_TURN * Math.cos(2 * Math.PI * phase);
+  out.nearArm = { from: rig.shoulder.near, to: down(rig.shoulder.near), turn: arm };
+  out.farArm = { from: rig.shoulder.far, to: down(rig.shoulder.far), turn: -arm };
   return out;
 }

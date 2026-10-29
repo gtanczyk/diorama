@@ -3,7 +3,7 @@
 // sprite sheets Muse painted playing as loops. Everything loads only when the preview opens.
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { GESTURES } from '../src/play/gestures.ts';
-import { pose, type PartName, type Rig } from '../src/play/rig.ts';
+import { pose, sheetCell, type PartName, type Rig } from '../src/play/rig.ts';
 import type { Figure3D, ModelInfo } from '../web/hero3d.ts';
 import { fileUrl } from './api.ts';
 
@@ -38,13 +38,13 @@ function useFrames(draw: (t: number) => void, deps: unknown[]) {
 }
 
 const FIGURE_TIPS = {
-  model: 'The 3D model the game walks this character with. Drag to turn it',
-  rig: 'The cut-out 2D rig: the fallback when there is no WebGL',
+  model: 'The 3D model sprites are painted over (the game shows it only with ?model=1). Drag to turn it',
+  rig: 'The painting itself, walking: bent by its bones as one piece, so clothes stretch and never tear',
   sprites: 'The painted sprites for each facing, looping',
 };
 
 export function FigurePreview({ slug, who, stamps }: { slug: string; who: string; stamps: Stamps }) {
-  const tabs = ([['model', '3D model'], ['rig', '2D rig'], ['sprites', 'Sprites']] as const).filter(([k]) => stamps[k]);
+  const tabs = ([['sprites', 'Sprites'], ['rig', '2D walk'], ['model', '3D model']] as const).filter(([k]) => stamps[k]);
   const [tab, setTab] = useState(tabs[0]?.[0]);
   if (!tab) return <p class="detail">No rig, model or sprites yet: run the build's cast, model and sprites steps.</p>;
   return (
@@ -53,7 +53,8 @@ export function FigurePreview({ slug, who, stamps }: { slug: string; who: string
         {tabs.map(([k, label]) => <button type="button" class={`ghost small${tab === k ? ' on' : ''}`} title={FIGURE_TIPS[k]} onClick={() => setTab(k)}>{label}</button>)}
       </div>
       {tab === 'model' && <ModelView slug={slug} dir={`cast/${who}/model`} v={stamps.model} />}
-      {tab === 'rig' && (stamps.model || stamps.sprites) && <p class="detail">The game walks this character with its {stamps.sprites ? 'sprites' : '3D model'}; the cut-out rig is only the fallback (no WebGL, or ?model=0).</p>}
+      {tab === 'rig' && stamps.sprites && <p class="detail">The game walks this character with its sprites; this walk is the fallback.</p>}
+      {tab === 'model' && <p class="detail">Sprites are painted over this model; the game draws the model itself only with ?model=1.</p>}
       {tab === 'rig' && <RigView slug={slug} who={who} v={stamps.rig} />}
       {tab === 'sprites' && <SpritesView slug={slug} dir={`cast/${who}/sprites`} v={stamps.sprites} />}
     </div>
@@ -141,7 +142,7 @@ function ModelView({ slug, dir, v }: { slug: string; dir: string; v: number | nu
 /** The cut-out rig (rig.json and its part images) posed by src/play/rig.ts, as the 2D page draws it. */
 function RigView({ slug, who, v }: { slug: string; who: string; v: number | null }) {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [rig, setRig] = useState<{ rig: Rig; parts: Map<PartName, HTMLImageElement> } | null>(null);
+  const [rig, setRig] = useState<{ rig: Rig; parts: Map<PartName, HTMLImageElement>; sheet?: HTMLImageElement } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>('walk');
   useEffect(() => {
@@ -150,7 +151,8 @@ function RigView({ slug, who, v }: { slug: string; who: string; v: number | null
       const r = await json<Rig>(fileUrl(slug, `cast/${who}/rig.json`, v));
       const parts = new Map<PartName, HTMLImageElement>();
       await Promise.all(r.parts.map(async (p) => parts.set(p.name, await image(fileUrl(slug, `cast/${who}/${p.file}`, v)))));
-      if (!gone) setRig({ rig: r, parts });
+      const sheet = r.sheet ? await image(fileUrl(slug, `cast/${who}/${r.sheet.file}`, v)) : undefined;
+      if (!gone) setRig({ rig: r, parts, sheet });
     })().catch((e) => !gone && setError((e as Error).message));
     return () => void (gone = true);
   }, [slug, who, v]);
@@ -158,17 +160,24 @@ function RigView({ slug, who, v }: { slug: string; who: string; v: number | null
     const c = canvas.current?.getContext('2d');
     if (!rig || !c) return;
     [c.canvas.width, c.canvas.height] = rig.rig.size;
-    const at = pose(rig.rig, t / STRIDE, mode === 'walk');
-    for (const part of rig.rig.parts) {
-      const img = rig.parts.get(part.name);
-      const p = at[part.name];
-      if (!img || !p) continue;
-      c.save();
-      c.translate(p.to[0], p.to[1]);
-      c.rotate(p.turn);
-      c.translate(-p.from[0], -p.from[1]);
-      c.drawImage(img, part.at[0], part.at[1]);
-      c.restore();
+    const sheet = rig.rig.sheet;
+    if (sheet && rig.sheet) {
+      const i = sheetCell(sheet, t / STRIDE, mode === 'walk');
+      const [cw, ch] = sheet.cell;
+      c.drawImage(rig.sheet, (i % sheet.cols) * cw, Math.floor(i / sheet.cols) * ch, cw, ch, 0, 0, c.canvas.width, c.canvas.height);
+    } else {
+      const at = pose(rig.rig, t / STRIDE, mode === 'walk');
+      for (const part of rig.rig.parts) {
+        const img = rig.parts.get(part.name);
+        const p = at[part.name];
+        if (!img || !p) continue;
+        c.save();
+        c.translate(p.to[0], p.to[1]);
+        c.rotate(p.turn);
+        c.translate(-p.from[0], -p.from[1]);
+        c.drawImage(img, part.at[0], part.at[1]);
+        c.restore();
+      }
     }
     c.fillStyle = 'rgba(255,255,255,0.25)';
     c.fillRect(0, rig.rig.ground, c.canvas.width, 2);
@@ -176,6 +185,8 @@ function RigView({ slug, who, v }: { slug: string; who: string; v: number | null
   return (
     <div class="moves">
       <Modes modes={['walk', 'stand']} mode={mode} set={setMode} />
+      {rig?.rig.check && !rig.rig.check.ok && <p class="detail">This walk tore when it was made ({rig.rig.check.why}), so the game slides the painted figure as one piece.</p>}
+      {rig && !rig.rig.sheet && <p class="detail">An old cut-out rig: run `diorama rig {slug}` (no Muse calls) for a walk that does not tear.</p>}
       {rig ? <canvas ref={canvas} class="rig" /> : <span class="detail">{error ?? 'Loading the rig…'}</span>}
     </div>
   );

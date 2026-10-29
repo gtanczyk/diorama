@@ -2,6 +2,7 @@
 import sharp from 'sharp';
 import type { Mask } from '../image/mask.ts';
 import { maskBox } from '../image/raster.ts';
+import { silhouette } from './warp.ts';
 import type { Memo } from '../meta/memo.ts';
 import { museEdit, musePaint } from '../meta/muse.ts';
 import { askSparkJson } from '../meta/spark.ts';
@@ -24,11 +25,12 @@ Plain flat light grey background, no floor, no shadow, no other people, no props
 
 /** The biggest instance SAM finds of the hero, as an RGBA PNG cropped to the figure and HERO_PX tall. */
 export async function cutHero(painting: Buffer, mask: Mask): Promise<Buffer> {
-  const box = maskBox(mask);
-  if (!box) throw new Error('figure: the mask is empty');
-  const [x0, y0, x1, y1] = box;
+  if (!maskBox(mask)) throw new Error('figure: the mask is empty');
   const { data, info } = await sharp(painting).resize(mask.width, mask.height, { fit: 'fill' }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  for (let i = 0; i < mask.bits.length; i++) if (!mask.bits[i]) data[i * info.channels + 3] = 0;
+  // SAM's person leaves out what they hold (a lantern, a net of fish) and leaves holes where it hangs over them.
+  const whole = silhouette(data, mask);
+  for (let i = 0; i < whole.bits.length; i++) if (!whole.bits[i]) data[i * info.channels + 3] = 0;
+  const [x0, y0, x1, y1] = maskBox(whole)!;
   return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
     .extract({ left: x0, top: y0, width: x1 - x0, height: y1 - y0 })
     .resize({ height: HERO_PX })

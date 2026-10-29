@@ -1,9 +1,12 @@
 // diorama cast <slug>: the hero and every NPC of world.json as cut-out figures the runtime walks around.
 import fs from 'node:fs';
 import { defineCommand, takeOption } from '../registry.ts';
-import { castBodies, paintFigure, readBodies, type Who } from '../scene/cast.ts';
+import { castBodies, cutHero, paintFigure, readBodies, type Who } from '../scene/cast.ts';
+import { samFind } from '../meta/sam.ts';
 import { photoStanding } from '../scene/photo.ts';
 import { rigFigure } from '../scene/rig.ts';
+import { checkSheet } from '../scene/rig-check.ts';
+import { PART_NAMES } from '../play/rig.ts';
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
 import { drawingFor, players, readDrawn } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
@@ -61,16 +64,48 @@ defineCommand({
       markStyled(files, 'cast', who.key, style);
       // The same painting cut into parts, so the runtime can walk the figure.
       if (bodies[who.key]?.upright === false) return console.log(`${who.key}: ${files.path('cast', `${who.key}.png`)} · not upright: drawn as painted`);
-      try {
-        const { rig, parts, issues } = await rigFigure(files.memo, who.key, painting);
-        for (const [file, png] of Object.entries(parts)) files.write(files.path('cast', who.key, file), png);
-        files.write(files.path('cast', who.key, 'rig.json'), rig);
-        console.log(`${who.key}: ${files.path('cast', `${who.key}.png`)} · rig ${rig.parts.length} parts${issues.map((i) => ` · ${i}`).join('')}`);
-      } catch (error) {
-        console.log(`${who.key}: ${files.path('cast', `${who.key}.png`)} · no rig: ${error instanceof Error ? error.message : error}`);
-      }
+      await rigCast(files, who.key, painting);
     }));
     for (const m of missing) console.log(`set aside, shown as a stand-in: ${m}`);
     console.log(`calls sent: muse ${files.memo.sent.muse}, sam ${files.memo.sent.sam}`);
+  },
+});
+
+/**
+ * The painting made walkable: the whole figure warped by its bones into a walk sheet (cast/<key>/walk.png) and
+ * rig.json with the joints and how the walk measured. A walk that tears is kept but marked, and the game slides
+ * the painted figure as one piece instead. Parts of an older cut-out rig are removed.
+ */
+export async function rigCast(files: WorldFiles, key: string, painting: Buffer) {
+  try {
+    const { rig, parts, issues } = await rigFigure(files.memo, key, painting);
+    for (const name of PART_NAMES) fs.rmSync(files.path('cast', key, `${name}.png`), { force: true });
+    for (const [file, png] of Object.entries(parts)) files.write(files.path('cast', key, file), png);
+    rig.check = rig.sheet ? await checkSheet(rig, parts[rig.sheet.file]) : undefined;
+    files.write(files.path('cast', key, 'rig.json'), rig);
+    const verdict = rig.check && !rig.check.ok ? ` · walk torn (${rig.check.why}): slides as one piece` : '';
+    console.log(`${key}: ${files.path('cast', `${key}.png`)} · walk sheet ${rig.sheet?.frames ?? 0} frames${verdict}${issues.map((i) => ` · ${i}`).join('')}`);
+  } catch (error) {
+    console.log(`${key}: ${files.path('cast', `${key}.png`)} · no rig: ${error instanceof Error ? error.message : error}`);
+  }
+}
+
+defineCommand({
+  name: 'rig',
+  usage: 'rig <slug> [key...]     make the walk again from the cast paintings already painted (no Muse; SAM answers are kept), and cut the figure out again so what it holds stays on',
+  async run(args) {
+    const [slug, ...only] = args;
+    if (!slug) throw new Error('usage: diorama rig <slug> [key...]');
+    const files = new WorldFiles(slug);
+    const bodies = readBodies(files, fs.existsSync);
+    const keys = fs.readdirSync(files.path('cast')).filter((f) => f.endsWith('-painting.png')).map((f) => f.slice(0, -'-painting.png'.length)).filter((k) => !only.length || only.includes(k));
+    for (const key of keys) {
+      if (bodies[key]?.upright === false) continue;
+      const painting = fs.readFileSync(files.path('cast', `${key}-painting.png`));
+      const person = (await samFind(files.memo, { label: `figure:${key}`, image: painting, prompt: 'person' })).sort((a, b) => b.mask.bits.reduce((s, x) => s + x, 0) - a.mask.bits.reduce((s, x) => s + x, 0))[0];
+      if (person) files.write(files.path('cast', `${key}.png`), await cutHero(painting, person.mask));
+      await rigCast(files, key, painting);
+    }
+    console.log(`calls sent: sam ${files.memo.sent.sam}`);
   },
 });
