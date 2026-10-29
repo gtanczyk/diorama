@@ -62,3 +62,34 @@ test('a locked world refuses the agent\'s cast changes', async () => {
   await runAction('lock_set', { slug: 'w', locked: true }, ctx('user'));
   await expect(runAction('cast_redo', { slug: 'w', key: 'wren', anotherTake: true }, ctx('agent'))).rejects.toThrow(/locked/);
 });
+
+test('repeated animation requests reuse the queued or running job, but allow a new request once it ends', async () => {
+  const { ctx, jobs } = world();
+  const blocker = jobs.start('w', ['sleep', 'w'], 'busy', 'user');
+  try {
+    const first = await runAction('cast_animate', { slug: 'w', key: 'wren' }, ctx('user')) as { id: string };
+    const again = await runAction('cast_animate', { slug: 'w', key: 'wren' }, ctx('user')) as { id: string };
+    expect(again.id).toBe(first.id);
+    expect(jobs.list().filter((j) => j.args[0] === 'model')).toHaveLength(1);
+    const cast = await runAction('cast_status', { slug: 'w' }, ctx('user')) as Array<{ modelJob: unknown }>;
+    expect(cast[0].modelJob).toEqual({ id: first.id, state: 'queued' });
+    jobs.cancel(blocker.id);
+    await jobs.wait(blocker.id);
+    const running = await runAction('cast_animate', { slug: 'w', key: 'wren' }, ctx('user')) as { id: string };
+    expect(running.id).toBe(first.id);
+    await jobs.wait(first.id);
+    const next = await runAction('cast_animate', { slug: 'w', key: 'wren' }, ctx('user')) as { id: string };
+    expect(next.id).not.toBe(first.id);
+    await jobs.wait(next.id);
+  } finally { jobs.stopAll(); }
+});
+
+test('cast status explains rejected or failed generation even when no model was published', async () => {
+  const { root, ctx } = world();
+  const files = new WorldFiles('w', root);
+  for (const state of ['fallback', 'failed']) {
+    files.write(files.path('cast', 'wren', 'model', 'attempt.json'), { state, reason: 'no usable body', at: new Date().toISOString() });
+    const cast = await runAction('cast_status', { slug: 'w' }, ctx('user')) as unknown[];
+    expect(cast[0]).toMatchObject({ model: false, modelIssue: 'no usable body', modelAttempt: { state } });
+  }
+});

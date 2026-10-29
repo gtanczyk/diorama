@@ -36,12 +36,40 @@ defineCommand({
     // Everyone the sprites plan needs, and whoever the person asked to animate (cast_animate, cast/fixes.json).
     const asked = Object.entries(readCastFixes(files)).filter(([, f]) => f.animate).map(([k]) => k);
     const keys = keyArg ? [keyArg] : [...new Set([...(await planSprites(files, story)).map((p) => p.key), ...asked])];
-    for (const key of keys) await buildModel(files, key, take, given);
+    await buildModels(files, keys, take, given, !!keyArg);
     console.log(`calls sent: muse ${files.memo.sent.muse}, space ${files.memo.sent.space}`);
   },
 });
 
-export async function buildModel(files: WorldFiles, key: string, take: number, given: string) {
+/** An unavailable service for one character must not prevent the rest of the cast being attempted. */
+export async function buildModels(files: WorldFiles, keys: string[], take: number, given: string, requireModel = false) {
+  const failures: string[] = [];
+  for (const key of keys) {
+    try {
+      const made = await buildModel(files, key, take, given);
+      if (!made && requireModel) failures.push(`${key}: no usable 3D model; see cast status`);
+    } catch (error) {
+      const reason = `${key}: ${error instanceof Error ? error.message : String(error)}`;
+      console.error(reason);
+      failures.push(reason);
+    }
+  }
+  if (failures.length) throw new Error(`3D models failed: ${failures.join('; ')}`);
+}
+
+export async function buildModel(files: WorldFiles, key: string, take: number, given: string): Promise<boolean> {
+  const attempt = files.path('cast', key, 'model', 'attempt.json');
+  try {
+    const reason = await makeModel(files, key, take, given);
+    files.write(attempt, { state: reason ? 'fallback' : 'ready', reason, at: new Date().toISOString() });
+    return !reason;
+  } catch (error) {
+    files.write(attempt, { state: 'failed', reason: error instanceof Error ? error.message : String(error), at: new Date().toISOString() });
+    throw error;
+  }
+}
+
+async function makeModel(files: WorldFiles, key: string, take: number, given: string): Promise<string | null> {
   const world = files.world();
   const found = [world.hero, ...world.places.flatMap((p) => p.things)].find((w) => w.key === key);
   if (!found) throw new Error(`no hero or NPC called ${key}`);
@@ -74,11 +102,11 @@ export async function buildModel(files: WorldFiles, key: string, take: number, g
   const reject = (why: string) => {
     if (fs.existsSync(rejected)) fs.renameSync(rejected, out('model-rejected.json'));
     console.log(`${key}: no 3D model: ${why}; ${creature ? 'the painted figure hops as it is' : 'the game walks the 2D rig'}`);
+    return why;
   };
   if (!given && !shell) {
     // An older model of this character (a flat one, kept before this gate) must not stay in the game.
-    reject('every reconstruction was flat or invalid');
-    return;
+    return reject('every reconstruction was flat or invalid');
   }
   if (creature) {
     // Make-It-Animatable rigs a person's skeleton only; a creature keeps TRELLIS's mesh as it came (no standing up:
@@ -88,19 +116,20 @@ export async function buildModel(files: WorldFiles, key: string, take: number, g
     const fits = await fitViews(mesh, views);
     files.write(out('model.json'), { glb: 'model.glb', creature: true, views: fits });
     console.log(`${key}: ${out('model.glb')} · a creature, no skeleton: hops, squashes and blinks as one body · views ${Object.entries(fits).map(([v, f]) => `${v} ${f.iou}`).join(', ')}`);
-    return;
+    return null;
   }
   const built = supplied ?? await autoRig(files.memo, key, shell!);
   const bad = badModel(readShape(built));
-  if (bad) { reject(`rigged body rejected: ${bad}`); return; }
+  if (bad) return reject(`rigged body rejected: ${bad}`);
   const tilt = lean(readShape(built));
   const rigged = standUp(built);
   const standingProblem = badModel(readShape(rigged));
-  if (standingProblem) { reject(`standing body rejected: ${standingProblem}`); return; }
+  if (standingProblem) return reject(`standing body rejected: ${standingProblem}`);
   files.write(out('model.glb'), rigged);
 
   const fits = await fitViews(rigged, views);
   files.write(out('model.json'), { glb: 'model.glb', views: fits });
   const degrees = (slope: number) => Math.round(Math.atan(slope) * 180 / Math.PI * 10) / 10;
   console.log(`${key}: ${out('model.glb')} · stood up ${degrees(tilt.z)}° forward, ${degrees(tilt.x)}° sideways · views ${Object.entries(fits).map(([v, f]) => `${v} ${f.iou}`).join(', ')}`);
+  return null;
 }

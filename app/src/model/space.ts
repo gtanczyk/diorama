@@ -18,12 +18,26 @@ export class Space {
   }
 
   async upload(name: string, data: Buffer): Promise<SpaceFile> {
-    const form = new FormData();
-    form.append('files', new Blob([new Uint8Array(data)]), name);
-    const res = await fetch(`${this.base}/upload`, { method: 'POST', headers: this.headers, body: form });
-    if (!res.ok) throw new Error(`${this.id} upload: ${res.status} ${(await res.text()).slice(0, 200)}`);
-    const [where] = (await res.json()) as string[];
-    return { path: where, meta: { _type: 'gradio.FileData' }, orig_name: name };
+    // Uploading the same bytes again is safe; queue/join can start GPU work and must not be retried blindly.
+    for (let attempt = 0; ; attempt++) {
+      const form = new FormData();
+      form.append('files', new Blob([new Uint8Array(data)]), name);
+      const res = await fetch(`${this.base}/upload`, { method: 'POST', headers: this.headers, body: form, signal: AbortSignal.timeout(60_000) });
+      if (res.ok) {
+        const [where] = (await res.json()) as string[];
+        if (typeof where !== 'string' || !where) throw new Error(`${this.id} upload: missing file path`);
+        return { path: where, meta: { _type: 'gradio.FileData' }, orig_name: name };
+      }
+      // Do not put proxy HTML in the build feed. The operation and status are enough to diagnose it.
+      await res.body?.cancel();
+      if (![408, 429, 500, 502, 503, 504].includes(res.status) || attempt === 2) {
+        throw new Error(`${this.id} upload: HTTP ${res.status} (${attempt + 1} attempt(s))`);
+      }
+      const retryAfter = res.headers.get('retry-after');
+      const seconds = retryAfter === null ? NaN : Number(retryAfter);
+      const delay = Number.isFinite(seconds) ? seconds * 1000 : retryAfter ? Date.parse(retryAfter) - Date.now() : 0;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(30_000, Math.max(1000 * 2 ** attempt, Number.isFinite(delay) ? delay : 0))));
+    }
   }
 
   /** One session for every call, so endpoints that keep files per session (TRELLIS) find them. */

@@ -14,6 +14,12 @@ import { Slug } from '../world/schema.ts';
 import { ActionError, defineAction, type ActionContext } from './registry.ts';
 
 const stamp = (file: string) => (fs.existsSync(file) ? Math.round(fs.statSync(file).mtimeMs) : null);
+const ModelAttempt = z.object({ state: z.enum(['ready', 'fallback', 'failed']), reason: z.string().nullable(), at: z.string() });
+
+function pendingModel(ctx: ActionContext, slug: string, key: string) {
+  return ctx.jobs.list(slug).find((j) => (j.state === 'queued' || j.state === 'running')
+    && j.args.length === 3 && j.args[0] === 'model' && j.args[1] === slug && j.args[2] === key);
+}
 
 function characters(files: WorldFiles) {
   const world = files.world();
@@ -67,10 +73,15 @@ defineAction({
         ...(() => {
           // A flat model (and the sheets painted over it) is not used by the game; say why instead.
           const has = fs.existsSync(files.path('cast', c.key, 'model', 'model.json'));
-          const modelIssue = has ? modelProblem(files.path('cast', c.key, 'model')) : null;
+          const attemptFile = files.path('cast', c.key, 'model', 'attempt.json');
+          const parsed = fs.existsSync(attemptFile) ? ModelAttempt.safeParse(files.readJson(attemptFile)) : null;
+          const modelAttempt = parsed?.success ? parsed.data : null;
+          const modelIssue = has ? modelProblem(files.path('cast', c.key, 'model')) : modelAttempt?.reason ?? null;
+          const pending = pendingModel(ctx, slug, c.key);
           const sprites = !modelIssue && fs.existsSync(files.path('cast', c.key, 'sprites', 'sprites.json'));
           return {
-            model: has && !modelIssue, sprites, modelIssue,
+            model: has && !modelIssue, sprites, modelIssue, modelAttempt,
+            modelJob: pending ? { id: pending.id, state: pending.state } : null,
             // When each was last written, so Studio's preview reloads them after a rebuild.
             stamps: { rig: stamp(files.path('cast', c.key, 'rig.json')), model: has && !modelIssue ? stamp(files.path('cast', c.key, 'model', 'model.json')) : null, sprites: sprites ? stamp(files.path('cast', c.key, 'sprites', 'sprites.json')) : null },
           };
@@ -109,6 +120,8 @@ defineAction({
   job: true,
   async run({ slug, key }, ctx) {
     const prepare = prepareFix(ctx, slug, key, (f) => void (f.animate = true));
+    const pending = pendingModel(ctx, slug, key);
+    if (pending) return pending;
     return ctx.jobs.start(slug, ['model', slug, key], `animate ${key}`, ctx.by, prepare);
   },
 });
