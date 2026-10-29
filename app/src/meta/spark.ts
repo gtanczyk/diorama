@@ -3,6 +3,7 @@ import { metaPost } from './http.ts';
 import sharp from 'sharp';
 import { inputHash, type Memo, type Paid } from './memo.ts';
 import { envValue } from '../secrets.ts';
+import { sparkChoice } from './choice.ts';
 import { chat } from './openrouter.ts';
 import { sparkUsd, type SparkTier, type Usage } from './prices.ts';
 
@@ -20,12 +21,12 @@ export function sparkTier(personal = false): SparkTier {
 }
 
 /**
- * Which model answers Spark's asks. DIORAMA_SPARK_VIA: "meta" (the default), "claude" (Anthropic's API with
+ * Which model answers Spark's asks (Studio Setup, or DIORAMA_SPARK_VIA): "meta" (the default), "claude" (Anthropic's API with
  * DIORAMA_ANTHROPIC_API_KEY, model DIORAMA_CLAUDE_MODEL, default Sonnet 5.5) or "openrouter:<model id>".
  * Another model's answers are kept under their own memo keys, so a Meta build never replays them.
  */
 export function sparkVia(): string | null {
-  const via = process.env.DIORAMA_SPARK_VIA;
+  const via = sparkChoice();
   if (!via || via === 'meta') return null;
   return via === 'claude' ? `anthropic:${process.env.DIORAMA_CLAUDE_MODEL || 'claude-sonnet-5-5'}` : via;
 }

@@ -8,6 +8,7 @@ import './weather.ts';
 import './fix.ts';
 import './feedback.ts';
 import './budget.ts';
+import './models.ts';
 import './view.ts';
 import './cast.ts';
 import './style.ts';

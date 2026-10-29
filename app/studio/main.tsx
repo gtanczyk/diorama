@@ -270,21 +270,43 @@ function Setup() {
 
 const MODEL_NAMES: Record<string, string> = { spark: 'Muse Spark', muse: 'Muse Image', sam: 'SAM 3.1', sound: 'ElevenLabs sound', voice: 'Voices', music: 'Music', space: 'HF Spaces' };
 
-/** Which agent a new world's conversation starts with; a world keeps the one it last talked with. */
+type Pick = { id: string; label: string; ready: boolean };
+type Models = { spark: string; image: string; env: { spark: string | null; image: string | null }; options: { spark: Pick[]; image: Pick[] } };
+
+/**
+ * Who works on a world: the agent a new world's conversation starts with (a world keeps the one it last talked
+ * with), the model for Spark's asks and the one that paints. One row, so Setup still fits the screen.
+ */
 function DefaultAgent() {
   const [d, setD] = useState<AgentDefaults | null>(null);
+  const [m, setM] = useState<Models | null>(null);
   const [error, setError] = useState('');
-  useEffect(() => void agentDefault().then(setD).catch((e) => setError(e.message)), []);
+  useEffect(() => {
+    void agentDefault().then(setD).catch((e) => setError(e.message));
+    void call<Models>('models_get').then(setM).catch((e) => setError(e.message));
+  }, []);
   if (!d) return error ? <p class="error">{error}</p> : null;
   const pick = d.agents.find((a) => a.default)?.name;
+  const choose = (kind: 'spark' | 'image', id: string) => void call<Models>('models_set', { [kind]: id }).then(setM).catch((x) => setError(x.message));
+  const select = (kind: 'spark' | 'image', label: string, title: string) => m && (
+    <label title={m.env[kind] ? `Set by DIORAMA_${kind === 'spark' ? 'SPARK' : 'IMAGE'}_VIA=${m.env[kind]} where the Studio was started` : title}>{label}
+      <select value={m[kind]} disabled={!!m.env[kind]} onChange={(e) => choose(kind, e.currentTarget.value)}>
+        {!m.options[kind].some((o) => o.id === m[kind]) && <option value={m[kind]}>{m[kind]}</option>}
+        {m.options[kind].map((o) => <option value={o.id} disabled={!o.ready}>{o.label}{o.ready ? '' : ' (no key)'}</option>)}
+      </select>
+    </label>
+  );
   return (
     <div class="budget default-agent">
-      <label title="The agent a new world talks with. A world keeps the one it last talked with; Hand over… in a world changes it there">Default agent
-        <select value={pick} disabled={!!d.env} onChange={(e) => void agentDefault(e.currentTarget.value).then(setD).catch((x) => setError(x.message))}>
-          {d.agents.map((a) => <option value={a.name} disabled={!a.installed}>{a.label}{a.installed ? '' : ' (not installed)'}</option>)}
-        </select>
-      </label>
-      {d.env && <span class="detail">Set by DIORAMA_AGENT={d.env} where the Studio was started.</span>}
+      <div class="prices">
+        <label title={d.env ? `Set by DIORAMA_AGENT=${d.env} where the Studio was started` : 'The agent a new world talks with. A world keeps the one it last talked with; Hand over… in a world changes it there'}>Default agent
+          <select value={pick} disabled={!!d.env} onChange={(e) => void agentDefault(e.currentTarget.value).then(setD).catch((x) => setError(x.message))}>
+            {d.agents.map((a) => <option value={a.name} disabled={!a.installed}>{a.label}{a.installed ? '' : ' (not installed)'}</option>)}
+          </select>
+        </label>
+        {select('spark', 'Thinking (Spark)', 'Who plans, locates and judges: Muse Spark, or Claude. Answers are kept per model, so switching back costs nothing')}
+        {select('image', 'Painting', 'Who paints places, cast and icons: Muse Image, or a Gemini image model. SAM 3.1 always cuts. The hackathon demo stays on Muse')}
+      </div>
       {error && <span class="error">{error}</span>}
     </div>
   );
@@ -318,9 +340,9 @@ function BudgetBox() {
   return (
     <form class="budget" onSubmit={save}>
       <h2>Budget</h2>
-      <p class="lead">{b.total.priced ? `$${b.total.usd.toFixed(2)} spent` : `${Object.values(b.total.calls).reduce((x, y) => x + y, 0)} model calls sent`}{b.limitUsd !== null ? ` of $${b.limitUsd}` : ''}, {b.today.priced ? `$${b.today.usd.toFixed(2)}` : `${Object.values(b.today.calls).reduce((x, y) => x + y, 0)} calls`} today. Answers already asked are reused for free.</p>
+      <p class="lead">{b.total.priced ? `$${b.total.usd.toFixed(2)} spent` : `$${b.total.usd.toFixed(2)} on Meta, ${Object.values(b.total.calls).reduce((x, y) => x + y, 0)} model calls`}{b.limitUsd !== null ? ` of $${b.limitUsd}` : ''}, {b.today.priced ? `$${b.today.usd.toFixed(2)}` : `${Object.values(b.today.calls).reduce((x, y) => x + y, 0)} calls`} today. Answers already asked are reused for free.</p>
       {b.creditsLeft !== null && <p class="lead">About ${b.creditsLeft.toFixed(2)} of Meta credits left (agent turns not counted).</p>}
-      <p class="note">Meta calls are priced from what each one used. Spark: {b.sparkVia ?? `Meta, ${b.sparkTier} tier`}; pictures: {b.imageVia ?? 'Muse Image'}.{b.elsewhere.calls ? ` Other models: ${b.elsewhere.calls} calls, $${b.elsewhere.usd.toFixed(2)}, not on Meta's bill.` : ''} Other models take dollars per call from their billing page.</p>
+      <p class="note">Meta calls are priced from what each one used (Spark on the {b.sparkTier} tier).{b.elsewhere.calls ? ` Other models: ${b.elsewhere.calls} calls, $${b.elsewhere.usd.toFixed(2)}, not on Meta's bill.` : ''} Other models take dollars per call from their billing page.</p>
       <div class="prices">
         {models.map((m) => <label>{MODEL_NAMES[m]} · {b.total.calls[m] ?? 0} calls<input inputMode="decimal" placeholder="$ per call" value={prices[m] ?? ''} onInput={(e) => setPrices({ ...prices, [m]: e.currentTarget.value })} /></label>)}
         <label title="Type the balance dev.meta.ai shows now; the Studio counts down from it">Meta credits now ($)<input inputMode="decimal" placeholder={b.creditsLeft === null ? '55.36' : b.creditsLeft.toFixed(2)} value={credits} onInput={(e) => setCredits(e.currentTarget.value)} /></label>

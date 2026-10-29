@@ -1,18 +1,19 @@
 // Muse Image: paints from a prompt, or from reference images whose layout it keeps.
 import { metaPost } from './http.ts';
 import { inputHash, type Memo } from './memo.ts';
+import { imageChoice } from './choice.ts';
 import { IMAGE_MODELS, paint } from './openrouter.ts';
 import { PRICES } from './prices.ts';
 
 export const MUSE = 'muse-image-1.0';
 
 /**
- * Which model paints. DIORAMA_IMAGE_VIA: "meta" (Muse Image, the default), a short name from IMAGE_MODELS
+ * Which model paints (Studio Setup, or DIORAMA_IMAGE_VIA): "meta" (Muse Image, the default), a short name from IMAGE_MODELS
  * (gemini-flash, gemini-lite, nano-banana, gemini-pro) or any OpenRouter image model id. Another model's
  * pictures are kept under their own memo keys, so switching back finds the Muse ones again.
  */
 export function imageVia(): string | null {
-  const via = process.env.DIORAMA_IMAGE_VIA;
+  const via = imageChoice();
   return !via || via === 'meta' ? null : (IMAGE_MODELS[via] ?? via);
 }
 
