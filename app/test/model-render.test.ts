@@ -94,3 +94,37 @@ test('an oversized draw fails before changing the canvas or producing a WebGL er
     expect(result.error).toBe(0);
   } finally { await page.close(); }
 }, 30_000);
+
+test('model texture mode keeps the UV paint and does not request projected paintings', async () => {
+  const red = await sharp({ create: { width: 4, height: 4, channels: 3, background: '#ff0000' } }).png().toBuffer();
+  const page = await open(boxGlb([1.2, 1, 0.4], 1, [0, 0, 0], red));
+  const paintings: string[] = [];
+  page.on('request', (r) => { if (r.url().startsWith('http://model.test/') && r.url().endsWith('.png')) paintings.push(r.url()); });
+  try {
+    const result = await page.evaluate(async (info) => {
+      const fig = await window.Figures.Figure3D.load({ ...info, texture: 'model' }, (f) => '/' + f, 0);
+      const c = fig.draw({ phase: 0, walking: false, yaw: 0, elevation: 0, px: 100 });
+      const copy = document.createElement('canvas'); copy.width = c.width; copy.height = c.height;
+      const ctx = copy.getContext('2d')!; ctx.drawImage(c, 0, 0);
+      const centre = Array.from(ctx.getImageData(c.width >> 1, c.height >> 1, 1, 1).data);
+      const error = c.getContext('webgl2')!.getError(); fig.dispose(); return { centre, error };
+    }, info);
+    expect(paintings).toEqual([]);
+    expect(result.error).toBe(0);
+    expect(result.centre[0]).toBeGreaterThan(150);
+    expect(result.centre[1]).toBeLessThan(10);
+    expect(result.centre[2]).toBeLessThan(10);
+    expect(result.centre[3]).toBe(255);
+  } finally { await page.close(); }
+}, 30_000);
+
+test('model texture mode rejects a mesh without a UV texture instead of silently projecting views', async () => {
+  const page = await open(boxGlb([1.2, 1, 0.4]));
+  try {
+    const message = await page.evaluate(async (info) => {
+      try { const fig = await window.Figures.Figure3D.load({ ...info, texture: 'model' }, (f) => '/' + f); fig.dispose(); return 'accepted'; }
+      catch (e) { return (e as Error).message; }
+    }, info);
+    expect(message).toContain('model texture requires a base colour map and UV coordinates');
+  } finally { await page.close(); }
+}, 30_000);

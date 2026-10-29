@@ -16,6 +16,8 @@ const smooth = (u: number) => u * u * (3 - 2 * u);
 /** model.json, written by `diorama model`. */
 export type ModelInfo = {
   glb: string;
+  /** Use the GLB's UV texture when independently painted views project duplicate features onto the mesh. Omitted: projected views. */
+  texture?: 'model' | 'views';
   /** Not a person on two legs (a round eye, a frog): the model has no skeleton and moves as a whole body (src/play/creature.ts). */
   creature?: boolean;
   /** bands: the across fit per slice of the height (src/model/fit.ts BANDS), feet first; without them, u everywhere. */
@@ -34,6 +36,12 @@ function footAt(p: number, step: number) {
   if (p < STANCE) return { dx: step / 2 - (step * p) / STANCE, lift: 0, stance: true, u: p / STANCE };
   const u = (p - STANCE) / (1 - STANCE);
   return { dx: -step / 2 + step * smooth(u), lift: Math.sin(Math.PI * u), stance: false, u };
+}
+
+/** Extra foot rotation during swing; the early toe-off bend fades in and out without snapping. */
+export function swingFootPitch(u: number): number {
+  const toeOff = Math.sin(Math.PI * Math.min(1, Math.max(0, u / 0.3))) ** 2;
+  return 0.35 * Math.sin(Math.PI * u) - 0.25 * toeOff;
 }
 
 const X = new THREE.Vector3(1, 0, 0);
@@ -261,7 +269,13 @@ export class Figure3D {
     inner.scale.setScalar(1 / h);
     inner.position.set(-(box.min.x + box.max.x) / 2 / h, -box.min.y / h, -(box.min.z + box.max.z) / 2 / h);
     this.holder.updateMatrixWorld(true);
-    await this.paintViews(body, info, url);
+    if (info.texture === 'model') {
+      if (!(body.material as THREE.MeshStandardMaterial).map || !body.geometry.attributes.uv) {
+        throw new Error(`${info.glb}: model texture requires a base colour map and UV coordinates`);
+      }
+    } else {
+      await this.paintViews(body, info, url);
+    }
     if (!skinned) {
       // How far it spreads round its feet whichever way it turns (a cat is longer than it is tall): the frame fits it.
       for (let i = 0; i < pos.count; i++) {
@@ -374,8 +388,8 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
   }
 
   // A long coat is skinned to the thighs and tears between the legs: weight on a leg bone for a vertex
-  // further than `radius` (figure heights) from that leg's bones moves to the hips. The boot stays on
-  // the leg: the foot segment counts, and nothing below the ankle moves.
+  // further than `radius` (figure heights) from that leg's bones moves to the hips. Only correct above
+  // the knee: a wide boot shaft also extends beyond that radius, but must stay attached to its leg.
   private fixCoat(skinned: THREE.SkinnedMesh, radius: number) {
     const sk = skinned.skeleton;
     const idx = skinned.geometry.attributes.skinIndex;
@@ -396,7 +410,7 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
         const side = name.startsWith('Left') ? 'Left' : name.startsWith('Right') ? 'Right' : null;
         if (!w || !side || !/UpLeg$|Leg$/.test(name)) continue;
         const [a, b, f, t] = segs[side];
-        if (v.y < f.y) continue;
+        if (v.y <= b.y + 1e-6) continue;
         let d = Infinity;
         for (const [p, q] of [[a, b], [b, f], [f, t]]) d = Math.min(d, line.set(p, q).closestPointToPoint(v, true, c).distanceTo(v));
         const k = Math.max(0, Math.min(1, (d - radius) / radius));
@@ -440,7 +454,7 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
       const knee = Math.PI - Math.acos(Math.max(-1, Math.min(1, (thigh * thigh + shin * shin - r * r) / (2 * thigh * shin))));
       const hipFlex = Math.atan2(tx, -ty) + Math.acos(Math.max(-1, Math.min(1, (thigh * thigh + r * r - shin * shin) / (2 * thigh * r))));
       let foot = -(hipFlex - knee);
-      if (!f.stance) foot += 0.35 * Math.sin(Math.PI * f.u) - (f.u < 0.3 ? 0.25 * (1 - f.u) : 0);
+      if (!f.stance) foot += swingFootPitch(f.u);
       this.turnBone(`${side}UpLeg`, turn(X, -hipFlex));
       this.turnBone(`${side}Leg`, turn(X, knee));
       this.turnBone(`${side}Foot`, turn(X, -foot));
