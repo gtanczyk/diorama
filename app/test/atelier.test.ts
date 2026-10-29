@@ -26,6 +26,59 @@ beforeAll(async () => {
 afterAll(async () => { await browser?.close(); await studio?.close(); if (root) fs.rmSync(root, { recursive: true, force: true }); });
 const open = async (page: Page) => { await page.goto(`${studio.url}w/w#${studio.token}`); await page.locator('.convo header h1').waitFor(); };
 
+test.each([true, false])('deleting a world removes its rail entry without reloading (live feed: %s)', async (live) => {
+  const slug = live ? 'delete-live' : 'delete-offline';
+  fs.cpSync(path.join(root, 'w'), path.join(root, slug), { recursive: true });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+  page.setDefaultTimeout(8000);
+  if (!live) await page.route('**/api/events?*', (r) => r.abort());
+  try {
+    await page.goto(`${studio.url}w/${slug}#${studio.token}`);
+    const entry = page.locator(`.rail-world[href="/w/${slug}"]`);
+    await entry.waitFor();
+    await page.getByRole('button', { name: 'More', exact: true }).click();
+    await page.getByRole('button', { name: 'Delete this world…', exact: true }).click();
+    const dialog = page.getByRole('alertdialog');
+    await dialog.getByRole('textbox').fill(slug);
+    await dialog.getByRole('button', { name: 'Delete this world', exact: true }).click();
+    await expect.poll(() => new URL(page.url()).pathname).toBe('/');
+    await expect.poll(() => entry.count()).toBe(0);
+    expect(await page.locator('.rail-world[href="/w/w"]').count()).toBe(1);
+    expect(fs.existsSync(path.join(root, slug))).toBe(false);
+  } finally { await page.close(); }
+}, 30_000);
+
+test('a deletion in another tab updates the rail and a stale list cannot bring the world back', async () => {
+  const slug = 'delete-elsewhere';
+  fs.cpSync(path.join(root, 'w'), path.join(root, slug), { recursive: true });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+  page.setDefaultTimeout(8000);
+  let release!: () => void, entered!: () => void, finished!: () => void;
+  const hold = new Promise<void>((r) => release = r), request = new Promise<void>((r) => entered = r), done = new Promise<void>((r) => finished = r);
+  try {
+    await open(page);
+    const entry = page.locator(`.rail-world[href="/w/${slug}"]`);
+    await entry.waitFor();
+    await page.route('**/api/actions/world_list', async (r) => {
+      const response = await r.fetch();
+      entered(); await hold;
+      try { await r.fulfill({ response }); } finally { finished(); }
+    }, { times: 1 });
+    studio.events.publish('step.end', { world: 'w', step: 'test' });
+    await request;
+    const response = await page.request.post(`${studio.url}api/actions/world_delete`, {
+      headers: { authorization: `Bearer ${studio.token}` }, data: { slug },
+    });
+    expect(response.ok()).toBe(true);
+    await expect.poll(() => entry.count()).toBe(0);
+    release(); await done;
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    expect(await entry.count()).toBe(0);
+    expect(await page.locator('.rail-world[href="/w/w"]').count()).toBe(1);
+    expect(new URL(page.url()).pathname).toBe('/w/w');
+  } finally { release(); await page.close(); }
+}, 30_000);
+
 test('Setup returns to the world that opened it, including after reload and browser navigation', async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 860 } });
   try {

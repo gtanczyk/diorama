@@ -13,7 +13,7 @@ import { StyleView } from './style-menu.tsx';
 import { askSure, Sure } from './sure.tsx';
 import { PlaceEditor } from './place.tsx';
 import { callBy, MODEL_NAME, Pipeline, standIn, viaName, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
-import { Bell, Logo, Rail, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
+import { Bell, Logo, Rail, forgetWorld, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
 import { CAST_STEPS, castFile, castLine, CastWorkStage, type CastWork } from './cast-work.tsx';
 import { SayIt } from './say-it.tsx';
 import { Card, CastCard, CastStage, nice, PlacesCard, PlaceStage, WorldStrip, type Picked, type StageView } from './world.tsx';
@@ -923,7 +923,7 @@ function Workshop({ slug }: { slug: string }) {
               {!job && status && !status.issue && <><hr /><Rebuild slug={slug} again={status.steps.length >= steps.length - 1} onError={setError} /></>}
               {!job && <><hr /><button type="button" class="mi danger go" title="Moves the world to worlds/.trash, so it can be brought back by moving its folder back" onClick={() => {
                 void askSure({ title: `Delete ${status?.title ?? slug}?`, body: 'It leaves the Studio and goes to worlds/.trash/: moving its folder back from there brings it back.', go: 'Delete this world', danger: true, type: slug })
-                  .then((yes) => void (yes && call('world_delete', { slug }).then(() => go('/')).catch((e) => setError(e.message))));
+                  .then((yes) => void (yes && call('world_delete', { slug }).then(() => { forgetWorld(slug); go('/'); }).catch((e) => setError(e.message))));
               }}>Delete this world…</button></>}
             </Menu>
           </div>

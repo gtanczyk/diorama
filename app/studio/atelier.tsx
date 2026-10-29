@@ -47,7 +47,25 @@ function markSeen(slug: string) {
   }
 }
 
-const refresh = () => call<WorldSummary[]>('world_list').then((w) => (worlds.value = w)).catch(() => {});
+let revision = 0;
+const refresh = async () => {
+  const current = ++revision;
+  try {
+    const list = await call<WorldSummary[]>('world_list');
+    if (current === revision) worlds.value = list;
+  } catch {}
+};
+
+/** Forget a confirmed deletion immediately, including any list response already in flight. */
+export function forgetWorld(slug: string) {
+  revision++;
+  worlds.value = worlds.value?.filter((w) => w.slug !== slug) ?? null;
+  const nextBusy = { ...busy.value }, nextEnded = { ...ended.value };
+  delete nextBusy[slug];
+  delete nextEnded[slug];
+  busy.value = nextBusy;
+  ended.value = nextEnded;
+}
 
 /** Starts the studio-wide feed once: jobs start and end, steps finish; the worlds list is read again after. */
 export function useAtelierFeed() {
@@ -61,6 +79,9 @@ export function useAtelierFeed() {
       const job = e.job as { label?: string; by?: string; state?: string; error?: string; args?: string[] } | undefined;
       const b = busy.value[slug];
       switch (e.type) {
+        case 'world.deleted':
+          forgetWorld(slug);
+          return soon();
         case 'job.start':
           busy.value = { ...busy.value, [slug]: { label: job?.label ?? 'build', plan: [], done: [], by: job?.by ?? 'you' } };
           return soon();
