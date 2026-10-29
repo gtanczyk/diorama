@@ -48,6 +48,9 @@ const VIEWS = [['front', 'x', 1, 'z', 1], ['back', 'x', -1, 'z', -1], ['left', '
 /** Slices of the height each view is fitted on, as src/model/fit.ts BANDS (no Node imports here). */
 const BANDS = 20;
 
+/** Height (share of the figure, feet 0) above which a surface counts as head: one view paints all of it. */
+const HEAD_FROM = 0.8;
+
 /** How much each view is preferred where two see a surface (added to how squarely it faces it). */
 const TRUST = { front: 0.3, back: 0.1, left: 0, right: 0 };
 
@@ -338,7 +341,7 @@ export class Figure3D {
   c[${i}] = texture2D(p_${k}, vec2(ab.x * ${sx.toFixed(1)} * vRest.${ax} + ab.y, 1. - (f_${k}.z * vRest.y + f_${k}.w))).rgb;
   facing[${i}] = ${ns.toFixed(1)} * rn.${nax};
   paint[${i}] = notBg(c[${i}], bg_${k});
-  score[${i}] = ${TRUST[k].toFixed(2)} + camDir.${nax} * ${ns.toFixed(1)} - 2. * (1. - smoothstep(0.05, 0.25, facing[${i}])) - 2. * (1. - vVis[${i}]) - 2. * (1. - paint[${i}]);`).join('');
+  score[${i}] = ${TRUST[k].toFixed(2)} + camDir.${nax} * ${ns.toFixed(1)} - 2. * (1. - smoothstep(mix(0.05, -0.45, head), mix(0.25, -0.2, head), facing[${i}])) - 2. * (1. - head) * (1. - vVis[${i}]) - 2. * (1. - paint[${i}]);`).join('');
     const m = skinned.material as THREE.MeshStandardMaterial;
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, uniforms);
@@ -353,7 +356,11 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
   vec3 rn = normalize(vRestN); vec3 c[4]; float facing[4]; float score[4]; float paint[4]; vec2 ab;
   // Between the centres of the two nearest slices of the height.
   float bandAt = clamp(vRest.y * ${BANDS}. - 0.5, 0., ${BANDS - 1}.);
-  int band = int(floor(bandAt)); int band2 = min(band + 1, ${BANDS - 1}); float bandT = bandAt - floor(bandAt);${sample}
+  int band = int(floor(bandAt)); int band2 = min(band + 1, ${BANDS - 1}); float bandT = bandAt - floor(bandAt);
+  // On the head, the view nearest the camera paints round to the far side of the cheek, even at a glancing
+  // angle: a profile's eye and nose land on the TRELLIS cheek beside the front's face (two faces), so no other
+  // view fills there. A slightly stretched cheek reads as a cheek; a second face never does.
+  float head = smoothstep(${HEAD_FROM.toFixed(3)}, ${(HEAD_FROM + 0.03).toFixed(3)}, vRest.y);${sample}
   float best = max(max(score[0], score[1]), max(score[2], score[3]));
   vec3 acc = vec3(0.); float wsum = 0.;
   for (int i = 0; i < 4; i++) { float w = exp(SHARP * (score[i] - best)) * step(0.001, facing[i]); acc += c[i] * w; wsum += w; }
