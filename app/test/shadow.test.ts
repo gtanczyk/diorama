@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Geometry } from '../src/play/geometry.ts';
-import { DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
+import { catchers, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
 import { fitFloor } from '../src/scene/depthmap.ts';
 
 const g = Geometry.parse({
@@ -40,6 +40,43 @@ describe('ground shadow', () => {
     expect(lit(px * 0.95)).toBeGreaterThan(0);
     expect(lit(px * 1.1)).toBe(0);
     expect(lit(-px * 0.3)).toBe(0);
+  });
+
+  it('stops at a booth standing in its way and never shows on the floor behind it', () => {
+    // A booth's face (x 450..650) stands on floor row 610; the person is just behind that line, right of it.
+    const d = floor();
+    for (let r = Math.floor(410 / DEPTH_SCALE); r < 610 / DEPTH_SCALE; r++) for (let c = 450 / DEPTH_SCALE; c < 650 / DEPTH_SCALE; c++) d.rows[r * d.w + c] = 410;
+    const [x, y] = [800, 600];
+    const px = 0.5 * (y - 200);
+    const light = { dir: [-1, 0] as [number, number], length: 2.5, strength: 0.5 };
+    const sil = bar(px);
+    const behind = (dd: Depth) => shadowAt(dd, sunFor(g, dd, light, x, y, px)!, sil, 400, 600);
+    expect(behind(floor())).toBeGreaterThan(0);
+    expect(behind(d)).toBe(0);
+    // Between the person and the booth it still lies on the floor.
+    expect(shadowAt(d, sunFor(g, d, light, x, y, px)!, sil, 700, 601)).toBeGreaterThan(0);
+  });
+
+  it('lands on the floors and things, not on the fog or a ship in it', () => {
+    // Above row 500 the depth model reads a fog bank as a wall; the floor zone ends there.
+    const d = floor();
+    for (let r = 0; r < 500 / DEPTH_SCALE; r++) for (let c = 0; c < d.w; c++) d.rows[r * d.w + c] = 300;
+    const zoned = Geometry.parse({ ...g, zone: Array.from({ length: 112 }, (_, r) => (r * 8 >= 500 ? '0' : '.').repeat(150)) });
+    const [x, y] = [600, 560];
+    const px = 0.5 * (y - 200);
+    const light = { dir: [0, -1] as [number, number], length: 2, strength: 0.5 };
+    const sun = sunFor(g, d, light, x, y, px)!;
+    const sil = bar(px);
+    const count = (on?: Uint8Array) => {
+      let n = 0;
+      for (let yy = 300; yy < 500; yy += 2) n += shadowAt(d, sun, sil, x, yy, on) > 0 ? 1 : 0;
+      return n;
+    };
+    expect(count()).toBeGreaterThan(0);
+    expect(count(catchers(d, zoned))).toBe(0);
+    // A thing standing there (its pixels, the owner map) still catches it.
+    const owner = new Uint8Array(d.w * d.h).fill(1);
+    expect(count(catchers(d, zoned, owner))).toBeGreaterThan(0);
   });
 
   it('runs longer down a drop', () => {

@@ -3,7 +3,7 @@ import { FLAME_GLOW, FLAME_SWAY_M, flameAt, depthStretch, flicker, floorYAt, hid
 import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, RIM_ALPHA, RIM_COLOUR, RIM_WIDTH, SEPARATE_ALPHA, SEPARATE_BLUR, SEPARATE_SHIFT } from '../src/play/focus.ts';
-import { decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
+import { catchers, decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
 import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, pickDialogue, pickInteraction, speakerOf, startState, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
@@ -91,6 +91,8 @@ type Place = {
   wet?: Uint8Array;
   /** The fire or lamp's work here (see Game.fireOf), made on first use. */
   fire?: Fire;
+  /** Where a person's shadow can land (see Game.catchesOf): the things not carried off when made, and the floors. */
+  catches?: { gone: string; on: Uint8Array };
   /** Rain or snow, rings, splashes and drips (weather.json). */
   weather?: WeatherFx;
 };
@@ -125,6 +127,22 @@ function lightMap(bg: HTMLImageElement, w: number, h: number): Place['light'] {
   const luma = new Float32Array(cols * rows);
   for (let i = 0; i < luma.length; i++) luma[i] = 0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2];
   return { cols, rows, luma };
+}
+
+/** The cards' pixels at the depth map's size: what stands there (thingShadows' casters, a shadow's catchers). */
+function ownerMap(depth: Depth, cuts: Cut[]): Uint8Array {
+  const S = DEPTH_SCALE;
+  const owner = new Uint8Array(depth.w * depth.h);
+  for (const c of cuts) {
+    const a = c.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.canvas.width, c.canvas.height).data;
+    for (let r = Math.max(0, Math.floor(c.y0 / S)); r < Math.min(depth.h, (c.y0 + c.canvas.height) / S); r++) {
+      for (let k = Math.max(0, Math.floor(c.x0 / S)); k < Math.min(depth.w, (c.x0 + c.canvas.width) / S); k++) {
+        const [u, v] = [k * S + 1 - c.x0, r * S + 1 - c.y0];
+        if (u >= 0 && v >= 0 && u < c.canvas.width && v < c.canvas.height && a[(v * c.canvas.width + u) * 4 + 3] > 127) owner[r * depth.w + k] = 1;
+      }
+    }
+  }
+  return owner;
 }
 
 type Events = 'enter' | 'arrive' | 'say' | 'silent' | 'use' | 'exit' | 'ending';
@@ -1733,10 +1751,11 @@ class Game {
     if (gc.width < bw || gc.height < bh) Object.assign(gc, { width: Math.max(gc.width, bw), height: Math.max(gc.height, bh) });
     const out = new ImageData(bw, bh);
     const W = g.frame.width;
+    const on = this.catchesOf(this.gone());
     let any = false;
     for (let r = y0; r < y1; r++) for (let c = x0; c < x1; c++) {
       const [fx, fy] = [c * S + S / 2, r * S + S / 2];
-      let a = shadowAt(depth, sun, sil, fx, fy);
+      let a = shadowAt(depth, sun, sil, fx, fy, on);
       if (a <= 0) continue;
       const i = Math.round(fy) * W + Math.round(fx);
       // Already in the painting's shade: no darker. On water a shadow hardly shows (it mirrors the sky).
@@ -1804,6 +1823,21 @@ class Game {
   }
 
   /**
+   * Where a person's shadow can land on this place (src/play/shadow.ts catchers): its floors and the things
+   * standing there, not the fog, sky or far backdrop. Made on first use and again when a thing is carried off.
+   */
+  private catchesOf(gone: Set<string>): Uint8Array | undefined {
+    const { g, depth, cuts } = this.place;
+    if (!depth) return undefined;
+    const key = [...gone].sort().join(',');
+    if (this.place.catches?.gone !== key) {
+      const owner = ownerMap(depth, cuts.filter((c) => !c.occ.front && !(c.occ.thing && gone.has(c.occ.thing))));
+      this.place.catches = { gone: key, on: catchers(depth, g, owner) };
+    }
+    return this.place.catches.on;
+  }
+
+  /**
    * The fire or lamp standing on this place's floor (light.at), made on first use and again when the story
    * carries a thing off: the painted things' shadows from it (needs the depth map) and the flame to animate.
    */
@@ -1822,17 +1856,7 @@ class Game {
     const shadows: Fire['shadows'] = [];
     if (depth) {
       const S = DEPTH_SCALE;
-      const owner = new Uint8Array(depth.w * depth.h);
-      for (const c of cuts) {
-        if (c.occ.front || holds(c.occ.box) || (c.occ.thing && (gone.has(c.occ.thing) || c.occ.thing === own?.key))) continue;
-        const a = c.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.canvas.width, c.canvas.height).data;
-        for (let r = Math.max(0, Math.floor(c.y0 / S)); r < Math.min(depth.h, (c.y0 + c.canvas.height) / S); r++) {
-          for (let k = Math.max(0, Math.floor(c.x0 / S)); k < Math.min(depth.w, (c.x0 + c.canvas.width) / S); k++) {
-            const [u, v] = [k * S + 1 - c.x0, r * S + 1 - c.y0];
-            if (u >= 0 && v >= 0 && u < c.canvas.width && v < c.canvas.height && a[(v * c.canvas.width + u) * 4 + 3] > 127) owner[r * depth.w + k] = 1;
-          }
-        }
-      }
+      const owner = ownerMap(depth, cuts.filter((c) => !c.occ.front && !holds(c.occ.box) && !(c.occ.thing && (gone.has(c.occ.thing) || c.occ.thing === own?.key))));
       for (const side of g.light!.flame ? [-1, 0, 1] : [0]) {
         const s = thingShadows(depth, g, owner, at, { up, shift: side * FLAME_SWAY_M });
         const W = g.frame.width;

@@ -12,6 +12,16 @@ export const DEPTH_SCALE = 2;
 export const DEPTH_UNIT = 16;
 /** Ground within about this many metres past the feet is taken as level with them (see shadowAt). */
 const CONTACT_M = 0.25;
+/**
+ * Away from the feet, a surface that is neither a thing nor floor-like catches no shadow: floor-like is no
+ * steeper than FLOOR_SLOPE (metres up per metre across, a few px up the screen) and, off the floor masks,
+ * within FLOOR_RISE_M of the feet's level (a puddle, the water below a quay). Within NEAR_M of the feet any
+ * surface does (the quay's edge they stand on, a wall at their back). So a fog bank or a ship in the mist,
+ * which the depth model reads as a wall, and the ferry's side a floor mask took in, stay clean.
+ */
+const FLOOR_SLOPE = 1;
+const FLOOR_RISE_M = 0.5;
+const NEAR_M = 0.6;
 
 /** The depth map as floor rows below the horizon per pixel, at 1 / DEPTH_SCALE of the frame. */
 export type Depth = { w: number; h: number; rows: Float32Array };
@@ -114,11 +124,64 @@ export function sunFor(g: Geometry, d: Depth, light: NonNullable<Geometry['light
 /** The figure's silhouette (alpha only): w x h px, feet at (ox, oy), px per metre. */
 export type Silhouette = { alpha: Uint8ClampedArray; w: number; h: number; ox: number; oy: number; perM: number };
 
-/** How much of the person's shadow falls on frame pixel (x, y), 0..1. */
-export function shadowAt(d: Depth, sun: Sun, sil: Silhouette, x: number, y: number): number {
+/**
+ * Where a person's shadow can land, at the depth map's size: 2 on the things standing in the place (owner:
+ * their pixels, as thingShadows takes them), 1 on the floors (geometry.zone, else the walk cells), 0 on the
+ * rest, which catches it only where it looks like floor or right by the feet (see shadowAt). The depth model
+ * reads a fog bank or a ship in the mist as a wall a few metres away, and a shadow on it is a ghost in the air.
+ */
+export function catchers(d: Depth, g: Geometry, owner?: Uint8Array): Uint8Array {
+  const on = owner ? owner.map((o) => (o ? 2 : 0)) : new Uint8Array(d.w * d.h);
+  const grid = g.zone ?? g.walk;
+  for (let r = 0; r < d.h; r++) {
+    const row = grid[Math.floor((r * DEPTH_SCALE + 1) / g.cell)];
+    if (!row) continue;
+    for (let c = 0; c < d.w; c++) {
+      const ch = row[Math.floor((c * DEPTH_SCALE + 1) / g.cell)];
+      if (ch && ch !== '.' && !on[r * d.w + c]) on[r * d.w + c] = 1;
+    }
+  }
+  return on;
+}
+
+/**
+ * Whether something stands between the 3D point p and the card the way the light comes (`past` metres
+ * back along it, rising with it): the ray is walked on the depth map, and a step that goes behind a surface
+ * seen there, by less than `thick` metres, is blocked. So a shadow that climbs a booth stops on it and
+ * never shows again on the floor behind the booth.
+ */
+function blocked(d: Depth, sun: Sun, p: [number, number, number], past: number, thick = 1.2): boolean {
+  const e: [number, number, number] = [p[0] - sun.along[0] * past, p[1] - sun.along[1] * past, p[2] + past * sun.rise];
+  const [ps, es] = [toScreen(sun, p), toScreen(sun, e)];
+  if (!ps || !es) return false;
+  const n = Math.min(32, Math.max(4, Math.ceil(Math.hypot(es[0] - ps[0], es[1] - ps[1]) / (2 * DEPTH_SCALE))));
+  for (let k = 1; k < n; k++) {
+    const t = k / n;
+    // Not the point's own surface, nor the ground at the feet the card stands on.
+    if (t * past < 0.15 || (1 - t) * past < 0.3) continue;
+    const q: [number, number, number] = [p[0] + (e[0] - p[0]) * t, p[1] + (e[1] - p[1]) * t, p[2] + (e[2] - p[2]) * t];
+    const s = toScreen(sun, q);
+    if (!s) continue;
+    const surf = pointAt(d, sun, s[0], s[1]);
+    if (surf && q[1] > surf[1] + 0.1 && q[1] < surf[1] + thick) return true;
+  }
+  return false;
+}
+
+/**
+ * How much of the person's shadow falls on frame pixel (x, y), 0..1. With `on` (catchers) it lands on the
+ * things and floors, not on the backdrop. Anything standing between the pixel and the person keeps it off.
+ */
+export function shadowAt(d: Depth, sun: Sun, sil: Silhouette, x: number, y: number, on?: Uint8Array): number {
   const p = pointAt(d, sun, x, y);
   if (!p) return 0;
   const [rx, rz] = [p[0] - sun.feet[0], p[1] - sun.feet[1]];
+  const catches = on ? on[Math.floor(y / DEPTH_SCALE) * d.w + Math.floor(x / DEPTH_SCALE)] : 2;
+  if (catches !== 2 && Math.hypot(rx, rz) > NEAR_M) {
+    if (!catches && Math.abs(p[2] - sun.feet[2]) > FLOOR_RISE_M) return 0;
+    const q = pointAt(d, sun, x, y - 8 * DEPTH_SCALE);
+    if (q && q[2] - p[2] > FLOOR_SLOPE * Math.hypot(q[0] - p[0], q[1] - p[1])) return 0;
+  }
   // How far past the person this point is, the way the light goes: points before the card are lit.
   const past = rx * sun.along[0] + rz * sun.along[1];
   if (past <= 0.02) return 0;
@@ -132,7 +195,8 @@ export function shadowAt(d: Depth, sun: Sun, sil: Silhouette, x: number, y: numb
   const sx = Math.round(sil.ox + side * sil.perM);
   const sy = Math.round(sil.oy - up * sil.perM);
   if (sx < 0 || sy < 0 || sx >= sil.w || sy >= sil.h) return 0;
-  return sil.alpha[sy * sil.w + sx] / 255;
+  const a = sil.alpha[sy * sil.w + sx] / 255;
+  return a > 0 && blocked(d, sun, p, past) ? 0 : a;
 }
 
 /**
