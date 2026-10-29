@@ -4,6 +4,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
 import { FigurePreview } from './figure.tsx';
 import { nice } from './world.tsx';
+import { Icon } from './icons.tsx';
 
 /** Per character: the files the running job wrote (world path → when) and what the build last said about them. */
 export type CastWork = Record<string, { files: Record<string, number>; said: string; at: number; first: number }>;
@@ -113,7 +114,7 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
                   </ol>
                 )}
                 <div class="row">
-                  {st.done && c && (c.stamps.model || c.stamps.rig || c.stamps.sprites) && <button type="button" class="ghost small" title="Looks, voice, 3D model and sprites of this character. Free to look" onClick={() => onOpen(focus)}>✎ Details</button>}
+                  {st.done && c && (c.stamps.model || c.stamps.rig || c.stamps.sprites) && <button type="button" class="ghost small" title="Looks, voice, 3D model and sprites of this character. Free to look" onClick={() => onOpen(focus)}><Icon name="pencil" /> Details</button>}
                 </div>
               </div>
             </div>

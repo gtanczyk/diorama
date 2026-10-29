@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { call } from './api.ts';
 import { base64 } from './camera.tsx';
+import { Icon } from './icons.tsx';
 
 /** The mic: press to speak, press again; what was said joins the text (the idea, or the message to the agent). */
 export function SayIt({ onText, onError, tip = 'Say the idea instead of typing it. Muse Voice Transcribe writes it here: 1 call', small }: { onText: (text: string) => void; onError: (m: string) => void; tip?: string; small?: boolean }) {
@@ -42,7 +43,7 @@ export function SayIt({ onText, onError, tip = 'Say the idea instead of typing i
   };
   return (
     <button type="button" class={`ghost ${small ? 'small' : 'bare'}${rec ? ' rec' : ''}`} disabled={hearing} title={rec ? 'Stop: what you said is written in' : tip} onClick={rec ? () => (rec.stop(), setRec(null)) : start}>
-      {hearing ? 'Hearing…' : rec ? `■ Stop · ${seconds} s` : '🎙 Say it'}
+      {hearing ? 'Hearing…' : rec ? `■ Stop · ${seconds} s` : <><Icon name="mic" /> Say it</>}
     </button>
   );
 }

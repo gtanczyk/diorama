@@ -7,6 +7,7 @@ import { call, fileUrl, token } from './api.ts';
 import { Camera } from './camera.tsx';
 import { SayIt } from './say-it.tsx';
 import { pickPrefix, shownPick, type Picked } from './world.tsx';
+import { Icon } from './icons.tsx';
 
 /** What each Studio tool does, as the person would say it. */
 export const SAYS: Record<string, string> = {
@@ -319,7 +320,7 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
         emptyState={empty ?? <p class="note">Ask for a world, a fix or a check. Each step shows here and in Activity, and Undo takes back everything the agent did in its last turn.</p>}
         hint={replay ? null : (
           <div class="pics">
-            {picked && <span class="pick-chip" title="Goes with your next message: the agent knows what you mean by this">📍 {picked.name}<button type="button" class="ghost bare" aria-label="Forget it" onClick={onUnpick}>×</button></span>}
+            {picked && <span class="pick-chip" title="Goes with your next message: the agent knows what you mean by this"><Icon name="pin" /> {picked.name}<button type="button" class="ghost bare" aria-label="Forget it" onClick={onUnpick}>×</button></span>}
             {pics.map((f) => (
               <span class="pic">
                 <img src={fileUrl(slug, f)} alt="" />
@@ -327,8 +328,8 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
               </span>
             ))}
             {adding > 0 && <span class="detail">adding…</span>}
-            <button type="button" class="ghost small" title="Show the agent a picture with your message: a drawing, a photo, a reference. Or paste one (Cmd+V) or drop it here" onClick={() => picker.current?.click()}>＋ Picture</button>
-            <button type="button" class="ghost small" title={camera ? 'Close the camera' : 'Take a webcam photo (a drawing held up works) to send the agent with your message'} onClick={() => setCamera(!camera)}>{camera ? 'Close the camera' : 'Camera'}</button>
+            <button type="button" class="ghost small" title="Show the agent a picture with your message: a drawing, a photo, a reference. Or paste one (Cmd+V) or drop it here" onClick={() => picker.current?.click()}><Icon name="figure" /> Picture</button>
+            <button type="button" class="ghost small" title={camera ? 'Close the camera' : 'Take a webcam photo (a drawing held up works) to send the agent with your message'} onClick={() => setCamera(!camera)}>{camera ? 'Close the camera' : <><Icon name="camera" /> Camera</>}</button>
             <SayIt small tip={running ? 'Say what to change while the agent works: it is written into the box, Send steers the agent. Muse Voice Transcribe, 1 call' : 'Say your message instead of typing it: it is written into the box, you send it. Muse Voice Transcribe, 1 call'} onText={said} onError={setError} />
             <input ref={picker} type="file" accept="image/*" multiple hidden onChange={(e) => (addFiles(e.currentTarget.files ?? []), (e.currentTarget.value = ''))} />
             {error && <span class="error">{error}</span>}
@@ -367,7 +368,7 @@ function shownPrompt(text: string, slug: string) {
   return (
     <>
       {m && <span class="pics sent">{m[1].split(', ').map((f) => <button type="button" class="pic-open" data-lightbox={fileUrl(slug, f)} title="See it big"><img src={fileUrl(slug, f)} alt="" /></button>)}</span>}
-      {pick && <span class="pick-chip sent">📍 {pick}</span>}
+      {pick && <span class="pick-chip sent"><Icon name="pin" /> {pick}</span>}
       {rest}
     </>
   );

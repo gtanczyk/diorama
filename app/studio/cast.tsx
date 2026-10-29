@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
 import { FigurePreview } from './figure.tsx';
+import { Icon, type IconName } from './icons.tsx';
 
 type Pic = { file: string; v: number | null } | null;
 type Character = {
@@ -99,12 +100,12 @@ function Card({ slug, c, onError, focused }: { slug: string; c: Character; onErr
   const creature = c.body?.upright === false;
   // What the game has of this character, as small signs; each says what it is on hover.
   const parts = ([
-    creature && ['🐾', 'A creature: moves as one body (hops, squashes, leans), no skeleton'],
-    c.figure && ['🖼', 'Figure: painted by Muse Image and cut out by SAM'],
-    c.rig && ['🦴', '2D rig: the figure cut into parts that walk; used when there is no 3D model or sprites'],
-    c.model && ['🧊', '3D model: built by TRELLIS from four painted sides'],
-    c.sprites && ['🎞', 'Sprites: painted walk and talk frames, what the game draws first'],
-  ].filter(Boolean)) as Array<[string, string]>;
+    creature && ['paw', 'A creature: moves as one body (hops, squashes, leans), no skeleton'],
+    c.figure && ['figure', 'Figure: painted by Muse Image and cut out by SAM'],
+    c.rig && ['bone', '2D rig: the figure cut into parts that walk; used when there is no 3D model or sprites'],
+    c.model && ['cube', '3D model: built by TRELLIS from four painted sides'],
+    c.sprites && ['film', 'Sprites: painted walk and talk frames, what the game draws first'],
+  ].filter(Boolean)) as Array<[IconName, string]>;
   return (
     <li id={`cast-${c.key}`} class={`who ${c.role}${focused ? ' focus' : ''}`}>
       {c.role !== 'narrator' && (c.figure ? <img src={fileUrl(slug, c.figure.file, c.figure.v)} alt={c.key} loading="lazy" /> : <div class="noimg">not painted yet</div>)}
@@ -113,7 +114,7 @@ function Card({ slug, c, onError, focused }: { slug: string; c: Character; onErr
           <strong>{c.key}</strong>
           <span class="badge">{c.role === 'hero' ? 'hero' : c.role === 'player' ? 'hero for another gamepad' : c.role === 'narrator' ? 'narrator' : `NPC · ${c.place}`}</span>
           <span class="grow" />
-          {parts.length > 0 && <span class="has">{parts.map(([sign, what]) => <span class="sign" title={what}>{sign}</span>)}</span>}
+          {parts.length > 0 && <span class="has">{parts.map(([sign, what]) => <span class="sign" title={what}><Icon name={sign} /></span>)}</span>}
           {c.modelIssue && <span class="detail">Using 2D: {c.modelIssue}</span>}
           {c.model && c.modelAttempt?.state === 'failed' && <span class="detail">Keeping previous model: {c.modelAttempt.reason}</span>}
           {c.role !== 'narrator' && c.figure && !c.model && <button type="button" class="ghost small" disabled={busy || !!c.modelJob} title={`Muse paints ${c.key} from 4 sides and TRELLIS builds a 3D model${creature ? ': no skeleton, in the game it hops, squashes, leans and blinks as one body' : ''}. Kept across rebuilds. 4 Muse Image calls + TRELLIS (needs the HF token)`} onClick={() => act('cast_animate', {})}>{c.modelJob ? c.modelJob.state === 'queued' ? '3D queued…' : 'Building 3D…' : c.modelIssue ? 'Retry 3D' : 'Animate in 3D'}</button>}

@@ -2,6 +2,7 @@
 // models it called) with its steps folded under it; the agent's and your clicks fold into one line per run of them.
 import { SAYS } from './agent.tsx';
 import { MODEL_NAME, nowBy } from './build.tsx';
+import { Icon, type IconName } from './icons.tsx';
 
 export type ActivityJob = { id: string; label: string; args: string[]; state: string; by: string; error?: string; queuedAt?: string; startedAt?: string; endedAt?: string };
 export type ActivityLine = { seq: number; text: string; kind: string; at?: number; job?: string; info?: ActivityJob; who?: 'you' | 'agent'; act?: string };
@@ -12,21 +13,21 @@ type Group =
   | { type: 'line'; line: ActivityLine; at: number };
 
 /** What a job is, as a sign. */
-function sign(j: ActivityJob): string {
+function sign(j: ActivityJob): IconName {
   // A build of one step ("derive · canal-walk") is that step.
   const [first] = j.label.split(/[\s·]/);
   const cmd = j.args[0] === 'build' && STEPS.has(first) ? first : j.args[0];
-  if (cmd === 'build') return '🏗';
-  if (j.args.includes('--animate') || /animate/i.test(j.label)) return '🧊';
-  if (cmd === 'cast' || cmd === 'model' || cmd === 'sprites') return '🧍';
-  if (cmd === 'story' || cmd === 'world') return '📖';
-  if (cmd === 'paint' || cmd === 'layout' || /repaint|style/i.test(j.label)) return '🎨';
-  if (cmd === 'masks' || cmd === 'plates' || /mask|thing/i.test(j.label)) return '✂️';
-  if (cmd === 'derive' || /floor|stand|walk/i.test(j.label)) return '📐';
-  if (cmd === 'sound' || cmd === 'voices' || /voice/i.test(j.label)) return '🔊';
-  if (cmd === 'icons') return '🎒';
-  if (cmd === 'export' || cmd === 'publish') return '📦';
-  return '⚙️';
+  if (cmd === 'build') return 'build';
+  if (j.args.includes('--animate') || /animate/i.test(j.label)) return 'cube';
+  if (cmd === 'cast' || cmd === 'model' || cmd === 'sprites') return 'person';
+  if (cmd === 'story' || cmd === 'world') return 'book';
+  if (cmd === 'paint' || cmd === 'layout' || /repaint|style/i.test(j.label)) return 'brush';
+  if (cmd === 'masks' || cmd === 'plates' || /mask|thing/i.test(j.label)) return 'scissors';
+  if (cmd === 'derive' || /floor|stand|walk/i.test(j.label)) return 'ruler';
+  if (cmd === 'sound' || cmd === 'voices' || /voice/i.test(j.label)) return 'sound';
+  if (cmd === 'icons') return 'bag';
+  if (cmd === 'export' || cmd === 'publish') return 'box';
+  return 'gear';
 }
 
 const STEPS = new Set(['world', 'story', 'layout', 'paint', 'masks', 'plates', 'icons', 'derive', 'backdrop', 'weather', 'cast', 'model', 'sprites', 'sound', 'voices', 'verify']);
@@ -88,7 +89,7 @@ export function Activity({ lines, costs, all }: { lines: ActivityLine[]; costs: 
             <li class={`a-job ${j.state}`} key={`j${j.id}`}>
               <details open={j.state === 'running' || j.state === 'failed'}>
                 <summary>
-                  <span class="a-sign">{sign(j)}</span>
+                  <span class="a-sign"><Icon name={sign(j)} /></span>
                   <span class="a-what"><strong>{j.label}</strong><small>{j.by === 'agent' ? 'the agent' : 'you'} · {time(Date.parse(j.queuedAt ?? '') || g.at)}{took ? ` · ${clock(took)}` : ''}{models.length ? ` · ${models.map(([m, n]) => `${nowBy(MODEL_NAME[m] ?? m)} ${n}`).join(', ')}` : ''}</small></span>
                   <span class={`a-state ${j.state}`} title={st.word}>{st.mark} {st.word}</span>
                   {(g.lines.length > 0 || j.error) && <span class="a-more" aria-hidden="true" />}
@@ -105,7 +106,7 @@ export function Activity({ lines, costs, all }: { lines: ActivityLine[]; costs: 
           for (const a of g.acts) runs.at(-1)?.[0] === a ? runs.at(-1)![1]++ : runs.push([a, 1]);
           return (
             <li class={`a-acts ${g.who}`} key={`a${g.at}-${g.acts.length}`}>
-              <span class="a-sign">{g.who === 'agent' ? '🤖' : '👆'}</span>
+              <span class="a-sign"><Icon name={g.who === 'agent' ? 'agent' : 'hand'} /></span>
               <span class="a-what"><small>{g.who === 'agent' ? 'The agent' : 'You'} · {time(g.at)}</small><span>{runs.map(([a, n]) => `${said(a)}${n > 1 ? ` ×${n}` : ''}`).join(' · ')}</span></span>
             </li>
           );
@@ -113,7 +114,7 @@ export function Activity({ lines, costs, all }: { lines: ActivityLine[]; costs: 
         const l = g.line;
         return (
           <li class={`a-line ${l.kind}`} key={`l${l.seq}`}>
-            <span class="a-sign">{l.kind === 'play' ? '🎮' : l.kind === 'err' ? '⚠️' : l.kind === 'agent' ? '🤖' : '·'}</span>
+            <span class="a-sign">{l.kind === 'play' ? <Icon name="play" /> : l.kind === 'err' ? <Icon name="warning" /> : l.kind === 'agent' ? <Icon name="agent" /> : '·'}</span>
             <span class="a-what"><span>{l.text.replace(/^play: /, '')}</span></span>
           </li>
         );

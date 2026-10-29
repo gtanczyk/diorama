@@ -135,7 +135,8 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
           const filled = p.steps.reduce((sum, s, i) => sum + (states[i] === 'ok' ? took(s) : states[i] === 'run' ? Math.min(took(s) * 0.95, runFor(s) / 1000) : 0), 0);
           const phase = states.includes('fail') ? 'fail' : states.includes('run') ? 'run' : states.every((x) => x === 'ok') ? 'ok' : states.every((x) => x === 'skip') ? 'skip' : 'todo';
           // Something to show once a step has run (or runs now); a click puts it on the stage.
-          const open = onOpen && phase !== 'todo' && phase !== 'skip';
+          // A phase only partly done (sprites still to come) shows what its done steps made too.
+          const open = onOpen && states.some((x) => x === 'ok' || x === 'run' || x === 'fail');
           const tip = `${p.title} · ${p.by.join(', ')}\n` + p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : '·'} ${s}${done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}`).join('\n');
           let at = 0;
           return (

@@ -180,7 +180,7 @@ test('the manual place inspector shows current verifier flags', async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 860 } });
   try {
     await open(page); await page.locator('.wcard .thumb').nth(1).click();
-    await page.getByRole('button', { name: '✎ Fix this place by hand', exact: true }).click();
+    await page.getByRole('button', { name: 'Fix this place by hand', exact: true }).click();
     await expect.poll(() => page.getByRole('region', { name: 'Place checks' }).innerText()).toContain('COARSE_MASK');
   } finally { await page.close(); }
 }, 30_000);

@@ -878,7 +878,7 @@ main.start .more .fields input:focus, main.start .more .fields select:focus { ou
 .pipeline .phases li.open .label:hover .name { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 .pipeline .phases li.open .bar { transition: height 0.15s, margin 0.15s; }
 .pipeline .phases li.open:hover .bar { height: 12px; margin: -2px 0; }
-.pipeline .seg { position: absolute; top: 0; bottom: 0; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; cursor: pointer; }
+.pipeline .seg { position: absolute; top: -6px; bottom: -6px; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; cursor: pointer; }
 .pipeline .seg:hover, .pipeline .seg:focus-visible { background: rgba(255, 255, 255, 0.35); box-shadow: inset 0 0 0 1.5px var(--ink); outline: none; }
 
 /* A button's ask in the chat: its gist in the bubble, the whole wording under it on a click. */
@@ -1034,3 +1034,9 @@ select:not([multiple]) { padding-right: 28px !important; }
 .sv-words textarea { width: 100%; font-size: 15px; color: var(--text); }
 .sv-est { margin: 0; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--amber) 14%, transparent); }
 @media (max-width: 600px) { .sv-now { flex-direction: column; } .sv-now img { width: 100%; } }
+
+/* Line icons (icons.tsx) sit on the text's baseline and take its colour. */
+.icon { vertical-align: -3px; flex: none; }
+button > .icon, .detail > .icon, .pick-chip > .icon { margin-right: 2px; }
+.a-sign .icon { vertical-align: middle; }
+.cast .who .sign .icon { vertical-align: 0; }

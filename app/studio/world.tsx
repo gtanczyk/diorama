@@ -4,6 +4,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
+import { Icon } from './icons.tsx';
 
 export type StageView = { kind: 'build' | 'place' | 'cast' | 'story' | 'play' | 'work'; place?: string; step?: string };
 export type Picked = { place?: string; thing: string; name: string };
@@ -130,8 +131,8 @@ export function PlaceStage({ slug, place, version, picked, onPick, onOpen, child
             const below = y1 / 896 < 0.86;
             return (
               <div class={`who-acts on-pic${below ? '' : ' above'}`} style={{ left: `${Math.min(80, Math.max(20, (((x0 + x1) / 2) / 1200) * 100))}%`, top: `${((below ? y1 : on[1].box![1]) / 896) * 100}%` }}>
-                <span class="detail">📍 {nice(on[0]).toLowerCase()} · in your next message</span>
-                {onOpen && <button type="button" class="ghost small" title="Its mask, kind, the words SAM looks for, where the hero stands to use it, remove it: by hand. Free to look" onClick={() => onOpen(on[0])}>✎ Details</button>}
+                <span class="detail"><Icon name="pin" /> {nice(on[0]).toLowerCase()} · in your next message</span>
+                {onOpen && <button type="button" class="ghost small" title="Its mask, kind, the words SAM looks for, where the hero stands to use it, remove it: by hand. Free to look" onClick={() => onOpen(on[0])}><Icon name="pencil" /> Details</button>}
               </div>
             );
           })()}
@@ -165,8 +166,8 @@ export function CastStage({ slug, version, picked, onPick, onOpen }: { slug: str
             {/* Picked: it goes into the next message, and its details are one click away. */}
             {on && (
               <div class="who-acts">
-                <span class="detail">📍 in your next message</span>
-                {onOpen && <button type="button" class="ghost small" title="Looks, voice, 3D model and sprites, by hand. Free to look" onClick={() => onOpen(c.key)}>✎ Details</button>}
+                <span class="detail"><Icon name="pin" /> in your next message</span>
+                {onOpen && <button type="button" class="ghost small" title="Looks, voice, 3D model and sprites, by hand. Free to look" onClick={() => onOpen(c.key)}><Icon name="pencil" /> Details</button>}
               </div>
             )}
           </div>

@@ -22,6 +22,7 @@ import { Lightbox } from './lightbox.tsx';
 import { Activity, type ActivityJob, type ActivityLine } from './activity.tsx';
 import { followAgent, go, movedFrom, route } from './nav.ts';
 import { MAX_WORLD_PHOTOS } from '../src/world/photo-limits.ts';
+import { Icon } from './icons.tsx';
 
 type Check = { id: string; label: string; state: 'ok' | 'missing' | 'optional' | 'fail'; detail: string; fix?: string[] };
 type Summary = { slug: string; title: string; pitch: string | null; issue: string | null; places: number; playable: number; verified: number; steps: string[]; cover: { file: string; v: number | null } | null; workshop?: boolean };
@@ -485,7 +486,7 @@ function Start() {
               <label class="button ghost bare" title="A photo of a real room becomes the first place, of a person the hero, of a drawing a character, thing or place. Dropping or pasting pictures works too">
                 <input type="file" accept="image/*" multiple onChange={(e) => (void addPhotos(e.currentTarget.files ?? []), (e.currentTarget.value = ''))} />＋ Photo
               </label>
-              <button type="button" class="ghost bare" title="Take photos with the camera, one after another: drawings, a room, a person" onClick={() => setCamera(true)}>📷 Camera</button>
+              <button type="button" class="ghost bare" title="Take photos with the camera, one after another: drawings, a room, a person" onClick={() => setCamera(true)}><Icon name="camera" /> Camera</button>
               <SayIt onText={(text) => (setIdea((old) => `${old.trim()} ${text}`.trim()), box.current?.focus())} onError={setError} />
               <span class="grow" />
               <button type="submit" class="primary" disabled={!ready}
@@ -946,7 +947,7 @@ function Workshop({ slug }: { slug: string }) {
             {shownView.kind === 'place' && stagedPlace && <PlaceStage slug={slug} place={stagedPlace} version={tick} picked={picked} onPick={setPicked} onOpen={(thing) => setByHand(`${stagedPlace.key}@${thing}`)} />}
             {shownView.kind === 'place' && !stagedPlace && <div class="mat"><p class="detail">{status?.pitch ?? 'Muse Spark is dreaming up the places…'}</p></div>}
             {shownView.kind === 'cast' && <CastStage slug={slug} version={tick} picked={picked} onPick={setPicked} onOpen={(key) => setByHand(`#cast:${key}`)} />}
-            {shownView.kind === 'place' && stagedPlace?.stages.painting && <button type="button" class="stage-tool" title="Masks, floors, stand spots and repaints for this place, by hand. Or just ask the agent" onClick={() => setByHand(stagedPlace.key)}>✎ Fix this place by hand</button>}
+            {shownView.kind === 'place' && stagedPlace?.stages.painting && <button type="button" class="stage-tool" title="Masks, floors, stand spots and repaints for this place, by hand. Or just ask the agent" onClick={() => setByHand(stagedPlace.key)}><Icon name="pencil" /> Fix this place by hand</button>}
             {shownView.kind === 'story' && <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} /></div>}
           </div>
         </section>
