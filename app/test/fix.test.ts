@@ -317,3 +317,26 @@ test('a prop comes off a place\'s list (kept painted or painted out) and a paint
   const things = new WorldFiles('w', path.dirname(dir)).world().places[0].things.map((t) => `${t.key}:${t.role}`);
   expect(things).toEqual(['oar:item', 'net:prop', 'red-bench:prop']);
 });
+
+test('missing layout has readable status and both retry and guidance repair can create the place', async () => {
+  const { dir, place, ctx, jobs } = world();
+  fs.writeFileSync(path.join(dir, 'world.json'), JSON.stringify({
+    title: 'Quay', pitch: 'A small quay on a river at dusk.', style: 'gouache, muted river colours', start: 'dock',
+    hero: { key: 'wren', looks: 'a keeper in a yellow oilskin' },
+    places: [{ key: 'dock', shows: 'a dock between leafless trees', mood: 'calm', exits: [], things: [{ key: 'swing', role: 'prop', looks: 'a swing frame' }] }],
+  }));
+  fs.rmSync(place, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'build.json'), JSON.stringify({ steps: {}, places: [{ place: 'dock', ok: false, from: 'layout', errors: ['STEP_FAILED layout: swing too small'], issues: [{ code: 'STEP_FAILED', key: 'layout', detail: 'swing too small' }] }] }));
+  const status = await runAction('place_status', { slug: 'w', place: 'dock' }, ctx('agent'));
+  expect(status).toMatchObject({ playable: false, pictures: { painting: null }, errors: [{ detail: 'swing too small' }] });
+  const retry = await runAction('place_fix', { slug: 'w', place: 'dock' }, ctx('agent')) as { job: { id: string; args: string[] } };
+  expect(retry.job.args).toEqual(['build', 'w', '--from', 'layout', '--to', 'verify', '--place', 'dock']);
+  await jobs.wait(retry.job.id);
+  fs.rmSync(place, { recursive: true });
+  const repair = await runAction('layout_fix', { slug: 'w', place: 'dock', guidance: 'Make the swing at least 40 pixels wide.' }, ctx('agent')) as { id: string; args: string[] };
+  await jobs.wait(repair.id);
+  expect(readCorrections(place).layout?.guidance).toBe('Make the swing at least 40 pixels wide.');
+  await expect(runAction('layout_fix', { slug: 'w', place: 'unknown', guidance: 'Make a new place.' }, ctx('agent'))).rejects.toThrow(/no place/);
+  fs.writeFileSync(path.join(place, 'painting.png'), 'x');
+  await expect(runAction('layout_fix', { slug: 'w', place: 'dock', guidance: 'Change the room.' }, ctx('agent'))).rejects.toThrow(/already has a painting/);
+});

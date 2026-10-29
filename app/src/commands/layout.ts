@@ -1,6 +1,7 @@
 // diorama layout <slug> [place...]: layout.json, blockin.png (for Muse) and plan.png (for people) for each place.
 import fs from 'node:fs';
 import { renderBlockin, renderPlan } from '../scene/blockin.ts';
+import { readCorrections } from '../scene/corrections.ts';
 import { layOut } from '../scene/layout.ts';
 import { defineCommand } from '../registry.ts';
 import { WorldFiles } from '../world/files.ts';
@@ -17,7 +18,7 @@ defineCommand({
       // A place made from a photo is measured from it, and the photo stands in for the block-in.
       const photoFile = files.place(place.key, 'photo.png');
       const photo = fs.existsSync(photoFile) ? fs.readFileSync(photoFile) : undefined;
-      const layout = await layOut(files.memo, world, place, photo);
+      const layout = await layOut(files.memo, world, place, photo, readCorrections(files.place(place.key)).layout?.guidance);
       files.write(files.place(place.key, 'layout.json'), layout);
       const blockin = photo ?? await renderBlockin(layout, place);
       files.write(files.place(place.key, 'blockin.png'), blockin);

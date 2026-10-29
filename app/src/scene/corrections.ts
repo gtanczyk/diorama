@@ -21,6 +21,8 @@ export const Stroke = z.object({
 export type Stroke = z.infer<typeof Stroke>;
 
 export const Corrections = z.object({
+  /** Persistent instructions for repairing an unfinished layout. */
+  layout: z.object({ guidance: z.string().min(10).max(4000) }).optional(),
   things: z.record(z.string(), z.object({
     /** What to ask SAM for instead of Spark's phrase. */
     phrase: z.string().min(2).optional(),

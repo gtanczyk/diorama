@@ -175,7 +175,7 @@ defineAction({
   input: z.object({ slug: Slug, place: z.string().min(1) }),
   async run({ slug, place }, ctx) {
     const dir = path.join(ctx.root, slug, 'places', place);
-    if (!fs.existsSync(dir)) throw new ActionError(404, `${slug} has no place ${place} yet`);
+    if (!new WorldFiles(slug, ctx.root).world().places.some((p) => p.key === place)) throw new ActionError(404, `${slug} has no place ${place}`);
     type Made = { kind: string; phrase: string; source: string; coarse: boolean; brushed?: boolean };
     const masks = readJson<{ things: Record<string, Made>; floors: Record<string, Omit<Made, 'kind' | 'phrase'>>; flagged: string[] }>(path.join(dir, 'masks.json'));
     const geometry = readJson<{ things: Array<{ key: string; role?: string; box: [number, number, number, number]; stand: [number, number] }>; start: [number, number] }>(path.join(dir, 'geometry.json'));

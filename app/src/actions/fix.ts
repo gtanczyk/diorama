@@ -18,7 +18,7 @@ const XY = z.tuple([z.number(), z.number()]);
 const Cell = z.string().refine((c) => !!parseCell(c), 'a grid cell like C12: a letter per 60 px column from A, a number per 60 px row from 1');
 
 /** Applies a change to a place's corrections and rebuilds that place from `from` to verify, as a job. */
-async function fixPlace(ctx: ActionContext, slug: string, place: string, from: 'paint' | 'masks' | 'derive', label: string, change: (c: Corrections) => void, addedThing?: string) {
+async function fixPlace(ctx: ActionContext, slug: string, place: string, from: 'layout' | 'paint' | 'masks' | 'derive', label: string, change: (c: Corrections) => void, addedThing?: string) {
   const dir = path.join(ctx.root, slug);
   const blocked = agentBlocked(dir, ctx.by, place);
   if (blocked) throw new ActionError(423, blocked);
@@ -32,10 +32,11 @@ async function fixPlace(ctx: ActionContext, slug: string, place: string, from: '
     }
   }
   const placeDir = path.join(dir, 'places', place);
-  const needs = { paint: 'blockin.png', masks: 'painting.png', derive: 'masks.json' }[from];
-  if (!fs.existsSync(path.join(placeDir, needs))) throw new ActionError(404, `${slug}/${place} has no ${needs} yet: build it first`);
+  const needs = { layout: null, paint: 'blockin.png', masks: 'painting.png', derive: 'masks.json' }[from];
+  if (needs && !fs.existsSync(path.join(placeDir, needs))) throw new ActionError(404, `${slug}/${place} has no ${needs} yet: build it first`);
   return ctx.jobs.start(slug, ['build', slug, '--from', from, '--to', 'verify', '--place', place], `${label} · ${place}`, ctx.by, () => {
     // The job snapshots first, then changes its source. Queued fixes must not change a running build.
+    fs.mkdirSync(placeDir, { recursive: true });
     const fixes = readCorrections(placeDir);
     change(fixes);
     writeCorrections(placeDir, Corrections.parse(fixes));
@@ -246,19 +247,37 @@ defineAction({
 });
 
 defineAction({
+  name: 'layout_fix',
+  description: 'Repair a place whose layout has not finished, even if its directory and painting do not exist. Save concrete layout guidance (camera, object sizes, floor access) and rebuild only that place through verify. Read place_status first. Existing painted scenes use the other fix tools.',
+  input: z.object({ slug: Slug, place: Slug, guidance: z.string().min(10).max(4000) }),
+  job: true,
+  async run({ slug, place, guidance }, ctx) {
+    const files = new WorldFiles(slug, ctx.root);
+    if (!files.world().places.some((p) => p.key === place)) throw new ActionError(404, `${slug} has no place ${place}`);
+    if (fs.existsSync(files.place(place, 'painting.png'))) throw new ActionError(409, `${place} already has a painting: use the existing place fix tools`);
+    return fixPlace(ctx, slug, place, 'layout', 'repair layout', (c) => {
+      if (fs.existsSync(files.place(place, 'painting.png'))) throw new ActionError(409, `${place} acquired a painting while this repair waited: use the existing place fix tools`);
+      c.layout = { guidance };
+    });
+  },
+});
+
+defineAction({
   name: 'place_fix',
   description: 'The Fix it button of a place that failed or was never painted: rebuilds the place from the step it broke at (paint rewords by itself '
     + 'when the image safety filter refused it), or, when it was built through and verify still finds errors, hands it to the agent.',
   input: z.object({ slug: Slug, place: z.string().min(1) }),
   async run({ slug, place }, ctx) {
     const dir = path.join(ctx.root, slug);
-    if (!fs.existsSync(path.join(dir, 'places', place))) throw new ActionError(404, `${slug} has no place ${place} yet`);
+    if (!new WorldFiles(slug, ctx.root).world().places.some((p) => p.key === place)) throw new ActionError(404, `${slug} has no place ${place}`);
     const trouble = placeTrouble(dir, place);
     if (!trouble) throw new ActionError(409, `${place} has nothing to fix: it is playable or not built yet`);
     if (trouble.from) {
       const blocked = agentBlocked(dir, ctx.by, place);
       if (blocked) throw new ActionError(423, blocked);
-      const job = ctx.jobs.start(slug, ['build', slug, '--from', trouble.from, '--to', 'verify', '--place', place], `fix ${place} from ${trouble.from}`, ctx.by);
+      const job = trouble.from === 'layout'
+        ? await fixPlace(ctx, slug, place, 'layout', 'retry layout', () => {})
+        : ctx.jobs.start(slug, ['build', slug, '--from', trouble.from, '--to', 'verify', '--place', place], `fix ${place} from ${trouble.from}`, ctx.by);
       return { did: 'rebuild', from: trouble.from, why: trouble.why, job };
     }
     // Built through and still not playable: the fix tools need judgement, which is the agent's (or the person's).
@@ -309,7 +328,8 @@ defineAction({
   async run({ slug, place, key }, ctx) {
     const had = readCorrections(path.join(ctx.root, slug, 'places', place));
     const repaints = !key ? had.repaint.length > 0 || !!had.words : !!had.words?.looks[key];
-    return fixPlace(ctx, slug, place, repaints ? 'paint' : 'masks', `clear ${key ?? 'fixes'}`, (c) => {
+    const unfinishedLayout = !key && had.layout && !fs.existsSync(path.join(ctx.root, slug, 'places', place, 'painting.png'));
+    return fixPlace(ctx, slug, place, unfinishedLayout ? 'layout' : repaints ? 'paint' : 'masks', `clear ${key ?? 'fixes'}`, (c) => {
       if (key) {
         delete c.things[key];
         delete c.floors[key];
@@ -321,6 +341,7 @@ defineAction({
         c.added = {};
         c.repaint = [];
         delete c.words;
+        delete c.layout;
       }
     });
   },

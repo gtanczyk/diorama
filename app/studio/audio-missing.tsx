@@ -13,7 +13,7 @@ export function AudioMissing({ misses, retry }: { misses: AudioMisses; retry: ()
       ...(other ? [`${other}${waiting.length ? ' other' : ''} spoken ${other === 1 ? 'line' : 'lines'}`] : []),
       ...(misses.sounds.length ? [`${misses.sounds.length} ${misses.sounds.length === 1 ? 'sound' : 'sounds'}`] : []),
     ].join(' and ')} {other + misses.sounds.length === 1 ? 'is' : 'are'} missing.</p>}
-    <p class="note">You can play, but this audio is missing. Retry checks saved voice samples again and generates new audio only when needed.</p>
+    <p class="note">These audio gaps do not by themselves block play. Retry checks saved voice samples again and generates new audio only when needed.</p>
     <details><summary>Audio details · {groups.length} {groups.length === 1 ? 'group' : 'groups'}</summary>
       <ul>{groups.map((g) => <li key={`${g.kind}:${g.speaker ?? g.id}`}>
         <strong>{nice(g.speaker ?? g.id!)}: {labels[g.kind]}{g.speaker ? ` (${g.count} ${g.count === 1 ? 'line' : 'lines'})` : ''}</strong>

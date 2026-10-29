@@ -43,7 +43,7 @@ type Job = { id: string; label: string; args: string[]; unplayable?: Array<{ pla
 type Note = { id: string; at: string; by: string; place?: string; point?: [number, number]; text: string; state: 'open' | 'done'; reply?: string };
 type Spend = { usd: number; priced: boolean; calls: Record<string, number> };
 type Budget = { total: Spend; today: Spend; limitUsd: number | null; creditsLeft: number | null; sparkTier: string; sparkVia: string | null; imageVia: string | null; elsewhere: { calls: number; usd: number }; over: boolean; prices: Record<string, number> };
-type Status = Summary & { placeDetail: PlaceDetail[]; build: Record<string, { seconds: number }>; typical?: Record<string, number>; calls: Record<string, number>; jobs: Job[]; audioMisses?: { sounds: Array<{ id: string; reason: string }>; lines: Array<{ speaker: string; text: string; reason: string }> } };
+type Status = Summary & { world: { start: string } | null; placeDetail: PlaceDetail[]; build: Record<string, { seconds: number }>; typical?: Record<string, number>; calls: Record<string, number>; jobs: Job[]; audioMisses?: { sounds: Array<{ id: string; reason: string }>; lines: Array<{ speaker: string; text: string; reason: string }> } };
 
 let steps: string[] = [];
 let quiet = new Set<string>();
@@ -715,7 +715,7 @@ function Workshop({ slug }: { slug: string }) {
   const failed = last && last.state === 'failed' ? last : null;
   const pipelineJob = job ?? (failed?.args[0] === 'extend' ? failed : undefined);
   
-  const playable = !!status?.placeDetail.some((p) => p.stages.layout);
+  const playable = !!status?.world && status.placeDetail.some((p) => p.key === status.world!.start && p.stages.painting && p.stages.geometry && p.verdict?.ok && !p.trouble);
   // A build, or one step run on its own (the agent's story_redo): the stage shows its bar.
   const building = job && (job.args[0] === 'build' || steps.includes(job.args[0])) ? job : null;
   const shown = job;

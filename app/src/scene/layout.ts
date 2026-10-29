@@ -1,9 +1,11 @@
 // layout.json: where things stand in a place, as a block-in for the painter.
 // Spark lays it out; the gate checks it before any paint is spent on it.
 import { z } from 'zod';
+import fs from 'node:fs';
+import path from 'node:path';
 import { components, dilate, intersect, polygonMask, rectMask, subtract, unionAll } from '../image/raster.ts';
 import { maskArea } from '../image/mask.ts';
-import type { Memo } from '../meta/memo.ts';
+import { inputHash, type Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import type { Place, World } from '../world/schema.ts';
 
@@ -148,7 +150,7 @@ export function closeUpIssues(layout: Layout): string[] {
   if (implied.length < 2) return [];
   const person = implied[Math.floor(implied.length / 2)];
   return person > CLOSE_UP_MAX * H
-    ? [`the camera is too close: by the things' sizes a person at the bottom edge would be ${Math.round(person)} px tall (keep it under ${Math.round(CLOSE_UP_MAX * H)}): make the things smaller, set them deeper, or raise the horizon`]
+    ? [`the camera is too close: by the things' sizes a person at the bottom edge would be ${Math.round(person)} px tall (keep it under ${Math.round(CLOSE_UP_MAX * H)}): reduce height relative to metres, move feet toward the bottom edge, or lower the horizon y coordinate`]
     : [];
 }
 
@@ -175,17 +177,40 @@ Reply with JSON only:
  "lights": [{"key": "...", "x": 0, "y": 0, "colour": "#rrggbb"}]}`;
 }
 
-/** With a photo, Spark measures where things already are instead of placing them. */
-export async function layOut(memo: Memo, world: World, place: Place, photo?: Buffer): Promise<Layout> {
+/** Small positive boxes can be enlarged without moving their feet; every gate still runs afterwards. */
+export function repairSmallBoxes(layout: Layout): Layout {
+  return { ...layout, things: layout.things.map((t) => ({ ...t,
+    width: t.width > 0 ? Math.max(40, t.width) : t.width,
+    height: t.height > 0 ? Math.max(40, t.height) : t.height,
+  })) };
+}
+
+/** With a photo, measure existing positions without resizing them. */
+export async function layOut(memo: Memo, world: World, place: Place, photo?: Buffer, guidance?: string): Promise<Layout> {
   const ask = () => (photo ? `${brief(world, place)}\n\nThe place already exists: it is the attached photo, ${FRAME.width}x${FRAME.height} px. Do not place anything; measure where each thing, floor and light is in it.` : brief(world, place));
-  let prompt = ask();
+  const base = ask() + (guidance ? `\n\nLayout repair guidance: ${guidance}` : '');
+  // Keep paid replies. An exhausted batch becomes feedback for the next batch, never an identical replay.
+  const stateFile = path.join(memo.dir, 'layout-retries', `${inputHash(base, photo ?? '')}.json`);
+  const saved = z.object({ round: z.number().int().nonnegative(), answer: z.unknown(), issues: z.array(z.string()) });
+  let previous: z.infer<typeof saved> | undefined;
+  if (fs.existsSync(stateFile)) previous = saved.parse(JSON.parse(fs.readFileSync(stateFile, 'utf8')));
+  const round = (previous?.round ?? 0) + 1;
+  const feedback = (answer: unknown, issues: string[], attempt: number) => `${base}\n\nRepair batch ${round}, attempt ${attempt}. Your last answer was:\n${JSON.stringify(answer)}\n\nFix every one of these and reply with the whole JSON again:\n- ${issues.join('\n- ')}`;
+  let prompt = previous ? feedback(previous.answer, previous.issues, 1) : base;
+  let last: { answer: unknown; issues: string[] } | undefined;
   for (let attempt = 1; attempt <= 3; attempt++) {
     const answer = await askSparkJson(memo, { label: `layout:${place.key}#${attempt}`, prompt, images: photo ? [photo] : [] });
-    const parsed = Layout.safeParse(answer);
+    const raw = Layout.safeParse(answer);
+    const parsed = raw.success && !photo ? Layout.safeParse(repairSmallBoxes(raw.data)) : raw;
     const issues = parsed.success ? layoutIssues(parsed.data, place, !photo) : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
     if (parsed.success && issues.length === 0) return parsed.data;
     console.log(`  ${place.key} layout try ${attempt}: ${issues.slice(0, 4).join('; ')}`);
-    prompt = `${ask()}\n\nYour last answer was:\n${JSON.stringify(answer)}\n\nFix every one of these and reply with the whole JSON again:\n- ${issues.join('\n- ')}`;
+    last = { answer: parsed.success ? parsed.data : answer, issues };
+    prompt = feedback(last.answer, issues, attempt + 1);
   }
-  throw new Error(`no valid layout for ${place.key} in 3 tries`);
+  fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+  const temp = `${stateFile}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify({ round, ...last }));
+  fs.renameSync(temp, stateFile);
+  throw new Error(`no valid layout for ${place.key} in 3 tries: ${last!.issues.join('; ')}`);
 }
