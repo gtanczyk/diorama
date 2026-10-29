@@ -99,13 +99,25 @@ export function jsonIn<T = unknown>(text: string): T {
   return JSON.parse(text.slice(from, to + 1)) as T;
 }
 
-/** Asks for JSON. A reply that is not JSON is forgotten, so the next run asks again instead of replaying it. */
+/**
+ * Asks for JSON. A reply that is not JSON is forgotten, so the next run asks again instead of replaying it, and is
+ * asked again at once (twice more), told what broke: a long reply in Polish often quotes a word with bare double
+ * quotes inside a string, and one broken story should not stop the whole build.
+ */
 export async function askSparkJson<T = unknown>(memo: Memo, ask: SparkAsk): Promise<T> {
-  const text = await askSpark(memo, ask);
-  try {
-    return jsonIn<T>(text);
-  } catch (error) {
-    memo.forget('spark', sparkHash(ask), 'txt');
-    throw error;
+  let last: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const tried: SparkAsk = attempt === 0 ? ask : {
+      ...ask,
+      prompt: `${ask.prompt}\n\nYour previous answer was not valid JSON (${last instanceof Error ? last.message.slice(0, 120) : 'unreadable'}). Answer with valid JSON only: inside a string, never use a bare double quote (write \\" or use „…” or single quotes).`,
+    };
+    const text = await askSpark(memo, tried);
+    try {
+      return jsonIn<T>(text);
+    } catch (error) {
+      memo.forget('spark', sparkHash(tried), 'txt');
+      last = error;
+    }
   }
+  throw last;
 }
