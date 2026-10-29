@@ -41,7 +41,7 @@ type Job = { id: string; label: string; args: string[]; unplayable?: Array<{ pla
 type Note = { id: string; at: string; by: string; place?: string; point?: [number, number]; text: string; state: 'open' | 'done'; reply?: string };
 type Spend = { usd: number; priced: boolean; calls: Record<string, number> };
 type Budget = { total: Spend; today: Spend; limitUsd: number | null; creditsLeft: number | null; sparkTier: string; sparkVia: string | null; imageVia: string | null; elsewhere: { calls: number; usd: number }; over: boolean; prices: Record<string, number> };
-type Status = Summary & { placeDetail: PlaceDetail[]; build: Record<string, { seconds: number }>; typical?: Record<string, number>; calls: Record<string, number>; jobs: Job[] };
+type Status = Summary & { placeDetail: PlaceDetail[]; build: Record<string, { seconds: number }>; typical?: Record<string, number>; calls: Record<string, number>; jobs: Job[]; audioMisses?: { sounds: Array<{ id: string; reason: string }>; lines: Array<{ speaker: string; text: string; reason: string }> } };
 
 let steps: string[] = [];
 let quiet = new Set<string>();
@@ -777,6 +777,7 @@ function Workshop({ slug }: { slug: string }) {
   const stagedPlace = shownView.kind === 'place' ? places.find((p) => p.key === shownView.place) ?? places[0] : undefined;
   const unplayable = !job ? places.filter((p) => p.trouble) : [];
   const openNotes = notes.filter((n) => n.state === 'open');
+  const misses = status?.audioMisses && status.audioMisses.sounds.length + status.audioMisses.lines.length > 0 ? status.audioMisses : null;
   const ask = (text: string, gist?: string) => askAgent(slug, text, gist).catch((e) => setError(e.message));
   const castDone = !!status?.steps.includes('cast');
   // What the conversation opens with: the idea, then the world as the build made it, card by card.
@@ -856,6 +857,13 @@ function Workshop({ slug }: { slug: string }) {
         <Card kind="Needs you" tone="ask">
           {unplayable.map((p) => <p><button type="button" class="link" onClick={() => onStage({ kind: 'place', place: p.key })}>{nice(p.key)}</button>: {p.trouble!.why}</p>)}
           <div class="btns"><button type="button" class="primary small" title="The agent fixes them with the Studio tools and says what it did. It uses model calls as it works" onClick={() => void ask(`${unplayable.map((p) => `${p.key}: ${p.trouble!.why}`).join('; ')}. Fix ${unplayable.length > 1 ? 'these places' : 'this place'} as your playbook says and tell me in one sentence what you did.`, `Fix ${unplayable.length > 1 ? `${unplayable.length} places that cannot be played` : `${nice(unplayable[0].key)}: it cannot be played`}`)}>Fix it</button></div>
+        </Card>
+      )}
+      {misses && !job && !agentBusy && (
+        <Card kind="Plays without">
+          <p>{[misses.sounds.length && `${misses.sounds.length} sound${misses.sounds.length > 1 ? 's' : ''} stay silent`, misses.lines.length && `${misses.lines.length} line${misses.lines.length > 1 ? 's' : ''} stay text only`].filter(Boolean).join(', ')}: they did not pass the quality checks. The game plays fine without them.</p>
+          <p class="detail">{[...misses.sounds.map((s) => `${nice(s.id)}: ${s.reason}`), ...misses.lines.map((l) => `${nice(l.speaker)} „${l.text.slice(0, 40)}”: ${l.reason}`)].slice(0, 3).join(' · ')}</p>
+          <div class="btns"><button type="button" class="ghost small" title="Make only the missing sounds and lines again (new ElevenLabs takes). Everything else is kept" onClick={() => call('world_build', { slug, from: 'sound', to: 'voices' }).catch((e) => setError(e.message))}>Try again</button></div>
         </Card>
       )}
       {openNotes.length > 0 && !job && !agentBusy && (

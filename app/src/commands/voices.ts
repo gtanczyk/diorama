@@ -105,6 +105,7 @@ defineCommand({
     files.write(outFile, { pipeline: VOICE_PIPELINE, castingFrom, cast, lines: spoken, failures });
     const s = files.memo.sent;
     console.log(`voices ${slug}: ${spoken.length}/${lines.length} lines, ${spoken.filter((l) => l.flags.some((f) => f.startsWith('heard'))).length} flagged · sent: spark ${s.spark}, voice ${s.voice} · ${await guard.report()} · ${outFile}`);
-    if (failures.length) throw new Error(`${failures.length} spoken lines failed; see voices.json failures (rejected audio is not used)`);
+    // A line without a voice still shows as text: the build goes on and Studio shows it with a retry.
+    if (failures.length) console.log(`warning: ${failures.length} spoken lines stay text only (rejected audio is not used); see voices.json failures`);
   },
 });

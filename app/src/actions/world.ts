@@ -152,9 +152,17 @@ defineAction({
       typical: typicalSeconds(ctx.root),
       calls: callCounts(dir),
       jobs: ctx.jobs.list(slug).slice(-10),
+      audioMisses: audioMisses(dir),
     };
   },
 });
+
+/** Sounds and spoken lines the last run could not make: the game plays without them, Studio offers a retry. */
+function audioMisses(dir: string) {
+  const sounds = readJson<{ failures?: Record<string, string> }>(path.join(dir, 'sound', 'sounds.json'))?.failures ?? {};
+  const lines = readJson<{ failures?: Array<{ speaker: string; text: string; reason: string }> }>(path.join(dir, 'voices.json'))?.failures ?? [];
+  return { sounds: Object.entries(sounds).map(([id, reason]) => ({ id, reason })), lines };
+}
 
 defineAction({
   name: 'place_status',
