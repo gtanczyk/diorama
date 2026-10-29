@@ -9,6 +9,7 @@ import { castVoices, DESIGNED, PENDING_DESIGN, freeVoiceSlot, voiceCandidates, D
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
+import { resumePendingVoices } from '../sound/voices.ts';
 
 defineCommand({
   name: 'voices',
@@ -36,8 +37,8 @@ defineCommand({
     const people = [world.hero, ...world.places.flatMap((p) => p.things).filter((t) => t.role === 'npc')];
     const speakers = people.map((p) => ({ ...fixedLooks(files, { key: p.key, looks: p.looks }), figure: figure(p.key) }));
     const castingFrom = inputHash(JSON.stringify(world), JSON.stringify(lines), ...speakers.flatMap((p) => [p.key, p.looks ?? '', p.figure ?? Buffer.alloc(0)]));
-    const current = (k: string) => { const c = old?.cast[k]; return old?.pipeline === VOICE_PIPELINE && old.castingFrom === castingFrom && c?.profile?.language === (world.language ?? 'English') && (!needsDesign(c.profile) || !!c.design || !!fixes[k]?.voice); };
-    if (old && !recast && lines.every((l) => current(l.speaker))) cast = old.cast;
+    const current = (k: string) => { const c = old?.cast[k]; return old?.pipeline === VOICE_PIPELINE && old.castingFrom === castingFrom && c?.profile?.language === (world.language ?? 'English') && (!needsDesign(c.profile) || !!c.design || c.voice === PENDING_DESIGN || !!fixes[k]?.voice); };
+    if (old && !recast && lines.every((l) => current(l.speaker))) cast = await resumePendingVoices(files.memo, old.cast, lines);
     else {
       cast = await castVoices(files.memo, world, lines, await stockVoices(), speakers);
     }

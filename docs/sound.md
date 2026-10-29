@@ -14,6 +14,8 @@ The Meta Model API has no audio model, so effects come from ElevenLabs (`ELEVENL
 
 Studio Setup → Audio → Audio quality saves Final or Draft for future generations in all worlds and CLI commands (`~/.config/diorama/sound.json`). CLI flags override `DIORAMA_SOUND`, which overrides the saved choice. Setup shows and locks the selector when the environment overrides it. A running sound or voices step keeps the quality it started with.
 
+**Transcription outages.** Voice verification sends audio no faster than real time, with one active transcription per process. A busy or disconnected service gets at most four attempts with cooldowns and slower transmission (down to quarter speed); the timeout includes the recording's transmission time. A closed or failed stream stops sending immediately. Voice Design does not add another retry loop. Paid previews remain saved until verification succeeds, and a retry resumes pending voices without recasting working actors. Studio groups blocked lines by speaker and distinguishes pending verification, pending voice creation, rejected audio and generation failures. Its retry button reruns only Voices when no effects are missing.
+
 To rebuild an existing world's audio: `diorama voices <slug>` and `diorama sound <slug>`. Rewriting the script is a separate `story` step; changing voice quality alone does not rewrite existing dialogue.
 
 In the page, loops pan and fade with where the hero stands, footsteps follow the floor under him, and `m` mutes. `diorama playthrough --video` records the page's sound too and writes an mp4.

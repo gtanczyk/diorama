@@ -7,6 +7,7 @@ import { agentDefault, askAgent, call, type AgentDefaults, fileUrl, follow, list
 import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
 import { AudioSetup } from './audio-setup.tsx';
+import { AudioMissing } from './audio-missing.tsx';
 import { base64, Camera, shrink } from './camera.tsx';
 import { StoryView } from './story.tsx';
 import { StyleView } from './style-menu.tsx';
@@ -874,9 +875,8 @@ function Workshop({ slug }: { slug: string }) {
         </Card>
       )}
       {misses && !job && !agentBusy && (
-        <Card kind="Plays without">
-          <p title={[...misses.sounds.map((s) => `${nice(s.id)}: ${s.reason}`), ...misses.lines.map((l) => `${nice(l.speaker)} „${l.text}”: ${l.reason}`)].join('\n')}>{[...misses.sounds.map((s) => nice(s.id.replace(/-loop$/, ''))), ...misses.lines.map((l) => `${nice(l.speaker)}: „${l.text.slice(0, 30)}${l.text.length > 30 ? '…' : ''}”`)].slice(0, 3).join(', ')}{misses.sounds.length + misses.lines.length > 3 ? ` and ${misses.sounds.length + misses.lines.length - 3} more` : ''}. Sounds bad, left out; the game plays fine.</p>
-          <div class="btns"><button type="button" class="ghost small" title="Make only the missing sounds and lines again (new ElevenLabs takes). Everything else is kept" onClick={() => call('world_build', { slug, from: 'sound', to: 'voices' }).catch((e) => setError(e.message))}>Try again</button></div>
+        <Card kind="Audio incomplete">
+          <AudioMissing misses={misses} retry={() => { void call('world_build', { slug, from: misses.sounds.length ? 'sound' : 'voices', to: 'voices' }).catch((e) => setError(e.message)); }} />
         </Card>
       )}
       {openNotes.length > 0 && !job && !agentBusy && (

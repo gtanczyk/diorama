@@ -16,6 +16,7 @@ import { World } from '../src/world/schema.ts';
 import { soundData } from '../src/sound/data.ts';
 import { WorldFiles } from '../src/world/files.ts';
 import { scene } from './fixtures/scene.ts';
+import { resumePendingVoices } from '../src/sound/voices.ts';
 
 vi.mock('../src/meta/voice.ts', () => ({ transcribe: vi.fn() }));
 vi.mock('../src/sound/sources.ts', () => ({ elevenKey: () => 'test', soundEffect: vi.fn(), forgetEffect: vi.fn(), elevenMusic: vi.fn(), musicgen: vi.fn(), MUSICGEN_MODEL: 'test' }));
@@ -89,8 +90,14 @@ test('a busy transcriber does not fail a designed voice: it stays pending, and t
   const fetch = vi.fn().mockResolvedValue(Response.json({ previews: [{ generated_voice_id: 'kept', language: 'pl', audio_base_64: 'YQ==' }] }));
   vi.stubGlobal('fetch', fetch);
   await expect(designVoice(memo, profile, ['Cześć! Szukam jabłka. Pomożesz mi?'])).rejects.toThrow(/validation pending/);
+  expect(transcribe).toHaveBeenCalledTimes(1); // Only the transcriber owns retries.
   vi.mocked(transcribe).mockResolvedValue(spokenSample);
-  expect((await designVoice(memo, profile, ['Cześć! Szukam jabłka. Pomożesz mi?'])).generated).toBe('kept');
+  const old = Cast.parse({ hero: { ...actor(), voice: 'pending-design', pending: 'validation pending' }, narrator: { ...actor(), voice: 'working-stock-voice' } });
+  const resumed = await resumePendingVoices(memo, old, [{ speaker: 'hero', text: 'Cześć! Szukam jabłka. Pomożesz mi?' }]);
+  expect(resumed.hero.design?.generated).toBe('kept');
+  expect(resumed.hero.voice).toBe('design');
+  expect(resumed.hero.pending).toBeUndefined();
+  expect(resumed.narrator).toBe(old.narrator);
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 

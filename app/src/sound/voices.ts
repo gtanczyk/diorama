@@ -199,13 +199,9 @@ async function prepareVoice(memo: Memo, p: Profile, says: string[], description?
         const pcm = decode(Buffer.from(v.audio_base_64, 'base64'));
         if (audioProblem(pcm)) continue;
         let heard: string | undefined;
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try { heard = await transcribe(memo, `voice-preview:${v.generated_voice_id}`, pcm24k(pcm), 10); break; }
-          catch (error) {
-            if (attempt < 2 && /backlog|temporar|socket|timed out/i.test(String(error))) await new Promise((r) => setTimeout(r, 250 * 2 ** attempt));
-            else throw new Error(`Voice Design validation pending: ${error instanceof Error ? error.message : error}`);
-          }
-        }
+        // Transcribe owns the bounded retry/backoff. Do not multiply it with another retry loop here.
+        try { heard = await transcribe(memo, `voice-preview:${v.generated_voice_id}`, pcm24k(pcm)); }
+        catch (error) { throw new Error(`Voice Design validation pending: ${error instanceof Error ? error.message : error}`); }
         const match = spokenMatch(text, heard ?? '', p.language);
         if (!heardOk(text, match)) continue;
         // Pitch is diagnostic only. Highest pitch is not evidence of a convincing character.
@@ -225,6 +221,21 @@ async function prepareVoice(memo: Memo, p: Profile, says: string[], description?
     }
   }
   throw new Error(`Voice Design failed: ${last instanceof Error ? last.message : last}`);
+}
+
+/** Resume saved previews for pending actors without recasting the actors whose voices already work. */
+export async function resumePendingVoices(memo: Memo, cast: Cast, lines: Line[]): Promise<Cast> {
+  const next = { ...cast };
+  for (const [key, voice] of Object.entries(cast)) {
+    if (voice.voice !== PENDING_DESIGN || !voice.profile) continue;
+    try {
+      const design = await designVoice(memo, voice.profile, lines.filter((l) => l.speaker === key).map((l) => l.text));
+      next[key] = { ...voice, voice: DESIGNED, design, pending: undefined, why: design.description };
+    } catch (error) {
+      next[key] = { ...voice, pending: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  return next;
 }
 
 /** Whether the ElevenLabs account can hold one more voice (a designed voice needs it while its lines are read). */
@@ -483,7 +494,7 @@ export async function voiceLine(memo: Memo, line: Line, voice: Cast[string], wri
   for (let take = 1; take <= takes; take++) {
     const pcm = pitchShift(trim(decode(await speak(memo, `${id}-${take}`, line, voice, take, designed)), 0.005), voice.pitch ?? 0);
     if (audioProblem(pcm)) continue;
-    const heard = await transcribe(memo, `${id}-${take}`, pcm24k(pcm), 10);
+    const heard = await transcribe(memo, `${id}-${take}`, pcm24k(pcm));
     const match = spokenMatch(line.text, heard, voice.profile?.language);
     if (!best || match > best.match) best = { pcm, heard, match, take };
     if (heardOk(spoken, match)) break;
