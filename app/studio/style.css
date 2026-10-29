@@ -900,8 +900,11 @@ main.start .more .fields input:focus, main.start .more .fields select:focus { ou
 
 /* The cast stage: figures on a row, the story's items on a shelf under them. */
 .mat.lineup { flex-direction: column; align-items: center; justify-content: center; gap: 4cqh; padding-bottom: 3cqh; }
-.mat.lineup .figures { display: flex; align-items: flex-end; justify-content: center; gap: clamp(16px, 4cqw, 48px); }
-.mat.lineup .who img { height: 44cqh; }
+.mat.lineup .figures { --gap: clamp(8px, calc(16cqw / var(--per-row, 1)), 48px); display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: center; gap: 2cqh var(--gap); max-width: 96cqw; }
+.mat.lineup .who-at { min-width: 0; max-width: calc((96cqw - var(--gap) * (var(--per-row, 1) - 1)) / var(--per-row, 1)); }
+.mat.lineup .who { max-width: 100%; }
+.mat.lineup .who span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mat.lineup .who img { height: calc(44cqh / var(--rows, 1) + 6cqh * (var(--rows, 1) - 1) / var(--rows, 1)); max-width: 100%; }
 .mat.lineup .who-acts { z-index: 2; }
 .mat.lineup .shelf { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; max-width: 92cqw; padding-top: 16px; border-top: 1px solid var(--line); }
 .mat.lineup .item { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 0; width: 92px; padding: 6px 4px; border: 2px solid transparent; border-radius: 12px; background: none; color: var(--muted); font-size: 12px; line-height: 1.25; text-align: center; }

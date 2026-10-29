@@ -155,7 +155,8 @@ export function CastStage({ slug, version, picked, onPick, onOpen }: { slug: str
   if (!shown.length) return <div class="mat"><p class="detail">Nobody is cast yet: the build paints them after the places.</p></div>;
   return (
     <div class="mat lineup">
-      <div class="figures">
+      {/* Any cast fits the stage: up to 6 a row, more rows when there are more, each figure smaller then. */}
+      <div class="figures" style={{ '--per-row': Math.min(shown.length, Math.ceil(shown.length / Math.ceil(shown.length / 6))), '--rows': Math.ceil(shown.length / 6) }}>
       {shown.map((c) => {
         const on = !!picked && !picked.place && picked.thing === c.key;
         return (
