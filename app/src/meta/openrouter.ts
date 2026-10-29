@@ -35,8 +35,13 @@ const dataUrl = (image: Buffer) => `data:image/${image[0] === 0xff && image[1] =
 const content = (prompt: string, images: Buffer[]): Part[] => [...images.map((i) => ({ type: 'image_url' as const, image_url: { url: dataUrl(i) } })), { type: 'text', text: prompt }];
 
 /** A chat model's text answer to a prompt and images. */
-export async function chat(label: string, model: string, prompt: string, images: Buffer[] = []): Promise<Paid> {
-  const body = await post(label, { model, messages: [{ role: 'user', content: content(prompt, images) }] });
+export async function chat(label: string, model: string, prompt: string, images: Buffer[] = [], system?: string, schema?: Record<string, unknown>): Promise<Paid> {
+  const body = await post(label, {
+    model,
+    messages: [...(system ? [{ role: 'system', content: system }] : []), { role: 'user', content: content(prompt, images) }],
+    // Structured outputs: the model's answer is held to the shape, so it always parses.
+    ...(schema ? { response_format: { type: 'json_schema', json_schema: { name: 'answer', strict: true, schema } } } : {}),
+  });
   const text = body.choices?.[0]?.message?.content ?? '';
   if (!text.trim()) throw new Error(`${label} (${model}): empty answer${body.error?.message ? `: ${body.error.message}` : ''}`);
   return { data: Buffer.from(text, 'utf8'), usd: body.usage?.cost, via: model };

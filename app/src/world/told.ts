@@ -86,7 +86,7 @@ Write the idea of their game: who the hero is, where it happens, what goes wrong
 
 ${drawn.some((d) => d.kind === 'hero' || d.kind === 'npc') ? `The hero is one of the drawn characters (${[...new Set(drawn.filter((d) => d.kind === 'hero' || d.kind === 'npc').map((d) => d.key))].join(', ')}): the one their story is most about.\n` : ''}
 Reply with JSON only: {"language": "the language they spoke, in English, like Polish", "title": "a short title in that language", "idea": "...", "hero": "<key of the drawn character who is the hero, if any>"}`;
-  return Idea.parse(await askSparkJson(memo, { label: 'told-idea', prompt }));
+  return Idea.parse(await askSparkJson(memo, { schema: Idea, label: 'told-idea', prompt }));
 }
 
 /** The story read aloud to the children by a warm storyteller voice (idea.mp3; not in told/, which holds only what the children said), as soon as it is written. */

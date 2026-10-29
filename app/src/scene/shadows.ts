@@ -94,7 +94,7 @@ async function sparkLight(memo: Memo, label: string, painting: Buffer): Promise<
   const prompt = `This is a painted background for a 2D adventure game (${W}x${H} px, x right, y down). A person will be walking on its floor.
 Is the scene lit by direct sun or another strong light that casts clear shadows (not fog, overcast or night without a lamp)? If it is, which way on the screen would a person's shadow fall from their feet, and how long would it be compared with their height?
 Reply with JSON only: {"sunlit": true, "dx": 0.5, "dy": 0.5, "length": 0.8}  (dx, dy: direction on screen, +dy toward the viewer)`;
-  const a = SparkLight.parse(await askSparkJson(memo, { label, prompt, images: [painting] }));
+  const a = SparkLight.parse(await askSparkJson(memo, { schema: SparkLight, label, prompt, images: [painting] }));
   const d = Math.hypot(a.dx, a.dy);
   if (!a.sunlit || d < 1e-3) return undefined;
   const r = (v: number) => Math.round(v * 1000) / 1000;
@@ -180,7 +180,7 @@ export async function localLight(memo: Memo, label: string, painting: Buffer, li
   const prompt = `This is a painted background for a 2D adventure game (${W}x${H} px). It shows these light sources: ${placed.map((l) => `"${l.key}"`).join(', ')}.
 What mainly lights the ground where people walk, and so decides which way their shadows fall: the sun or daylight, or one of those light sources (at dusk or at night a fire or a lamp usually does)?
 Reply with JSON only: {"source": "sun"} or {"source": "<one of the names above>", "flame": true if that light is a living flame (a fire, a torch, a candle, an oil lamp), false if not (an electric lamp, a glowing window)}`;
-  const a = SparkSource.parse(await askSparkJson(memo, { label, prompt, images: [painting] }));
+  const a = SparkSource.parse(await askSparkJson(memo, { schema: SparkSource, label, prompt, images: [painting] }));
   const hit = placed.find((l) => l.key === a.source);
   if (!hit?.box) return undefined;
   const [x0, y0, x1, y1] = hit.box;

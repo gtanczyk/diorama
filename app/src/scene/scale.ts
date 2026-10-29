@@ -103,7 +103,7 @@ For each point on the ground below, how tall in pixels would an adult ${PERSON_M
 Points: ${points.map((p) => `(${p.x}, ${p.y})`).join(', ')}
 
 Reply with JSON only: {"people": [{"x": 0, "y": 0, "px": 0}]}`;
-  const { people } = People.parse(await askSparkJson(memo, { label, prompt, images: [painting] }));
+  const { people } = People.parse(await askSparkJson(memo, { schema: People, label, prompt, images: [painting] }));
   return people.filter((p) => p.px > 10 && p.px < 900);
 }
 

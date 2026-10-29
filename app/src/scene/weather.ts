@@ -39,7 +39,7 @@ Mood: ${place.mood}${wish.hint ? `\nThe author says: ${wish.hint}` : ''}
 4. "drips": up to 4 edges in the picture that water drips from in this weather: roof eaves, a gutter, an awning, a dripping pipe, a wet cave ceiling, the underside of a bridge. Only edges you can see. Each as a short noun phrase an image segmentation model can find ("slate roof", "wooden awning", "rusty pipe"). None when nothing drips.
 5. "fog" 0..1: how much mist or fog drifts through the scene, as the picture and the mood show it: 0 clear air, 0.3 a haze over water or a valley, 0.7 thick fog. Indoors 0 unless steam or smoke fills the room.
 Answer with JSON only: {"fall": "rain", "strength": 0.6, "wind": 0.1, "fog": 0, "drips": [{"phrase": "..."}]}`;
-  const read = Read.parse(await askSparkJson(memo, { label: `weather:${place.key}`, prompt, images: [painting] }));
+  const read = Read.parse(await askSparkJson(memo, { schema: Read, label: `weather:${place.key}`, prompt, images: [painting] }));
   const fall = wish.fall === 'auto' ? read.fall : wish.fall;
   const strength = wish.strength ?? (fall === 'none' ? 0 : read.strength);
   const [W, H] = [g.frame.width, g.frame.height];

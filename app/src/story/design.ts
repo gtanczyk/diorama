@@ -4,7 +4,7 @@ import type { Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import type { World } from '../world/schema.ts';
 import { BREVITY, brevityIssues, checkStory, paintingIssues, questionIssues, type StoryReport } from './check.ts';
-import type { Story } from './schema.ts';
+import { Story } from './schema.ts';
 import { z } from 'zod';
 
 const MIN_STEPS = 6;
@@ -62,19 +62,28 @@ export async function designStory(memo: Memo, world: World, wish?: string): Prom
   // The person's wish goes last, so a story without one asks Spark exactly what it asked before.
   const ask = (w: World) => brief(w) + (wish ? `\n\nThe author asks for this; follow it, keeping every ending reachable and the exit rules: ${wish}` : '');
   let prompt = ask(world);
+  // A story every ending of which plays, kept in case the editor never runs out of notes on its wording.
+  let playable: { story: Story; report: StoryReport; notes: string[] } | undefined;
   for (let attempt = 1; attempt <= 4; attempt++) {
-    const answer = await askSparkJson(memo, { label: `story#${attempt}`, prompt });
+    const answer = await askSparkJson(memo, { label: `story#${attempt}`, prompt, schema: Story });
     const report = checkStory(world, answer);
     if (report.story) report.issues.push(...brevityIssues(report.story), ...questionIssues(report.story), ...paintingIssues(world, report.story));
     for (const r of report.routes) {
       if (r.steps.length < MIN_STEPS) report.issues.push(`ending "${r.ending}" is reached in only ${r.steps.length} clicks: ${r.steps.join(' → ')}`);
     }
     if (report.story && report.issues.length === 0) {
-      report.issues.push(...await dialogueIssues(memo, world, report.story));
-      if (!report.issues.length) return { story: report.story, report };
+      const notes = await dialogueIssues(memo, world, report.story);
+      if (!notes.length) return { story: report.story, report };
+      if (!playable || notes.length <= playable.notes.length) playable = { story: report.story, report: { ...report, issues: [] }, notes };
+      report.issues.push(...notes);
     }
     console.log(`  story try ${attempt}: ${report.issues.length} issue(s): ${report.issues.slice(0, 3).join('; ')}`);
     prompt = `${ask(world)}\n\nYour last answer was:\n${JSON.stringify(answer)}\n\nA checker played every possible state and found these problems. Fix every one and reply with the whole JSON again:\n- ${report.issues.join('\n- ')}`;
+  }
+  // Wording notes are taste; a story that plays is the step's job. The person can reword any line in the Studio.
+  if (playable) {
+    console.log(`  story: kept the playable version with the fewest wording notes (${playable.notes.length}): ${playable.notes.slice(0, 3).join('; ')}`);
+    return { story: playable.story, report: playable.report };
   }
   throw new Error('Spark gave no playable story in 4 tries');
 }
@@ -83,6 +92,7 @@ export async function designStory(memo: Memo, world: World, wish?: string): Prom
 export async function dialogueIssues(memo: Memo, world: World, story: Story): Promise<string[]> {
   const review = await askSparkJson(memo, {
     label: 'story-dialogue-review',
+    schema: z.object({ issues: z.array(z.string()) }),
     prompt: `Review the spoken script of this game in ${world.language ?? 'English'} for ${world.audience === 'kids' ? 'children aged 5–7' : 'its intended audience'}.
 World: ${JSON.stringify(world)}
 Script: ${JSON.stringify(story)}

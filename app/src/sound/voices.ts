@@ -286,7 +286,7 @@ Description: ${who.looks}
 ${who.says?.length ? `They say: ${who.says.map((l) => `"${l}"`).join(' ')}\n` : ''}
 Who are they, as far as their voice goes? The key, the description, the game text and how they talk decide gender when they say it (a "girl", "he", a name); otherwise judge by the picture. Judge age by the face and body${who.figure ? ' in the picture' : ''} and the text: a child is under 14 (a boy, a girl, a kid, an errand boy, a small figure next to the adults), a teen 14-19 with a grown body. When unsure between child and teen, say child: an adult-sounding boy is worse than a young-sounding one.
 Reply with JSON only: {"gender": "male | female", "age": "child | teen | young | middle_aged | old", "sound": "how their voice should sound, a few words"}`;
-  return { ...Profile.parse(await askSparkJson(memo, { label: `voice-profile:${who.key}`, prompt, images: who.figure ? [who.figure] : [] })), language: world.language ?? 'English' };
+  return { ...Profile.parse(await askSparkJson(memo, { schema: Profile, label: `voice-profile:${who.key}`, prompt, images: who.figure ? [who.figure] : [] })), language: world.language ?? 'English' };
 }
 
 /**
@@ -326,7 +326,7 @@ ${stock.map((k) => `## ${k}: ${profiles[k].age.replace('_', ' ')} ${profiles[k].
 ${candidates[k].map((v) => `- ${describe(v)}`).join('\n')}`).join('\n\n')}
 
 Reply with JSON only: {"<character key>": {"voice": "<voice id>", "why": "few words", "stability": 0.45, "style": 0.2}}`;
-  const picked = Cast.safeParse(stock.length ? await askSparkJson<unknown>(memo, { label: 'cast-voices', prompt }).catch(() => ({})) : {});
+  const picked = Cast.safeParse(stock.length ? await askSparkJson<unknown>(memo, { schema: Cast, label: 'cast-voices', prompt }).catch(() => ({})) : {});
   const cast: Cast = {};
   const used = new Set<string>();
   for (const k of keys) {

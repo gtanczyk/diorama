@@ -35,7 +35,7 @@ Inside a room (a bedroom, a kitchen, a hall, a cellar) its own walls, ceiling, d
 List no bands at all when there is no far view: {"bands": []}.
 List up to 4 bands, each one a different distance. Give each a short noun phrase that an image segmentation model can search for ("distant mountains", "row of townhouses", "castle on a hill").
 Answer only with JSON: {"bands": [{"phrase": "...", "what": "one short sentence"}]}`;
-  const { bands } = Bands.parse(await askSparkJson(memo, { label: `flats:${place.key}`, prompt, images: [backdrop] }));
+  const { bands } = Bands.parse(await askSparkJson(memo, { schema: Bands, label: `flats:${place.key}`, prompt, images: [backdrop] }));
   if (!bands.length) return undefined;
   // Only what stands above (or just at) the horizon: below it the floor and the upright band move already.
   const above = emptyMask(W, H);
@@ -146,7 +146,7 @@ export async function flowOf(memo: Memo, place: Place, backdrop: Buffer, box: [n
   const prompt = `This is a painted game scene, ${FRAME.width}x${FRAME.height} px. There is ${place.key.replace(/-/g, ' ')} water in the box x ${box[0]}..${box[2]}, y ${box[1]}..${box[3]}.
 Which way does the water run?${hint ? ` The author says: "${hint}". Follow that.` : ''} A river or a canal runs along its banks: follow the channel, which may lead into the depth of the picture (toward a far bridge or arch, or toward the viewer), not only left or right. Pick the more natural direction; when nothing shows it, water runs toward the viewer.
 Answer with JSON only: {"flows": true, "from": [x, y], "to": [x, y]}, two points on the water in px, "from" upstream and "to" downstream, far apart along the channel. For still water (a pond, a lake, a harbour basin, the open sea) answer {"flows": false}.`;
-  const a = FlowAnswer.parse(await askSparkJson(memo, { label: `water-flow:${place.key}`, prompt, images: [backdrop] }));
+  const a = FlowAnswer.parse(await askSparkJson(memo, { schema: FlowAnswer, label: `water-flow:${place.key}`, prompt, images: [backdrop] }));
   if (!a.flows || !a.from || !a.to) return [0, 0];
   const [dx, dy] = [a.to[0] - a.from[0], a.to[1] - a.from[1]];
   const len = Math.hypot(dx, dy);
@@ -346,7 +346,7 @@ export async function mistSheet(memo: Memo, place: Place, backdrop: Buffer, notM
   if (!phrase) {
     const prompt = `This is a painted game scene, ${W}x${H} px. Is there fog, mist or haze painted in it: a bank of fog over the land or the water, mist round a far building, a veil over hills?
 Answer with JSON only: {"bands": [{"box": [x0, y0, x1, y1], "what": "low fog over the dunes"}]}, one box in px round each band of fog (at most 4), or {"bands": []} when the air is clear. Not clouds high in the sky, not smoke from a chimney.`;
-    const { bands } = FogBands.parse(await askSparkJson(memo, { label: `mist-bands:${place.key}`, prompt, images: [backdrop] }));
+    const { bands } = FogBands.parse(await askSparkJson(memo, { schema: FogBands, label: `mist-bands:${place.key}`, prompt, images: [backdrop] }));
     for (const b of bands) {
       const [x0, y0, x1, y1] = [Math.max(0, Math.round(b.box[0])), Math.max(0, Math.round(b.box[1])), Math.min(W, Math.round(b.box[2])), Math.min(H, Math.round(b.box[3]))];
       if (x1 - x0 < 40 || y1 - y0 < 20) continue;

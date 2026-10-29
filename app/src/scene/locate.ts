@@ -44,7 +44,7 @@ ${painted.map((t) => `- ${t.key}: ${brief.looks[t.key] ?? t.looks}`).join('\n')}
 
 Reply with JSON only: {"<key>": {"box": [0, 0, 0, 0], "kind": "standing", "phrase": "...", "also": "..."}}`;
   // A grid drawn over the painting did not make the boxes tighter (tried on foghorn), so the painting goes in plain.
-  const spots = Spots.parse(await askSparkJson(memo, { label: `locate:${place.key}`, prompt, images: [painting] }));
+  const spots = Spots.parse(await askSparkJson(memo, { schema: Spots, label: `locate:${place.key}`, prompt, images: [painting] }));
   const missing = painted.filter((t) => !spots[t.key]).map((t) => t.key);
   if (missing.length) throw new Error(`locate ${place.key}: Spark skipped ${missing.join(', ')}`);
   return spots;
@@ -113,6 +113,6 @@ Floors:
 ${layout.floors.map((f) => `- ${f.key}: ${brief.looks[f.key] ?? f.is}`).join('\n')}
 
 Reply with JSON only: {"<floor key>": ["C12", "D12", ...]}`;
-  const marked = FloorCells.parse(await askSparkJson(memo, { label: `floors:${place.key}`, prompt, images: [await gridImage(painting)] }));
+  const marked = FloorCells.parse(await askSparkJson(memo, { schema: FloorCells, label: `floors:${place.key}`, prompt, images: [await gridImage(painting)] }));
   return Object.fromEntries(layout.floors.map((f) => [f.key, marked[f.key] ?? []]));
 }

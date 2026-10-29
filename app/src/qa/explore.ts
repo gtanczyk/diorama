@@ -80,7 +80,7 @@ const Judged = z.object({ wrong: z.array(z.object({ id: z.number(), why: z.strin
 export async function judge(memo: Memo, label: string, sheet: Buffer, count: number): Promise<z.infer<typeof Judged>['wrong']> {
   const prompt = `This contact sheet shows ${count} tiles from a 2D point-and-click adventure, each a crop around the player character (a simple dark figure), numbered #1 to #${count} in the corner. Which tiles look wrong, and why? Look for: the character standing inside an object, partly hidden by an object they should be in front of, drawn over an object they should be behind, floating above or sunk into the ground, or the wrong size for the things around them.
 Reply with JSON only: {"wrong": [{"id": 1, "why": "short reason"}]}, an empty list when all look right.`;
-  const { wrong } = Judged.parse(await askSparkJson(memo, { label, prompt, images: [sheet] }));
+  const { wrong } = Judged.parse(await askSparkJson(memo, { schema: Judged, label, prompt, images: [sheet] }));
   return wrong.filter((w) => w.id >= 1 && w.id <= count);
 }
 

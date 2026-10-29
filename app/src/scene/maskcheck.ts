@@ -38,6 +38,6 @@ ${list}
 For each number say whether that thing is inside its box. Judge the kind of thing, not its details: mossy stairs are "stone stairs", a dim lamp is "a glowing lantern". Say ok false only when the box clearly holds a different object (a stone where a boat should be) or nothing at all. Then say in a few words what the box holds, and give the box [x0, y0, x1, y1] in pixels where the thing really is, or null if you cannot find it anywhere.
 
 Reply with JSON only: {"boxes": {"1": {"ok": true}, "2": {"ok": false, "seen": "a grey stone", "box": [0, 0, 0, 0]}}}`;
-  const reply = Reply.parse(await askSparkJson(memo, { label: `maskcheck:${place}`, prompt, images: [image] }));
+  const reply = Reply.parse(await askSparkJson(memo, { schema: Reply, label: `maskcheck:${place}`, prompt, images: [image] }));
   return Object.fromEntries(boxed.flatMap((t, i) => (reply.boxes[String(i + 1)] ? [[t.key, reply.boxes[String(i + 1)]]] : [])));
 }

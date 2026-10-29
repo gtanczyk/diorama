@@ -33,7 +33,7 @@ List at most 4 problems a player would notice, worst first:
 For each give the region to repaint as [x0, y0, x1, y1] in pixels and one sentence on what to paint there. Never ask for text or letters. If the painting is fine, give no issues.
 
 Reply with JSON only: {"issues": [{"key": "...", "problem": "missing | wrong | flat | unwanted", "region": [0, 0, 0, 0], "fix": "..."}]}`;
-  return Critique.parse(await askSparkJson(memo, { label: `critic:${place.key}`, prompt, images: [painting] }));
+  return Critique.parse(await askSparkJson(memo, { schema: Critique, label: `critic:${place.key}`, prompt, images: [painting] }));
 }
 
 /** A soft-edged alpha mask covering the regions, so patches blend into the painting. */
