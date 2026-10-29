@@ -15,7 +15,8 @@ export const SECRETS = {
   HF_TOKEN: { label: 'Hugging Face token', aliases: ['HUGGING_FACE_API_KEY'], required: false },
   // For DIORAMA_SPARK_VIA=claude. Its own name first, so setting it never switches Claude Code itself to API billing.
   DIORAMA_ANTHROPIC_API_KEY: { label: 'Anthropic API key (Spark via Claude)', aliases: ['ANTHROPIC_API_KEY', 'CLAUDE_API_KEY'], required: false },
-  OPENROUTER_API_KEY: { label: 'OpenRouter key (Gemini pictures, other Spark models)', aliases: [], required: false },
+  OPENROUTER_API_KEY: { label: 'OpenRouter key (Gemini pictures, other Spark models)', aliases: ['OPEN_ROUTER_API_KEY'], required: false },
+  GEMINI_API_KEY: { label: 'Google Gemini key (Gemini pictures straight from Google)', aliases: ['API_KEY', 'GOOGLE_API_KEY'], required: false },
 } as const;
 export type SecretName = keyof typeof SECRETS;
 export const SECRET_NAMES = Object.keys(SECRETS) as SecretName[];

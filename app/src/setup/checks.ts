@@ -83,6 +83,7 @@ export async function runChecks(opts: { live?: boolean } = {}): Promise<Check[]>
   checks.push(await keyCheck('HF_TOKEN', 'Hugging Face token', false, 'Optional: 3D hero figures (TRELLIS, auto-rig) on ZeroGPU Spaces.', sources.HF_TOKEN));
   checks.push(await keyCheck('DIORAMA_ANTHROPIC_API_KEY', 'Anthropic API key', false, 'Optional: with DIORAMA_SPARK_VIA=claude, Spark\'s text and vision asks go to Claude (Sonnet 5.5) instead of Meta.', sources.DIORAMA_ANTHROPIC_API_KEY));
   checks.push(await keyCheck('OPENROUTER_API_KEY', 'OpenRouter key', false, 'Optional: DIORAMA_IMAGE_VIA=gemini-flash, gemini-lite, nano-banana or gemini-pro paints with Gemini instead of Muse Image; DIORAMA_SPARK_VIA=openrouter:<model> for any chat model.', sources.OPENROUTER_API_KEY));
+  checks.push(await keyCheck('GEMINI_API_KEY', 'Google Gemini key', false, 'Optional: with DIORAMA_IMAGE_VIA=gemini-flash (or gemini-lite, nano-banana, gemini-pro) Gemini paints straight from Google instead of through OpenRouter.', sources.GEMINI_API_KEY));
 
   const py = process.env.DIORAMA_PYTHON;
   checks.push(!py
