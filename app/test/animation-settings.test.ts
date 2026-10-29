@@ -37,3 +37,12 @@ test.each([8, 16, 32])('a %i-frame UV sheet reserves standing without changing c
   expect(grid.width / grid.cols).toBe(300);
   expect(grid.height / grid.rows).toBe(448);
 });
+
+test('trousers keep their opt-out when changing frame count or regenerating', () => {
+  const files = fixture();
+  const chosen = animationSettings(files, 'bruno', animationOptions('model', '16', 'off'));
+  saveAnimationSettings(files, 'bruno', chosen);
+  expect(animationSettings(files, 'bruno', { frames: 32 })).toEqual({ texture: 'model', frames: 32, coatCorrection: false });
+  expect(animationSettings(files, 'mara')).not.toHaveProperty('coatCorrection');
+  expect(() => animationOptions('model', '', 'false')).toThrow();
+});

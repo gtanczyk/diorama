@@ -106,3 +106,12 @@ test('regenerating a model keeps the character UV preference outside its output 
   await buildModel(files, 'hero', 0, '');
   expect(files.readJson(files.path('cast', 'hero', 'model', 'model.json'))).not.toHaveProperty('texture');
 });
+
+test('a humanoid rebuild preserves its trousers skinning preference in model metadata', async () => {
+  files.write(files.path('cast', 'figures.json'), { hero: { height: 1.6, upright: true } });
+  files.write(files.path('cast', 'hero', 'animation.json'), { texture: 'model', frames: 16, coatCorrection: false });
+  vi.mocked(reconstruct).mockResolvedValue(valid);
+  vi.mocked(autoRig).mockResolvedValue(valid);
+  await buildModel(files, 'hero', 0, '');
+  expect(files.readJson(files.path('cast', 'hero', 'model', 'model.json'))).toMatchObject({ texture: 'model', coatCorrection: false });
+});

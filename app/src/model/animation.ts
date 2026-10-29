@@ -5,7 +5,7 @@ import type { WorldFiles } from '../world/files.ts';
 
 const Texture = z.enum(['views', 'model']);
 const Frames = z.union([z.literal(8), z.literal(16), z.literal(32)]);
-const Settings = z.object({ texture: Texture, frames: Frames });
+const Settings = z.object({ texture: Texture, frames: Frames, coatCorrection: z.boolean().optional() });
 export type AnimationSettings = z.infer<typeof Settings>;
 
 /** Missing options preserve the legacy painted eight-frame workflow. */
@@ -14,13 +14,14 @@ export function animationSettings(files: WorldFiles, key: string, patch: Partial
   const saved = fs.existsSync(file) ? Settings.parse(files.readJson(file)) : undefined;
   const texture = patch.texture ?? saved?.texture ?? 'views';
   const frames = patch.frames ?? (patch.texture === 'views' ? 8 : saved?.frames ?? (texture === 'model' ? 16 : 8));
-  const settings = Settings.parse({ texture, frames });
+  const coatCorrection = patch.coatCorrection ?? saved?.coatCorrection;
+  const settings = Settings.parse({ texture, frames, ...(coatCorrection !== undefined && { coatCorrection }) });
   if (texture === 'views' && frames !== 8) throw new Error('Painted views use 8 frames; use --texture model for 16 or 32 frames');
   return settings;
 }
 
-export function animationOptions(texture: string, frames = ''): Partial<AnimationSettings> {
-  return { ...(texture && { texture: Texture.parse(texture) }), ...(frames && { frames: Frames.parse(Number(frames)) }) };
+export function animationOptions(texture: string, frames = '', coat = ''): Partial<AnimationSettings> {
+  return { ...(texture && { texture: Texture.parse(texture) }), ...(frames && { frames: Frames.parse(Number(frames)) }), ...(coat && { coatCorrection: z.enum(['on', 'off']).parse(coat) === 'on' }) };
 }
 
 export function saveAnimationSettings(files: WorldFiles, key: string, settings: AnimationSettings) {

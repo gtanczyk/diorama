@@ -15,9 +15,9 @@ import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
   name: 'model',
-  usage: 'model <slug> [key]       Muse paints each character who needs sprites (or [key]) from 4 sides, TRELLIS + auto-rig make a 3D model (cast/<key>/model/) [--texture model|views: saved per character] [--glb rigged.glb: skip TRELLIS and the rig] [--take N] [--refit: only fit the views onto the model again, no calls]',
+  usage: 'model <slug> [key]       Muse paints each character who needs sprites (or [key]) from 4 sides, TRELLIS + auto-rig make a 3D model (cast/<key>/model/) [--texture model|views: saved per character] [--glb rigged.glb: skip TRELLIS and the rig] [--coat-correction on|off: off for trousers] [--take N] [--refit: only fit the views onto the model again, no calls]',
   async run(args) {
-    const options = animationOptions(takeOption(args, 'texture', ''));
+    const options = animationOptions(takeOption(args, 'texture', ''), '', takeOption(args, 'coat-correction', ''));
     const take = Number(takeOption(args, 'take', '0'));
     const given = takeOption(args, 'glb', '');
     const refit = args.includes('--refit');
@@ -75,7 +75,7 @@ export async function buildModel(files: WorldFiles, key: string, take: number, g
 
 async function makeModel(files: WorldFiles, key: string, take: number, given: string): Promise<string | null> {
   const settings = animationSettings(files, key);
-  const texture = settings.texture === 'model' ? { texture: 'model' as const } : {};
+  const texture = { ...(settings.texture === 'model' && { texture: 'model' as const }), ...(settings.coatCorrection !== undefined && { coatCorrection: settings.coatCorrection }) };
   const world = files.world();
   const found = [world.hero, ...world.places.flatMap((p) => p.things)].find((w) => w.key === key);
   if (!found) throw new Error(`no hero or NPC called ${key}`);

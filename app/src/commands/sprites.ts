@@ -22,9 +22,9 @@ const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.l
 
 defineCommand({
   name: 'sprites',
-  usage: 'sprites <slug> [key]     walk and talk sheets for what the story uses: the 3D model poses, Muse draws each sheet again (cast/<key>/sprites/; needs `diorama model` first) [--texture model|views] [--frames 8|16|32: model texture only; choices persist per character] [--plan: only print what would be drawn] [--take N] [--tries N: up to N takes per walk facing while a frame has its legs wrong]',
+  usage: 'sprites <slug> [key]     walk and talk sheets for what the story uses: the 3D model poses, Muse draws each sheet again (cast/<key>/sprites/; needs `diorama model` first) [--texture model|views] [--coat-correction on|off] [--frames 8|16|32: model texture only; choices persist per character] [--plan: only print what would be drawn] [--take N] [--tries N: up to N takes per walk facing while a frame has its legs wrong]',
   async run(args) {
-    const options = animationOptions(takeOption(args, 'texture', ''), takeOption(args, 'frames', ''));
+    const options = animationOptions(takeOption(args, 'texture', ''), takeOption(args, 'frames', ''), takeOption(args, 'coat-correction', ''));
     const take = Number(takeOption(args, 'take', '0'));
     const tries = Number(takeOption(args, 'tries', '1'));
     const planOnly = args.includes('--plan');
@@ -58,19 +58,20 @@ defineCommand({
       }
       const selected = settings.get(p.key)!;
       if (selected.texture === 'model') await drawModelCharacter(files, p, selected);
-      else await drawCharacter(files, p, take, tries);
+      else await drawCharacter(files, p, take, tries, selected);
       if (selected.texture === 'model' || Object.keys(options).length || fs.existsSync(files.path('cast', p.key, 'animation.json'))) saveAnimationSettings(files, p.key, selected);
       const modelFile = files.path('cast', p.key, 'model', 'model.json');
       const model = files.readJson(modelFile) as Record<string, unknown>;
       if (selected.texture === 'model') model.texture = 'model';
       else delete model.texture;
+      if (selected.coatCorrection !== undefined) model.coatCorrection = selected.coatCorrection;
       files.write(modelFile, model);
     }
     console.log(`calls sent: muse ${files.memo.sent.muse}, spark ${files.memo.sent.spark}`);
   },
 });
 
-async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: number, tries: number) {
+async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: number, tries: number, settings: AnimationSettings) {
   const { key } = plan;
   const world = files.world();
   const who = [world.hero, ...world.places.flatMap((p) => p.things)].find((w) => w.key === key);
@@ -78,7 +79,7 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
   // A world given another style names it, so the sheets follow the restyled character, not the gouache they were made for.
   const style = readStyled(files).from ? castStyle(files, world, key) : undefined;
   const modelDir = files.path('cast', key, 'model');
-  const projected: AnimationSettings = { texture: 'views', frames: 8 };
+  const projected: AnimationSettings = { ...settings, texture: 'views', frames: 8 };
   // An older model's views were fitted on the whole silhouette only: the guides would show the profile's face twice.
   if (await refitIfOld(modelDir)) console.log(`${key}: views fitted again, slice by slice`);
   const view = (name: string) => fs.readFileSync(`${modelDir}/${name}.png`);

@@ -7,11 +7,11 @@ import type { ViewName } from './fit.ts';
 const SIZE = '1024x1024';
 /** Each view as it lands, so Studio shows them one by one while the rest are painted. */
 type Landed = (name: ViewName, png: Buffer) => void;
-const STAND = 'standing still in a relaxed A-pose: arms hanging slightly away from the body with a clear gap between arms and body, legs straight and slightly apart, feet flat';
+const STAND = 'standing still in a clear rigging A-pose: both straight arms extended diagonally outwards 35 degrees from vertical, elbows straight, hands at least one hand-width away from the thighs, a wide uninterrupted background gap between each arm and the torso and hips, legs straight and shoulder-width apart, feet flat';
 // The arms in every view where the front has them: TRELLIS builds one body from all four, and each view is
 // projected back onto it, so a hand in a pocket in one view is painted on the hip as a second pair of hands.
 // Looks often say "hand in pocket"; this pose wins over it.
-const HANDS = 'Both hands empty and fully visible, hanging beside the thighs: not in pockets, not on the hips, not holding anything, not in front of the body.';
+const HANDS = 'Both hands empty and fully visible, well separated from the thighs, never touching clothing: not in pockets, not on the hips, not holding anything, not in front of the body.';
 const SAME_HEAD = 'Whatever is on the head (hood up or down, hat, hair) is exactly as in the front picture, from this side too.';
 // Looks written from a photo may still say where the person sat or lay ("against a headboard"): a profile then
 // paints the headboard behind them, and TRELLIS grows it into the body as a slab around the model.
@@ -33,7 +33,7 @@ export async function paintViews(memo: Memo, key: string, looks: string, paintin
   onView?.('back', back);
   const side = (facing: 'left' | 'right') => museEdit(memo, {
     label: `${key}-view-${facing}`, size: SIZE, take, images: [front, back],
-    prompt: `The same character as in both pictures (front and back views), same clothes, colours, patches and painted style, now seen exactly from the side in profile, facing to the ${facing} of the picture (${looks}). ${SAME_HEAD} Standing in the same relaxed pose: arms hanging straight down beside the body, legs straight and slightly apart. ${HANDS} Same size and position in the frame as the pictures. ${PLAIN}`,
+    prompt: `The same character as in both pictures (front and back views), same clothes, colours, patches and painted style, now seen exactly from the side in profile, facing to the ${facing} of the picture (${looks}). ${SAME_HEAD} Keep exactly the same rigging A-pose as the front and back: straight arms angled out sideways 35 degrees from vertical, hands clear of the thighs, legs straight and shoulder-width apart. Do not lower the arms against the hips for this profile. ${HANDS} Same size and position in the frame as the pictures. ${PLAIN}`,
   }).then((png) => (onView?.(facing, png), png));
   const [left, right] = await Promise.all([side('left'), side('right')]);
   return { front, back, left, right };

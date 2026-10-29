@@ -122,5 +122,10 @@ Talking sheets use the same grid and preserve the story's gesture mapping. The
 GLB must contain a base-colour texture and UV coordinates. Rendering UV sheets
 does not call Muse; existing line/gesture assignments are reused. New dialogue lines still use Spark
 for gesture planning.
+For trousers, pass `--coat-correction off` to `model` or `sprites` to preserve
+the original thigh skin weights. This choice also persists per character;
+omitting it preserves the legacy long-coat correction. New humanoid model views
+use an A-pose with hands separated from the thighs to avoid fused geometry.
+
 Use `--texture views` to return that character to painted 8-frame sheets.
 `--plan` reports the selected mode without saving animation choices or sheets.

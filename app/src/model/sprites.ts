@@ -57,7 +57,10 @@ export const OFF_GAIT = 0.88;
  */
 export async function renderGuides(modelDir: string, facings: Facing[], gestures?: number[], /** grey clay, no textures */ plain = false, animation?: AnimationSettings): Promise<Record<string, Buffer>> {
   const info = JSON.parse(fs.readFileSync(path.join(modelDir, 'model.json'), 'utf8'));
-  if (animation) info.texture = animation.texture;
+  if (animation) {
+    info.texture = animation.texture;
+    if (animation.coatCorrection !== undefined) info.coatCorrection = animation.coatCorrection;
+  }
   const js = (await build({ entryPoints: [path.join(WEB, 'sheet.ts')], bundle: true, format: 'esm', write: false, target: 'es2022' })).outputFiles[0].text;
   const browser = await (await chromium()).launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   try {

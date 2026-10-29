@@ -18,6 +18,8 @@ export type ModelInfo = {
   glb: string;
   /** Use the GLB's UV texture when independently painted views project duplicate features onto the mesh. Omitted: projected views. */
   texture?: 'model' | 'views';
+  /** Disable the long-coat weight correction for trousers. Omitted preserves legacy models. */
+  coatCorrection?: boolean;
   /** Not a person on two legs (a round eye, a frog): the model has no skeleton and moves as a whole body (src/play/creature.ts). */
   creature?: boolean;
   /** bands: the across fit per slice of the height (src/model/fit.ts BANDS), feet first; without them, u everywhere. */
@@ -293,7 +295,7 @@ export class Figure3D {
     };
     this.legs = { Left: leg('Left'), Right: leg('Right') };
     this.arms = { Left: at('LeftForeArm').sub(at('LeftArm')).normalize(), Right: at('RightForeArm').sub(at('RightArm')).normalize() };
-    this.fixCoat(skinned, 0.035);
+    if (info.coatCorrection !== false) this.fixCoat(skinned, 0.035);
     this.hipsRest = this.bones.Hips.position.clone();
   }
 
