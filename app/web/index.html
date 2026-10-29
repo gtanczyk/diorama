@@ -23,7 +23,9 @@
   :root { --paper: #f3e8cf; --paper-hi: #fbf4e2; --ink: #2b2118; --glow: #ffe7a8; --clay: #c9774a; }
   #inventory { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 10px 14px 10px 10px; background: var(--paper); border: 2.5px solid var(--ink); border-radius: 18px; box-shadow: 0 5px 0 #2b211840, 0 12px 28px #0006; transition: opacity .3s, left .3s, transform .3s; }
   #inventory[hidden] { display: none; }
-  #inventory.quiet { opacity: .55; left: 22px; transform: none; }
+  /* In a talk the bag steps out of the answers' way: small, faint, top left (below the turn badge when there is one). */
+  #inventory.quiet { opacity: .6; left: 22px; top: 22px; bottom: auto; transform: scale(.7); transform-origin: 0 0; }
+  #hud:has(#player:not([hidden])) #inventory.quiet { top: 80px; }
   #inventory .bag { width: 46px; display: flex; justify-content: center; border-right: 2px dashed #2b211855; padding-right: 6px; }
   #inventory .slots { display: flex; gap: 8px; }
   #inventory .slot { width: 72px; height: 72px; padding: 0; display: grid; place-items: center; background: #e7d8b6; border: 2px solid #2b211866; border-radius: 14px; transition: transform .15s; }
@@ -39,15 +41,21 @@
   .held-cursor .label { margin: 2px 0 0 12px; padding: 4px 10px; background: #2b2118e8; color: var(--paper); border-radius: 9px; font-size: 15px; white-space: nowrap; }
   .flying { position: fixed; z-index: 6; pointer-events: none; object-fit: contain; }
   .toast { position: absolute; left: 50%; bottom: 122px; transform: translateX(-50%); padding: 6px 14px; background: #2b2118e8; color: var(--paper); border-radius: 10px; font-size: 17px; opacity: 0; pointer-events: none; }
-  #talk { position: absolute; right: 22px; bottom: 22px; display: flex; flex-direction: column; gap: 8px; width: min(460px, 90vw); }
+  /* The answers: one paper panel at the bottom centre, in the eye line under the speakers, where the bag sits when nobody talks. */
+  #talk { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; width: min(600px, 90%); box-sizing: border-box; padding: 12px 14px 10px; background: #f3e8cff2; border: 2.5px solid var(--ink); border-radius: 20px; box-shadow: 0 5px 0 #2b211840, 0 14px 34px #0009; }
   #talk[hidden] { display: none; }
-  #talk .who { display: flex; align-items: center; gap: 10px; }
-  #talk .face { width: 52px; height: 52px; border-radius: 50%; background: #e9c46a; border: 2.5px solid var(--ink); overflow: hidden; }
+  #talk .who { display: flex; align-items: center; gap: 10px; margin-top: -40px; }
+  #talk .face { width: 56px; height: 56px; border-radius: 50%; background: #e9c46a; border: 2.5px solid var(--ink); overflow: hidden; }
   #talk .face img { width: 140%; margin: 0 0 0 -20%; display: block; }
-  #talk .tag { padding: 2px 10px; background: #f3e8cfee; border: 2px solid var(--ink); border-radius: 9px; color: var(--ink); font-weight: bold; font-size: 15px; }
-  #talk .answer { display: flex; align-items: center; gap: 12px; padding: 10px 14px; color: var(--ink); background: var(--paper); border: 2px solid var(--ink); border-radius: 14px; box-shadow: 0 4px 0 #2b211840; font-size: 18px; transition: transform .12s; }
-  #talk .answer:hover { background: var(--glow); border-color: var(--clay); transform: translateX(-6px); }
-  body.pad #talk .answer.focus { background: var(--glow); border: 3px solid var(--clay); box-shadow: 0 0 0 4px #ffd37a88, 0 4px 0 #2b211840; transform: translateX(-10px) scale(1.03); }
+  #talk .tag { padding: 2px 10px; background: var(--paper-hi); border: 2px solid var(--ink); border-radius: 9px; color: var(--ink); font-weight: bold; font-size: 15px; }
+  #talk .answer { display: flex; align-items: center; gap: 12px; padding: 10px 14px; color: var(--ink); background: var(--paper-hi); border: 2px solid var(--ink); border-radius: 14px; box-shadow: 0 4px 0 #2b211840; font-size: 19px; transition: transform .12s; }
+  #talk .answer:hover { background: var(--glow); border-color: var(--clay); transform: translateY(-2px); }
+  body.pad #talk .answer.focus { background: var(--glow); border: 3px solid var(--clay); box-shadow: 0 0 0 4px #ffd37a88, 0 4px 0 #2b211840; transform: scale(1.02); }
+  #talk .leave { color: #2b2118a0; font-size: 13px; text-align: center; }
+  #talk .leave .pads, #talk .leave .taps, body.pad #talk .leave .keys { display: none; }
+  body.pad #talk .leave .pads { display: inline; }
+  @media (hover: none) { #talk .leave .keys, body.pad #talk .leave .pads { display: none; } #talk .leave .taps { display: inline; } }
+  body.talking #bar .hint { visibility: hidden; }
   body.pad #ending .again { box-shadow: 0 0 0 4px #ffd37a88, 0 4px 0 #2b211840; }
   #player { position: absolute; left: 18px; top: 18px; padding: 6px 16px 6px 12px; display: flex; align-items: center; gap: 10px; background: var(--paper); border: 3px solid var(--player); border-radius: 999px; color: var(--ink); font-weight: bold; font-size: 22px; box-shadow: 0 4px 0 #2b211840; pointer-events: none; }
   #player::before { content: ''; width: 22px; height: 22px; border-radius: 50%; background: var(--player); }
@@ -56,7 +64,7 @@
   #soundless[hidden] { display: none; }
   @keyframes soundless { to { border-color: #e9c46a33; } }
   #handover { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); padding: 22px 48px; background: var(--player); color: #fff; border: 5px solid #fff; border-radius: 28px; font-size: 64px; font-weight: bold; text-shadow: 0 3px 0 #0005; box-shadow: 0 10px 30px #0008; pointer-events: none; }
-  #talk .key { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border: 2px solid var(--ink); border-radius: 7px; background: var(--paper-hi); font-size: 14px; }
+  #talk .key { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border: 2px solid var(--ink); border-radius: 7px; background: var(--paper); font-size: 14px; }
   button { font: inherit; cursor: pointer; text-align: left; }
   #ending { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at center, #0006, #000b); padding: 24px; }
   #ending[hidden] { display: none; }

@@ -126,7 +126,10 @@ export class Bag {
   }
 }
 
-/** The hero's answers as numbered cards; keys 1 to 4 pick them too, and a gamepad moves a lit card and picks it. */
+/**
+ * The hero's answers as numbered cards in a paper panel at the bottom centre; keys 1 to 9 pick them too, and a gamepad
+ * moves a lit card and picks it.
+ */
 export class Answers {
   private readonly root = document.getElementById('talk')!;
   private picks: Array<() => void> = [];
@@ -147,6 +150,8 @@ export class Answers {
   show(options: Array<{ text: string; action?: string; pick: () => void }>, hero?: { name: string; portrait?: string }) {
     this.picks = options.map((o) => o.pick);
     this.root.hidden = options.length === 0;
+    // The hint line under the picture would run through the panel; it steps aside while answers are up.
+    document.body.classList.toggle('talking', options.length > 0);
     // New answers start from the first card; the same ones redrawn keep the lit one.
     const texts = options.map((o) => o.text).join('\n');
     const fresh = texts !== this.texts;
@@ -172,8 +177,19 @@ export class Answers {
       b.onfocus = () => this.hear?.(o.text);
       return b;
     });
-    this.root.replaceChildren(who, ...this.cards);
+    // Walking away ends the talk as Goodbye does; said once under answers that are not just a goodbye.
+    const leave = options.some((o) => o.action !== 'leave') ? [el('div', 'leave')] : [];
+    for (const l of leave) l.append(el('span', 'keys', words.leave), el('span', 'pads', words.padLeave), el('span', 'taps', words.tapLeave));
+    this.root.replaceChildren(who, ...this.cards, ...leave);
     this.light();
+    // New answers rise in and their cards pulse twice, so a choice waiting for the player is not missed.
+    if (fresh) {
+      this.root.animate([{ opacity: 0, transform: 'translate(-50%, 24px) scale(.96)' }, { opacity: 1, transform: 'translate(-50%, 0) scale(1)' }], { duration: 320, easing: 'cubic-bezier(.2,.9,.3,1.2)' });
+      this.cards.forEach((c, i) => c.animate(
+        [{ boxShadow: '0 0 0 0 #ffd37acc, 0 4px 0 #2b211840' }, { boxShadow: '0 0 0 14px #ffd37a00, 0 4px 0 #2b211840' }],
+        { duration: 900, delay: 250 + i * 90, iterations: 2, easing: 'ease-out' },
+      ));
+    }
     // Playing with a pad, the lit card is said as soon as the answers come up.
     if (fresh && document.body.classList.contains('pad')) this.hear?.(options[0].text);
   }

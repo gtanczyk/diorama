@@ -714,6 +714,13 @@ class Game {
     return new DOMRect(r.left + x0 * k, r.top + y0 * k, (box[2] - box[0]) * z * k, (box[3] - box[1]) * z * k);
   }
 
+  /** Ends the conversation as its Goodbye would: the player walked away, clicked elsewhere or pressed Esc. */
+  leave(): boolean {
+    if (!this.state.talk || this.state.ending) return false;
+    void this.act({ kind: 'leave' });
+    return true;
+  }
+
   /** Inventory, conversation choices and the ending, as plain HTML over the canvas. */
   ui() {
     const story = this.data.story;
@@ -2310,7 +2317,9 @@ for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListe
 canvas.addEventListener('click', (e) => {
   // The tap that ended a long press has done its work.
   if (press?.fired) return void (press = null);
-  if (!game.place || game.dark > 0 || game.state.talk || game.state.ending) return;
+  if (!game.place || game.dark > 0 || game.state.ending) return;
+  // A click away from the answers says goodbye and goes where it points.
+  game.leave();
   // A double click hurries the walk the first click set off; a single one walks.
   if (e.detail >= 2 && game.hero.path.length) return void (game.hero.run = true);
   game.hero.run = false;
@@ -2328,7 +2337,7 @@ canvas.addEventListener('contextmenu', (e) => {
 });
 canvas.addEventListener('mouseleave', () => (pointer = null));
 // The keyboard: WASD or the arrows walk, E, Space or Enter use the nearest thing in reach (it lights up),
-// 1 to 9 take an item from the bag when nobody is talking (in a conversation they pick an answer).
+// 1 to 9 take an item from the bag when nobody is talking (in a conversation they pick an answer; walking or Esc leaves it).
 const DIRS: Record<string, Point> = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
 const keys = new Set<string>();
 let keyboard = false;
@@ -2339,13 +2348,15 @@ addEventListener('keydown', (e) => {
   if (k === 'shift') keys.add(k);
   if (k in DIRS) {
     e.preventDefault();
+    // Walking off ends a talk (a key held from before it began does not).
+    if (!e.repeat) game.leave();
     keys.add(k);
     keyboard = true;
     return;
   }
   if (k === 'g') game.grid = !game.grid;
   if (k === 'm') mixer?.toggleMute();
-  if (k === 'escape') game.hold(undefined);
+  if (k === 'escape' && !game.leave()) game.hold(undefined);
   if ((k === 'e' || k === ' ' || k === 'enter') && free()) {
     e.preventDefault();
     const hot = game.within();
@@ -2443,6 +2454,7 @@ function padPress(b: PadButton, body: Body) {
     if (b === 'up' || b === 'left' || b === 'prev') game.answers.move(-1);
     if (b === 'down' || b === 'right' || b === 'next') game.answers.move(1);
     if (b === 'use') game.answers.pick();
+    if (b === 'back') game.leave();
   } else if (free()) {
     const hot = game.within(body);
     // Using or looking at something makes this player's hero the one the story follows, unless the hero is still busy
