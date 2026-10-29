@@ -1,7 +1,6 @@
 // Other models through OpenRouter, for when a world should be made with something other than Meta's:
-// Gemini image models in place of Muse Image, any chat model in place of Spark. OPENROUTER_API_KEY (or
-// OPEN_ROUTER_API_KEY) holds the key; in a cloud session the proxy supplies it. A Google key (GEMINI_API_KEY,
-// API_KEY or GOOGLE_API_KEY) sends Gemini pictures straight to Google instead. Answers say what they cost.
+// Gemini image models in place of Muse Image, any chat model in place of Spark. OPENROUTER_API_KEY holds
+// the key; in a cloud session the proxy supplies it. A Google key (GEMINI_API_KEY or GOOGLE_API_KEY) sends Gemini pictures straight to Google instead. Answers say what they cost.
 import sharp from 'sharp';
 import type { Paid } from './memo.ts';
 
@@ -23,7 +22,7 @@ async function post(label: string, body: Record<string, unknown>): Promise<Answe
     const res = await fetch(URL, {
       method: 'POST',
       signal: AbortSignal.timeout(240_000),
-      headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY ?? process.env.OPEN_ROUTER_API_KEY ?? 'proxy'}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY ?? 'proxy'}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     if (res.ok) return (await res.json()) as Answer;
@@ -45,7 +44,7 @@ export async function chat(label: string, model: string, prompt: string, images:
 
 const RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
 
-const googleKey = () => process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.GOOGLE_API_KEY;
+const googleKey = () => process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 
 /** A Gemini picture straight from Google: the model id without OpenRouter's "google/". */
 async function paintGoogle(label: string, model: string, prompt: string, ratio: string, images: Buffer[]): Promise<Buffer> {
