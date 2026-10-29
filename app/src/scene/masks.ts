@@ -14,7 +14,8 @@ import { cellsBox, cellsMask, GRID, type Kind, type Spots } from './locate.ts';
 
 export type MaskSource = 'sam-text' | 'sam-box' | 'colour-cut' | 'spark-box' | 'layout-box' | 'spark-cells' | 'layout';
 
-export type ThingMask = { key: string; kind: Kind; phrase: string; source: MaskSource; coarse: boolean; px: number; box: Rect; mask: Mask };
+/** whole: px added by the whole-thing pass (parts SAM by name left out: what sits in or on it). */
+export type ThingMask = { key: string; kind: Kind; phrase: string; source: MaskSource; coarse: boolean; px: number; box: Rect; mask: Mask; whole?: number };
 export type FloorMask = { key: string; source: MaskSource; coarse: boolean; px: number; iouCells: number; iouLayout: number; mask: Mask };
 
 const { width: W, height: H } = FRAME;
@@ -130,6 +131,40 @@ export function pickInstances(found: Found[], prior: Rect): Mask | undefined {
   return withoutSpecks(mask, Math.max(60, maskArea(mask) * 0.03));
 }
 
+/**
+ * The box SAM is asked by for the whole thing: its mask's box joined with Spark's (Spark boxes a "bucket of fish
+ * heads" with the fish), grown on the top and the sides, where contents stick out; barely below, that is floor.
+ */
+export function wholeBox(mask: Rect, spark: Rect | undefined): Rect {
+  const [x0, y0, x1, y1] = spark ? [Math.min(mask[0], spark[0]), Math.min(mask[1], spark[1]), Math.max(mask[2], spark[2]), Math.max(mask[3], spark[3])] : mask;
+  const g = 0.15 * Math.max(x1 - x0, y1 - y0);
+  return clampRect([x0 - g, y0 - 2 * g, x1 + g, y1 + 0.2 * g], W, H);
+}
+
+/**
+ * The thing as one piece: SAM by name (`named`) joined with the parts SAM by the whole box (`boxed`) finds attached
+ * to it. Refused when the box found something else (it covers little of the named mask) or took in its surroundings
+ * (it adds over twice the thing itself); `others` (the other things) are never taken. Specks and slivers along the
+ * outline are not parts. Returns the mask and the px it gained (0: as it was).
+ */
+export function wholeThing(named: Mask, boxed: Mask | undefined, others: Mask): { mask: Mask; added: number; why?: string } {
+  const px = maskArea(named);
+  if (!boxed || px === 0) return { mask: named, added: 0 };
+  const cover = maskArea(intersect(boxed, named)) / px;
+  if (cover < 0.6) return { mask: named, added: 0, why: `the box found something else (covers ${Math.round(cover * 100)}% of it)` };
+  const extra = subtract(subtract(boxed, dilate(named, 2)), others);
+  const touch = dilate(named, 4);
+  const parts = components(extra).filter((c) => maskArea(c) >= Math.max(80, 0.01 * px) && maskArea(intersect(c, touch)) > 0);
+  const added = parts.reduce((n, c) => n + maskArea(c), 0);
+  if (added < 0.03 * px) return { mask: named, added: 0 };
+  // Contents can be as big as their container (a heap of fish over a small bucket), not much bigger.
+  if (added > 2 * px) return { mask: named, added: 0, why: `the box took in ${added} px around it, over twice the thing` };
+  // The 2 px seam left between the mask and its parts closes with them.
+  const joined = unionAll(named.width, named.height, [named, ...parts]);
+  const closed = subtract(dilate(dilate(joined, 3), -3), others);
+  return { mask: closed, added: maskArea(closed) - px };
+}
+
 async function samBoxes(memo: Memo, label: string, painting: Buffer, boxes: Rect[]): Promise<(Mask | undefined)[]> {
   const out: (Mask | undefined)[] = [];
   for (let i = 0; i < boxes.length; i += SAM_MAX_BOXES) {
@@ -170,7 +205,7 @@ export async function maskThings(memo: Memo, place: Place, layout: Layout, spots
   const retry = tried.filter((r) => r.fault);
   const pixels = await sharp(painting).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer();
   const boxed = await samBoxes(memo, `mask-box:${place.key}`, painting, retry.map((r) => clampRect(r.prior, W, H)));
-  return tried.map((r) => {
+  const masked = tried.map((r) => {
     const base = { key: r.t.key, kind: r.spot.kind, phrase: r.spot.phrase };
     let mask = r.mask;
     let source: MaskSource = 'sam-text';
@@ -195,8 +230,42 @@ export async function maskThings(memo: Memo, place: Place, layout: Layout, spots
         }
       }
     }
-    return { ...base, source, coarse: source === 'spark-box' || source === 'layout-box', px: maskArea(mask!), box: maskBox(mask!)!, mask: mask! };
+    return { ...base, source, coarse: source === 'spark-box' || source === 'layout-box', px: maskArea(mask!), box: maskBox(mask!)!, mask: mask!, prior: r.spot.box ? clampRect(r.spot.box, W, H) : undefined };
   });
+  return wholeThings(memo, place, painting, masked, log);
+}
+
+/** Did the parts found reach the edge of the box asked by (its top or a side, inside the frame)? Then there is more of it. */
+export function reachesEdge(found: Rect, asked: Rect): boolean {
+  const near = 6;
+  return (asked[1] > 0 && found[1] - asked[1] < near) || (asked[0] > 0 && found[0] - asked[0] < near) || (asked[2] < W && asked[2] - found[2] < near);
+}
+
+/**
+ * Things that stand or sit (not floors laid flat): a batch of box prompts per place, see wholeThing. Parts that
+ * reach the edge of the box are asked once more by a box grown around them (fish piled high over a rim).
+ */
+async function wholeThings(memo: Memo, place: Place, painting: Buffer, masked: Array<ThingMask & { prior?: Rect }>, log: (line: string) => void): Promise<ThingMask[]> {
+  const out: ThingMask[] = masked.map(({ prior: _, ...t }) => t);
+  let asked = masked.filter((t) => t.source === 'sam-text' && t.kind !== 'walk-on' && t.kind !== 'flat').map((t) => ({ key: t.key, box: wholeBox(t.box, t.prior) }));
+  for (let round = 0; round < 2 && asked.length; round++) {
+    const boxed = await samBoxes(memo, `mask-whole${round ? round + 1 : ''}:${place.key}`, painting, asked.map((a) => a.box));
+    const again: typeof asked = [];
+    asked.forEach((a, i) => {
+      const k = out.findIndex((t) => t.key === a.key);
+      const t = out[k];
+      const others = unionAll(W, H, out.filter((o) => o.key !== t.key).map((o) => o.mask));
+      const whole = wholeThing(t.mask, boxed[i], others);
+      if (whole.why) console.log(`  ${place.key}: ${t.key}: kept its mask, ${whole.why}`);
+      if (!whole.added) return;
+      const box = maskBox(whole.mask)!;
+      out[k] = { ...t, mask: whole.mask, px: maskArea(whole.mask), box, whole: (t.whole ?? 0) + whole.added };
+      if (reachesEdge(box, a.box)) again.push({ key: t.key, box: wholeBox(box, undefined) });
+    });
+    asked = again;
+  }
+  for (const t of out) if (t.whole) log(`${t.key}: SAM by name left parts of it out (what is in or on it); ${t.whole} px joined from SAM by its whole box`);
+  return out;
 }
 
 /** Keeps a floor candidate to within one grid cell of Spark's marking and scores the agreement. */

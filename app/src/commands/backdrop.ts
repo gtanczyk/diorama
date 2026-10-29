@@ -62,6 +62,7 @@ defineCommand({
         files.write(at('backdrop.json'), report);
         const stuck = Object.entries(report).filter(([, r]) => r.stillThere).map(([k]) => k);
         const ghosts = Object.entries(report).filter(([, r]) => r.ghost).map(([k]) => k);
+        for (const [k, r] of Object.entries(report)) if (r.cut) console.log(`  ${place.key}: ${k}: its card cuts through a painted part of it at [${r.cut.box?.join(', ')}] (its mask leaves that part out, so it stays on the backdrop and slides apart)`);
         console.log(`${place.key}: backdrop behind ${keys.join(', ')}${stuck.length ? ` (Muse left ${stuck.join(', ')}: smeared there)` : ''}${ghosts.length ? ` (a silhouette of ${ghosts.join(', ')} was left: painted over again)` : ''}`);
       }
       // The far view as flats one behind another (layers/), so it has depth of its own.
