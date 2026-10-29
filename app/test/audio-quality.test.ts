@@ -7,7 +7,7 @@ import { transcribe } from '../src/meta/voice.ts';
 import { Cast, designVoice, heardMatch, heardOk, previewText, profileKey, reusableDesign, speechRequest, stockVoices, storyLines, voiceCandidates, voiceLine } from '../src/sound/voices.ts';
 import { soundQuality, ttsModel } from '../src/sound/cost.ts';
 import { decode, encodeMp3, RATE, type Pcm } from '../src/sound/pcm.ts';
-import { soundEffect } from '../src/sound/sources.ts';
+import { forgetEffect, soundEffect } from '../src/sound/sources.ts';
 import { AUDIO_VALIDATION, makeSounds, seedLibrary } from '../src/sound/make.ts';
 import type { SoundPlan } from '../src/sound/plan.ts';
 import { spokenLine } from '../src/play/sound.ts';
@@ -18,7 +18,7 @@ import { WorldFiles } from '../src/world/files.ts';
 import { scene } from './fixtures/scene.ts';
 
 vi.mock('../src/meta/voice.ts', () => ({ transcribe: vi.fn() }));
-vi.mock('../src/sound/sources.ts', () => ({ elevenKey: () => 'test', soundEffect: vi.fn(), elevenMusic: vi.fn(), musicgen: vi.fn(), MUSICGEN_MODEL: 'test' }));
+vi.mock('../src/sound/sources.ts', () => ({ elevenKey: () => 'test', soundEffect: vi.fn(), forgetEffect: vi.fn(), elevenMusic: vi.fn(), musicgen: vi.fn(), MUSICGEN_MODEL: 'test' }));
 vi.mock('../src/sound/pcm.ts', async (original) => ({ ...await original<object>(), decode: vi.fn(), encodeMp3: vi.fn(() => Buffer.from('encoded')) }));
 let root: string, memo: Memo;
 const tone = (hz = 220): Pcm => {
@@ -131,6 +131,8 @@ test('persistent bad loops are excluded from the manifest and reported after bou
   const p = { ...plan('bell'), places: { garden: { bed: 'gentle birds', loops: [], floors: {} } } };
   const result = await makeSounds(memo, p, write, { only: ['bed'] });
   expect(soundEffect).toHaveBeenCalledTimes(3);
+  // Rejected takes are forgotten, so a rerun asks for new ones instead of replaying the same three.
+  expect(forgetEffect).toHaveBeenCalledTimes(3);
   expect(result.sounds).toEqual({}); expect(result.failures['garden-bed']).toContain('rejected');
   expect(write).not.toHaveBeenCalled(); expect(encodeMp3).not.toHaveBeenCalled();
 });

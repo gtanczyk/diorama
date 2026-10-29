@@ -32,9 +32,16 @@ async function elevenPost(route: string, body: unknown): Promise<Buffer> {
 export type EffectAsk = { label: string; prompt: string; seconds: number; loop: boolean; take?: number };
 
 /** An effect or ambience from ElevenLabs text-to-sound, as mp3. `take` > 1 asks again for a different take. */
+const effectBody = (ask: EffectAsk) => ({ text: ask.prompt, duration_seconds: ask.seconds, loop: ask.loop, prompt_influence: 0.45, model_id: 'eleven_text_to_sound_v2' });
+const effectHash = (ask: EffectAsk) => inputHash('eleven-sfx', JSON.stringify(effectBody(ask)), String(ask.take ?? 1));
+
 export function soundEffect(memo: Memo, ask: EffectAsk): Promise<Buffer> {
-  const body = { text: ask.prompt, duration_seconds: ask.seconds, loop: ask.loop, prompt_influence: 0.45, model_id: 'eleven_text_to_sound_v2' };
-  return memo.remember('sound', ask.label, inputHash('eleven-sfx', JSON.stringify(body), String(ask.take ?? 1)), 'mp3', () => elevenPost('/sound-generation', body));
+  return memo.remember('sound', ask.label, effectHash(ask), 'mp3', () => elevenPost('/sound-generation', effectBody(ask)));
+}
+
+/** A take the quality checks turned down is forgotten, so the next run asks for a new one instead of replaying it. */
+export function forgetEffect(memo: Memo, ask: EffectAsk) {
+  memo.forget('sound', effectHash(ask), 'mp3');
 }
 
 /** Music from ElevenLabs, for when MusicGen is not available. */

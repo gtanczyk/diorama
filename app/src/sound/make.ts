@@ -7,7 +7,7 @@ import { inputHash, type Memo } from '../meta/memo.ts';
 import { sharedDir, soundQuality } from './cost.ts';
 import { audioProblem, decode, encodeMp3, hiss, loopProblem, normalise, seamless, seconds, steps, trim, type Pcm } from './pcm.ts';
 import { soundIds, type SoundPlan } from './plan.ts';
-import { elevenKey, elevenMusic, musicgen, MUSICGEN_MODEL, soundEffect } from './sources.ts';
+import { elevenKey, elevenMusic, forgetEffect, musicgen, MUSICGEN_MODEL, soundEffect, type EffectAsk } from './sources.ts';
 
 export const Kind = z.enum(['music', 'bed', 'loop', 'step', 'shot']);
 export type Kind = z.infer<typeof Kind>;
@@ -112,8 +112,10 @@ async function makeOne(memo: Memo, job: Job, music: { python?: string }): Promis
     let problem = '';
     for (let take = 1; take <= 3; take++) {
       const prompt = job.prompt + (take > 1 ? STEADY : '') + (take > 2 ? NO_HISS : '');
-      const pcm = decode(await soundEffect(memo, { label: `${job.id}-${take}`, prompt, seconds: job.seconds, loop: true, take }));
+      const ask: EffectAsk = { label: `${job.id}-${take}`, prompt, seconds: job.seconds, loop: true, take };
+      const pcm = decode(await soundEffect(memo, ask));
       problem = audioProblem(pcm) ?? loopProblem(pcm) ?? (hiss(pcm) > HISS ? 'mostly hiss' : '');
+      if (problem) forgetEffect(memo, ask);
       if (!problem) return entry(normalise(seamless(pcm, job.kind === 'bed' ? 1.5 : 0.8), TARGET_DB[job.kind]), 'elevenlabs', { mix: MIX });
     }
     throw new Error(`loop rejected after 3 takes: ${problem}`);
@@ -136,8 +138,10 @@ async function makeOne(memo: Memo, job: Job, music: { python?: string }): Promis
 
   let problem = '';
   for (let take = 1; take <= 2; take++) {
-    const pcm = trim(decode(await soundEffect(memo, { label: `${job.id}-${take}`, prompt: job.prompt, seconds: job.seconds, loop: false, take })));
+    const ask: EffectAsk = { label: `${job.id}-${take}`, prompt: job.prompt, seconds: job.seconds, loop: false, take };
+    const pcm = trim(decode(await soundEffect(memo, ask)));
     problem = audioProblem(pcm) ?? '';
+    if (problem) forgetEffect(memo, ask);
     if (!problem) return entry(normalise(pcm, TARGET_DB.shot), 'elevenlabs');
   }
   throw new Error(`effect rejected: ${problem}`);
