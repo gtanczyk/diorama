@@ -124,11 +124,12 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
   }, [!!job]);
   const { plan, done, running } = live;
   const took = (s: string) => build[s]?.seconds ?? typical[s] ?? 30;
-  const state = (s: string): 'ok' | 'run' | 'fail' | 'todo' | 'skip' => {
+  const state = (s: string): 'ok' | 'existing' | 'run' | 'fail' | 'todo' | 'skip' => {
     if (running[s] === 'fail') return 'fail';
     if (running[s] === 'run') return 'run';
     if (done[s] !== undefined) return 'ok';
-    if (job && plan.length && !plan.includes(s)) return 'skip';
+    // A partial job does not erase the earlier world build. Keep it distinct from work finished in this job.
+    if (job && !plan.includes(s)) return build[s] ? 'existing' : 'skip';
     return !job && build[s] ? 'ok' : 'todo';
   };
   const started = job?.startedAt ? Date.parse(job.startedAt) : null;
@@ -173,22 +174,24 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
         {phases.map((p) => {
           const states = p.steps.map(state);
           const all = weight(p);
-          // Filled by the steps done and by the running one's share of its usual time.
-          const filled = p.steps.reduce((sum, s, i) => sum + (states[i] === 'ok' ? took(s) : states[i] === 'run' ? Math.min(took(s) * 0.95, runFor(s) / 1000) : 0), 0);
-          const phase = states.includes('fail') ? 'fail' : states.includes('run') ? 'run' : states.every((x) => x === 'ok') ? 'ok' : states.every((x) => x === 'skip') ? 'skip' : 'todo';
+          const phase = states.includes('fail') ? 'fail' : states.includes('run') ? 'run' : states.every((x) => x === 'ok') ? 'ok' : states.every((x) => x === 'ok' || x === 'existing') ? 'existing' : states.every((x) => x === 'skip') ? 'skip' : 'todo';
           // Something to show once a step has run (or runs now); a click puts it on the stage.
           // A phase only partly done (sprites still to come) shows what its done steps made too.
-          const open = onOpen && states.some((x) => x === 'ok' || x === 'run' || x === 'fail');
-          const tip = `${p.title} · ${p.by.map(nowBy).join(', ')}\n` + p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : '·'} ${s}${done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}`).join('\n');
+          const open = onOpen && states.some((x) => x === 'ok' || x === 'existing' || x === 'run' || x === 'fail');
+          const tip = `${p.title} · ${p.by.map(nowBy).join(', ')}\n` + p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'existing' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : '·'} ${s}${states[i] === 'existing' ? ' (previous build)' : done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}`).join('\n');
           let at = 0;
           return (
             <li class={`${phase}${open ? ' open' : ''}`} style={{ flexGrow: Math.max(1, all) }}>
-              <span class="bar"><span class="fill" style={{ width: `${Math.round((100 * filled) / Math.max(1, all))}%` }} />
+              <span class="bar">{p.steps.map((s, i) => {
+                const before = p.steps.slice(0, i).reduce((sum, step) => sum + took(step), 0);
+                const amount = states[i] === 'ok' || states[i] === 'existing' || states[i] === 'fail' ? took(s) : states[i] === 'run' ? Math.min(took(s) * 0.95, runFor(s) / 1000) : 0;
+                return <span class={`fill ${states[i]}`} style={{ left: `${100 * before / Math.max(1, all)}%`, width: `${100 * amount / Math.max(1, all)}%` }} />;
+              })}
                 {p.steps.slice(1).map((s) => <span class="tick" style={{ left: `${(100 * p.steps.slice(0, p.steps.indexOf(s)).reduce((a, x) => a + took(x), 0)) / Math.max(1, all)}%` }} />)}
                 {open && p.steps.map((s, i) => {
                   const from = at;
                   at += took(s);
-                  const ready = states[i] === 'ok' || states[i] === 'run';
+                  const ready = states[i] === 'ok' || states[i] === 'existing' || states[i] === 'run';
                   return ready && <button type="button" class="seg" style={{ left: `${(100 * from) / Math.max(1, all)}%`, width: `${(100 * took(s)) / Math.max(1, all)}%` }}
                     title={`${s}${states[i] === 'run' ? ', running' : done[s] !== undefined ? `, ${Math.round(done[s])} s` : ''}. Click to see what it made`} onClick={() => onOpen!(p.key, s)} />;
                 })}
@@ -200,6 +203,7 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
           );
         })}
       </ol>
+      {job && <span class="detail">Earlier build shown in muted green · orange: updating now. Built steps do not confirm visual quality or a playthrough.</span>}
     </section>
   );
 }

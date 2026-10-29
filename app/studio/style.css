@@ -389,9 +389,10 @@ section.agent .gc-fold > summary { display: block; cursor: pointer; }
 .pipeline .phases li { flex-basis: 0; min-width: 124px; display: flex; flex-direction: column; gap: 5px; }
 .pipeline .bar { position: relative; height: 8px; border-radius: 4px; background: var(--raised); overflow: hidden; }
 .pipeline .fill { position: absolute; inset: 0 auto 0 0; background: var(--ok); border-radius: 4px; transition: width 1s linear; }
+.pipeline .fill.existing { opacity: 0.55; }
 .pipeline .tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--panel); }
-.pipeline li.run .fill { background: linear-gradient(90deg, var(--accent), #ffd59a, var(--accent)); background-size: 200% 100%; animation: flow 1.6s linear infinite; }
-.pipeline li.fail .fill { background: var(--bad); width: 100% !important; }
+.pipeline .fill.run, .extension-pipeline li.run .fill { background: linear-gradient(90deg, var(--accent), #ffd59a, var(--accent)); background-size: 200% 100%; animation: flow 1.6s linear infinite; }
+.pipeline .fill.fail, .extension-pipeline li.fail .fill { background: var(--bad); }
 .pipeline li.skip { opacity: 0.45; }
 .pipeline li.todo .name, .pipeline li.skip .name { color: var(--faint); }
 .pipeline li.run .name { color: var(--accent); }
