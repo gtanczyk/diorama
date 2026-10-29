@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { defineCommand, takeOption } from '../registry.ts';
 import { describePerson, describePhoto, framePhoto, normalisePhoto } from '../scene/photo.ts';
 import { designWorld, type Extra } from '../world/design.ts';
-import { drawingFiles, drawingsBrief, drawnIssues, keepDrawings, KIDS_STYLE, oneHero, readDrawings, readKinds } from '../world/drawings.ts';
+import { drawingFiles, drawingsBrief, drawnIssues, fitPlaces, keepDrawings, KIDS_STYLE, oneHero, readDrawings, readKinds } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
 import { hearAll, Idea, ideaFromTold, keepTold } from '../world/told.ts';
 
@@ -28,7 +28,8 @@ defineCommand({
     if (toldFrom) console.log(`recordings kept: ${keepTold(files, toldFrom).join(', ')}`);
     const said = await hearAll(files);
     for (const s of said) console.log(`heard ${s.clip}: ${s.text}`);
-    const drawn = await readDrawings(files.memo, files);
+    // A drawn place over the places asked for goes into a place as a prop: places are what makes a build long.
+    const drawn = fitPlaces(await readDrawings(files.memo, files), places);
     for (const d of drawn) console.log(`drawing ${d.file}: ${d.kind} ${d.key}, ${d.looks}`);
     const kids = kidsFlag >= 0 || drawn.length > 0 || said.length > 0;
 

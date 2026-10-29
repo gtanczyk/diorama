@@ -103,12 +103,37 @@ Reply with JSON only: {"kind": "...", "key": "...", "looks": "..."}`;
 export async function readDrawings(memo: Memo, files: WorldFiles): Promise<Drawn[]> {
   const names = drawingFiles(files);
   const known = new Map(readDrawn(files).map((d) => [d.file, d]));
-  const drawn: Drawn[] = [];
-  // One after another, so a drawing of the same thing again gets the same key.
-  for (const file of names) drawn.push(known.get(file) ?? await readDrawing(memo, fs.readFileSync(files.path('drawings', file)), file, [...new Set(drawn.map((d) => d.key))]));
+  // All at once (Spark's lane cap paces them): a class's 25 drawings read one after another took 6 minutes.
+  // A drawing read now keeps its own key, so two children's princesses are two princesses; ones read before keep theirs.
+  const read = await Promise.all(names.map((file) => known.get(file) ?? readDrawing(memo, fs.readFileSync(files.path('drawings', file)), file)));
+  const drawn = ownKeys(read, new Set(names.filter((f) => known.has(f))));
   const kinds = readKinds(files);
   for (const d of drawn) if (kinds[d.file]) d.kind = kinds[d.file];
   return oneHero(drawn, drawn.find((d) => kinds[d.file] === 'hero')?.key);
+}
+
+/** A new drawing whose key another drawing has gets a number ("princess-2"); drawings in `kept` keep their keys as they are. */
+export function ownKeys(drawn: Drawn[], kept = new Set<string>()): Drawn[] {
+  const taken = new Set(drawn.filter((d) => kept.has(d.file)).map((d) => d.key));
+  return drawn.map((d) => {
+    if (kept.has(d.file)) return d;
+    let key = d.key;
+    for (let n = 2; taken.has(key); n++) key = `${d.key}-${n}`;
+    taken.add(key);
+    return key === d.key ? d : { ...d, key };
+  });
+}
+
+/**
+ * At most `places` drawn places stay places, the first ones; a drawn place over that becomes a big prop inside one.
+ * Every drawn place was a place to paint, mask and check, so a class's 8 place drawings made an 8-place, 40-minute build.
+ */
+export function fitPlaces(drawn: Drawn[], places: number): Drawn[] {
+  let kept = 0;
+  return drawn.map((d) => {
+    if (d.kind !== 'place' || ++kept <= places) return d;
+    return { ...d, kind: 'prop', looks: `${d.looks} (a child drew it as a whole place; here it is one big thing in a place: a picture, a model, a view through a window)` };
+  });
 }
 
 /** Exactly one character leads: the one asked for, else the one already leading, else the first drawn. */
