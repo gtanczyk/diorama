@@ -5,6 +5,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, fileUrl, token } from './api.ts';
 import { Camera } from './camera.tsx';
+import { SayIt } from './say-it.tsx';
 import { pickPrefix, shownPick, type Picked } from './world.tsx';
 
 /** What each Studio tool does, as the person would say it. */
@@ -182,6 +183,16 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
   // Pictures for the next message: pasted, dropped, picked or taken with the webcam, kept with the world.
   const [pics, setPics] = useState<string[]>([]);
   const [adding, setAdding] = useState(0);
+  // What was said goes into the chat's own box (new message or, while the agent works, a steer), not sent yet.
+  const said = (text: string) => {
+    const box = panel.current?.querySelector<HTMLTextAreaElement>('textarea');
+    if (!box) return;
+    const value = `${box.value.trim()} ${text}`.trim();
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(box, value);
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    box.focus();
+    box.setSelectionRange(value.length, value.length);
+  };
   const [camera, setCamera] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const keep = async (name: string, data: string) => {
@@ -318,6 +329,7 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
             {adding > 0 && <span class="detail">adding…</span>}
             <button type="button" class="ghost small" title="Show the agent a picture with your message: a drawing, a photo, a reference. Or paste one (Cmd+V) or drop it here" onClick={() => picker.current?.click()}>＋ Picture</button>
             <button type="button" class="ghost small" title={camera ? 'Close the camera' : 'Take a webcam photo (a drawing held up works) to send the agent with your message'} onClick={() => setCamera(!camera)}>{camera ? 'Close the camera' : 'Camera'}</button>
+            <SayIt small tip={running ? 'Say what to change while the agent works: it is written into the box, Send steers the agent. Muse Voice Transcribe, 1 call' : 'Say your message instead of typing it: it is written into the box, you send it. Muse Voice Transcribe, 1 call'} onText={said} onError={setError} />
             <input ref={picker} type="file" accept="image/*" multiple hidden onChange={(e) => (addFiles(e.currentTarget.files ?? []), (e.currentTarget.value = ''))} />
             {error && <span class="error">{error}</span>}
           </div>
