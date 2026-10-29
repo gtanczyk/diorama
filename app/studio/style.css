@@ -922,6 +922,10 @@ main.start .more .fields input:focus, main.start .more .fields select:focus { ou
 .stage-live .layers button { color: rgba(255, 255, 255, 0.78); background: rgba(20, 18, 16, 0.55); }
 .stage-live .layers button:hover:not(:disabled) { color: #fff; background: rgba(20, 18, 16, 0.75); }
 .stage-live .layers .on, .stage-live .layers .on:hover:not(:disabled) { color: #fff; background: rgba(20, 18, 16, 0.85); box-shadow: inset 0 0 0 1.5px var(--amber); }
+/* The same for the caption and the place's name at the bottom, and the model tag inside the caption. */
+.stage-live figcaption { color: #fff; background: rgba(20, 18, 16, 0.72); }
+.stage-live figcaption .model { color: rgba(255, 255, 255, 0.85); background: rgba(255, 255, 255, 0.14); }
+.stage-live .where { color: rgba(255, 255, 255, 0.85); background: rgba(20, 18, 16, 0.6); }
 
 /* Activity: one row per job with its steps folded under it, the agent's and your clicks folded per run. */
 .drawer.log .mi.switch { display: flex; align-items: center; gap: 10px; justify-content: flex-start; font-size: 13px; color: var(--muted); }

@@ -29,21 +29,27 @@ async function walkPicture(painting: Buffer, g: Geometry, footprint: ThingIn['ma
     svg.push(`<polyline points="${(o.floor ?? []).map((p) => p.join(',')).join(' ')}" fill="none" stroke="#ffe600" stroke-width="3"/>`);
   }
   for (const t of g.things) {
-    svg.push(`<circle cx="${t.stand[0]}" cy="${t.stand[1]}" r="6" fill="#fff" stroke="#000" stroke-width="2"/>`, svgLabel(t.stand[0] + 9, t.stand[1] + 5, t.key));
+    svg.push(`<circle cx="${t.stand[0]}" cy="${t.stand[1]}" r="6" fill="#fff" stroke="#000" stroke-width="2"/>`, svgLabel(t.stand[0] + 9, t.stand[1] + 5, t.role === 'npc' ? `${t.key} stands here (not painted)` : t.key));
   }
-  // The hero's height at a few depths, as a ruler.
+  // The hero's size at three depths, as little figures spread over the floor (far left, middle, near right):
+  // stacked boxes in one column read as a path, not as a person.
   const rows = g.walk.map((row, r) => (row.includes('#') ? r : -1)).filter((r) => r >= 0);
-  for (const q of [0.1, 0.5, 0.95]) {
+  for (const [q, across] of [[0.1, 0.2], [0.5, 0.5], [0.95, 0.8]] as const) {
     const r = rows[Math.floor(q * (rows.length - 1))];
-    const c = g.walk[r].indexOf('#') + Math.floor((g.walk[r].lastIndexOf('#') - g.walk[r].indexOf('#')) / 2);
+    const cols = [...g.walk[r]].flatMap((ch, c) => (ch === '#' ? [c] : []));
+    // The walkable cell nearest to a quarter, the middle and three quarters of the frame, so they stand apart.
+    const want = (across * FRAME.width) / CELL;
+    const c = cols.reduce((best, col) => (Math.abs(col - want) < Math.abs(best - want) ? col : best));
     const [x, y] = [(c + 0.5) * CELL, (r + 0.5) * CELL];
     const h = personPx(g, y);
-    svg.push(`<rect x="${x - h * 0.12}" y="${y - h}" width="${h * 0.24}" height="${h}" fill="rgba(80,160,255,0.55)" stroke="#fff" stroke-width="2"/>`);
+    const head = h * 0.065;
+    svg.unshift(`<g fill="rgba(80,160,255,0.6)" stroke="#fff" stroke-width="2"><circle cx="${x}" cy="${y - h + head}" r="${head}"/><rect x="${x - h * 0.1}" y="${y - h + head * 2.2}" width="${h * 0.2}" height="${h - head * 2.2}" rx="${h * 0.05}"/></g>`);
+    if (q === 0.95) svg.push(svgLabel(x - h * 0.1, y - h - 8, 'hero size'));
   }
   // Each step's back edge on stairs, where the feet climb.
   for (const st of g.steps ?? []) svg.push(`<polyline points="${st.top.flatMap((t, i) => (t >= 0 ? [`${st.x0 + i * st.every},${t}`] : [])).join(' ')}" fill="none" stroke="#3cf" stroke-width="3"/>`);
-  svg.push(`<circle cx="${g.start[0]}" cy="${g.start[1]}" r="9" fill="#3f6" stroke="#000" stroke-width="2"/>`);
-  svg.push(`<line x1="0" y1="${g.scale.horizonY}" x2="${FRAME.width}" y2="${g.scale.horizonY}" stroke="#5af" stroke-width="2" stroke-dasharray="12 8"/>`);
+  svg.push(`<circle cx="${g.start[0]}" cy="${g.start[1]}" r="9" fill="#3f6" stroke="#000" stroke-width="2"/>`, svgLabel(g.start[0] + 12, g.start[1] + 5, 'start'));
+  svg.push(`<line x1="0" y1="${g.scale.horizonY}" x2="${FRAME.width}" y2="${g.scale.horizonY}" stroke="#5af" stroke-width="2" stroke-dasharray="12 8"/>`, svgLabel(8, g.scale.horizonY - 6, 'horizon'));
   return tintOver(painting, tints, svg.join(''));
 }
 
