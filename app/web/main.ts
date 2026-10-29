@@ -3,8 +3,8 @@ import { FLAME_GLOW, FLAME_SWAY_M, flameAt, depthStretch, flicker, floorYAt, hid
 import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, RIM_ALPHA, RIM_COLOUR, RIM_WIDTH, SEPARATE_ALPHA, SEPARATE_BLUR, SEPARATE_SHIFT } from '../src/play/focus.ts';
-import { decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
-import { CYCLE, pose, type PartName, type Rig } from '../src/play/rig.ts';
+import { catchers, decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
+import { CYCLE, pose, sheetCell, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, pickDialogue, pickInteraction, speakerOf, startState, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
@@ -54,7 +54,7 @@ export type SpriteInfo = {
 /** walk: the cells a walk steps through, without the ones the sprites step found off the gait (a crouch, a sit). */
 type Sheet = { yaw: number; stand: number; img: HTMLImageElement; gestures: string[]; walk: number[] };
 /** height: metres standing (a grown-up 1.62, a cat 0.3), so each is drawn at its own size; upright false: an animal, drawn as painted. */
-type Figure = { img: HTMLImageElement; height?: number; upright?: boolean; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
+type Figure = { img: HTMLImageElement; height?: number; upright?: boolean; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; sheet?: HTMLImageElement; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
 /** y: the floor row the cut stands on, which sets how far it slides with parallax. */
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number; y: number };
 
@@ -91,6 +91,8 @@ type Place = {
   wet?: Uint8Array;
   /** The fire or lamp's work here (see Game.fireOf), made on first use. */
   fire?: Fire;
+  /** Where a person's shadow can land (see Game.catchesOf): the things not carried off when made, and the floors. */
+  catches?: { gone: string; on: Uint8Array };
   /** Rain or snow, rings, splashes and drips (weather.json). */
   weather?: WeatherFx;
 };
@@ -125,6 +127,22 @@ function lightMap(bg: HTMLImageElement, w: number, h: number): Place['light'] {
   const luma = new Float32Array(cols * rows);
   for (let i = 0; i < luma.length; i++) luma[i] = 0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2];
   return { cols, rows, luma };
+}
+
+/** The cards' pixels at the depth map's size: what stands there (thingShadows' casters, a shadow's catchers). */
+function ownerMap(depth: Depth, cuts: Cut[]): Uint8Array {
+  const S = DEPTH_SCALE;
+  const owner = new Uint8Array(depth.w * depth.h);
+  for (const c of cuts) {
+    const a = c.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.canvas.width, c.canvas.height).data;
+    for (let r = Math.max(0, Math.floor(c.y0 / S)); r < Math.min(depth.h, (c.y0 + c.canvas.height) / S); r++) {
+      for (let k = Math.max(0, Math.floor(c.x0 / S)); k < Math.min(depth.w, (c.x0 + c.canvas.width) / S); k++) {
+        const [u, v] = [k * S + 1 - c.x0, r * S + 1 - c.y0];
+        if (u >= 0 && v >= 0 && u < c.canvas.width && v < c.canvas.height && a[(v * c.canvas.width + u) * 4 + 3] > 127) owner[r * depth.w + k] = 1;
+      }
+    }
+  }
+  return owner;
 }
 
 type Events = 'enter' | 'arrive' | 'say' | 'silent' | 'use' | 'exit' | 'ending';
@@ -285,8 +303,9 @@ class Game {
       if (cast.rig && cast.parts) {
         const parts = new Map<PartName, HTMLImageElement>();
         await Promise.all(cast.rig.parts.map(async (p) => parts.set(p.name, await loadImage(files(`${cast.parts}/${p.file}`)))));
+        const sheet = cast.rig.sheet ? await loadImage(files(`${cast.parts}/${cast.rig.sheet.file}`)) : undefined;
         const canvas = Object.assign(document.createElement('canvas'), { width: cast.rig.size[0], height: cast.rig.size[1] });
-        figure.rig = { rig: cast.rig, parts, canvas };
+        figure.rig = { rig: cast.rig, parts, sheet, canvas };
       }
       if (cast.sprites && params.get('model') !== '1') {
         const { dir, info } = cast.sprites;
@@ -347,7 +366,7 @@ class Game {
     c.fillStyle = '#d8d4cc';
     c.fillRect(0, 0, sheet.width, h);
     for (let i = 0; i <= frames; i++) {
-      drawRig(rig, pose(rig.rig, i / frames, i < frames));
+      drawRig(rig, pose(rig.rig, i / frames, i < frames), i / frames, i < frames);
       c.drawImage(rig.canvas, i * w, 0);
       c.fillStyle = '#c33';
       c.fillRect(i * w, rig.rig.ground, w, 1);
@@ -1533,7 +1552,9 @@ class Game {
     const h = unit * ((figure?.height ?? 1.62) / 1.62);
     y = foot ?? stepFootY(g, x, y);
     const sprites = figure?.sprites;
-    let model = sprites ? undefined : figure?.model;
+    // A walk sheet warped from the painting looks like the painting; the bare 3D model (TRELLIS's textures up
+    // close) does not, so it walks a person only with ?model=1. A creature has no sheet and keeps its model.
+    let model = sprites || (figure?.rig?.rig.sheet && params.get('model') !== '1') ? undefined : figure?.model;
     let modelCanvas: HTMLCanvasElement | undefined;
     try {
       modelCanvas = model?.draw({ phase, walking, yaw, px: h, time: this.time, talk });
@@ -1549,7 +1570,7 @@ class Game {
     // A rig walks its legs; a plain cut-out (or the stand-in) only bobs and rocks as it slides.
     const bob = creature ? creature.lift * h : rig || model || sprites || !walking ? 0 : Math.abs(Math.sin(phase * Math.PI * 2)) * h * 0.025;
     const rock = creature ? creature.lean * (facing < 0 ? -1 : 1) : rig || model || sprites || !walking ? 0 : Math.sin(phase * Math.PI * 2) * 0.035;
-    if (rig) drawRig(rig, pose(rig.rig, phase, walking));
+    if (rig) drawRig(rig, pose(rig.rig, phase, walking), phase, walking);
     /** Draws the figure into c with its feet at c's origin; returns its half width. */
     const paint = (c: CanvasRenderingContext2D): number => {
       if (sprites) {
@@ -1733,10 +1754,11 @@ class Game {
     if (gc.width < bw || gc.height < bh) Object.assign(gc, { width: Math.max(gc.width, bw), height: Math.max(gc.height, bh) });
     const out = new ImageData(bw, bh);
     const W = g.frame.width;
+    const on = this.catchesOf(this.gone());
     let any = false;
     for (let r = y0; r < y1; r++) for (let c = x0; c < x1; c++) {
       const [fx, fy] = [c * S + S / 2, r * S + S / 2];
-      let a = shadowAt(depth, sun, sil, fx, fy);
+      let a = shadowAt(depth, sun, sil, fx, fy, on);
       if (a <= 0) continue;
       const i = Math.round(fy) * W + Math.round(fx);
       // Already in the painting's shade: no darker. On water a shadow hardly shows (it mirrors the sky).
@@ -1804,6 +1826,21 @@ class Game {
   }
 
   /**
+   * Where a person's shadow can land on this place (src/play/shadow.ts catchers): its floors and the things
+   * standing there, not the fog, sky or far backdrop. Made on first use and again when a thing is carried off.
+   */
+  private catchesOf(gone: Set<string>): Uint8Array | undefined {
+    const { g, depth, cuts } = this.place;
+    if (!depth) return undefined;
+    const key = [...gone].sort().join(',');
+    if (this.place.catches?.gone !== key) {
+      const owner = ownerMap(depth, cuts.filter((c) => !c.occ.front && !(c.occ.thing && gone.has(c.occ.thing))));
+      this.place.catches = { gone: key, on: catchers(depth, g, owner) };
+    }
+    return this.place.catches.on;
+  }
+
+  /**
    * The fire or lamp standing on this place's floor (light.at), made on first use and again when the story
    * carries a thing off: the painted things' shadows from it (needs the depth map) and the flame to animate.
    */
@@ -1822,17 +1859,7 @@ class Game {
     const shadows: Fire['shadows'] = [];
     if (depth) {
       const S = DEPTH_SCALE;
-      const owner = new Uint8Array(depth.w * depth.h);
-      for (const c of cuts) {
-        if (c.occ.front || holds(c.occ.box) || (c.occ.thing && (gone.has(c.occ.thing) || c.occ.thing === own?.key))) continue;
-        const a = c.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.canvas.width, c.canvas.height).data;
-        for (let r = Math.max(0, Math.floor(c.y0 / S)); r < Math.min(depth.h, (c.y0 + c.canvas.height) / S); r++) {
-          for (let k = Math.max(0, Math.floor(c.x0 / S)); k < Math.min(depth.w, (c.x0 + c.canvas.width) / S); k++) {
-            const [u, v] = [k * S + 1 - c.x0, r * S + 1 - c.y0];
-            if (u >= 0 && v >= 0 && u < c.canvas.width && v < c.canvas.height && a[(v * c.canvas.width + u) * 4 + 3] > 127) owner[r * depth.w + k] = 1;
-          }
-        }
-      }
+      const owner = ownerMap(depth, cuts.filter((c) => !c.occ.front && !holds(c.occ.box) && !(c.occ.thing && (gone.has(c.occ.thing) || c.occ.thing === own?.key))));
       for (const side of g.light!.flame ? [-1, 0, 1] : [0]) {
         const s = thingShadows(depth, g, owner, at, { up, shift: side * FLAME_SWAY_M });
         const W = g.frame.width;
@@ -2155,9 +2182,17 @@ class Game {
 }
 
 /** Poses a rig's parts into its own canvas, back to front, in the figure's coordinates. */
-function drawRig(fig: NonNullable<Figure['rig']>, at: ReturnType<typeof pose>) {
+function drawRig(fig: NonNullable<Figure['rig']>, at: ReturnType<typeof pose>, phase = 0, walking = false) {
   const c = fig.canvas.getContext('2d')!;
   c.clearRect(0, 0, fig.canvas.width, fig.canvas.height);
+  const sheet = fig.rig.sheet;
+  if (sheet && fig.sheet) {
+    // The walk drawn ahead (src/scene/warp.ts): one cell, scaled back up to the rig's size.
+    const i = sheetCell(sheet, phase, walking);
+    const [cw, ch] = sheet.cell;
+    c.drawImage(fig.sheet, (i % sheet.cols) * cw, Math.floor(i / sheet.cols) * ch, cw, ch, 0, 0, fig.canvas.width, fig.canvas.height);
+    return;
+  }
   for (const part of fig.rig.parts) {
     const img = fig.parts.get(part.name);
     const p = at[part.name];
@@ -2337,7 +2372,7 @@ canvas.addEventListener('contextmenu', (e) => {
 });
 canvas.addEventListener('mouseleave', () => (pointer = null));
 // The keyboard: WASD or the arrows walk, E, Space or Enter use the nearest thing in reach (it lights up),
-// 1 to 9 take an item from the bag when nobody is talking (in a conversation they pick an answer; walking or Esc leaves it).
+// 1 to 9 take an item from the bag when nobody is talking (in a conversation they pick an answer; Esc or a click away leaves it).
 const DIRS: Record<string, Point> = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
 const keys = new Set<string>();
 let keyboard = false;
@@ -2346,10 +2381,21 @@ addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
   if (k === 'shift') keys.add(k);
+  // In a talk the keys go through the answers: arrows or WASD light one, E, Space or Enter say it, Esc says goodbye.
+  if (game.state.talk && !game.state.ending) {
+    if (k in DIRS) {
+      e.preventDefault();
+      game.answers.move(DIRS[k][0] + DIRS[k][1] < 0 ? -1 : 1, true);
+      return;
+    }
+    if (k === 'e' || k === ' ' || k === 'enter') {
+      e.preventDefault();
+      game.answers.pick();
+      return;
+    }
+  }
   if (k in DIRS) {
     e.preventDefault();
-    // Walking off ends a talk (a key held from before it began does not).
-    if (!e.repeat) game.leave();
     keys.add(k);
     keyboard = true;
     return;

@@ -69,6 +69,7 @@ export function worldData(files: WorldFiles) {
     .filter((f) => f.endsWith('.png') && !f.endsWith('-painting.png'))
     .map((f) => {
       const key = f.slice(0, -4);
+      // A walk that measured torn when it was made (rig.json check) is left out: the painted figure slides as one piece.
       const rig = fs.existsSync(files.path('cast', key, 'rig.json')) ? Rig.parse(files.readJson(files.path('cast', key, 'rig.json'))) : undefined;
       // cast/<key>/model/model.json (diorama model): a rigged 3D figure the page draws instead of the 2D rig.
       // A flat one (a card TRELLIS made of a flat drawing, kept before the model step checked) is left out, and so
@@ -81,7 +82,7 @@ export function worldData(files: WorldFiles) {
       const walks = body?.upright !== false;
       // A creature has no legs for a 2D rig, but its own 3D model (no skeleton, model.json creature) hops and squashes.
       const creatureModel = model?.info.creature ? model : undefined;
-      return [key, { image: `cast/${f}`, ...(body && { height: body.height }), ...(!walks && { upright: false }), ...(walks && rig ? { rig, parts: `cast/${key}` } : {}), ...(walks ? model && { model } : creatureModel && { model: creatureModel }), ...(walks && sprites && { sprites }) }];
+      return [key, { image: `cast/${f}`, ...(body && { height: body.height }), ...(!walks && { upright: false }), ...(walks && rig && rig.check?.ok !== false ? { rig, parts: `cast/${key}` } : {}), ...(walks ? model && { model } : creatureModel && { model: creatureModel }), ...(walks && sprites && { sprites }) }];
     }));
   const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
   // changes/<i>.png per place: how story.changes[i] looks once it holds.

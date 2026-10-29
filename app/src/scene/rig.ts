@@ -1,4 +1,5 @@
-// A figure cut into parts the runtime can walk: SAM finds arms, legs and boots, code places the joints.
+// A figure made to walk: SAM finds arms, legs and boots, code places the joints; the painting is then bent by them
+// as one mesh into a walk sheet (src/scene/warp.ts), or, the older way, cut into parts the runtime turns.
 // Joints sit at a person's proportions, measured below the head (a chibi's big head leaves short legs), on the
 // parts' own pixels.
 import sharp from 'sharp';
@@ -6,6 +7,7 @@ import { emptyMask, maskArea, type Mask } from '../image/mask.ts';
 import { components, dilate, intersect, maskBox, subtract, union, unionAll } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import { samFind } from '../meta/sam.ts';
+import { labelPixels, Part, silhouette, warpSheet } from './warp.ts';
 import type { PartName, Rig } from '../play/rig.ts';
 
 type P = [number, number];
@@ -157,7 +159,10 @@ function enclosed(body: Mask, part: Mask): Mask {
 
 export type RigBuild = { rig: Rig; parts: Record<string, Buffer>; issues: string[] };
 
-export async function rigFigure(memo: Memo, key: string, painting: Buffer): Promise<RigBuild> {
+/** Cut parts (the old rig), or the whole painting warped into a walk sheet (the default: nothing tears). */
+export type RigStyle = 'parts' | 'warp';
+
+export async function rigFigure(memo: Memo, key: string, painting: Buffer, style: RigStyle = 'warp'): Promise<RigBuild> {
   const png = await sharp(painting).png().toBuffer();
   const find = async (prompt: string) => (await samFind(memo, { label: `rig:${key}:${prompt}`, image: png, prompt })).map((f) => f.mask);
   const [people, arms, boots, legsFound, trousers, heads] = await Promise.all(['person', 'arm', 'boot', 'leg', 'trousers', 'head'].map(find));
@@ -188,7 +193,7 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer): Prom
   const byHead = ground - 0.575 * (ground - chin);
   const wornBox = worn && maskBox(worn);
   const waist = wornBox ? wornBox[1] + 0.03 * H : undefined;
-  const hipY = waist !== undefined && waist > byHead - 0.08 * H && waist < byHead + 0.1 * H ? waist : byHead;
+  const hipY = waist !== undefined && waist > byHead - 0.08 * H && waist < byHead + 0.06 * H ? waist : byHead;
   if (Math.abs(hipY - (ground - 0.5 * H)) > 0.04 * H) issues.push(`hip at ${((ground - hipY) / H).toFixed(2)} of the height (${head ? 'head' : 'no head found'}${hipY === waist ? ', waistband' : ''})`);
   // Near leg: the bigger whole leg SAM sees, from above the knee; far leg: the rest of the lower body.
   // SAM's "leg" on bare legs under trousers is only the shin: then it marks where each leg ends instead.
@@ -232,11 +237,20 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer): Prom
   const [nearArm = emptyMask(W, Hh), farArm = emptyMask(W, Hh)] = armMasks.map((a, i) => (i === 0 ? intersect(dilate(a, 3), person) : a));
 
   const legsBox = maskBox(union(near, far))!;
-  const hipX = centreX(union(near, far), Math.max(hipY, legsBox[1] + 8), 10) ?? (px0 + px1) / 2;
+  // Over the middle of the two boots when both show: a figure painted mid-stride has its hip between its feet,
+  // not over the leg SAM saw more of (else the walk swings one leg far out to reach under it).
+  const bootTop = (b: Mask) => centreX(b, maskBox(b)![1] + 0.01 * H, 0.01 * H);
+  const between = maskArea(nearBoot) && maskArea(farBoot) ? [bootTop(nearBoot), bootTop(farBoot)] : [];
+  const hipX = between.length === 2 && between.every((x) => x !== undefined)
+    ? (between[0]! + between[1]!) / 2
+    : centreX(union(near, far), Math.max(hipY, legsBox[1] + 8), 10) ?? (px0 + px1) / 2;
   const hip: P = [hipX, hipY];
   const joints = (legMask: Mask, boot: Mask) => {
     const kneeY = ground - 0.56 * (ground - hipY);
-    const knee: P = [centreX(legMask, kneeY) ?? hipX, kneeY];
+    const bootBox0 = maskArea(boot) ? maskBox(boot) : undefined;
+    // A knee hidden under a coat or an apron sits on the line from the hip down to the boot.
+    const kneeX = centreX(legMask, kneeY) ?? (bootBox0 ? hipX + ((centreX(boot, bootBox0[1] + 4, 4) ?? hipX) - hipX) * (kneeY - hipY) / (bootBox0[1] - hipY || 1) : hipX);
+    const knee: P = [kneeX, kneeY];
     // The ankle pivot is where the leg enters the boot (its top middle), so the boot hangs off the shin's end.
     const bootBox = maskArea(boot) ? maskBox(boot) : undefined;
     const ankleY = bootBox ? bootBox[1] + 0.02 * H : maskBox(legMask)![3] - 0.02 * H;
@@ -283,6 +297,36 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer): Prom
   fillHole(torsoPixels, W, torso, behindArm);
   const torsoFilled = union(torso, behindArm);
 
+  const shift = (p: P): P => [p[0] - crop.x0, p[1] - crop.y0];
+  const placed: Omit<Rig, 'parts'> = {
+    size: [crop1.x1 - crop.x0, crop1.y1 - crop.y0],
+    ground: ground - crop.y0,
+    height: H,
+    hip: shift(hip),
+    shoulder: { near: shift(shoulder(nearArm)), far: shift(shoulder(farArm)) },
+    leg: { near: { knee: shift(nearJ.knee), ankle: shift(nearJ.ankle) }, far: { knee: shift(farJ.knee), ankle: shift(farJ.ankle) } },
+  };
+  if (style === 'warp') {
+    // The whole painting, held things and all, each pixel labelled with the part whose bones pull it.
+    const whole = silhouette(data, person);
+    const labels = labelPixels(whole, [[Part.Body, person], [Part.FarLeg, far], [Part.NearLeg, near], [Part.FarBoot, farBoot], [Part.NearBoot, nearBoot], [Part.FarArm, farArm], [Part.NearArm, nearArm]], person);
+    const [cw, chh] = placed.size;
+    const image = Buffer.alloc(cw * chh * 4);
+    const cropLabels = new Uint8Array(cw * chh);
+    for (let y = 0; y < chh; y++) {
+      for (let x = 0; x < cw; x++) {
+        const i = (y + crop.y0) * W + x + crop.x0;
+        if (!whole.bits[i]) continue;
+        data.copy(image, (y * cw + x) * 4, i * 4, i * 4 + 4);
+        image[(y * cw + x) * 4 + 3] = 255;
+        cropLabels[y * cw + x] = labels[i];
+      }
+    }
+    const base: Rig = { ...placed, parts: [] };
+    const sheet = await warpSheet(base, image, cropLabels);
+    const rig: Rig = { ...base, sheet: { file: 'walk.png', cols: sheet.cols, rows: sheet.rows, frames: sheet.frames, cell: sheet.cell, scale: sheet.scale } };
+    return { rig, parts: { 'walk.png': sheet.png }, issues };
+  }
   const masks: Record<PartName, { mask: Mask; from: Buffer }> = {
     farArm: { mask: farArm, from: data },
     farThigh: { mask: farSplit.thigh, from: farWhole.pixels },
@@ -315,15 +359,6 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer): Prom
     parts[file] = await sharp(out, { raw: { width: w, height: h, channels: 4 } }).png().toBuffer();
     list.push({ name, file, at: [x0 - crop.x0, y0 - crop.y0] });
   }
-  const shift = (p: P): P => [p[0] - crop.x0, p[1] - crop.y0];
-  const rig: Rig = {
-    size: [crop1.x1 - crop.x0, crop1.y1 - crop.y0],
-    ground: ground - crop.y0,
-    height: H,
-    hip: shift(hip),
-    shoulder: { near: shift(shoulder(nearArm)), far: shift(shoulder(farArm)) },
-    leg: { near: { knee: shift(nearJ.knee), ankle: shift(nearJ.ankle) }, far: { knee: shift(farJ.knee), ankle: shift(farJ.ankle) } },
-    parts: list,
-  };
+  const rig: Rig = { ...placed, parts: list };
   return { rig, parts, issues };
 }

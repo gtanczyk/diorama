@@ -129,6 +129,18 @@ defineAction({
 });
 
 defineAction({
+  name: 'cast_rewalk',
+  description: 'Make a character\'s 2D walk again from its painting (no Muse calls): the painting bent by its bones as one piece, so an apron, a coat '
+    + 'or a skirt stretches with the legs and never tears, and what they hold (a lantern, a net) stays on. Use it when the person says a walk tears, '
+    + 'a leg or arm comes off, or the figure has holes; then play_reload. Without key, every character. Runs as a job.',
+  input: z.object({ slug: Slug, key: z.string().min(1).optional() }),
+  job: true,
+  async run({ slug, key }, ctx) {
+    return ctx.jobs.start(slug, ['rig', slug, ...(key ? [key] : [])], key ? `walk ${key}` : 'walk the cast', ctx.by);
+  },
+});
+
+defineAction({
   name: 'voice_list',
   reads: true,
   description: 'The stock ElevenLabs voices a character can be given: id, name and what they sound like. With slug and key, '
