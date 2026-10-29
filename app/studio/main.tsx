@@ -922,7 +922,7 @@ function Workshop({ slug }: { slug: string }) {
             <h1 title={status?.pitch ?? undefined}>{status?.title ?? slug}</h1>
             <small class="to-build" role="button" tabIndex={0} title="The build bar: every step, clickable" onClick={() => onStage({ kind: 'build' })}>{places.length ? `${places.length} places` : 'being made'}{status && status.playable ? ` · ${status.playable} playable` : ''}{job ? ' · building' : playable ? ' · ready to play' : ''}{live ? '' : ' · reconnecting…'}</small>
           </header>
-          <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} notices={opening} pinned={places.length > 0 && <WorldStrip slug={slug} version={tick} title={status?.title} places={places} pending={pendingPlaces} stage={shownView} onStage={onStage} />} afterTurn={afterTurn} footer={footer} picked={picked} onUnpick={() => setPicked(null)}
+          <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} notices={opening} pinned={places.length > 0 && <WorldStrip slug={slug} version={tick} title={status?.title} places={places} pending={pendingPlaces} castDone={castDone} stage={shownView} onStage={onStage} />} afterTurn={afterTurn} footer={footer} picked={picked} onUnpick={() => setPicked(null)}
             empty={<span />} />
         </section>
         <section class="theatre" ref={stageRef}>

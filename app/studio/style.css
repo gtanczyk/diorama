@@ -930,14 +930,18 @@ main.start .more .fields input:focus, main.start .more .fields select:focus { ou
 .world-strip { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 6px 16px rgba(80, 55, 25, 0.08); animation: drawer-in 0.15s ease-out; }
 .world-strip button { min-height: 0; padding: 0; border: 2px solid transparent; background: none; }
 .world-strip .ws-story { flex: 1; min-width: 0; padding: 4px 6px; border-radius: 8px; font-family: var(--display); font-size: 14px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.world-strip .ws-places { display: flex; gap: 4px; flex: none; }
-.world-strip .ws-thumb { width: 44px; height: 33px; border-radius: 6px; background: var(--raised) center / cover; }
-.world-strip .ws-pending { display: flex; align-items: center; gap: 3px; padding: 0 6px; border: 1px dashed var(--amber); border-radius: 6px; color: var(--accent); font-size: 11px; white-space: nowrap; }
-.world-strip .ws-pending-name { max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
+.world-strip .ws-places { display: flex; align-items: center; gap: 5px; flex: none; padding: 3px 5px; border-radius: 8px; }
+.world-strip .ws-stack { position: relative; display: block; width: 55px; height: 38px; }
+.world-strip .ws-sheet { position: absolute; top: 3px; left: 0; width: 40px; height: 30px; border: 2px solid var(--panel); border-radius: 5px; background: var(--raised) center / cover; box-shadow: 0 1px 3px rgba(60, 40, 20, 0.25); transform: rotate(-7deg); }
+.world-strip .ws-sheet:nth-child(2) { left: 7px; top: 2px; transform: rotate(4deg); }
+.world-strip .ws-sheet:nth-child(3) { left: 14px; top: 4px; transform: rotate(10deg); }
+.world-strip .ws-count, .world-strip .ws-building { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.world-strip .ws-building { color: var(--accent); }
 .wcard .thumb.pending-place { border: 1px dashed var(--amber); color: var(--accent); }
-.world-strip .ws-thumb.trouble { box-shadow: inset 0 0 0 2px var(--bad); }
-.world-strip .ws-cast { display: flex; align-items: flex-end; height: 36px; padding: 0 4px; border-radius: 8px; flex: none; }
+.world-strip .ws-cast { display: flex; align-items: flex-end; height: 42px; padding: 0 4px; border-radius: 8px; flex: none; }
 .world-strip .ws-cast img { height: 100%; max-width: 26px; object-fit: contain; }
+.world-strip .ws-cast img + img { margin-left: -6px; }
+.world-strip .ws-cast img:nth-child(even) { transform: translateY(-3px); }
 .world-strip button:hover, .world-strip button.on { border-color: var(--amber); background: var(--raised); }
 
 /* Layer chips over the picture: dark glass, so their words are light whatever the page's theme. */

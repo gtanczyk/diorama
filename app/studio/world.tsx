@@ -17,7 +17,7 @@ type Character = { key: string; role: string; looksNow: string; figure: Pic };
 /** A card in the conversation: what it shows decides the stage when clicked. */
 export function Card({ kind, by, on, onClick, children, tone, opening }: { kind: string; by?: string; on?: boolean; onClick?: () => void; children: ComponentChildren; tone?: 'ask' | 'play'; opening?: boolean }) {
   return (
-    <div class={`wcard${on ? ' on' : ''}${tone ? ` ${tone}` : ''}${onClick ? ' click' : ''}`} data-opening={opening || undefined} onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}
+    <div class={`wcard${on ? ' on' : ''}${tone ? ` ${tone}` : ''}${onClick ? ' click' : ''}`} data-opening={opening ? kind.toLowerCase() : undefined} onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}
       onKeyDown={(e) => onClick && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onClick())}>
       <div class="k">{kind}{by && <span class="by">{named(by)}</span>}</div>
       {children}
@@ -59,23 +59,33 @@ export function CastCard({ slug, version, stage, onStage }: { slug: string; vers
 
 /**
  * The world at a glance, pinned over a long conversation once its first cards scrolled away: the story, the places
- * and the cast, each a click from the stage as on its card.
+ * and the cast. The compact previews lead back to their full cards in the conversation.
  */
-export function WorldStrip({ slug, version, title, places, pending = [], stage, onStage }: { slug: string; version: number; title?: string; places: CardPlace[]; pending?: string[]; stage: StageView; onStage: (s: StageView) => void }) {
+export function WorldStrip({ slug, version, title, places, pending = [], castDone, stage, onStage }: { slug: string; version: number; title?: string; places: CardPlace[]; pending?: string[]; castDone: boolean; stage: StageView; onStage: (s: StageView) => void }) {
   const cast = useCast(slug, version)?.filter((c) => c.figure) ?? [];
+  const goToCard = (button: HTMLButtonElement, kind: 'places' | 'cast') => {
+    const scroller = button.closest('.agent')?.querySelector<HTMLElement>('.gc-scroll');
+    const card = scroller?.querySelector<HTMLElement>(`[data-opening="${kind}"]`);
+    if (!scroller || !card) return;
+    const target = kind === 'places' ? card.querySelector<HTMLElement>('button') : card;
+    target?.focus({ preventScroll: true });
+    scroller.scrollTo({ top: scroller.scrollTop + card.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 8, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  };
+  const placesLabel = `${places.length} ${places.length === 1 ? 'place' : 'places'}${pending.length ? `, ${pending.length} building` : ''}. Show places in the conversation`;
   return (
     <div class="world-strip">
       {title && <button type="button" class={`ws-story${stage.kind === 'story' ? ' on' : ''}`} title="The story: places, items, people and endings" onClick={() => onStage({ kind: 'story' })}>{title}</button>}
-      <span class="ws-places">
-        {places.map((p) => (
-          <button type="button" class={`ws-thumb${stage.kind === 'place' && stage.place === p.key ? ' on' : ''}${p.trouble ? ' trouble' : ''}`} title={nice(p.key)} onClick={() => onStage({ kind: 'place', place: p.key })}
-            style={p.image ? { backgroundImage: `url("${fileUrl(slug, p.image.file, p.image.v)}")` } : undefined} />
-        ))}
-        {pending.map(key => <button type="button" class="ws-pending" title={`${nice(key)}: being built; not in the game yet. Show build progress`} aria-label={`${nice(key)}: being built, not in the game yet`} onClick={() => onStage({ kind: 'build' })}><span aria-hidden="true">◌</span><span class="ws-pending-name">{nice(key)}</span><span>Building</span></button>)}
-      </span>
-      {cast.length > 0 && (
-        <button type="button" class={`ws-cast${stage.kind === 'cast' ? ' on' : ''}`} title="The cast and the items" onClick={() => onStage({ kind: 'cast' })}>
+      <button type="button" class="ws-places" title={placesLabel} aria-label={placesLabel} onClick={(e) => goToCard(e.currentTarget, 'places')}>
+        <span class="ws-stack" aria-hidden="true">
+          {places.slice(0, 3).map((p) => <span class="ws-sheet" key={p.key} style={p.image ? { backgroundImage: `url("${fileUrl(slug, p.image.file, p.image.v)}")` } : undefined} />)}
+        </span>
+        <span class="ws-count">{places.length}</span>
+        {pending.length > 0 && <span class="ws-building" aria-hidden="true">+{pending.length} ◌</span>}
+      </button>
+      {castDone && cast.length > 0 && (
+        <button type="button" class="ws-cast" title="Show the cast in the conversation" aria-label={`Show ${cast.length} ${cast.length === 1 ? 'character' : 'characters'} in the conversation`} onClick={(e) => goToCard(e.currentTarget, 'cast')}>
           {cast.slice(0, 5).map((c) => <img src={fileUrl(slug, c.figure!.file, c.figure!.v)} alt="" />)}
+          {cast.length > 5 && <span class="ws-count">+{cast.length - 5}</span>}
         </button>
       )}
     </div>
