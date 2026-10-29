@@ -5,7 +5,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
 
-export type StageView = { kind: 'build' | 'place' | 'cast' | 'story' | 'play'; place?: string };
+export type StageView = { kind: 'build' | 'place' | 'cast' | 'story' | 'play' | 'work'; place?: string; step?: string };
 export type Picked = { place?: string; thing: string; name: string };
 
 type Pic = { file: string; v: number | null } | null;

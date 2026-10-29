@@ -13,6 +13,14 @@ test('a fresh agent session is pointed at the conversation so far, and only when
     expect(earlier(dir)).toBe('');
     fs.writeFileSync(path.join(dir, 'studio', 'conversation.md'), '## 2026-10-28 09:00 · muse\n\n**Person:** the hero walks into the table\n');
     expect(earlier(dir)).toContain('studio/conversation.md');
+    // The turns themselves are in the brief: an agent that keeps to the Studio's tools never opens the file.
+    expect(earlier(dir)).toContain('the hero walks into the table');
+    const turns = Array.from({ length: 80 }, (_, i) => `## 2026-10-28 09:${String(i % 60).padStart(2, '0')} · muse\n\n**Person:** ask number ${i} ${'x'.repeat(150)}\n\n`).join('');
+    fs.writeFileSync(path.join(dir, 'studio', 'conversation.md'), turns);
+    const brief = earlier(dir);
+    expect(brief).toContain('ask number 79');
+    expect(brief).not.toContain('ask number 0 ');
+    expect(brief).toMatch(/<conversation>\n## /);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

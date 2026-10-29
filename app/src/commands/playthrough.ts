@@ -63,8 +63,11 @@ defineCommand({
     // Headless pages may play sound without a click, so the recorder hears the game from the first frame.
     const browser = await (await chromium()).launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
     const runs: Run[] = [];
+    // Studio counts the endings off these lines: "1/3 ...", then ok or FAIL for each.
+    console.log(`playing ${routes.length} ending${routes.length === 1 ? '' : 's'}: ${routes.map((r) => r.ending).join(', ')}`);
     try {
-      for (const route of routes) {
+      for (const [i, route] of routes.entries()) {
+        console.log(`${i + 1}/${routes.length} playing to ${route.ending}`);
         const opened = Date.now();
         const page = (await browser.newPage({
           viewport: { width: 1920, height: 1080 },

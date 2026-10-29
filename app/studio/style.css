@@ -207,14 +207,14 @@ section.agent .row { padding: 12px 14px 0; }
 .items .row { display: flex; flex-wrap: wrap; gap: 6px; }
 .items input { flex: 1 1 140px; min-width: 0; }
 /* A character moving as the game moves them: 3D model, 2D rig, painted sheets. */
-.cast .figure-preview { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
-.cast .figure-preview .moves { display: flex; flex-direction: column; gap: 10px; }
-.cast .figure-preview .turntable { min-height: 340px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: var(--raised); cursor: grab; touch-action: none; user-select: none; }
-.cast .figure-preview .turntable:active { cursor: grabbing; }
-.cast .figure-preview canvas.rig { height: 300px; width: auto; align-self: flex-start; border-radius: 10px; background: var(--raised); }
-.cast .figure-preview .sheets { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
-.cast .figure-preview .sheets li { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.cast .figure-preview .sheets canvas { height: 220px; width: auto; border-radius: 10px; background: var(--raised); }
+:is(.cast, .cw-focus) .figure-preview { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+:is(.cast, .cw-focus) .figure-preview .moves { display: flex; flex-direction: column; gap: 10px; }
+:is(.cast, .cw-focus) .figure-preview .turntable { min-height: 340px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: var(--raised); cursor: grab; touch-action: none; user-select: none; }
+:is(.cast, .cw-focus) .figure-preview .turntable:active { cursor: grabbing; }
+:is(.cast, .cw-focus) .figure-preview canvas.rig { height: 300px; width: auto; align-self: flex-start; border-radius: 10px; background: var(--raised); }
+:is(.cast, .cw-focus) .figure-preview .sheets { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
+:is(.cast, .cw-focus) .figure-preview .sheets li { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+:is(.cast, .cw-focus) .figure-preview .sheets canvas { height: 220px; width: auto; border-radius: 10px; background: var(--raised); }
 @media (max-width: 600px) { .cast .who { grid-template-columns: 1fr; } }
 
 .story { display: flex; flex-direction: column; gap: 14px; }
@@ -950,3 +950,34 @@ main.start .more .fields input:focus, main.start .more .fields select:focus { ou
 .activity .a-more { flex: none; width: 16px; text-align: center; color: var(--faint); line-height: 20px; }
 .activity .a-more::before { content: '▸'; }
 .activity details[open] .a-more::before { content: '▾'; }
+
+/* A cast step at work: the character being made, each picture as it lands, then the result moving. */
+.cast-work { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px 2px; }
+.cw-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.cw-head strong { font-family: var(--display); font-size: 18px; font-weight: 400; }
+.cw-wait { flex: 1; display: grid; place-items: center; color: var(--muted); font-family: var(--display); font-size: 18px; text-align: center; padding: 30px; }
+.cw-wait span { animation: pulse 2.4s ease-in-out infinite; }
+.cw-focus { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 12px; background: var(--panel); box-shadow: 0 1px 2px rgba(60, 40, 20, 0.12); }
+.cw-who { display: flex; gap: 14px; align-items: flex-start; }
+.cw-who > img, .cw-who > .noimg { width: 84px; height: 110px; object-fit: contain; flex: none; border-radius: 8px; background: var(--raised); }
+.cw-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cw-text h3 { margin: 0; font-family: var(--display); font-weight: 400; font-size: 22px; }
+.cw-stages { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 0; padding: 0; list-style: none; }
+.cw-stages li { padding: 3px 10px; border-radius: 999px; background: var(--raised); color: var(--muted); font-size: 12.5px; }
+.cw-stages li small { opacity: 0.7; margin-left: 2px; }
+.cw-stages li.on { background: var(--amber); color: #2a1d0a; animation: pulse 2.4s ease-in-out infinite; }
+.cw-stages li.ok { color: var(--text); }
+.cw-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(140px, 40%), 1fr)); gap: 10px; }
+.cw-slots figure { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.cw-slots img, .cw-slots .to-come { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 8px; background: var(--raised); }
+.cw-slots img { animation: land 0.5s ease-out; }
+.cw-slots .to-come { background: repeating-linear-gradient(135deg, var(--raised) 0 14px, transparent 14px 28px); animation: pulse 2.4s ease-in-out infinite; }
+.cw-slots figcaption { font-size: 12px; color: var(--muted); text-align: center; }
+.cw-others { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.cw-others button { display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 4px; }
+.cw-others img, .cw-others .noimg { width: 30px; height: 38px; object-fit: contain; border-radius: 4px; background: var(--raised); }
+.cw-others small { color: var(--muted); }
+@keyframes land { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
+.cw-stages li.stop { background: #f3d9d2; color: #8a2b17; }
+.cw-slots .to-come.still { animation: none; opacity: 0.5; }
+.stage-top .back { flex: none; width: 36px; height: 36px; min-height: 0; padding: 0; border-radius: 50%; font-size: 18px; line-height: 1; }

@@ -84,8 +84,9 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
 
   // Not a person on two legs (cast/figures.json): painted as it is, no skeleton; it hops and squashes as one body.
   const creature = readBodies(files, fs.existsSync)[key]?.upright === false;
-  const views = await paintViews(files.memo, key, who.looks ?? '', painting, take, creature);
-  for (const [name, png] of Object.entries(views)) files.write(out(`${name}.png`), png);
+  // Each stage says its name ("<key>: ..."), and each side is written as it lands: Studio follows both live.
+  console.log(`${key}: painting 4 sides`);
+  const views = await paintViews(files.memo, key, who.looks ?? '', painting, take, creature, (name, png) => files.write(out(`${name}.png`), png));
   // TRELLIS sometimes makes a flat card of a flat drawing: other seeds, then the front alone (depth guessed),
   // and with none of them a body, no model: the character walks with its 2D rig.
   const all = [views.front, views.back, views.left, views.right];
@@ -93,6 +94,7 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
   let shell: Buffer | undefined;
   for (const [seed, from] of tries) {
     if (given) break;
+    console.log(`${key}: TRELLIS builds the body${seed > 1 || from.length === 1 ? ` (try ${seed + (from.length === 1 ? 3 : 0)})` : ''}`);
     const made = await reconstruct(files.memo, key, [...from], seed);
     const bad = badModel(readShape(made));
     if (!bad) { shell = made; break; }
@@ -118,6 +120,7 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
     console.log(`${key}: ${out('model.glb')} · a creature, no skeleton: hops, squashes and blinks as one body · views ${Object.entries(fits).map(([v, f]) => `${v} ${f.iou}`).join(', ')}`);
     return null;
   }
+  if (!supplied) console.log(`${key}: rigging the skeleton`);
   const built = supplied ?? await autoRig(files.memo, key, shell!);
   const bad = badModel(readShape(built));
   if (bad) return reject(`rigged body rejected: ${bad}`);

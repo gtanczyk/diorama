@@ -86,6 +86,8 @@ class Talk {
   readonly log: string;
   /** Whether the current agent session got the brief; a new agent starts without it. */
   briefed = false;
+  /** Whether the agent goes on with its own session from turn to turn; one that does not (Codex) is briefed with the conversation every turn. */
+  resumes = true;
   rebrief() {
     this.briefed = false;
   }
@@ -332,18 +334,27 @@ export function pastTurns(dir: string, limit = 60): SessionTurn[] {
 
 const conversationFile = (dir: string) => path.join(dir, 'studio', 'conversation.md');
 
-/** For a fresh agent session: where the conversation so far is, when there is one. */
+/** How much of the conversation a fresh session is handed in its brief: the last turns, about this many bytes. */
+const HANDED = 8000;
+
+/**
+ * For a fresh agent session: the conversation so far, when there is one. Its last turns are in the brief itself,
+ * since an agent that keeps to the Studio's tools (Codex) does not open files; the whole of it stays in the file.
+ */
 export function earlier(dir: string): string {
-  let size = 0;
+  let text = '';
   try {
-    size = fs.statSync(conversationFile(dir)).size;
+    text = fs.readFileSync(conversationFile(dir), 'utf8');
   } catch {
     return '';
   }
-  if (!size) return '';
+  if (!text.trim()) return '';
+  // Whole turns only: cut at a turn's heading.
+  let tail = text.slice(-HANDED);
+  if (tail.length < text.length) tail = tail.slice(Math.max(0, tail.indexOf('\n## ') + 1));
   return `\nYou are joining a conversation about this world that started before this session (another agent, or before the Studio restarted). `
-    + `It is in studio/conversation.md, newest at the end (${Math.round(size / 1024)} KB): read its last part before you answer, `
-    + 'so you know what the person asked, what was changed and what is still open. The person sees the same conversation on screen.';
+    + 'The person sees the same conversation on screen, so carry on from it: what they asked, what was changed and what is still open. '
+    + `${tail.length < text.length ? `Its last turns (all of it, ${Math.round(text.length / 1024)} KB, is in studio/conversation.md):` : 'Here it is (also in studio/conversation.md):'}\n\n<conversation>\n${tail.trim()}\n</conversation>\n`;
 }
 
 export class AgentHub {
@@ -378,8 +389,9 @@ export class AgentHub {
     const cwd = fs.existsSync(dir) ? dir : this.opts.root;
     fs.mkdirSync(cwd, { recursive: true });
     const ask = process.env.DIORAMA_AGENT_TOOLS === 'ask';
+    const agent = this.make(this.defaultAgent(slug));
     const session = createAgentSession({
-      agent: this.make(this.defaultAgent(slug)),
+      agent,
       cwd,
       task: {
         env: withoutProviderCredentials(withoutSecrets(process.env)) as Record<string, string>,
@@ -398,12 +410,13 @@ export class AgentHub {
       },
       // The first prompt carries the brief; later ones resume Muse's own session and go as typed.
       transformPrompt: (prompt) => {
-        if (t?.briefed && session.get().sessionId) return prompt;
+        if (t?.briefed && t.resumes && session.get().sessionId) return prompt;
         if (t) t.briefed = true;
         return `${AGENT_BRIEF(slug)}${earlier(dir)}\n\nPerson: ${prompt}`;
       },
     });
     t = new Talk(slug, session, dir, this.events);
+    t.resumes = !!agent.capabilities.resume;
     this.talks.set(slug, t);
     return t;
   }
@@ -451,7 +464,9 @@ export class AgentHub {
     const t = this.talk(slug);
     if (t.session.get().status === 'running') throw new Error('the agent is working: stop it or wait before switching');
     const from = this.agents(slug).find((a) => a.using)?.label;
-    t.session.setAgent(this.make(name));
+    const agent = this.make(name);
+    t.session.setAgent(agent);
+    t.resumes = !!agent.capabilities.resume;
     t.rebrief();
     this.save(name);
     if (from && from !== AGENTS[name].label && (t.past.length || t.session.get().turns.length)) t.handedOver(from, AGENTS[name].label);

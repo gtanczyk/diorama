@@ -12,6 +12,7 @@ import { StyleMenu } from './style-menu.tsx';
 import { PlaceEditor } from './place.tsx';
 import { MODEL_NAME, Pipeline, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
 import { Bell, Logo, Rail, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
+import { CAST_STEPS, castFile, castLine, CastWorkStage, type CastWork } from './cast-work.tsx';
 import { Card, CastCard, CastStage, nice, PlacesCard, PlaceStage, WorldStrip, type Picked, type StageView } from './world.tsx';
 import { Tips } from './tip.tsx';
 import { Lightbox } from './lightbox.tsx';
@@ -164,6 +165,10 @@ function asked(turn: SessionTurn): { question: string; options: string[]; recomm
   }
   const text = turn.entries.findLast((e) => e.kind === 'text');
   if (text?.kind !== 'text' || !/\?\s*$/.test(text.text)) return null;
+  // Only a yes-or-no question gets yes and no: "What should I do?" or "the bridge or the hedgehog?" is answered in words.
+  const last = (text.text.trim().split(/(?<=[.!?:])\s+|\n+/).at(-1) ?? '').replace(/^[\s*_>"„-]+/, '');
+  if (/^(co|jak|jaki|jaka|jakie|jakich|kt[óo]r\w*|gdzie|kiedy|ile|dlaczego|czemu|kto|kogo|komu|w jaki|od czego|na czym|what|which|how|where|when|who|whom|why|whose)\b/i.test(last)) return null;
+  if (/\S\s+(czy|or|albo|lub)\s+\S[^?]*\?\s*$/i.test(last)) return null;
   const pl = /[ąćęłńóśźż]|\b(czy|się|mogę|chcesz)\b/i.test(text.text);
   return { question: '', options: pl ? ['Tak', 'Nie'] : ['Yes', 'No'], recommended: 0 };
 }
@@ -618,6 +623,8 @@ function Workshop({ slug }: { slug: string }) {
   const [jobCalls, setJobCalls] = useState<Record<string, number>>({});
   const [lastCall, setLastCall] = useState<Live['lastCall']>(null);
   const [cut, setCut] = useState<Record<string, string[]>>({});
+  /** The characters the running job paints or models, picture by picture (the live cast view). */
+  const [castWork, setCastWork] = useState<CastWork>({});
   const [livePlace, setLivePlace] = useState<{ key: string; at: number } | null>(null);
   const [spin, setSpin] = useState(0);
   const [tick, setTick] = useState(0);
@@ -651,6 +658,8 @@ function Workshop({ slug }: { slug: string }) {
           const line = String(e.line).replace(/\/(?:Users|home)\/[^/\s]+/g, '~');
           if (/^\s+flag\s|^# |^calls sent:|^[a-z][a-z0-9-]*: (ok|\d+ error\(s\)), \d+ flag\(s\)$|^[a-z][a-z0-9-]*: playable, flagged and continued/.test(line)) return;
           if (line.trim()) setJobTail(line.trim().slice(0, 160));
+          const about = castLine(line);
+          if (about) setCastWork((w) => ({ ...w, [about[0]]: { files: w[about[0]]?.files ?? {}, first: w[about[0]]?.first ?? Date.now(), said: about[1], at: Date.now() } }));
           return add(e, line, e.stream === 'err' ? 'err' : 'out');
         }
         case 'build.start': return setJobPlan(e.steps as string[]);
@@ -672,11 +681,14 @@ function Workshop({ slug }: { slug: string }) {
           // A new picture of a place puts that place on the stage.
           const at = /^places\/([^/]+)\/(blockin|plan|painting|masks\/overlay|depth|walk)\.png$/.exec(String(e.file));
           if (at && e.exists) setLivePlace({ key: at[1], at: Date.now() });
+          // A character's picture as it lands: the live cast view shows it.
+          const who = e.exists ? castFile(String(e.file)) : null;
+          if (who) setCastWork((w) => ({ ...w, [who[0]]: { said: w[who[0]]?.said ?? '', first: w[who[0]]?.first ?? Date.now(), files: { ...w[who[0]]?.files, [String(e.file)]: Date.now() }, at: Date.now() } }));
           return soon();
         }
         case 'feedback.changed': return soon();
         case 'job.start': case 'job.end': case 'job.queued': {
-          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setCut({}));
+          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setCut({}), setCastWork({}));
           const job = e.job as Job;
           soon();
           // What the agent changed shows in an open game at once; after the person's own builds the banner offers it.
@@ -730,9 +742,7 @@ function Workshop({ slug }: { slug: string }) {
   const building = job && (job.args[0] === 'build' || steps.includes(job.args[0])) ? job : null;
   const shown = job;
   // How far the watched build is, weighed by how long each step took last time.
-  const plan = jobPlan ?? steps;
   const took = (s: string) => status?.build[s]?.seconds ?? status?.typical?.[s] ?? 30;
-  const total = plan.reduce((sum, s) => sum + took(s), 0);
   // A running step counts as far along as its time so far says (never quite done), so the road moves every second, not only between steps.
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -740,7 +750,14 @@ function Workshop({ slug }: { slug: string }) {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [shown?.id, shown?.state]);
-  const left = plan.filter((s) => jobDone[s] === undefined).reduce((sum, s) => sum + took(s) - (running[s] === 'run' && since[s] ? Math.min((now - since[s]) / 1000, took(s) * 0.9) : 0), 0);
+  // Any other job (a playthrough, one character's model, a voice) takes about what the same job took before here;
+  // with none before, no guess: the whole build's steps are not what it runs.
+  const before = job && job.args[0] !== 'build' ? (status?.jobs ?? []).filter((j) => j.id !== job.id && j.state === 'done' && j.args[0] === job.args[0] && j.startedAt && j.endedAt).slice(-3).map((j) => (Date.parse(j.endedAt!) - Date.parse(j.startedAt!)) / 1000) : [];
+  const plan = jobPlan ?? (job?.args[0] === 'build' ? steps : []);
+  const total = before.length ? before.reduce((a, b) => a + b, 0) / before.length : plan.reduce((sum, s) => sum + took(s), 0);
+  const left = before.length
+    ? Math.max(0, total - (job?.startedAt ? (now - Date.parse(job.startedAt)) / 1000 : 0))
+    : plan.filter((s) => jobDone[s] === undefined).reduce((sum, s) => sum + took(s) - (running[s] === 'run' && since[s] ? Math.min((now - since[s]) / 1000, took(s) * 0.9) : 0), 0);
   // The build stage: the running job's own steps (the build says them; until then, its arguments).
   const arg = (name: string) => (job && job.args.includes(name) ? job.args[job.args.indexOf(name) + 1] : undefined);
   const ownPlan = jobPlan ?? (job?.args[0] === 'build' ? steps.slice(arg('--from') ? steps.indexOf(arg('--from')!) : 0, arg('--to') ? steps.indexOf(arg('--to')!) + 1 : steps.length) : []);
@@ -769,7 +786,12 @@ function Workshop({ slug }: { slug: string }) {
   const [hold, setHold] = useState<{ layer: LayerName; at: number } | null>(null);
   const openPhase = (phase: string, step?: string) => {
     if (phase === 'story') return onStage({ kind: 'story' });
-    if (phase === 'cast') return onStage({ kind: 'cast' });
+    if (phase === 'cast') {
+      // A cast step at work (or just done): watch it live; otherwise the cast as it stands.
+      const s = step && CAST_STEPS.includes(step) ? step : CAST_STEPS.find((x) => liveBuild.running[x] === 'run') ?? (job ? CAST_STEPS.find((x) => liveBuild.plan.includes(x)) : undefined);
+      const seen = !!s && Object.values(castWork).some((w) => Object.keys(w.files).some((f) => castFile(f)?.[1] === s));
+      return onStage(s && (liveBuild.plan.includes(s) || seen) ? { kind: 'work', step: s } : { kind: 'cast' });
+    }
     if (phase === 'sound') return setByHand('#cast');
     if (phase === 'verify') return playable ? onStage({ kind: 'play' }) : setLogOpen(true);
     const layer = (step && STEP_SHOWS[step]) ?? ({ paint: 'painting', cut: 'masks', space: 'walk' } as Record<string, LayerName>)[phase];
@@ -830,17 +852,37 @@ function Workshop({ slug }: { slug: string }) {
       </>
     );
   };
+  // A playthrough says how many endings it plays and how each went: the card counts them and guesses the rest by the ones done.
+  const trial = job?.args[0] === 'playthrough' ? (() => {
+    const mine = lines.filter((l) => l.job === job.id && !l.info).map((l) => ({ text: l.text.trim(), at: l.at ?? now }));
+    const total = Number(/^playing (\d+) ending/.exec(mine.find((l) => /^playing \d+ ending/.test(l.text))?.text ?? '')?.[1] ?? 0);
+    const results = mine.flatMap((l) => { const m = /^(ok|FAIL)\s+([\w-]+): .*\((\d+) s wall\)/.exec(l.text); return m ? [{ ok: m[1] === 'ok', ending: m[2], wall: Number(m[3]) }] : []; });
+    const playing = mine.findLast((l) => /^\d+\/\d+ playing to /.test(l.text));
+    const each = results.length ? results.reduce((a, r) => a + r.wall, 0) / results.length : 0;
+    const left = each && total ? Math.max(0, each * (total - results.length) - (playing && results.length < total ? (now - playing.at) / 1000 : 0)) : 0;
+    return { total, done: results.length, results, now: results.length < total ? playing?.text.replace(/^\d+\/\d+ playing to /, '') : undefined, left };
+  })() : null;
   // While the agent works, its progress is the last thing above the prompt: what waits for you comes back after.
   const footer = (agentBusy: boolean) => (
     <div class="world-footer">
       {movedFrom.value && movedFrom.value !== slug && <Card kind="Moved here" tone="ask"><p>The agent moved the view here from {movedFrom.value}.</p><div class="btns"><button type="button" class="ghost small" onClick={() => { const back = movedFrom.value!; movedFrom.value = null; go(`/w/${back}`); }}>Back to {movedFrom.value}</button><button type="button" class="ghost small" onClick={() => (movedFrom.value = null)}>Stay</button></div></Card>}
       {job && (
+        trial ? (
+        <Card kind={job.by === 'agent' ? 'The agent is testing the game' : 'Testing the game'} by="a test bot" on={false}>
+          <p>A bot plays the game to {trial.total === 1 ? 'its ending' : 'every ending'} in a hidden browser, to check {trial.total === 1 ? 'it' : 'each'} can be reached. Free: no model calls. Keep working, or stop it.</p>
+          <p>{trial.total ? `Ending ${Math.min(trial.done + 1, trial.total)} of ${trial.total}${trial.now ? `: ${nice(trial.now)}` : ''}` : 'Starting…'}{trial.left ? (trial.left > 60 ? ` · about ${Math.round(trial.left / 60)} min left` : ' · almost done') : ''}</p>
+          <div class="bar"><i style={{ width: `${Math.round((trial.total ? trial.done / trial.total : 0.03) * 100)}%` }} /></div>
+          {trial.results.length > 0 && <p class="detail">{trial.results.map((r) => `${r.ok ? '✓' : '✕'} ${nice(r.ending)}`).join(' · ')}</p>}
+          <div class="btns"><button type="button" class="ghost small" title="Stop the test. Nothing in the world changes" onClick={(e) => (e.stopPropagation(), call('job_cancel', { id: job.id }))}>Stop</button></div>
+        </Card>
+        ) : (
         <Card kind={job.by === 'agent' ? 'The agent is building' : 'Building'} by={MODEL_FOR[liveBuild.plan.find((s) => running[s] === 'run') ?? ''] } on={shownView.kind === 'build'} onClick={() => onStage({ kind: 'build' })}>
-          <p>{job.label}{job.step ? `: ${job.step}` : ''}{total ? ` · about ${Math.max(1, Math.round(left / 60))} min left` : ''}</p>
+          <p>{job.label}{job.step ? `: ${job.step}` : ''}{total ? (left > 30 ? ` · about ${Math.max(1, Math.round(left / 60))} min left` : left > 0 ? ' · almost done' : ' · longer than last time') : ''}</p>
           <div class="bar"><i style={{ width: `${Math.round((total ? 1 - left / total : 0.05) * 100)}%` }} /></div>
           {jobTail && <p class="detail">{jobTail}</p>}
           <div class="btns"><button type="button" class="ghost small" title={`Stop ${job.label}`} onClick={(e) => (e.stopPropagation(), call('job_cancel', { id: job.id }))}>Stop</button></div>
         </Card>
+        )
       )}
       {failed && !job && !agentBusy && <Card kind="Needs you" tone="ask"><Failed slug={slug} job={failed} noAgent={noAgent} onError={setError} onPlace={(p) => onStage({ kind: 'place', place: p })} /></Card>}
       {unplayable.length > 0 && !failed && !agentBusy && (
@@ -870,8 +912,19 @@ function Workshop({ slug }: { slug: string }) {
     document.title = `${status?.title ?? slug} · Diorama`;
     return () => void (document.title = 'Diorama Studio');
   }, [status?.title, slug]);
-  const stageTitle = shownView.kind === 'place' ? nice(stagedPlace?.key ?? '') : shownView.kind === 'cast' ? 'Cast' : shownView.kind === 'story' ? 'Story' : shownView.kind === 'build' ? (stagePlace ? nice(stagePlace.key) : 'Building') : status?.title ?? slug;
+  const stageTitle = shownView.kind === 'place' ? nice(stagedPlace?.key ?? '') : shownView.kind === 'cast' || shownView.kind === 'work' ? 'Cast' : shownView.kind === 'story' ? 'Story' : shownView.kind === 'build' ? (stagePlace ? nice(stagePlace.key) : 'Building') : status?.title ?? slug;
   const stageHint = shownView.kind === 'place' ? 'Click a thing to talk about it' : shownView.kind === 'cast' ? 'Click someone to talk about them' : shownView.kind === 'play' ? 'Click to walk, right click to look, or a gamepad' : '';
+  // Story, Cast and a step at work sit over the places: ← (or Esc) goes back to the place last shown, or the build.
+  const away = shownView.kind === 'cast' || shownView.kind === 'story' || shownView.kind === 'work';
+  const lastPlace = useRef<string | undefined>(undefined);
+  if (shownView.kind === 'place') lastPlace.current = shownView.place;
+  const back = () => (lastPlace.current && places.some((p) => p.key === lastPlace.current) ? onStage({ kind: 'place', place: lastPlace.current }) : setStage(null));
+  useEffect(() => {
+    if (!away || byHand || notesOpen || logOpen) return;
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && !(e.target instanceof HTMLElement && e.target.closest('input, textarea, select')) && back();
+    addEventListener('keydown', esc);
+    return () => removeEventListener('keydown', esc);
+  }, [away, byHand, notesOpen, logOpen]);
 
   return (
     <>
@@ -886,6 +939,7 @@ function Workshop({ slug }: { slug: string }) {
         </section>
         <section class="theatre" ref={stageRef}>
           <div class="stage-top">
+            {away && <button type="button" class="ghost back" aria-label="Back" title={`Back to ${lastPlace.current ? nice(lastPlace.current) : building ? 'the build' : 'the places'} (Esc)`} onClick={back}>←</button>}
             <h2>{stageTitle}</h2>
             {stageHint && <small>{stageHint}</small>}
             <span class="grow" />
@@ -908,6 +962,14 @@ function Workshop({ slug }: { slug: string }) {
               <div class="build-on-stage">
                 <Pipeline job={job} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
                 {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} hold={hold} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? 'Muse Spark is dreaming up the places…'}</span></div></div></figure>}
+              </div>
+            )}
+            {shownView.kind === 'work' && status && (
+              <div class="build-on-stage">
+                <Pipeline job={job} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
+                <CastWorkStage slug={slug} step={shownView.step ?? 'cast'} work={castWork} running={liveBuild.running[shownView.step ?? ''] === 'run'}
+                  failed={liveBuild.running[shownView.step ?? ''] === 'fail' || (!job && failed?.args[0] === shownView.step) ? plainError(failed?.error ?? 'the step failed') : undefined} since={liveBuild.since[shownView.step ?? '']} took={took(shownView.step ?? 'cast')} version={tick}
+                  only={job && job.args[0] === shownView.step ? job.args[2] : undefined} onOpen={(key) => setByHand(`#cast:${key}`)} />
               </div>
             )}
             {shownView.kind === 'place' && stagedPlace && <PlaceStage slug={slug} place={stagedPlace} version={tick} picked={picked} onPick={setPicked} />}
