@@ -60,7 +60,7 @@ Also used: Depth Anything V2 (ONNX, on the CPU) for shadows and parallax, Eleven
 1. **world, story**: Spark turns the sentence into places, a cast, items, locks and endings, and checks every ending can be reached.
 2. **layout, paint**: Spark lays out each place and names each thing's silhouette; the layout becomes a shaded sketch (`blockin.png`, what Muse sees) and a named plan (`plan.png`, what Studio shows); Muse paints over the sketch; a Spark critic marks what is wrong and Muse repaints only those regions.
 3. **masks, plates**: SAM 3.1 cuts out every thing and floor; Muse paints the place without the things the hero can take.
-4. **derive, backdrop, weather**: code measures floor, scale, occlusion, stairs and light from the masks and the depth map; the place becomes a little stage with cards, far flats, moving water, rain and drips.
+4. **derive, backdrop, weather, reactions**: code measures floor, scale, occlusion, stairs and light from the masks and the depth map; the place becomes a little stage with cards, far flats, moving water, rain and drips. The planner chooses subtle material-specific reactions, triggered by footsteps, entering floor regions and physical object interactions.
 5. **cast, model, sprites**: the hero and characters are painted, cut out, turned into 3D models and drawn back as sprite sheets in the world's style.
 6. **sound, voices**: ambience, loops, footsteps and music; a fitting voice for every character.
 7. **verify**: every place is walked and used by code; places that fail are repaired automatically, or handed to the agent with what is wrong.

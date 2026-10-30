@@ -26,7 +26,7 @@ export const PHASES = [
   { key: 'story', title: 'Story', by: ['Muse Spark'], steps: ['world', 'story'] },
   { key: 'paint', title: 'Paint', by: ['Muse Image', 'Muse Spark'], steps: ['layout', 'paint'] },
   { key: 'cut', title: 'Cut out', by: ['SAM 3.1', 'Muse Image'], steps: ['masks', 'plates', 'icons'] },
-  { key: 'space', title: 'Depth and walk', by: ['Depth Anything', 'code'], steps: ['derive', 'backdrop', 'weather'] },
+  { key: 'space', title: 'Depth and walk', by: ['Depth Anything', 'code'], steps: ['derive', 'backdrop', 'weather', 'reactions'] },
   { key: 'cast', title: 'Cast', by: ['Muse Image', '3D'], steps: ['cast', 'model', 'sprites'] },
   { key: 'sound', title: 'Sound', by: ['ElevenLabs'], steps: ['sound', 'voices'] },
   { key: 'verify', title: 'Checks', by: ['code'], steps: ['verify'] },
@@ -113,7 +113,7 @@ export function extensionDetail(progress?: ExtensionProgress, step?: string): st
  * times (world_status.typical), never a made-up countdown.
  */
 /** What each step leaves on the stage, for a click on its segment: the place layer it makes. */
-export const STEP_SHOWS: Record<string, LayerName> = { layout: 'blockin', paint: 'painting', masks: 'masks', plates: 'masks', derive: 'walk', backdrop: 'depth', weather: 'painting' };
+export const STEP_SHOWS: Record<string, LayerName> = { layout: 'blockin', paint: 'painting', masks: 'masks', plates: 'masks', derive: 'walk', backdrop: 'depth', weather: 'painting', reactions: 'painting' };
 
 export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: JobLike; all: string[]; live: Live; build: Record<string, { seconds: number }>; typical: Record<string, number>; onOpen?: (phase: string, step?: string) => void }) {
   const [now, setNow] = useState(Date.now());

@@ -112,7 +112,7 @@ test('a short gap is bridged for free: a floor stroke in corrections.json, the p
   await registry.get('build')!.run(['w', '--from', 'derive', '--to', 'verify']);
   const fixes = JSON.parse(fs.readFileSync(path.join(dir, 'places', 'stuck', 'corrections.json'), 'utf8'));
   expect(fixes.floors.deck.strokes).toHaveLength(1);
-  expect(ran.filter((r) => r.endsWith(':stuck'))).toEqual(['derive:stuck', 'backdrop:stuck', 'weather:stuck', 'verify:stuck', 'masks:stuck', 'plates:stuck', 'derive:stuck', 'backdrop:stuck', 'weather:stuck', 'verify:stuck']);
+  expect(ran.filter((r) => r.endsWith(':stuck'))).toEqual(['derive:stuck', 'backdrop:stuck', 'weather:stuck', 'reactions:stuck', 'verify:stuck', 'masks:stuck', 'plates:stuck', 'derive:stuck', 'backdrop:stuck', 'weather:stuck', 'reactions:stuck', 'verify:stuck']);
   const log = JSON.parse(fs.readFileSync(path.join(dir, 'build.json'), 'utf8'));
   expect(log.places.find((p: { place: string }) => p.place === 'stuck').ok).toBe(true);
   expect(log.repairs[0]).toMatchObject({ place: 'stuck', by: 'auto', ok: true });

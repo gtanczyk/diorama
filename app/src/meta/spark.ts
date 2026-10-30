@@ -98,7 +98,7 @@ const CLAUDE_SYSTEM = 'You stand in for a vision-language model inside a game-ma
 
 async function askClaude(model: string, { label, prompt, images = [], schema }: SparkAsk): Promise<Paid> {
   const key = envValue('DIORAMA_ANTHROPIC_API_KEY');
-  if (!key) throw new Error('DIORAMA_SPARK_VIA=claude needs DIORAMA_ANTHROPIC_API_KEY (or ANTHROPIC_API_KEY); openrouter:anthropic/claude-sonnet-5.5 goes without');
+  if (!key) throw new Error('DIORAMA_SPARK_VIA=claude needs DIORAMA_ANTHROPIC_API_KEY, ANTHROPIC_API_KEY or CLAUDE_API_KEY; openrouter:anthropic/claude-sonnet-5.5 goes without');
   const content = [...(await Promise.all(images.map(async (i) => ({ type: 'image', source: await claudeImage(i) })))), { type: 'text', text: prompt }];
   let format = heldTo(schema);
   for (let n = 1; ; n++) {

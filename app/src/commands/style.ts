@@ -64,7 +64,7 @@ defineCommand({
 
     if (plan.places.length) {
       if (scope === 'place') await run('build', [slug, '--from', 'paint', '--to', 'verify', '--place', placeKey]);
-      else await run('build', [slug, '--from', 'paint', '--to', 'weather']);
+      else await run('build', [slug, '--from', 'paint', '--to', 'reactions']);
       // Icons cut from a painting are cut again from the new one; painted ones are painted in the new style.
       if (scope === 'place') await run('icons', [slug]);
     }

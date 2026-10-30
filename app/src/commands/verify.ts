@@ -5,6 +5,9 @@ import { defineCommand } from '../registry.ts';
 import { gapError, placeGap } from './build.ts';
 import { verifyPlace, type BackdropNotes, type MaskNotes, type PlateNotes } from '../scene/verify.ts';
 import { WorldFiles } from '../world/files.ts';
+import { Reactions } from '../play/reactions.ts';
+import { reactionInput } from './reactions.ts';
+import { reactionSource } from '../scene/reactions.ts';
 
 defineCommand({
   name: 'verify',
@@ -22,6 +25,12 @@ defineCommand({
       const plates = (fs.existsSync(at('plates.json')) ? files.readJson(at('plates.json')) : {}) as PlateNotes;
       const backdrop = (fs.existsSync(at('backdrop.json')) ? files.readJson(at('backdrop.json')) : {}) as BackdropNotes;
       const verdict = verifyPlace(place, geometry, files.readJson(at('masks.json')) as MaskNotes, plates, backdrop);
+      if (fs.existsSync(at('reactions.json'))) {
+        try {
+          const rules = Reactions.parse(files.readJson(at('reactions.json')));
+          if (rules.source !== reactionSource(reactionInput(files, place.key))) verdict.flags.push({ code: 'REACTIONS_STALE', detail: 'Scene or story changed; rerun reactions. Stale effects are disabled in play.' });
+        } catch (e) { verdict.flags.push({ code: 'REACTIONS_INVALID', detail: `Rerun reactions: ${e instanceof Error ? e.message : String(e)}` }); }
+      }
       files.write(at('verify.json'), verdict);
       if (!verdict.ok) failed++;
       console.log(`${place.key}: ${verdict.ok ? 'ok' : `${verdict.errors.length} error(s)`}, ${verdict.flags.length} flag(s)`);

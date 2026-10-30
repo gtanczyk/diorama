@@ -8,6 +8,9 @@ import { Geometry } from '../play/geometry.ts';
 import { previewGeometry } from '../play/preview.ts';
 import type { Layers } from '../play/parallax.ts';
 import { Rig } from '../play/rig.ts';
+import { Reactions } from '../play/reactions.ts';
+import { reactionInput } from './reactions.ts';
+import { reactionSource } from '../scene/reactions.ts';
 import { Weather } from '../play/weather.ts';
 import { readBodies } from '../scene/cast.ts';
 import type { ModelInfo } from '../../web/hero3d.ts';
@@ -29,7 +32,7 @@ const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg
 /** What the page loads: the world, and per place its geometry (measured, or a preview from the layout). */
 export function worldData(files: WorldFiles) {
   const world = files.world();
-  const places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; weather?: Weather; issue?: string }> = {};
+  const places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; weather?: Weather; reactions?: Reactions; issue?: string }> = {};
   for (const place of world.places) {
     const painted = ['painting.png', 'blockin.png'].find((f) => fs.existsSync(files.place(place.key, f)));
     let geometry: Geometry | null = null;
@@ -59,7 +62,16 @@ export function worldData(files: WorldFiles) {
     const weatherFile = files.place(place.key, 'weather.json');
     const read = painted === 'painting.png' && fs.existsSync(weatherFile) ? Weather.safeParse(files.readJson(weatherFile)) : undefined;
     const weather = read?.success ? { ...read.data, ...(read.data.ripples && { ripples: rel(read.data.ripples) }) } : undefined;
-    places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, ...(backdrop && { backdrop }), ...(layers && { layers }), ...(weather && { weather }), issue };
+    let reactions: Reactions | undefined;
+    const reactionsFile = files.place(place.key, 'reactions.json');
+    if (fs.existsSync(reactionsFile)) {
+      try {
+        const rules = Reactions.parse(files.readJson(reactionsFile));
+        if (rules.source === reactionSource(reactionInput(files, place.key))) reactions = rules;
+        else console.warn(`${place.key}: reactions stale; rerun reactions`);
+      } catch (e) { console.warn(`${place.key}: reactions unavailable: ${e instanceof Error ? e.message : String(e)}`); }
+    }
+    places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, ...(backdrop && { backdrop }), ...(layers && { layers }), ...(weather && { weather }), ...(reactions && { reactions }), issue };
   }
   const castDir = files.path('cast');
   // cast/figures.json (diorama cast): metres each one stands (a grown-up 1.62) and whether upright; one that

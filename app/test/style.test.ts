@@ -49,7 +49,7 @@ test('style_set without go only estimates, from what the world\'s own build sent
   // Only the hero is painted so far; the ferryman has nothing to repaint.
   expect(r.estimate.cast).toEqual(['wren']);
   // paint and masks as the world's build sent them, the cast step shared over two characters, the rest by the rough table.
-  expect(r.estimate.calls).toEqual({ spark: 14, muse: 13, sam: 25 });
+  expect(r.estimate.calls).toEqual({ spark: 16, muse: 13, sam: 25 });
   expect(r.line).toContain('2 place(s) repainted');
   expect(JSON.parse(fs.readFileSync(path.join(dir, 'world.json'), 'utf8')).style).toBe(CARTOON);
   expect(jobs.list('w')).toEqual([]);
