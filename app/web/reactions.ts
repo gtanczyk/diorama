@@ -32,10 +32,10 @@ export class ReactionFx {
       const dust = e.burst.kind === 'dust';
       this.particles.push({ x: e.x + foot + (this.rand() - .5) * h * .025, y: e.y, depth: e.depth,
         vx: (this.rand() - .5) * h * (dust ? .22 : .28), vy: -h * (dust ? .045 + this.rand() * .045 : .12 + this.rand() * .17),
-        size: h * (dust ? .04 + this.rand() * .025 : .008 + this.rand() * .01) * scale,
+        size: h * (dust ? .036 + this.rand() * .0225 : .008 + this.rand() * .01) * scale,
         life: dust ? .65 + this.rand() * .3 : .45 + this.rand() * .3, age: 0,
         angle: this.rand() * Math.PI, spin: (this.rand() - .5) * 7,
-        kind: e.burst.kind, colour: e.burst.colour, alpha: (dust ? .6 + .25 * strength : .65 + .25 * strength) });
+        kind: e.burst.kind, colour: e.burst.colour, alpha: (dust ? .48 + .2 * strength : .65 + .25 * strength) });
     }
   }
   update(dt: number) {
