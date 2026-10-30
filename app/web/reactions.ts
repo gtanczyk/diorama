@@ -23,19 +23,19 @@ export class ReactionFx {
     if (this.reduced) return;
     const body = e.actor as { yaw?: number; phase?: number; figure?: { height?: number } };
     const h = personPx(this.g, e.depth) * (e.trigger === 'interaction' ? 1 : (body.figure?.height ?? 1.62) / 1.62);
-    const scale = e.trigger === 'step' ? 0.75 : 1;
+    const scale = e.trigger === 'step' ? 0.85 : 1.15;
     const strength = e.burst.strength;
-    const n = Math.ceil((e.burst.kind === 'dust' ? 3 : 5) * (0.5 + strength) * scale);
+    const n = Math.ceil((e.burst.kind === 'dust' ? 5 : 7) * (0.5 + strength) * scale);
     const foot = e.trigger === 'step' ? Math.cos(body.yaw ?? 0) * h * 0.035 * ((e.step ?? 0) % 2 ? -1 : 1) : 0;
     for (let i = 0; i < n; i++) {
       if (this.particles.length >= LIMIT) this.particles.shift();
       const dust = e.burst.kind === 'dust';
       this.particles.push({ x: e.x + foot + (this.rand() - .5) * h * .025, y: e.y, depth: e.depth,
-        vx: (this.rand() - .5) * h * (dust ? .13 : .24), vy: -h * (dust ? .018 + this.rand() * .025 : .08 + this.rand() * .13),
-        size: h * (dust ? .025 + this.rand() * .025 : .005 + this.rand() * .009) * scale,
-        life: dust ? .4 + this.rand() * .3 : .3 + this.rand() * .35, age: 0,
+        vx: (this.rand() - .5) * h * (dust ? .22 : .28), vy: -h * (dust ? .045 + this.rand() * .045 : .12 + this.rand() * .17),
+        size: h * (dust ? .04 + this.rand() * .025 : .008 + this.rand() * .01) * scale,
+        life: dust ? .65 + this.rand() * .3 : .45 + this.rand() * .3, age: 0,
         angle: this.rand() * Math.PI, spin: (this.rand() - .5) * 7,
-        kind: e.burst.kind, colour: e.burst.colour, alpha: (dust ? .32 + .3 * strength : .35 + .35 * strength) });
+        kind: e.burst.kind, colour: e.burst.colour, alpha: (dust ? .6 + .25 * strength : .65 + .25 * strength) });
     }
   }
   update(dt: number) {
@@ -54,7 +54,10 @@ export class ReactionFx {
     if (c) return c;
     c = Object.assign(document.createElement('canvas'), { width: 48, height: 48 });
     const ctx = c.getContext('2d')!, grad = ctx.createRadialGradient(24, 24, 1, 24, 24, 24);
-    grad.addColorStop(0, colour); grad.addColorStop(.35, colour + 'aa'); grad.addColorStop(1, colour + '00');
+    // A readable body with a soft edge: a tiny Gaussian vanished against detailed painted floors.
+    const shade = '#' + colour.slice(1).match(/../g)!.map((v) => Math.round(parseInt(v, 16) * .74).toString(16).padStart(2, '0')).join('');
+    grad.addColorStop(0, colour); grad.addColorStop(.4, colour);
+    grad.addColorStop(.7, shade + 'bb'); grad.addColorStop(1, shade + '00');
     ctx.fillStyle = grad; ctx.fillRect(0, 0, 48, 48);
     this.textures.set(colour, c); return c;
   }
@@ -64,7 +67,7 @@ export class ReactionFx {
       const t = p.age / p.life, [sx, sy] = shift(p.depth), x = p.x + sx, y = p.y + sy;
       const r = p.size * (p.kind === 'dust' ? .6 + t : 1);
       ctx.save(); ctx.translate(x, y); ctx.rotate(p.angle);
-      ctx.globalAlpha = p.alpha * Math.min(1, t * 12) * (1 - t);
+      ctx.globalAlpha = p.alpha * Math.min(1, t * 16) * (1 - t * t);
       ctx.fillStyle = p.colour;
       if (p.kind === 'dust') ctx.drawImage(this.blob(p.colour), -r, -r * .6, 2 * r, 1.2 * r);
       else if (p.kind === 'leaves') { ctx.beginPath(); ctx.ellipse(0, 0, r, r * .4, 0, 0, Math.PI * 2); ctx.fill(); }
