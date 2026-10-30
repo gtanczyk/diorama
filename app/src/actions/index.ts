@@ -21,3 +21,5 @@ import './share.ts';
 import './pictures.ts';
 import './start.ts';
 import './sound.ts';
+
+import './video.ts';

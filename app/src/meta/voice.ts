@@ -1,4 +1,4 @@
-// Muse Voice Transcribe: what a recording says, over the realtime ASR socket (the API has no batch route).
+// Muse Voice Transcribe realtime transport. File uploads use voice-file.ts through speech/transcribe.ts.
 import { apiKey } from './http.ts';
 import { inputHash, type Memo } from './memo.ts';
 

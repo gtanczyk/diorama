@@ -7,6 +7,7 @@ import { agentDefault, askAgent, call, type AgentDefaults, fileUrl, follow, list
 import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
 import { AudioSetup } from './audio-setup.tsx';
+import { VideoInput, type VideoResult } from './video.tsx';
 import { AudioMissing } from './audio-missing.tsx';
 import { base64, Camera, shrink } from './camera.tsx';
 import { StoryView } from './story.tsx';
@@ -413,6 +414,9 @@ function Start() {
   const [idea, setIdea] = useState('');
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(0);
+  const [videoBusy, setVideoBusy] = useState(false);
+  const [videos, setVideos] = useState<string[]>([]);
+  const [videoReview, setVideoReview] = useState<VideoResult | null>(null);
   const [slug, setSlug] = useState('');
   const [places, setPlaces] = useState(0);
   const [language, setLanguage] = useState('');
@@ -422,7 +426,7 @@ function Start() {
   const box = useRef<HTMLTextAreaElement>(null);
   const taken = !!slug && worlds?.some((w) => w.slug === slug);
   const tooManyPhotos = photos.length > MAX_WORLD_PHOTOS;
-  const ready = idea.trim().length >= 10 && !taken && !noKey && !busy && !loadingPhotos && !tooManyPhotos;
+  const ready = idea.trim().length >= 10 && idea.length <= 4000 && !taken && !noKey && !busy && !videoBusy && !loadingPhotos && !tooManyPhotos;
   const addPhotos = async (files: Iterable<File>) => {
     const pics = [...files].filter((f) => f.type.startsWith('image/'));
     setLoadingPhotos((n) => n + 1);
@@ -446,7 +450,7 @@ function Start() {
     setError('');
     setBusy(true);
     try {
-      const made = await call<{ slug: string }>('world_new', { idea: idea.trim(), ...(slug && { slug }), ...(places && { places }), ...(language && { language }), ...(photos.length && { photos }) });
+      const made = await call<{ slug: string }>('world_new', { idea: idea.trim(), ...(slug && { slug }), ...(places && { places }), ...(language && { language }), ...(photos.length && { photos }), ...(videos.length && { videos }) });
       void call('world_list').then((w) => (allWorlds.value = w as typeof allWorlds.value)).catch(() => {});
       go(`/w/${made.slug}`);
     } catch (err) {
@@ -467,7 +471,7 @@ function Start() {
             onDragOver={(e) => (e.preventDefault(), setDrop(true))}
             onDragLeave={() => setDrop(false)}
             onDrop={(e) => (e.preventDefault(), setDrop(false), void addPhotos(e.dataTransfer?.files ?? []))}>
-            <textarea ref={box} rows={4} aria-label="Your idea" placeholder="A lighthouse keeper's last night before the foghorn is switched off for good…" value={idea}
+            <textarea ref={box} disabled={videoBusy} rows={4} aria-label="Your idea" placeholder="A lighthouse keeper's last night before the foghorn is switched off for good…" value={idea}
               onInput={(e) => setIdea(e.currentTarget.value)}
               onPaste={(e) => { const files = [...(e.clipboardData?.files ?? [])]; if (files.length) (e.preventDefault(), void addPhotos(files)); }}
               onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && void build()} />
@@ -497,6 +501,18 @@ function Start() {
               </button>
             </div>
           </div>
+          <VideoInput note={idea} disabled={busy || noKey} onBusy={setVideoBusy} onResult={(id, result) => {
+            setVideos(v => [...v, id]); setVideoReview(result);
+            setIdea(result.idea);
+            setPhotos(p => [...p, ...result.photos]);
+          }} />
+          {videoReview && <details open><summary>Review what the video means</summary>
+            <p>Edit the idea above and remove any reference pictures you do not want. Each picture’s name includes its time in the recording.</p>
+            {videoReview.idea.length > 4000 && <p class="error">The full interpretation exceeds the idea field. Condense it before building; the complete interpretation is shown below and kept with the video.</p>}
+            {videoReview.totalFrames > 32 && <p>{videoReview.totalFrames} useful frames were found; 32 spread across the movie are shown. All timestamped evidence is kept.</p>}
+            {!!videoReview.speech?.length && <details><summary>Recognized speech and timing</summary>{videoReview.speech.map(s => <div key={s.at}><p>{s.provider} · {s.model} · {s.timing === 'none' ? 'No speech timing returned' : 'Speech turn timestamps'}</p>{s.timing === 'none' ? <p>{s.text}</p> : s.segments.map(t => <p>{t.start.toFixed(1)}–{t.end.toFixed(1)} s {t.speaker ? `· Speaker ${t.speaker} (clip ${s.at}s)` : ''}: {t.text}</p>)}</div>)}</details>}
+            <details><summary>Full interpretation and observations</summary><p>{videoReview.idea}</p>{videoReview.observations.map(o => <p key={o.at}>{Math.floor(o.at / 60)}:{String(o.at % 60).padStart(2, '0')} · {o.text}</p>)}</details>
+          </details>}
           <div class="row ideas">
             {EXAMPLES.map((x) => <button type="button" class="chip" title="Start from this idea" onClick={() => (setIdea(x), box.current?.focus())}>{x}</button>)}
           </div>

@@ -115,7 +115,7 @@ test('the start form sends all 18 drawings in order and never silently drops exc
   try {
     await page.goto(`${studio.url}#${studio.token}`);
     await page.getByRole('textbox', { name: 'Your idea' }).fill('Make a story from these drawings');
-    const picker = page.locator('form.hero input[type=file]');
+    const picker = page.locator('form.hero input[type=file][accept="image/*"]');
     const build = page.getByRole('button', { name: 'Build it', exact: true });
     await picker.setInputFiles(files(18));
     await expect.poll(() => page.locator('.attached .att').count()).toBe(18);

@@ -13,6 +13,7 @@ import { PICTURE } from '../world/drawings.ts';
 import { pieces, SOUND } from '../world/told.ts';
 import { Slug } from '../world/schema.ts';
 import { MAX_WORLD_PHOTOS } from '../world/photo-limits.ts';
+import { VideoId, videoDir, videoState, VIDEO_STEP } from '../world/video.ts';
 import { ActionError, defineAction } from './registry.ts';
 
 /** Calls made before a world has a folder are remembered here (a dot folder, so it is never listed as a world). */
@@ -80,16 +81,26 @@ defineAction({
     slug: Slug.optional().describe('the folder name; picked from the idea when left out'),
     places: z.number().int().min(1).max(8).optional().describe('picked from the idea when left out'),
     language: z.string().min(2).max(30).optional().describe('the game\'s language ("Polish"); read from the idea when left out'),
+    videos: z.array(VideoId).max(8).optional(),
     photos: z.array(z.object({ name: z.string().min(1).max(120), data: z.string().min(10) })).max(MAX_WORLD_PHOTOS).optional().describe('photos, base64: a real room becomes the first place, a person the hero, drawings the characters, things and places they show'),
   }),
   job: true,
-  async run({ idea, slug, places, language, photos = [] }, ctx) {
+  async run({ idea, slug, places, language, photos = [], videos = [] }, ctx) {
+    for (const id of videos) {
+      const dir = videoDir(ctx.root, id), state = videoState(dir);
+      if (!state.duration || !fs.existsSync(path.join(dir, `part-${Math.ceil(state.duration / VIDEO_STEP) - 1}.json`))) throw new ActionError(409, 'Finish interpreting the video before building.');
+    }
     for (const p of photos) if (!PICTURE.test(p.name)) throw new ActionError(400, `${p.name}: a photo is png, jpg, webp or heic`);
     const images = await Promise.all(photos.map((p) => normalisePhoto(bytesOf(p.data))));
     const shape = await shapeIdea(startMemo(ctx.root), idea.trim(), images);
     if (slug && fs.existsSync(path.join(ctx.root, slug, 'world.json'))) throw new ActionError(409, `${slug} is built already: pick another name`);
     const name = slug ?? freeSlug(ctx.root, shape.slug);
     const dir = path.join(ctx.root, name);
+    for (const id of videos) {
+      const dest = path.join(dir, 'videos', id);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.cpSync(videoDir(ctx.root, id), dest, { recursive: true });
+    }
     // Photos go with the world, and the build reads them from there.
     const kept = (role: 'place' | 'hero') => {
       const at = (shape.pictures ?? []).indexOf(role);

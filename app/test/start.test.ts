@@ -84,3 +84,19 @@ test('the API rejects more than the shared limit before calling any model or sta
   expect(ask).not.toHaveBeenCalled();
   expect(start).not.toHaveBeenCalled();
 });
+
+test('a reviewed video and all timestamped evidence are retained with the new world', async () => {
+  const id = 'b'.repeat(32), dir = path.join(root, '.start', 'videos', id);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'upload.json'), JSON.stringify({ name: 'brief.mp4', size: 6, received: 6, duration: 1, audio: false }));
+  fs.writeFileSync(path.join(dir, 'source'), 'source');
+  const { ctx, start } = context();
+  await expect(runAction('world_new', { idea, videos: [id] }, ctx)).rejects.toThrow('Finish interpreting');
+  expect(start).not.toHaveBeenCalled(); expect(ask).not.toHaveBeenCalled();
+  fs.writeFileSync(path.join(dir, 'part-0.json'), JSON.stringify({ intervals: [{ from: 0, to: 1, said: '' }], reading: { idea } }));
+  ask.mockResolvedValue(shape);
+  await runAction('world_new', { idea, videos: [id] }, ctx);
+  expect(fs.readFileSync(path.join(root, 'forest-post', 'videos', id, 'source'), 'utf8')).toBe('source');
+  expect(fs.existsSync(path.join(root, 'forest-post', 'videos', id, 'part-0.json'))).toBe(true);
+  expect(start).toHaveBeenCalledTimes(1);
+});
