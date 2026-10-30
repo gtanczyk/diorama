@@ -2,9 +2,9 @@
   "fps": 30,
   "shots": [
     {
-      "name": "1 Cold open: the lighthouse",
-      "src": "footage/places/key-before-sunrise--lantern-rock-lighthouse.mp4",
-      "from": 1,
+      "name": "1 Cold open: lighthouse in the fog",
+      "src": "footage/mac/alive/foggy-ferry-cat--lighthouse-base.mp4",
+      "from": 0.5,
       "dur": 2.2,
       "crop": [
         0,
@@ -14,9 +14,9 @@
       ]
     },
     {
-      "name": "1 Cold open: a crayon valley",
-      "src": "footage/places/demo35--crayon-dream-valley.mp4",
-      "from": 3,
+      "name": "1 Cold open: the lantern market",
+      "src": "footage/mac/alive/dark-lantern-2--market-lane.mp4",
+      "from": 1,
       "dur": 2,
       "crop": [
         0,
@@ -27,9 +27,9 @@
       "fade": 0.3
     },
     {
-      "name": "1 Cold open: a kid's room in 1991",
-      "src": "footage/places/demo35--boyhood-room-1991.mp4",
-      "from": 3,
+      "name": "1 Cold open: lanterns on the river",
+      "src": "footage/mac/alive/dark-lantern-2--river-dock.mp4",
+      "from": 1,
       "dur": 2,
       "crop": [
         0,
@@ -40,9 +40,9 @@
       "fade": 0.3
     },
     {
-      "name": "1 Cold open: the broken bridge",
-      "src": "footage/places/living-drawing--crayon-game-land.mp4",
-      "from": 3,
+      "name": "1 Cold open: a crayon castle",
+      "src": "footage/mac/alive/smiling-cat-castle--striped-hill-top.mp4",
+      "from": 1,
       "dur": 2,
       "crop": [
         0,
@@ -53,10 +53,10 @@
       "fade": 0.3
     },
     {
-      "name": "1 Cold open: the harbour",
-      "src": "footage/places/key-before-sunrise--mug-harbour-town.mp4",
-      "from": 4,
-      "dur": 2.4,
+      "name": "1 Cold open: the lighthouse at night",
+      "src": "footage/mac/alive/foggy-ferry--lighthouse-landing.mp4",
+      "from": 1,
+      "dur": 2.6,
       "crop": [
         0,
         135,
@@ -129,11 +129,11 @@
       "name": "4 Build: painting",
       "dur": 3.5,
       "src": "footage/walkthrough/take.mp4",
-      "from": 380,
-      "speed": 12,
+      "from": 425,
+      "speed": 4,
       "caption": "Paints every place",
       "by": "Muse Image",
-      "speedup": "12x"
+      "speedup": "4x"
     },
     {
       "name": "4 Build: cut out",
@@ -149,11 +149,11 @@
       "name": "4 Build: depth and walk",
       "dur": 3,
       "src": "footage/walkthrough/take.mp4",
-      "from": 862,
-      "speed": 33,
+      "from": 700,
+      "speed": 20,
       "caption": "Depth: the floor, scale, shadows and parallax",
       "by": "Depth Anything",
-      "speedup": "33x"
+      "speedup": "20x"
     },
     {
       "name": "4 Build: voices and sound",
@@ -266,40 +266,81 @@
       "caption": "Walks, stands and talks with its hands"
     },
     {
-      "name": "6 Play: the study",
-      "src": "../../worlds/key-before-sunrise/playthrough/lighthouse-dawn.mp4",
-      "from": 9,
-      "dur": 4,
-      "fade": 0.4,
-      "audio": 0.8
-    },
-    {
-      "name": "6 Play: out to the harbour",
-      "src": "../../worlds/key-before-sunrise/playthrough/lighthouse-dawn.mp4",
-      "from": 55,
-      "dur": 4,
-      "audio": 0.8
-    },
-    {
-      "name": "6 Play: picking up the lantern",
-      "src": "../../worlds/key-before-sunrise/playthrough/lighthouse-dawn.mp4",
-      "from": 80,
-      "dur": 4,
-      "audio": 0.8
-    },
-    {
-      "name": "6 Play: talking to the fisher woman",
-      "src": "../../worlds/key-before-sunrise/playthrough/lighthouse-dawn.mp4",
-      "from": 113,
-      "dur": 4,
-      "audio": 0.8
-    },
-    {
-      "name": "6 Play: the lighthouse",
-      "src": "footage/places/key-before-sunrise--lantern-rock-lighthouse.mp4",
-      "from": 2,
-      "dur": 4,
+      "name": "6 Play: lanterns on the river",
+      "src": "footage/mac/walk/dark-lantern-2--river-dock.mp4",
+      "from": 2.5,
+      "dur": 4.5,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
       "fade": 0.4
+    },
+    {
+      "name": "6 Play: the last tram",
+      "src": "footage/mac/walk/last-tram--przystanek.mp4",
+      "from": 1,
+      "dur": 4,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ]
+    },
+    {
+      "name": "6 Play: the foghorn on the cliff",
+      "src": "footage/mac/walk/ootb-test2--foghorn-point.mp4",
+      "from": 1,
+      "dur": 4,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "6 Play: the farm",
+      "src": "footage/mac/walk/podwo-rko-gospodarstwa-obora--farm-yard.mp4",
+      "from": 0.5,
+      "dur": 4,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "6 Play: the bridge in the mist",
+      "src": "footage/mac/walk/last-tram-2--river-bank.mp4",
+      "from": 1,
+      "dur": 4,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "6 Play: the ferry pier",
+      "src": "footage/mac/alive/foggy-ferry--ferry-pier.mp4",
+      "from": 1,
+      "dur": 4,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
     },
     {
       "name": "7 Change: click, screenshot, ask",
@@ -326,24 +367,9 @@
       "from": 173.5
     },
     {
-      "name": "8 Export: a zip",
-      "dur": 6,
-      "src": "footage/walkthrough/take.mp4",
-      "from": 1689,
-      "fade": 0.4,
-      "caption": "Export: a zip, or a GitHub Pages link"
-    },
-    {
-      "name": "8 Export: plays in any browser",
-      "dur": 6,
-      "src": "footage/walkthrough/take.mp4",
-      "from": 1705,
-      "caption": "Plays in any browser"
-    },
-    {
-      "name": "9 More worlds: a drawing come alive",
-      "src": "footage/places/living-drawing--boy-room-1991.mp4",
-      "from": 2,
+      "name": "9 More worlds: the garden at dusk",
+      "src": "footage/mac/alive/grandmas-kitchen--garden.mp4",
+      "from": 1,
       "dur": 3,
       "crop": [
         0,
@@ -352,12 +378,26 @@
         810
       ],
       "fade": 0.4,
+      "caption": "Export: one zip or a GitHub Pages link, plays in any browser"
+    },
+    {
+      "name": "9 More worlds: the striped lighthouse",
+      "src": "footage/mac/alive/ootb-test2--lighthouse-yard.mp4",
+      "from": 1,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3,
       "caption": "Every world here was made with Diorama"
     },
     {
-      "name": "9 More worlds: the crayon castle",
-      "src": "footage/places/demo35--crayon-dream-valley.mp4",
-      "from": 5,
+      "name": "9 More worlds: the tram stop",
+      "src": "footage/mac/alive/last-tram-2--tram-stop.mp4",
+      "from": 1,
       "dur": 3,
       "crop": [
         0,
@@ -368,22 +408,9 @@
       "fade": 0.3
     },
     {
-      "name": "9 More worlds: the bridge",
-      "src": "footage/places/living-drawing--crayon-game-land.mp4",
-      "from": 0,
-      "dur": 3,
-      "crop": [
-        0,
-        135,
-        1440,
-        810
-      ],
-      "fade": 0.3
-    },
-    {
-      "name": "9 More worlds: back to the desk",
-      "src": "footage/places/demo35--developer-study-today.mp4",
-      "from": 2,
+      "name": "9 More worlds: the lantern market",
+      "src": "footage/mac/walk/dark-lantern-2--market-lane.mp4",
+      "from": 1,
       "dur": 3,
       "crop": [
         0,
@@ -407,27 +434,27 @@
   "voice": [
     {
       "src": "footage/vo/ask.wav",
-      "at": 25.9
+      "at": 26.1
     },
     {
       "src": "footage/vo/build.wav",
-      "at": 36.9
+      "at": 37.1
     },
     {
       "src": "footage/vo/how.wav",
-      "at": 56.9
+      "at": 57.1
     },
     {
       "src": "footage/vo/change.wav",
-      "at": 108.9
+      "at": 113.6
     },
     {
       "src": "footage/vo/export.wav",
-      "at": 130.9
+      "at": 135.6
     },
     {
       "src": "footage/vo/end.wav",
-      "at": 154.9
+      "at": 147.6
     }
   ]
 }
