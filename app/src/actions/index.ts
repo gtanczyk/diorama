@@ -13,6 +13,7 @@ import './models.ts';
 import './view.ts';
 import './motion.ts';
 import './cast.ts';
+import './faces.ts';
 import './style.ts';
 import './items.ts';
 import './story.ts';

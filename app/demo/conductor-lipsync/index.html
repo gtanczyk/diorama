@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Obsada — usta i mimika</title>
+<style>
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:#121b21;color:#eee4ce;font:15px system-ui,sans-serif}header{display:flex;align-items:center;gap:24px;padding:16px 24px;border-bottom:1px solid #34434a}h1{font:600 23px Georgia,serif;margin:0}header p{font-size:12px;color:#b5bebf;margin:4px 0 0}.options{margin-left:auto;display:flex;gap:20px;align-items:center}label{display:flex;gap:8px;align-items:center}select{max-width:180px;background:#293a42;color:#eee4ce;border:1px solid #61717a;padding:6px;border-radius:5px}input{accent-color:#e6b273}main{display:grid;grid-template-columns:minmax(0,1fr) 290px;height:calc(100vh - 80px)}iframe{width:100%;height:100%;border:0;background:#090b0d}aside{min-height:0;overflow-y:auto;padding:24px 20px;border-left:1px solid #34434a;display:flex;flex-direction:column;gap:14px}button{color:#f0e7d4;background:#293a42;border:1px solid #61717a;border-radius:6px;padding:10px 12px;cursor:pointer;font:inherit}button:hover{background:#3b5059}button:disabled{opacity:.45;cursor:default}#all{background:#e3b27b;color:#172129;font-weight:650;border-color:#e3b27b}.line{text-align:left;font-size:13px;line-height:1.5}.line.active{border-color:#e3b27b;background:#3d4545}#status{font-size:12px;color:#bac6c7;line-height:1.6;margin:4px 0}aside p{margin:0}.small{font-size:12px;color:#9dadaf;line-height:1.6;margin-top:auto}aside>*{flex-shrink:0}a{color:#e3b27b}@media(max-width:900px){header{flex-wrap:wrap}.options{margin:0}main{height:auto;display:flex;flex-direction:column}iframe{height:70vh}aside{border:0}.small{margin-top:12px}}
+</style>
+<header><div><h1>Usta i mimika</h1><p>Ostatni tramwaj · prototyp dialogu</p></div><div class="options"><label><input type="checkbox" id="enabled" checked>Usta i mimika</label><label><input type="checkbox" id="close" checked>Zbliżenie</label><a href="/?place=tram-car" target="_blank">Otwórz grę ↗</a></div></header>
+<main><iframe title="Ostatni tramwaj — scena z konduktorem" allow="autoplay"></iframe><aside><label>Postać <select id="actor"><option value="conductor">Konduktor Wacek</option><option value="flower-seller">Pani Róża</option><option value="traveler">Antek</option><option value="boatman">Stary Janek</option></select></label><label>Wyświetlanie <select id="mode"><option value="sprites">Sprite’y</option><option value="image">Obrazek</option><option value="rig">Rig 2D</option><option value="model">Model 3D</option></select></label><label id="rotation" hidden>Obrót 3D <input id="yaw" type="range" min="-180" max="180" step="15" value="45"></label><p id="coverage" class="small" style="margin:0"></p><button id="all" disabled>Odtwórz wszystkie kwestie</button><button id="stop" disabled>Przerwij</button><p id="status" role="status">Wczytywanie sceny…</p><div id="lines" style="display:grid;gap:10px"></div><p class="small">Przełącz „Usta i mimika”, żeby porównać efekt z dotychczasową animacją. Wyłącz zbliżenie, żeby zobaczyć postać w normalnej skali gry.</p></aside></main>
+<script>
+const actor=document.querySelector('#actor'), mode=document.querySelector('#mode'), coverage=document.querySelector('#coverage');
+const frame=document.querySelector('iframe'), enabled=document.querySelector('#enabled'), close=document.querySelector('#close'), all=document.querySelector('#all'), stop=document.querySelector('#stop'), status=document.querySelector('#status'), list=document.querySelector('#lines');
+let game,lines=[],serial=0,loading=0;
+const yaw=document.querySelector('#yaw'),rotation=document.querySelector('#rotation');
+const places={'conductor':'tram-car','flower-seller':'tram-stop','traveler':'tram-stop','boatman':'river-bank'};
+const params=new URLSearchParams(location.search);if(params.has('actor'))actor.value=params.get('actor');if(params.has('mode'))mode.value=params.get('mode');
+function clear(){serial++;if(game){game.speech=null;game.emit('silent',{});}list.querySelectorAll('button').forEach(b=>b.classList.remove('active'));}
+async function play(index,sequence=false){
+ clear();const request=serial;await game.sound.ctx.resume();
+ for(let i=index;i<lines.length;i++){
+  if(request!==serial)return;
+  list.querySelectorAll('button').forEach((b,n)=>b.classList.toggle('active',i===n));
+  status.textContent=`Kwestia ${i+1} z ${lines.length}`;
+  await game.say(lines[i],actor.value);
+  if(!sequence)break;
+ }
+ if(request===serial){status.textContent=`Gotowy · ${lines.length} polskich kwestii`;list.querySelectorAll('button').forEach(b=>b.classList.remove('active'));}
+}
+function load(){loading++;rotation.hidden=mode.value!=='model';clear();game=null;list.replaceChildren();all.disabled=stop.disabled=true;status.textContent='Wczytywanie sceny…';frame.src='/?place='+places[actor.value]+'&rim=0&separate=0&parallax=0&modelPaint=0&model='+(mode.value==='model'?'1':'0')+'&lipsync='+(enabled.checked?'1':'0');}
+frame.onload=async()=>{
+ const request=loading,key=actor.value,selectedMode=mode.value,win=frame.contentWindow;while(!win.diorama?.place||win.diorama.dark!==0){if(request!==loading)return;await new Promise(r=>setTimeout(r,80));}if(request!==loading)return;
+ const current=win.diorama;game=current;
+ const figure=current.figures.get(actor.value);
+ if(mode.value==='image'){figure.sprites=undefined;figure.model=undefined;figure.rig=undefined;}
+ if(mode.value==='rig'){figure.sprites=undefined;figure.model=undefined;}
+ coverage.textContent=mode.value==='model' ? (figure.model?.facialCapabilities.mouth?(figure.model.facialCapabilities.method==='morphs'?'Model 3D · deformacje twarzy.':'Model 3D · animowana malowana powierzchnia twarzy.'):'Ten model nie ma jeszcze przygotowanej animacji twarzy.') : mode.value==='rig'&&!figure.rig?'Ta postać nie ma sprawnego rigu; użyto obrazka.':'Wspólna synchronizacja nagrania, usta i delikatna mimika.';
+ // This review camera uses the actual game renderer. No changes to the world or its character size.
+ const zoom=current.zoom.bind(game),sway=current.swayCamera.bind(game),bubble=current.drawSpeech.bind(game);
+ const npc=current.place.g.things.find(t=>t.key===key),foot=npc?npc.box[3]:current.hero.y,x=npc?(npc.box[0]+npc.box[2])/2:current.hero.x;
+ const drawPerson=current.drawPerson.bind(current),heroFigure=current.hero.figure;current.drawPerson=(...args)=>{if(key!==current.data.world.hero.key&&args[5]===heroFigure)return[args[0],args[1],args[0],args[1]];if(args[5]===figure&&selectedMode==='model')args[9]=Number(yaw.value)*Math.PI/180;return drawPerson(...args);};
+ const unit=Math.max(40,(foot-current.place.g.scale.horizonY)*current.place.g.scale.pxPerY)*(figure.height??1.62)/1.62;
+ current.zoom=()=>close.checked?Math.min(8,Math.max(1,1000/unit)):zoom();
+ current.swayCamera=dt=>{sway(dt);if(close.checked){current.viewX=x;current.viewY=foot-unit*.88;}};
+ current.drawSpeech=(rect,name)=>{const c=frame.contentDocument.querySelector('#view').getContext('2d'),m=c.getTransform();c.save();c.setTransform(1,0,0,1,0,0);bubble([rect[0]*m.a+m.e,rect[1]*m.d+m.f,rect[2]*m.a+m.e,rect[3]*m.d+m.f],name);c.restore();};
+ lines=Object.keys(current.data.sound.bySpeaker[actor.value]);list.replaceChildren();
+ for(const [i,line] of lines.entries()){const b=document.createElement('button');b.className='line';b.textContent=line;b.onclick=()=>play(i);list.append(b);}
+ all.disabled=stop.disabled=false;status.textContent=`Gotowy · ${lines.length} polskich kwestii`;
+};
+actor.onchange=mode.onchange=enabled.onchange=load;all.onclick=()=>play(0,true);stop.onclick=()=>{clear();status.textContent='Przerwano';};load();
+</script></html>

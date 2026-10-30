@@ -1,3 +1,4 @@
+import { refreshExistingLipSync } from './lipsync-make.ts';
 import type { WorldFiles } from '../world/files.ts';
 import { Story } from '../story/schema.ts';
 import { creditGuard } from './cost.ts';
@@ -37,5 +38,6 @@ export async function retryVoiceLine(files: WorldFiles, speaker: string, text: s
     files.write(files.path('voices.json'), { ...saved, failures: [...old.failures.filter((l) => !same(l)), { speaker, text, reason }] });
     throw error;
   } finally { if (voice.design) await designed.close(); }
+  await refreshExistingLipSync(files, [speaker]);
   console.log(`voice retry ${speaker}: ${text} · ${await guard.report()}`);
 }

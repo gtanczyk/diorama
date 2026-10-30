@@ -1,5 +1,6 @@
 // The play page's sound: a music bed, the place's ambience, loops that pan and fade with where the hero
 // stands, footsteps on the floor under him, and one-shots for what happens in the story. Web Audio only.
+import { mouthAt, type LipSync } from '../src/play/lipsync.ts';
 import { personPx, type GeoThing, type Geometry } from '../src/play/geometry.ts';
 import { levelGain, placeSound, spokenLine, zoneAt, type SoundData } from '../src/play/sound.ts';
 import { holds, type State } from '../src/story/engine.ts';
@@ -123,6 +124,14 @@ export class Mixer {
   }
 
   private speaking: AudioBufferSourceNode | undefined;
+  private articulation: { speech: unknown; start: number; sync: LipSync } | undefined;
+
+  /** The active source owns both articulation and time; loading, mute, pause and interruption close the lips. */
+  mouth(speech: unknown) {
+    const active = this.articulation;
+    return mouthAt(active?.sync, active && active.speech === speech && !this.muted && this.ctx.state === 'running'
+      ? this.ctx.currentTime - active.start : undefined);
+  }
   private lines = new Map<string, Promise<AudioBuffer | undefined>>();
 
   /** ?voices=npc: only the people the hero meets speak (for a film with a voice-over); ?voices=0: nobody. */
@@ -147,11 +156,13 @@ export class Mixer {
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     src.connect(this.voiceBus);
-    src.start();
+    const start = this.ctx.currentTime;
+    src.start(start);
     this.speaking = src;
+    if (!card && line.lipsync) this.articulation = { speech, start, sync: line.lipsync };
     if (!card && !this.muted && this.ctx.state === 'running') this.game.voiceStarted?.(speech);
     src.onended = () => {
-      if (this.speaking === src) this.speaking = undefined;
+      if (this.speaking === src) { this.speaking = undefined; this.articulation = undefined; }
       if (!card) this.game.voiceEnded?.(speech);
     };
     this.log.push({ at: this.ctx.currentTime, id: text.slice(0, 40), kind: 'line' });
@@ -160,6 +171,7 @@ export class Mixer {
   private speechRequest = 0;
   private hush() {
     this.speechRequest++;
+    this.articulation = undefined;
     try {
       this.speaking?.stop();
     } catch {

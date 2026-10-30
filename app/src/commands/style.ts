@@ -80,6 +80,7 @@ defineCommand({
         await run('sprites', [slug, k]);
       }
     }
+    if (plan.faces.length) await run('faces', [slug, ...plan.faces]);
     if (scope === 'world' && plan.places.length) await run('build', [slug, '--from', 'verify', '--to', 'verify']);
     console.log(`\nstyle ${slug}: ${scope}${key ? ` ${key}` : ''} now "${style}"`);
   },

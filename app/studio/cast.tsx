@@ -17,6 +17,7 @@ type Character = {
   body: { height: number; upright: boolean } | null;
   stamps: { rig: number | null; model: number | null; sprites: number | null };
   voice: { voice: string; why: string; stability: number; style: number } | null;
+  face?: { ready: boolean; image: boolean; rig: boolean; spriteViews: number; model3d?: {mouth:boolean;method?:string|null;views?:string[]} | null; attempt?: { state?: string; reason?: string } | null };
   lines: number; flagged: number; sample: { text: string; file: string } | null;
   voiceFailures?: Array<{ text: string; reason: string }>;
   voiceWarnings?: string[];
@@ -124,7 +125,12 @@ function Card({ slug, c, onError, focused }: { slug: string; c: Character; onErr
           {c.role !== 'narrator' && c.figure && !c.model && <button type="button" class="ghost small" disabled={busy || !!c.modelJob} title={named(`Muse paints ${c.key} from 4 sides and TRELLIS builds a 3D model${creature ? ': no skeleton, in the game it hops, squashes, leans and blinks as one body' : ''}. Animation settings are chosen automatically and kept across rebuilds.`)} onClick={() => act('cast_animate', {})}>{c.modelJob ? c.modelJob.state === 'queued' ? '3D queued…' : 'Building 3D…' : c.modelIssue ? 'Retry 3D' : 'Animate in 3D'}</button>}
           {(c.rig || c.model || c.sprites) && <button type="button" class={`ghost small round${moving ? ' on' : ''}`} aria-label={moving ? 'Close the preview' : 'See it move'} title={moving ? 'Close the preview' : 'See it move: walk, stand and talk as the game draws it. Free'} onClick={() => setMoving(!moving)}>{moving ? '■' : '▶'}</button>}
         </div>
-        {c.role !== 'narrator' && (
+        {c.role !== 'narrator' && (<>
+          <div class="row" style="margin-bottom:8px">
+            <button type="button" class="ghost small" disabled={busy || !c.figure} onClick={() => void act('faces_prepare', {})}>{c.face?.ready ? 'Refresh speech animation' : 'Prepare speech animation'}</button>
+            {c.face?.ready && <small>{c.face.model3d?.mouth ? `2D + 3D speech ready (${c.face.model3d.method === 'morphs' ? 'facial morphs' : 'painted surfaces'})` : '2D speaking face ready'}</small>}
+            {c.face?.attempt?.state === 'failed' && <small class="error">{c.face.attempt.reason}</small>}
+          </div>
           <form class="say" onSubmit={(e) => (e.preventDefault(), changed && void act('cast_redo', { looks: looks.trim() }))}>
             <textarea rows={3} value={looks} title="How the character looks. Change it and press Repaint" onInput={(e) => setLooks(e.currentTarget.value)} aria-label={`How ${c.key} looks`} />
             <div class="row">
@@ -134,7 +140,7 @@ function Card({ slug, c, onError, focused }: { slug: string; c: Character; onErr
               <button type="submit" class="primary small" disabled={busy || !changed} title={named(changed ? 'Muse paints the character from your new description, kept across rebuilds. 1 Muse Image + 1 SAM call' : 'Change the description first (at least 10 letters)')}>Repaint</button>
             </div>
           </form>
-        )}
+        </>)}
         <div class="row voice">
           {c.voice
             ? <>

@@ -45,7 +45,7 @@ function world() {
   }
   process.chdir(root);
   const ran: string[] = [];
-  for (const step of ['icons', 'cast', 'model', 'sprites', 'sound', 'voices']) defineCommand({ name: step, usage: step, async run() {} });
+  for (const step of ['icons', 'cast', 'model', 'sprites', 'sound', 'voices', 'faces']) defineCommand({ name: step, usage: step, async run() {} });
   for (const step of PLACE_STEPS) {
     defineCommand({
       name: step,
@@ -121,7 +121,7 @@ test('a short gap is bridged for free: a floor stroke in corrections.json, the p
 
 test('places do not wait for each other: a quick place is played while a slow one is still painted, the cast is made alongside', async () => {
   const { ran } = world();
-  for (const step of ['cast', 'model', 'sprites', 'voices', 'sound', 'icons']) defineCommand({ name: step, usage: step, async run() { ran.push(step); } });
+  for (const step of ['cast', 'model', 'sprites', 'voices', 'sound', 'icons', 'faces']) defineCommand({ name: step, usage: step, async run() { ran.push(step); } });
   const paint = registry.get('paint')!;
   defineCommand({
     name: 'paint',
@@ -141,6 +141,9 @@ test('places do not wait for each other: a quick place is played while a slow on
   // Sprites walk the routes of every place, sound listens to every painting: they wait for the slow one.
   expect(at('sprites')).toBeGreaterThan(at('derive:stuck'));
   expect(at('sound')).toBeGreaterThan(at('painted:stuck'));
+  expect(at('faces')).toBeGreaterThan(at('sprites'));
+  expect(at('faces')).toBeGreaterThan(at('voices'));
+  expect(at('faces')).toBeGreaterThan(at('cast'));
 });
 
 test('a world step that fails ends the build with its error once what was running is done', async () => {

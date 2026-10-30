@@ -2,6 +2,9 @@
 // sprite: feet planted on the walk cycle the 2D rig uses, any facing, Muse's four painted views on its
 // surface, lit by the painting around it. The page only imports this when a world ships a model.
 import * as THREE from 'three';
+import { ModelFace } from './face3d.ts';
+import type { FaceDefinition, FaceState } from '../src/play/lipsync.ts';
+import { PaintedFace } from './face.ts';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GESTURES, type Pose as GesturePose } from '../src/play/gestures.ts';
 import { CYCLE } from '../src/play/rig.ts';
@@ -69,6 +72,11 @@ const KUWAHARA = `
 uniform sampler2D tex; uniform vec2 texel; uniform int radius; varying vec2 vUv;
 void main() {
   vec4 c0 = texture2D(tex, vUv);
+  if (radius == 0) {
+    gl_FragColor = c0;
+    #include <colorspace_fragment>
+    return;
+  }
   vec3 m[4]; vec3 s[4]; float a[4];
   for (int k = 0; k < 4; k++) { m[k] = vec3(0.); s[k] = vec3(0.); a[k] = 0.; }
   for (int j = -4; j <= 4; j++) for (int i = -4; i <= 4; i++) {
@@ -172,6 +180,37 @@ export class Figure3D {
   private postCam = new THREE.Camera();
   private holder = new THREE.Group();
   private bones: Record<string, THREE.Bone> = {};
+  private facial?: ModelFace;
+  private surfaceSources: Array<{ name: string; file: string; image: HTMLImageElement; texture: THREE.Texture }> = [];
+  private surfaces: Array<{ name: string; file: string; image: HTMLImageElement; texture: THREE.Texture; painter: PaintedFace; version: number }> = [];
+  get facialCapabilities() {
+    const morphs = this.facial?.mouth ?? false;
+    return { mouth: morphs || this.surfaces.length > 0, eyes: (this.facial?.eyes ?? false) || this.surfaces.length > 0,
+      method: morphs ? 'morphs' : this.surfaces.length ? 'painted-surfaces' : null, views: this.surfaces.map(s=>s.name) };
+  }
+
+  /** Each view owns a canvas: sharing one would paint the last profile onto every side of the model. */
+  setFace(info: FaceDefinition, atlas: HTMLImageElement) {
+    this.surfaces = []; this.lastFrame=undefined;
+    for(const source of this.surfaceSources){source.texture.image=source.image;source.texture.needsUpdate=true;}
+    if (this.facial?.mouth) return;
+    const definition = this.facial?.eyes ? { ...info, sheets: Object.fromEntries(Object.entries(info.sheets).map(([key,poses])=>[key,poses.map(p=>p?{...p,eyes:[]}:null)])) } : info;
+    for (const source of this.surfaceSources) {
+      const pose = info.sheets[`model:${source.file}`]?.[0], view = pose?.atlas ?? 'default';
+      if (!pose?.lips || !info.anchors?.[view] || !info.frames?.[view] || (view!=='default'&&!info.atlases?.[view])) continue;
+      this.surfaces.push({...source,painter:new PaintedFace(definition,atlas,[view]),version:-1});
+    }
+  }
+
+  private paintFace(state: FaceState) {
+    for (const surface of this.surfaces) {
+      const image = surface.painter.draw(surface.image,`model:${surface.file}`,0,1,1,state,0,0,undefined,state);
+      if (surface.version === surface.painter.version) continue;
+      surface.version = surface.painter.version;
+      surface.texture.image = image;
+      surface.texture.needsUpdate = true;
+    }
+  }
   private rest: Record<string, { q: THREE.Quaternion; parentWorld: THREE.Quaternion }> = {};
   private legs!: Record<'Left' | 'Right', Leg>;
   private arms!: Record<'Left' | 'Right', THREE.Vector3>;
@@ -180,6 +219,7 @@ export class Figure3D {
   private creature = false;
   private reach = 0.45;
   private seed = Math.random() * 10;
+  private lastFrame?: {frame:number;key:string};
   get creatureBody() {
     return this.creature;
   }
@@ -199,6 +239,8 @@ export class Figure3D {
 
   /** Frees the WebGL context (a browser keeps only a few), for a page that shows figures one after another. */
   dispose() {
+    for (const source of this.surfaceSources) source.texture.dispose();
+    this.surfaceSources = []; this.surfaces = [];
     this.rt.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
@@ -250,6 +292,7 @@ export class Figure3D {
       for (const b of skinned.skeleton.bones) this.bones[b.name.replace(/^mixamorig:?/, '')] = b;
       toBindPose(root, skinned);
     }
+    this.facial = new ModelFace(root);
     // Feet at 0, height 1, centred: measured on the mesh as posed now.
     this.holder.add(root);
     this.holder.updateMatrixWorld(true);
@@ -341,6 +384,7 @@ export class Figure3D {
       tex.needsUpdate = true;
       const f = info.views[name];
       uniforms[`p_${name}`] = { value: tex };
+      this.surfaceSources.push({name,file:f.image,image:img,texture:tex});
       uniforms[`f_${name}`] = { value: new THREE.Vector4(f.u[0], f.u[1], f.v[0], f.v[1]) };
       uniforms[`b_${name}`] = { value: (f.bands?.length === BANDS ? f.bands : Array(BANDS).fill(f.u)).map(([a, b]) => new THREE.Vector2(a, b)) };
     }));
@@ -496,13 +540,15 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
    * One frame, `px` pixels tall. yaw: 0 faces the viewer, PI/2 faces screen right. elevation: how far
    * the camera looks down (radians). Returns the canvas, feet at (width / 2, height * feetAt).
    */
-  draw({ phase = 0, walking = false, yaw = 0, elevation = 0.18, px = 300, light, armSwing = 0.12, gesture, time = performance.now() / 1000, talk }: {
-    phase?: number; walking?: boolean; yaw?: number; elevation?: number; px?: number; light?: FigureLight; armSwing?: number;
+  draw({ phase = 0, walking = false, yaw = 0, elevation = 0.18, px = 300, light, armSwing = 0.12, gesture, time = performance.now() / 1000, talk, face, frame }: {
+    phase?: number; walking?: boolean; yaw?: number; elevation?: number; px?: number; light?: FigureLight; armSwing?: number; frame?: number;
     /** A talking pose (index into src/play/gestures.ts GESTURES), standing. A creature only bounces on its words. */
     gesture?: number;
     /** Seconds, and whether it speaks or listens: a creature breathes, blinks and bounces with them. */
-    time?: number; talk?: 'speak' | 'listen';
+    time?: number; talk?: 'speak' | 'listen'; face?: FaceState;
   }): HTMLCanvasElement {
+    const key=frame===undefined?'':JSON.stringify([phase,walking,yaw,elevation,px,light,armSwing,gesture,time,talk,face&&[face.mouth,face.previous,face.mix.toFixed(2),face.blink.toFixed(2),face.brow.toFixed(2),face.jaw.toFixed(2),face.round.toFixed(2)]]);
+    if(frame!==undefined&&this.lastFrame?.frame===frame&&this.lastFrame.key===key)return this.canvas;
     // Feet at 0: how much of the frame is above and below them, and how wide it is either side, in heights.
     let [top, bottom, half] = [1.06, -0.06, 0.45];
     if (this.creature) {
@@ -514,6 +560,7 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
       // Room for the highest hop and a stretched take-off, and for a long body turned side on.
       [top, bottom, half] = [1.55, -0.06, this.reach];
     } else this.pose(phase, walking && gesture === undefined, armSwing, gesture);
+    if (face) { this.facial?.apply(face); this.paintFace(face); }
     this.holder.rotation.y = yaw;
     this.camDir.value.set(-Math.sin(yaw), 0, Math.cos(yaw));
     this.holder.updateMatrixWorld(true);
@@ -548,6 +595,7 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
     this.renderer.setRenderTarget(null);
     this.renderer.clear();
     this.renderer.render(this.postScene, this.postCam);
+    if(frame!==undefined)this.lastFrame={frame,key};
     return this.canvas;
   }
 }

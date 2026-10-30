@@ -1,3 +1,4 @@
+import type { LipSync } from './lipsync.ts';
 // What the play page gets to mix a world's sound, and the mixing rules as pure functions.
 // No Node imports: the browser bundles this file.
 
@@ -16,7 +17,7 @@ export type SoundData = {
   /** Trigger ("take", "click", "exit:cliff-path", "use:cold-lamp", "talk", "ending") → sound id. */
   shots: Record<string, string>;
   /** Spoken lines (diorama voices): the text the page says → its recording. */
-  lines?: Record<string, { file: string; seconds: number; speaker?: string }>;
+  lines?: Record<string, { file: string; seconds: number; speaker?: string; lipsync?: LipSync }>;
   /** Speaker-specific recordings; older worlds can still use lines keyed only by text. */
   bySpeaker?: Record<string, NonNullable<SoundData['lines']>>;
 };

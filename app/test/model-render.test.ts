@@ -128,3 +128,35 @@ test('model texture mode rejects a mesh without a UV texture instead of silently
     expect(message).toContain('model texture requires a base colour map and UV coordinates');
   } finally { await page.close(); }
 }, 30_000);
+
+test('a 3D mesh without morphs speaks through independent painted surfaces, turns with them and returns to the original paint', async () => {
+  const page=await open(boxGlb([1.2,1,0.4]));
+  const atlas=await sharp(Buffer.from(`<svg width="144" height="16">${Array.from({length:9},(_,i)=>`<rect x="${i*16}" width="16" height="16" fill="${i===4?'#ff2200':'#dddddd'}"/>`).join('')}</svg>`)).png().toBuffer();
+  await page.route('**/faces.png',r=>r.fulfill({body:atlas,contentType:'image/png'}));
+  const green=await sharp({create:{width:32,height:32,channels:3,background:'#22bb44'}}).png().toBuffer();
+  const blue=await sharp({create:{width:32,height:32,channels:3,background:'#2255bb'}}).png().toBuffer();
+  await page.route('**/right.png',r=>r.fulfill({body:green,contentType:'image/png'}));
+  await page.route('**/left.png',r=>r.fulfill({body:blue,contentType:'image/png'}));
+  try {
+    const result=await page.evaluate(async info=>{
+      const fig=await window.Figures.Figure3D.load(info,f=>'/'+f,0),atlas=new Image();atlas.src='/faces.png';await atlas.decode();
+      const mouths=['X','A','B','C','D','E','F','G','H'] as const;
+      const gl=fig.canvas.getContext('webgl2')!;let draws=0;
+      for(const name of ['drawElements','drawArrays'] as const){const original=(gl[name] as Function).bind(gl);(gl as any)[name]=(...args:unknown[])=>{draws++;return original(...args);};}
+      const anchor:[number,number,number,number]=[0.25,0.3,0.5,0.2];
+      fig.setFace({image:'faces.png',mouths:Object.fromEntries(mouths.map((m,i)=>[m,[i*16,0,16,16]])) as any,anchors:{default:anchor},frames:{default:Object.fromEntries(mouths.map(m=>[m,anchor])) as any},sheets:Object.fromEntries(['front','left','right'].map(v=>['model:'+v+'.png',[{mouth:[10,2,12,10],lips:[12,4,8,2],eyes:[]}]]))},atlas);
+      const draw=(mouth:'X'|'D',yaw=0)=>{
+        const face={mouth,previous:mouth,mix:1,energy:0,blink:0,brow:0,jaw:mouth==='D'?0.9:0,round:0};
+        const c=fig.draw({time:0,phase:0,walking:false,yaw,elevation:0,px:240,frame:42,face}),copy=document.createElement('canvas');copy.width=c.width;copy.height=c.height;
+        const ctx=copy.getContext('2d')!;ctx.drawImage(c,0,0);const pixels=ctx.getImageData(0,0,c.width,c.height).data;
+        let red=0,green=0;for(let i=0;i<pixels.length;i+=4){if(pixels[i+3]&&pixels[i]>pixels[i+1]+60&&pixels[i]>pixels[i+2]+60)red++;if(pixels[i+3]&&pixels[i+1]>pixels[i]+30&&pixels[i+1]>pixels[i+2]+30)green++;}
+        return {red,green};
+      };
+      const before=draw('X'),firstDraws=draws;draw('X');const cached=draws===firstDraws,speaking=draw('D'),profile=draw('D',Math.PI/2),after=draw('X'),caps=fig.facialCapabilities,error=fig.canvas.getContext('webgl2')!.getError();fig.dispose();
+      return {before,speaking,profile,after,caps,error,cached};
+    },info);
+    expect(result.cached).toBe(true);expect(result.caps.method).toBe('painted-surfaces');expect(result.caps.views.sort()).toEqual(['front','left','right']);
+    expect(result.before.red).toBe(0);expect(result.speaking.red).toBeGreaterThan(5);expect(result.profile.red).toBeGreaterThan(5);
+    expect(result.speaking.green).toBe(0);expect(result.profile.green).toBeGreaterThan(20);expect(result.after).toEqual(result.before);expect(result.error).toBe(0);
+  } finally {await page.close();}
+},30_000);

@@ -30,7 +30,7 @@ function sign(j: ActivityJob): IconName {
   return 'gear';
 }
 
-const STEPS = new Set(['world', 'story', 'layout', 'paint', 'masks', 'plates', 'icons', 'derive', 'backdrop', 'weather', 'reactions', 'cast', 'model', 'sprites', 'sound', 'voices', 'verify']);
+const STEPS = new Set(['world', 'story', 'layout', 'paint', 'masks', 'plates', 'icons', 'derive', 'backdrop', 'weather', 'reactions', 'cast', 'model', 'sprites', 'sound', 'voices', 'faces', 'verify']);
 
 const STATE: Record<string, { mark: string; word: string }> = {
   queued: { mark: '⏳', word: 'waiting' },

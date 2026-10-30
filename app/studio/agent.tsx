@@ -146,7 +146,7 @@ export function describeCalls(state: SessionState | null, jobs: readonly JobInfo
   return { ...state, turns };
 }
 
-const BUILD_STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'icons', 'derive', 'backdrop', 'weather', 'reactions', 'cast', 'model', 'sprites', 'sound', 'voices', 'verify'];
+const BUILD_STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'icons', 'derive', 'backdrop', 'weather', 'reactions', 'cast', 'model', 'sprites', 'sound', 'voices', 'faces', 'verify'];
 /** The steps a job runs, from its command: one step, a range (--from/--to) or a whole build. */
 function steps(args: readonly string[]): string[] {
   if (args[0] !== 'build') return BUILD_STEPS.includes(args[0]) ? [args[0]] : [];

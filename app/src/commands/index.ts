@@ -15,6 +15,7 @@ import './weather.ts';
 import './reactions.ts';
 import './sound.ts';
 import './voices.ts';
+import './faces.ts';
 import './voice-retry.ts';
 import './verify.ts';
 import './explore.ts';

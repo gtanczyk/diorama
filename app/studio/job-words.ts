@@ -5,7 +5,7 @@ const STEP_WORDS: Record<string, string> = {
   world: 'writing the story', story: 'writing the story', layout: 'planning the places', paint: 'painting', masks: 'cutting out things',
   plates: 'painting changed things', icons: 'drawing the items', derive: 'measuring depth and walk', backdrop: 'painting the far view',
   weather: 'setting the weather', reactions: 'choosing scene reactions', cast: 'painting the cast', model: 'building 3D models', sprites: 'painting sprites',
-  sound: 'making sounds', voices: 'giving voices', verify: 'play testing',
+  sound: 'making sounds', voices: 'giving voices', faces: 'animating speaking faces', verify: 'play testing',
 };
 export const stepWords = (s: string) => STEP_WORDS[s] ?? name(s).toLowerCase();
 /** A job's label ("fix princess-castle from paint", "masks · tram-stop") in plain words with place names, no step ids. */

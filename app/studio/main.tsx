@@ -207,7 +207,7 @@ function ShareButton({ slug, jobs, onError }: { slug: string; jobs: Job[]; onErr
 }
 
 /** Which model does the running step, for the build card. */
-const MODEL_FOR: Record<string, string> = { world: 'Muse Spark', story: 'Muse Spark', layout: 'Muse Spark', paint: 'Muse Image', masks: 'SAM 3.1', plates: 'Muse Image', icons: 'Muse Image', derive: 'Depth', backdrop: 'Muse Image', reactions: 'Muse Spark', cast: 'Muse Image', model: '3D', sprites: 'Muse Image', sound: 'ElevenLabs', voices: 'ElevenLabs', verify: 'play test' };
+const MODEL_FOR: Record<string, string> = { world: 'Muse Spark', story: 'Muse Spark', layout: 'Muse Spark', paint: 'Muse Image', masks: 'SAM 3.1', plates: 'Muse Image', icons: 'Muse Image', derive: 'Depth', backdrop: 'Muse Image', reactions: 'Muse Spark', cast: 'Muse Image', model: '3D', sprites: 'Muse Image', sound: 'ElevenLabs', voices: 'ElevenLabs', faces: 'Muse Image', verify: 'play test' };
 
 function Copy({ text }: { text: string }) {
   const [done, setDone] = useState(false);

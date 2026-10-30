@@ -14,6 +14,7 @@ import { WorldFiles } from '../world/files.ts';
 import { liveVoiceFailures } from '../sound/data.ts';
 import { voiceRetryTarget } from '../sound/retry.ts';
 import { Slug } from '../world/schema.ts';
+import { faceStatus } from './faces.ts';
 import { ActionError, defineAction, type ActionContext } from './registry.ts';
 
 const stamp = (file: string) => (fs.existsSync(file) ? Math.round(fs.statSync(file).mtimeMs) : null);
@@ -87,6 +88,7 @@ defineAction({
         looksNow: fixes[c.key]?.looks ?? c.looks,
         fix: fixes[c.key] ?? null,
         figure: pic(`cast/${c.key}.png`),
+        face: faceStatus(files, c.key),
         painting: pic(`cast/${c.key}-painting.png`),
         rig: fs.existsSync(files.path('cast', c.key, 'rig.json')),
         ...(() => {

@@ -1,5 +1,6 @@
 // diorama play <slug>: serves the world to a browser page where you walk through its places.
 import fs from 'node:fs';
+import { registeredFace } from '../scene/faces-data.ts';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -90,11 +91,12 @@ export function worldData(files: WorldFiles) {
       const model = modelOk ? { dir: `cast/${key}/model`, info: files.readJson(files.path('cast', key, 'model', 'model.json')) as ModelInfo } : undefined;
       // cast/<key>/sprites/sprites.json (diorama sprites): painted walk sheets, preferred over the 3D figure.
       const sprites = modelOk && fs.existsSync(files.path('cast', key, 'sprites', 'sprites.json')) ? { dir: `cast/${key}/sprites`, info: files.readJson(files.path('cast', key, 'sprites', 'sprites.json')) as SpriteInfo } : undefined;
+      const face = registeredFace(files, key);
       const body = bodies[key];
       const walks = body?.upright !== false;
       // A creature has no legs for a 2D rig, but its own 3D model (no skeleton, model.json creature) hops and squashes.
       const creatureModel = model?.info.creature ? model : undefined;
-      return [key, { image: `cast/${f}`, ...(body && { height: body.height }), ...(!walks && { upright: false }), ...(walks && rig && rig.check?.ok !== false ? { rig, parts: `cast/${key}` } : {}), ...(walks ? model && { model } : creatureModel && { model: creatureModel }), ...(walks && sprites && { sprites }) }];
+      return [key, { image: `cast/${f}`, ...(face && { face }), ...(body && { height: body.height }), ...(!walks && { upright: false }), ...(walks && rig && rig.check?.ok !== false ? { rig, parts: `cast/${key}` } : {}), ...(walks ? model && { model } : creatureModel && { model: creatureModel }), ...(walks && sprites && { sprites }) }];
     }));
   const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
   // changes/<i>.png per place: how story.changes[i] looks once it holds.
@@ -130,6 +132,7 @@ export async function serveWorld(files: WorldFiles, port: number): Promise<http.
     };
     try {
       if (url.pathname === '/') return send(200, 'text/html; charset=utf-8', fs.readFileSync(path.join(WEB, 'index.html')));
+      if (url.pathname === '/prototype/conductor-lipsync') return send(200, 'text/html; charset=utf-8', fs.readFileSync(path.join(WEB, '../demo/conductor-lipsync/index.html')));
       if (url.pathname === '/main.js') return send(200, 'text/javascript; charset=utf-8', await bundle());
       if (url.pathname === '/world-data.json') return send(200, 'application/json', JSON.stringify(worldData(files)));
       if (url.pathname.startsWith('/files/')) {

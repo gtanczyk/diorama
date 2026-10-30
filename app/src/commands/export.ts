@@ -50,13 +50,16 @@ export async function exportWorld(slug: string, out: string): Promise<void> {
   for (const [i, rel] of Object.entries(data.changes)) data.changes[i] = await copy(rel); // transparent around the thing, so PNG
   for (const figure of Object.values(data.cast)) {
     await copy(figure.image);
+    if (figure.face) await copy(`${figure.face.dir}/${figure.face.info.image}`);
     for (const part of figure.rig?.parts ?? []) await copy(`${figure.parts}/${part.file}`);
     if (figure.rig?.sheet) await copy(`${figure.parts}/${figure.rig.sheet.file}`);
     if (figure.sprites) for (const f of [...Object.values(figure.sprites.info.facings), ...Object.values(figure.sprites.info.talk ?? {})]) await copy(`${figure.sprites.dir}/${f.sheet}`);
     if (figure.model) for (const file of [figure.model.info.glb, ...Object.values(figure.model.info.views).map((v) => v.image)]) await copy(`${figure.model.dir}/${file}`);
   }
   for (const item of Object.values(data.items ?? {})) await copy(item.icon); // transparent, so PNG
-  for (const sound of [...Object.values(data.sound?.files ?? {}), ...Object.values(data.sound?.lines ?? {})]) await copy(sound.file);
+  const recordings = Object.values(data.sound?.bySpeaker ?? {}).flatMap(lines => Object.values(lines));
+  const audioFiles = new Set([...Object.values(data.sound?.files ?? {}), ...Object.values(data.sound?.lines ?? {}), ...recordings].map(sound => sound.file));
+  for (const file of audioFiles) await copy(file);
   fs.writeFileSync(path.join(out, 'world-data.json'), JSON.stringify(data));
   fs.writeFileSync(path.join(out, 'main.js'), await bundle(true));
   fs.copyFileSync(path.join(WEB, 'index.html'), path.join(out, 'index.html'));

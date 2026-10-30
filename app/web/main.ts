@@ -19,13 +19,15 @@ import { WeatherFx } from './weather.ts';
 import type { Reactions } from '../src/play/reactions.ts';
 import { ReactionFx } from './reactions.ts';
 import { creatureMotion } from '../src/play/creature.ts';
+import { PaintedFace } from './face.ts';
+import { mouthAt, offsetFace, faceAt, type FaceDefinition } from '../src/play/lipsync.ts';
 
 type Data = {
   slug: string;
   world: World;
   places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; weather?: Weather; reactions?: Reactions; issue?: string }>;
   /** Figure per hero or NPC key: a cut-out image, and its rig when `diorama cast` could cut it into parts. */
-  cast: Record<string, { image: string; height?: number; upright?: boolean; rig?: Rig; parts?: string; model?: { dir: string; info: ModelInfo }; sprites?: { dir: string; info: SpriteInfo } }>;
+  cast: Record<string, { image: string; height?: number; upright?: boolean; face?: { dir: string; info: FaceDefinition }; rig?: Rig; parts?: string; model?: { dir: string; info: ModelInfo }; sprites?: { dir: string; info: SpriteInfo } }>;
   story: Story | null;
   /** Index into story.changes → the painting as it looks once that change holds. */
   changes?: Record<string, string>;
@@ -54,9 +56,9 @@ export type SpriteInfo = {
   lines?: Record<string, string>;
 };
 /** walk: the cells a walk steps through, without the ones the sprites step found off the gait (a crouch, a sit). */
-type Sheet = { yaw: number; stand: number; img: HTMLImageElement; gestures: string[]; walk: number[] };
+type Sheet = { file: string; yaw: number; stand: number; img: HTMLImageElement; gestures: string[]; walk: number[] };
 /** height: metres standing (a grown-up 1.62, a cat 0.3), so each is drawn at its own size; upright false: an animal, drawn as painted. */
-type Figure = { img: HTMLImageElement; height?: number; upright?: boolean; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; sheet?: HTMLImageElement; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
+type Figure = { img: HTMLImageElement; face?: PaintedFace; faceInfo?: FaceDefinition; height?: number; upright?: boolean; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; sheet?: HTMLImageElement; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
 /** y: the floor row the cut stands on, which sets how far it slides with parallax. */
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number; y: number };
 
@@ -316,7 +318,7 @@ class Game {
           Promise.all(list.map(async (f) => {
             const img = await loadImage(files(`${dir}/${f.sheet}`));
             const walk = [...Array(info.frames).keys()].filter((i) => !f.off?.includes(i));
-            return { yaw: f.yaw, stand: f.stand ?? 0, gestures: f.gestures ?? ['listen'], img, walk };
+            return { file: f.sheet, yaw: f.yaw, stand: f.stand ?? 0, gestures: f.gestures ?? ['listen'], img, walk };
           }));
         const [walk, talk] = await Promise.all([sheets(Object.values(info.facings ?? {})), sheets(Object.values(info.talk ?? {})).catch(() => [])]);
         if (walk.length || talk.length) figure.sprites = { info, sheets: walk, talk };
@@ -324,8 +326,17 @@ class Game {
       // A 3D figure needs WebGL; without it (or if the model fails) the 2D rig or cut-out stays.
       else if (cast.model && params.get('model') !== '0') {
         const dir = cast.model.dir;
-        figure.model = await import('./hero3d.ts').then(({ Figure3D }) => Figure3D.load(cast.model!.info, (f) => files(`${dir}/${f}`)))
+        figure.model = await import('./hero3d.ts').then(({ Figure3D }) => Figure3D.load(cast.model!.info, (f) => files(`${dir}/${f}`), params.get('modelPaint') === '0' ? 0 : 1))
           .catch((e) => (console.warn(`no 3D figure for ${key}:`, e), undefined));
+      }
+      if (cast.face && params.get('lipsync') !== '0') {
+        try {
+          const atlas = await loadImage(files(`${cast.face.dir}/${cast.face.info.image}`));
+          const views=[cast.face.info.imagePose?.atlas ?? 'default',cast.face.info.rigPose?.atlas ?? 'default',...Object.entries(cast.face.info.sheets).filter(([name])=>!name.startsWith('model:')).flatMap(([,poses])=>poses.filter(Boolean).map(p=>p!.atlas ?? 'default'))];
+          figure.face = new PaintedFace(cast.face.info, atlas,views); figure.faceInfo = cast.face.info;
+          figure.model?.setFace(cast.face.info,atlas);
+        }
+        catch (e) { console.warn(`no facial animation for ${key}:`, e); }
       }
       this.figures.set(key, figure);
     }));
@@ -1604,13 +1615,16 @@ class Game {
     const unit = personPx(g, y);
     const h = unit * ((figure?.height ?? 1.62) / 1.62);
     y = foot ?? stepFootY(g, x, y);
+    const articulation = talk === 'speak' ? mixer?.mouth(this.speech) ?? mouthAt(undefined, undefined) : mouthAt(undefined, undefined);
+    const faceTime = performance.now() / 1000;
     const sprites = figure?.sprites;
     // A walk sheet warped from the painting looks like the painting; the bare 3D model (TRELLIS's textures up
     // close) does not, so it walks a person only with ?model=1. A creature has no sheet and keeps its model.
     let model = sprites || (figure?.rig?.rig.sheet && params.get('model') !== '1') ? undefined : figure?.model;
     let modelCanvas: HTMLCanvasElement | undefined;
+    const modelDensity=Math.max(1,Math.min(4,this.zoom()));
     try {
-      modelCanvas = model?.draw({ phase, walking, yaw, px: h, time: this.time, talk });
+      modelCanvas = model?.draw({ phase, walking, yaw, px: h*modelDensity, frame:this.frame, time: this.time, talk, face: params.get('lipsync') === '0' ? undefined : faceAt(articulation, faceTime, figure?.faceInfo?.seed) });
     } catch (error) {
       console.warn('3D figure failed; using its 2D figure:', error);
       model?.dispose();
@@ -1623,7 +1637,18 @@ class Game {
     // A rig walks its legs; a plain cut-out (or the stand-in) only bobs and rocks as it slides.
     const bob = creature ? creature.lift * h : rig || model || sprites || !walking ? 0 : Math.abs(Math.sin(phase * Math.PI * 2)) * h * 0.025;
     const rock = creature ? creature.lean * (facing < 0 ? -1 : 1) : rig || model || sprites || !walking ? 0 : Math.sin(phase * Math.PI * 2) * 0.035;
-    if (rig) drawRig(rig, pose(rig.rig, phase, walking), phase, walking);
+    let rigCanvas: CanvasImageSource | undefined;
+    if (rig) {
+      const at = pose(rig.rig, phase, walking);
+      drawRig(rig, at, phase, walking);
+      const sheet = rig.rig.sheet;
+      const definition = figure?.faceInfo;
+      // A legacy parts rig follows the torso; a baked mesh walk has registrations for its individual cells.
+      const imagePose = definition?.rigPose;
+      const mapped = !sheet && imagePose ? offsetFace(imagePose, at.torso.to[0] - at.torso.from[0], at.torso.to[1] - at.torso.from[1]) : undefined;
+      rigCanvas = figure?.face && (sheet || mapped) ? figure.face.draw(rig.canvas, sheet ? `rig:${sheet.file}` : '$image', sheet ? sheetCell(sheet, phase, walking) : 0,
+        1, 1, articulation, faceTime, 0, mapped) : rig.canvas;
+    }
     /** Draws the figure into c with its feet at c's origin; returns its half width. */
     const paint = (c: CanvasRenderingContext2D): number => {
       if (sprites) {
@@ -1639,26 +1664,30 @@ class Game {
         const i = onTalk ? (talk === 'speak' ? this.gestureCell(sheet, sprites.info) : 0) : walking ? steps[Math.floor((((phase % 1) + 1) % 1) * steps.length) % steps.length] : sheet.stand;
         const s = h / px;
         if (a < 0) c.scale(-1, 1);
-        c.drawImage(sheet.img, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch, (-cw / 2) * s, -ch * feetAt * s, cw * s, ch * s);
+        const face = figure?.face ? figure.face.draw(sheet.img, sheet.file, i, cols, rows,
+          talk === 'speak' ? mixer?.mouth(this.speech) ?? mouthAt(undefined, undefined) : mouthAt(undefined, undefined), performance.now() / 1000) : undefined;
+        if (face && face !== sheet.img) c.drawImage(face, (-cw / 2) * s, -ch * feetAt * s, cw * s, ch * s);
+        else c.drawImage(sheet.img, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch, (-cw / 2) * s, -ch * feetAt * s, cw * s, ch * s);
         return (cw / 2) * s;
       }
       if (modelCanvas && model) {
         // yaw turns the model itself, so no mirroring; feet sit at (width / 2, height * feetAt).
-        c.drawImage(modelCanvas, -modelCanvas.width / 2, -modelCanvas.height * model.feetAt);
-        return modelCanvas.width / 2;
+        const w=modelCanvas.width/modelDensity,h=modelCanvas.height/modelDensity;
+        c.drawImage(modelCanvas,-w/2,-h*model.feetAt,w,h);
+        return w/2;
       }
       c.scale(facing, 1);
       if (rig) {
         const s = h / rig.rig.height;
         const [ax, ay] = [rig.rig.hip[0], rig.rig.ground];
-        c.drawImage(rig.canvas, -ax * s, -ay * s, rig.canvas.width * s, rig.canvas.height * s);
+        c.drawImage(rigCanvas ?? rig.canvas, -ax * s, -ay * s, rig.canvas.width * s, rig.canvas.height * s);
         return Math.max(ax, rig.canvas.width - ax) * s;
       }
       const img = figure?.img;
       const w = img ? (h * img.width) / img.height : h * 0.36;
       // A creature squashes and stretches from the feet up, keeping its volume.
       const [sx2, sy2] = creature ? [1 / Math.sqrt(creature.stretch), creature.stretch] : [1, 1];
-      if (img) c.drawImage(img, (-w / 2) * sx2, -h * sy2, w * sx2, h * sy2);
+      if (img) c.drawImage(figure?.face?.draw(img, '$image', 0, 1, 1, articulation, faceTime) ?? img, (-w / 2) * sx2, -h * sy2, w * sx2, h * sy2);
       else drawFigure(c, h, colour);
       return w / 2;
     };

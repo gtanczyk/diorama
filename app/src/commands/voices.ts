@@ -1,3 +1,4 @@
+import { refreshExistingLipSync } from '../sound/lipsync-make.ts';
 // diorama voices <slug>: every line of the story spoken. Spark casts the voices (kept in voices.json; voice_set in the Studio recasts one),
 // ElevenLabs reads, Muse Voice Transcribe checks each take says its line.
 import fs from 'node:fs';
@@ -126,6 +127,7 @@ defineCommand({
     }
     const spoken = done.filter(Boolean);
     files.write(outFile, { pipeline: VOICE_PIPELINE, castingFrom, cast, lines: spoken, failures });
+    await refreshExistingLipSync(files);
     const s = files.memo.sent;
     console.log(`voices ${slug}: ${spoken.length}/${lines.length} lines, ${spoken.filter((l) => l.flags.some((f) => f.startsWith('heard'))).length} flagged · sent: spark ${s.spark}, voice ${s.voice} · ${await guard.report()} · ${outFile}`);
     // A line without a voice still shows as text: the build goes on and Studio shows it with a retry.

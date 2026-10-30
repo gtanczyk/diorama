@@ -9,6 +9,7 @@ import { jobsOf } from './make.ts';
 import { readSoundFixes } from './fixes.ts';
 import { storyLines, Voices } from './voices.ts';
 import { Story } from '../story/schema.ts';
+import { lipSyncData } from './lipsync.ts';
 
 /**
  * The spoken lines the last voices run could not make that the story still has. A line rewritten since (story_text)
@@ -37,8 +38,9 @@ export function soundData(files: WorldFiles): SoundData | undefined {
     .filter((l) => !l.flags.some((f) => f.startsWith('heard')) && fs.existsSync(files.path(l.file)));
   const lines: NonNullable<SoundData['lines']> = {};
   const bySpeaker: NonNullable<SoundData['bySpeaker']> = {};
+  const sync = lipSyncData(files);
   for (const l of recordings) {
-    const entry = { file: l.file, seconds: l.seconds, speaker: l.speaker };
+    const entry = { file: l.file, seconds: l.seconds, speaker: l.speaker, ...(sync[l.file] && { lipsync: sync[l.file] }) };
     (bySpeaker[l.speaker] ??= {})[l.text] = entry;
     if (recordings.filter((r) => r.text === l.text).length === 1) lines[l.text] = entry;
   }
