@@ -13,6 +13,7 @@ import { Reactions } from '../play/reactions.ts';
 import { reactionInput } from './reactions.ts';
 import { reactionSource } from '../scene/reactions.ts';
 import { Weather } from '../play/weather.ts';
+import { glowsOf, type Glow } from '../play/glow.ts';
 import { readBodies } from '../scene/cast.ts';
 import type { ModelInfo } from '../../web/hero3d.ts';
 import { modelProblem } from '../model/glb.ts';
@@ -33,7 +34,7 @@ const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg
 /** What the page loads: the world, and per place its geometry (measured, or a preview from the layout). */
 export function worldData(files: WorldFiles) {
   const world = files.world();
-  const places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; weather?: Weather; reactions?: Reactions; issue?: string }> = {};
+  const places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; weather?: Weather; reactions?: Reactions; glows?: Glow[]; issue?: string }> = {};
   for (const place of world.places) {
     const painted = ['painting.png', 'blockin.png'].find((f) => fs.existsSync(files.place(place.key, f)));
     let geometry: Geometry | null = null;
@@ -63,6 +64,10 @@ export function worldData(files: WorldFiles) {
     const weatherFile = files.place(place.key, 'weather.json');
     const read = painted === 'painting.png' && fs.existsSync(weatherFile) ? Weather.safeParse(files.readJson(weatherFile)) : undefined;
     const weather = read?.success ? { ...read.data, ...(read.data.ripples && { ripples: rel(read.data.ripples) }) } : undefined;
+    // layout.lights: the painted lights, to breathe, flicker, twinkle or turn their beam (src/play/glow.ts).
+    const layoutFile = files.place(place.key, 'layout.json');
+    const lights = painted === 'painting.png' && fs.existsSync(layoutFile) ? Layout.safeParse(files.readJson(layoutFile)) : undefined;
+    const glows = lights?.success && lights.data.lights.length ? glowsOf(lights.data.lights) : undefined;
     let reactions: Reactions | undefined;
     const reactionsFile = files.place(place.key, 'reactions.json');
     if (fs.existsSync(reactionsFile)) {
@@ -72,7 +77,7 @@ export function worldData(files: WorldFiles) {
         else console.warn(`${place.key}: reactions stale; rerun reactions`);
       } catch (e) { console.warn(`${place.key}: reactions unavailable: ${e instanceof Error ? e.message : String(e)}`); }
     }
-    places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, ...(backdrop && { backdrop }), ...(layers && { layers }), ...(weather && { weather }), ...(reactions && { reactions }), issue };
+    places[place.key] = { geometry, painting: painted ? `places/${place.key}/${painted}` : null, ...(backdrop && { backdrop }), ...(layers && { layers }), ...(weather && { weather }), ...(reactions && { reactions }), ...(glows && { glows }), issue };
   }
   const castDir = files.path('cast');
   // cast/figures.json (diorama cast): metres each one stands (a grown-up 1.62) and whether upright; one that

@@ -18,6 +18,8 @@ import type { Weather } from '../src/play/weather.ts';
 import { WeatherFx } from './weather.ts';
 import type { Reactions } from '../src/play/reactions.ts';
 import { ReactionFx } from './reactions.ts';
+import { GlowFx } from './glows.ts';
+import type { Glow } from '../src/play/glow.ts';
 import { creatureMotion } from '../src/play/creature.ts';
 import { PaintedFace } from './face.ts';
 import { mouthAt, offsetFace, faceAt, type FaceDefinition } from '../src/play/lipsync.ts';
@@ -25,7 +27,7 @@ import { mouthAt, offsetFace, faceAt, type FaceDefinition } from '../src/play/li
 type Data = {
   slug: string;
   world: World;
-  places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; weather?: Weather; reactions?: Reactions; issue?: string }>;
+  places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; weather?: Weather; reactions?: Reactions; glows?: Glow[]; issue?: string }>;
   /** Figure per hero or NPC key: a cut-out image, and its rig when `diorama cast` could cut it into parts. */
   cast: Record<string, { image: string; height?: number; upright?: boolean; face?: { dir: string; info: FaceDefinition }; rig?: Rig; parts?: string; model?: { dir: string; info: ModelInfo }; sprites?: { dir: string; info: SpriteInfo } }>;
   story: Story | null;
@@ -100,6 +102,8 @@ type Place = {
   /** Rain or snow, rings, splashes and drips (weather.json). */
   weather?: WeatherFx;
   reactions?: ReactionFx;
+  /** The painted lights breathing, flickering, twinkling or turning a beam (layout.lights). */
+  glows?: GlowFx;
 };
 
 /**
@@ -121,6 +125,7 @@ type Fire = {
 };
 
 const LIGHT_CELL = 40;
+const fract = (v: number) => v - Math.floor(v);
 
 function lightMap(bg: HTMLImageElement, w: number, h: number): Place['light'] {
   const cols = Math.ceil(w / LIGHT_CELL);
@@ -457,8 +462,10 @@ class Game {
     const ripples = wx?.ripples ? await loadBits(files(wx.ripples), g.frame.width, g.frame.height).catch(() => undefined) : undefined;
     const weather = wx && new WeatherFx(wx, g, ripples?.bits, key);
     const reactions = entry.reactions && params.get('reactions') !== '0' ? new ReactionFx(entry.reactions, g, key, matchMedia('(prefers-reduced-motion: reduce)').matches) : undefined;
+    // ?glow=0 (or ?still; capture unless ?glow=1) keeps the painted lights as painted, for pixel checks.
+    const glows = entry.glows?.length && !params.has('still') && (params.get('glow') ?? (capture ? '0' : '1')) !== '0' ? new GlowFx(entry.glows, g.frame.height) : undefined;
     const focus = focusScale > 0 || separateScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions };
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
     this.cache.set(key, place);
     return place;
   }
@@ -900,6 +907,7 @@ class Game {
     }
     this.swayCamera(dt);
     this.place.weather?.update(dt);
+    this.place.glows?.step(dt);
     this.place.reactions?.update(dt);
     for (const b of this.party) this.move(b, dt);
     this.move(hero, dt);
@@ -1138,13 +1146,25 @@ class Game {
     const phase = (this.time / PERIOD) % 1;
     // Still water (the sea, a lake, a harbour basin) does not run, but it is never dead: rows sway in slow
     // swells, small far off and wider near, so waves roll across it in place.
+    // On the crests the painted light (a moon's path, lit windows) glints: the strip is added over itself, brighter
+    // where its pixels already are bright, as the swell passes.
     if (!ux && !uy) {
       for (let y = y0; y < y1; y += STRIP) {
         const near = (y - y0) / Math.max(1, y1 - y0);
-        const dx = Math.sin(this.time * 0.9 + y * 0.09) * (0.6 + 3.4 * near) + Math.sin(this.time * 0.37 + y * 0.023) * (0.5 + 2 * near);
-        const dy = Math.sin(this.time * 0.6 + y * 0.05) * (0.3 + 1.2 * near);
-        c.drawImage(water.tex, 0, Math.min(y1 - y0 - STRIP, Math.max(0, y - y0 + dy)), w, STRIP, dx, y - y0, w, STRIP);
+        const dx = Math.sin(this.time * 0.9 + y * 0.09) * (1.2 + 6 * near) + Math.sin(this.time * 0.37 + y * 0.023) * (1 + 3.5 * near);
+        const dy = Math.sin(this.time * 0.6 + y * 0.05) * (0.6 + 2.2 * near);
+        const sy = Math.min(y1 - y0 - STRIP, Math.max(0, y - y0 + dy));
+        c.globalCompositeOperation = 'source-over';
+        c.globalAlpha = 1;
+        c.drawImage(water.tex, 0, sy, w, STRIP, dx, y - y0, w, STRIP);
+        const crest = Math.max(0, Math.sin(this.time * 1.3 - y * 0.06 + Math.sin(this.time * 0.4) * 2));
+        if (crest > 0.4) {
+          c.globalCompositeOperation = 'lighter';
+          c.globalAlpha = 0.22 * (crest - 0.4) * (0.5 + near);
+          c.drawImage(water.tex, 0, sy, w, STRIP, dx * 1.6, y - y0, w, STRIP);
+        }
       }
+      c.globalCompositeOperation = 'source-over';
     } else for (const [k, alpha] of [[0, 1], [0.5, 1 - Math.abs(2 * ((phase + 0.5) % 1) - 1)]] as const) {
       const ph = (phase + k) % 1;
       c.globalAlpha = k === 0 ? 1 : alpha;
@@ -1157,6 +1177,29 @@ class Game {
         const sy = Math.min(y1 - y0 - STRIP, Math.max(0, y - y0 - uy * travel));
         c.drawImage(water.tex, 0, sy, w, STRIP, ux * travel, y - y0, w, STRIP);
       }
+    }
+    // Glints: short light dashes on the swell, each fading in and out on its own beat and drifting with the
+    // water, so even a dark, smooth painted sea is seen to move. Seeded by index, the same every run.
+    c.globalCompositeOperation = 'lighter';
+    const hh = y1 - y0;
+    const count = Math.round((w * hh) / 1400);
+    for (let i = 0; i < count; i++) {
+      const r1 = fract(Math.sin(i * 12.9898) * 43758.5453);
+      const r2 = fract(Math.sin(i * 78.233) * 12543.123);
+      const r3 = fract(Math.sin(i * 39.425) * 24634.632);
+      const life = 1.6 + 2.4 * r3;
+      const beat = (this.time + r1 * life * 7) / life;
+      const a = Math.sin(fract(beat) * Math.PI);
+      if (a < 0.15) continue;
+      // A glint lands somewhere new each beat; near ones (low in the box) are longer and brighter.
+      const k = Math.floor(beat);
+      const gy = fract(r2 + k * 0.618) * hh;
+      const near = gy / hh;
+      const gx = fract(r1 + k * 0.381) * w + (ux * FLOW + 6) * fract(beat) * (0.4 + near);
+      const len = (8 + 30 * r3) * (0.4 + near);
+      c.globalAlpha = a * (0.2 + 0.4 * near);
+      c.fillStyle = 'rgb(220,232,255)';
+      c.fillRect(gx - len / 2, gy, len, 1.5 + near * 2);
     }
     c.globalAlpha = 1;
     c.globalCompositeOperation = 'destination-in';
@@ -1301,6 +1344,7 @@ class Game {
       for (const cut of this.place.cuts) if (!cut.occ.thing || !gone.has(cut.occ.thing)) this.drawCard(cut);
       this.drawClimbs();
     }
+    this.place.glows?.draw(ctx, (y) => this.shift(y));
     this.place.weather?.drawDrips(ctx, (y) => this.shift(y));
     this.drawFocus();
     // Everyone is drawn far to near, and each one gets the things in front of them put back.
