@@ -157,17 +157,18 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
   events.subscribe((e) => {
     if (e.world && e.type !== 'file.changed' && e.type !== 'call') watches.get(e.world)?.start();
   });
-  // A build that leaves places unplayable wakes the agent to repair them (budget_set autoRepair turns it off).
+  // A failed build wakes the agent to repair it: places left unplayable, or the step that broke (budget_set autoRepair turns it off).
   events.subscribe((e) => {
     if (e.type !== 'job.end' || !e.world) return;
     const job = e.job as Job;
     // A busy agent gets it after its turn: the Studio's messages wait as notes.
     if (!agents || !wantsRepair(job, { enabled: readBudget().autoRepair })) return;
     const places = (job.unplayable ?? []).map((u) => u.place);
+    const step = places.length ? undefined : job.step;
     // With no agent on this machine there is nobody to wake; the person is told what would help instead.
     const using = agents.agents(e.world).find((a) => a.using);
-    if (!using?.installed) return events.publish('repair.agent', { world: e.world, job: job.id, places, missing: using?.label ?? 'an agent' });
-    events.publish('repair.agent', { world: e.world, job: job.id, places });
+    if (!using?.installed) return events.publish('repair.agent', { world: e.world, job: job.id, places, step, missing: using?.label ?? 'an agent' });
+    events.publish('repair.agent', { world: e.world, job: job.id, places, step });
     agents.say(e.world, repairPrompt(job), 'studio').catch((error) => events.publish('log', { world: e.world, stream: 'err', line: `could not wake the agent: ${error instanceof Error ? error.message : error}` }));
   });
 

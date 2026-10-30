@@ -4,6 +4,9 @@
 
 export const HF_TOKEN_VARS = ['HUGGING_FACE_API_KEY', 'HF_TOKEN'] as const;
 
+/** HTTP answers of a busy or restarting Space: asking again later can work. */
+export const TRANSIENT = [408, 429, 500, 502, 503, 504];
+
 /** A file argument, as Gradio expects it after an upload. */
 export type SpaceFile = { path: string; meta: { _type: 'gradio.FileData' }; orig_name?: string };
 
@@ -30,7 +33,7 @@ export class Space {
       }
       // Do not put proxy HTML in the build feed. The operation and status are enough to diagnose it.
       await res.body?.cancel();
-      if (![408, 429, 500, 502, 503, 504].includes(res.status) || attempt === 2) {
+      if (!TRANSIENT.includes(res.status) || attempt === 2) {
         throw new Error(`${this.id} upload: HTTP ${res.status} (${attempt + 1} attempt(s))`);
       }
       const retryAfter = res.headers.get('retry-after');
@@ -103,9 +106,17 @@ export class Space {
   }
 
   async download(file: { path: string; url?: string }): Promise<Buffer> {
-    const res = await fetch(file.url ?? `${this.base}/file=${file.path}`, { headers: this.headers });
-    if (!res.ok) throw new Error(`${this.id} download ${file.path}: ${res.status}`);
-    return Buffer.from(await res.arrayBuffer());
+    // A download only reads a file the Space already made, so a busy or restarting Space is asked again.
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetch(file.url ?? `${this.base}/file=${file.path}`, { headers: this.headers }).catch((error: Error) => error);
+      if (!(res instanceof Error) && res.ok) return Buffer.from(await res.arrayBuffer());
+      if (!(res instanceof Error)) await res.body?.cancel();
+      const status = res instanceof Error ? res.message : res.status;
+      if ((!(res instanceof Error) && !TRANSIENT.includes(res.status)) || attempt === 3) {
+        throw new Error(`${this.id} download ${file.path}: ${status}${attempt ? ` (${attempt + 1} attempts)` : ''}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000 * 2 ** attempt));
+    }
   }
 }
 

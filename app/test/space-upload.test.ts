@@ -35,3 +35,23 @@ test('persistent 500 stops after three uploads and excludes HTML from the error'
   expect(await result).toBe('test/model upload: HTTP 500 (3 attempt(s))');
   expect(fetch).toHaveBeenCalledTimes(3);
 });
+
+test('download asks again after a transient error or a dropped connection', async () => {
+  vi.useFakeTimers();
+  const fetch = vi.fn()
+    .mockResolvedValueOnce(new Response('<html>busy</html>', { status: 500 }))
+    .mockRejectedValueOnce(new Error('fetch failed'))
+    .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3])));
+  vi.stubGlobal('fetch', fetch);
+  const result = new Space('test/model').download({ path: '/tmp/gradio/x.png' });
+  await vi.runAllTimersAsync();
+  expect([...await result]).toEqual([1, 2, 3]);
+  expect(fetch).toHaveBeenCalledTimes(3);
+});
+
+test('download does not ask again after a 404', async () => {
+  const fetch = vi.fn().mockResolvedValue(new Response('gone', { status: 404 }));
+  vi.stubGlobal('fetch', fetch);
+  await expect(new Space('test/model').download({ path: '/tmp/gradio/x.png' })).rejects.toThrow('test/model download /tmp/gradio/x.png: 404');
+  expect(fetch).toHaveBeenCalledTimes(1);
+});

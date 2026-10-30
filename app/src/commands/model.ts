@@ -51,13 +51,20 @@ defineCommand({
   },
 });
 
+/** Said when a character is left in 2D because the 3D service did not answer: cast_animate tries it again. */
+export const SERVICE_DOWN = 'the 3D service did not answer';
+/** Pauses before asking TRELLIS again after an error; tests shorten them. */
+export const SERVICE_PAUSES = { ms: [10_000, 30_000, 60_000] };
+/** Errors that asking again will not mend: no quota left, no access, a refused picture. */
+const lasting = (message: string) => /quota|\b40[13]\b|unauthori[sz]ed|forbidden|NSFW|not allowed/i.test(message);
+
 /** An unavailable service for one character must not prevent the rest of the cast being attempted. */
 export async function buildModels(files: WorldFiles, keys: string[], take: number, given: string, requireModel = false) {
   const failures: string[] = [];
   for (const key of keys) {
     try {
       const made = await buildModel(files, key, take, given);
-      if (!made && requireModel) failures.push(`${key}: no usable 3D model; see cast status`);
+      if (!made && requireModel) failures.push(`${key}: no usable 3D model (${attemptReason(files, key)}); see cast status`);
     } catch (error) {
       const reason = `${key}: ${error instanceof Error ? error.message : String(error)}`;
       console.error(reason);
@@ -65,6 +72,14 @@ export async function buildModels(files: WorldFiles, keys: string[], take: numbe
     }
   }
   if (failures.length) throw new Error(`3D models failed: ${failures.join('; ')}`);
+}
+
+function attemptReason(files: WorldFiles, key: string): string {
+  try {
+    return String((files.readJson(files.path('cast', key, 'model', 'attempt.json')) as { reason?: unknown }).reason ?? 'unknown');
+  } catch {
+    return 'unknown';
+  }
 }
 
 export async function buildModel(files: WorldFiles, key: string, take: number, given: string): Promise<boolean> {
@@ -107,10 +122,26 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
   const all = [views.front, views.back, views.left, views.right];
   const tries = [[1, all], [2, all], [3, all], [1, [views.front]]] as const;
   let shell: Buffer | undefined;
+  // A Space that answers with an error (busy, restarting, a lost file) is asked again after a pause, on the next try;
+  // one that keeps failing leaves the character in 2D, so the world is still built and playable.
+  let unavailable: string | undefined;
+  let failures = 0;
   for (const [seed, from] of tries) {
     if (given) break;
     console.log(`${key}: TRELLIS builds the body${seed > 1 || from.length === 1 ? ` (try ${seed + (from.length === 1 ? 3 : 0)})` : ''}`);
-    const made = await reconstruct(files.memo, key, [...from], seed);
+    let made: Buffer;
+    try {
+      made = await reconstruct(files.memo, key, [...from], seed);
+    } catch (error) {
+      unavailable = error instanceof Error ? error.message : String(error);
+      console.log(`${key}: TRELLIS failed: ${unavailable}`);
+      if (lasting(unavailable) || ++failures > SERVICE_PAUSES.ms.length) break;
+      const pause = SERVICE_PAUSES.ms[failures - 1];
+      console.log(`${key}: asking TRELLIS again in ${Math.round(pause / 1000)} s`);
+      await new Promise((resolve) => setTimeout(resolve, pause));
+      continue;
+    }
+    unavailable = undefined;
     const bad = badModel(readShape(made));
     if (!bad) { shell = made; break; }
     console.log(`${key}: TRELLIS (seed ${seed}${from.length === 1 ? ', front only' : ''}) made a model that is ${bad}`);
@@ -123,7 +154,7 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
   };
   if (!given && !shell) {
     // An older model of this character (a flat one, kept before this gate) must not stay in the game.
-    return reject('every reconstruction was flat or invalid');
+    return reject(unavailable ? `${SERVICE_DOWN}: ${unavailable}` : 'every reconstruction was flat or invalid');
   }
   if (creature) {
     // Make-It-Animatable rigs a person's skeleton only; a creature keeps TRELLIS's mesh as it came (no standing up:
@@ -136,7 +167,12 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
     return null;
   }
   if (!supplied) console.log(`${key}: rigging the skeleton`);
-  const built = supplied ?? await autoRig(files.memo, key, shell!);
+  let built: Buffer;
+  try {
+    built = supplied ?? await autoRig(files.memo, key, shell!);
+  } catch (error) {
+    return reject(`${SERVICE_DOWN}: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const bad = badModel(readShape(built));
   if (bad) return reject(`rigged body rejected: ${bad}`);
   const tilt = lean(readShape(built));

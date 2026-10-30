@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import '../src/commands/sprites.ts';
 import { registry } from '../src/registry.ts';
 import { renderGuides, paintSheet } from '../src/model/sprites.ts';
-import { buildModel, buildModels } from '../src/commands/model.ts';
+import { buildModel, buildModels, SERVICE_DOWN, SERVICE_PAUSES } from '../src/commands/model.ts';
 import { worldData } from '../src/commands/play.ts';
 import { WorldFiles } from '../src/world/files.ts';
 import { reconstruct, autoRig } from '../src/model/build.ts';
@@ -22,6 +22,8 @@ let root: string, files: WorldFiles;
 const valid = boxGlb([1.2, 1, 0.4]), flat = boxGlb([1, 0.043, 1]);
 beforeEach(async () => {
   vi.clearAllMocks();
+  vi.mocked(reconstruct).mockReset();
+  SERVICE_PAUSES.ms = [0, 0, 0];
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'diorama-model-gate-'));
   await scene(root);
   files = new WorldFiles('w', root);
@@ -79,17 +81,45 @@ test('a body flattened by auto-rigging is not published', async () => {
   expect(fs.existsSync(files.path('cast', 'hero', 'model', 'model.json'))).toBe(false);
 });
 
-test('a failed hero upload does not skip the next character, and the batch reports the failure', async () => {
+test('a 3D service that keeps failing leaves the character in 2D, and the next character is still built', async () => {
   const world = files.world();
   world.places[0].things.push({ key: 'owl', role: 'npc', looks: 'a round white owl' });
   files.write(files.path('world.json'), world);
   files.write(files.path('cast', 'owl-painting.png'), Buffer.from('owl painting'));
   files.write(files.path('cast', 'figures.json'), { hero: { height: 0.6, upright: false }, owl: { height: 0.4, upright: false } });
-  vi.mocked(reconstruct).mockRejectedValueOnce(new Error('TRELLIS upload: HTTP 500')).mockResolvedValue(valid);
-  await expect(buildModels(files, ['hero', 'owl'], 0, '')).rejects.toThrow('hero: TRELLIS upload: HTTP 500');
+  vi.mocked(reconstruct).mockImplementation(async (_memo, key) => {
+    if (key === 'hero') throw new Error('TRELLIS download /tmp/gradio/x.png: 500');
+    return valid;
+  });
+  await expect(buildModels(files, ['hero', 'owl'], 0, '')).resolves.toBeUndefined();
+  expect(reconstruct).toHaveBeenCalledTimes(5);
+  expect(fs.existsSync(files.path('cast', 'hero', 'model', 'model.json'))).toBe(false);
   expect(fs.existsSync(files.path('cast', 'owl', 'model', 'model.json'))).toBe(true);
-  expect(files.readJson(files.path('cast', 'hero', 'model', 'attempt.json'))).toMatchObject({ state: 'failed', reason: 'TRELLIS upload: HTTP 500' });
+  expect(files.readJson(files.path('cast', 'hero', 'model', 'attempt.json'))).toMatchObject({ state: 'fallback', reason: `${SERVICE_DOWN}: TRELLIS download /tmp/gradio/x.png: 500` });
   expect(files.readJson(files.path('cast', 'owl', 'model', 'attempt.json'))).toMatchObject({ state: 'ready', reason: null });
+  // Asked for by name (Animate), the same outage fails and says why.
+  await expect(buildModels(files, ['hero'], 0, '', true)).rejects.toThrow(`hero: no usable 3D model (${SERVICE_DOWN}`);
+});
+
+test('a passing 3D service error is asked again and the model is made', async () => {
+  vi.mocked(reconstruct).mockRejectedValueOnce(new Error('TRELLIS upload: HTTP 503')).mockResolvedValue(valid);
+  expect(await buildModel(files, 'hero', 0, '')).toBe(true);
+  expect(reconstruct).toHaveBeenCalledTimes(2);
+  expect(files.readJson(files.path('cast', 'hero', 'model', 'attempt.json'))).toMatchObject({ state: 'ready' });
+});
+
+test('a lasting refusal (no GPU quota) is not asked again', async () => {
+  vi.mocked(reconstruct).mockRejectedValue(new Error('TRELLIS /generate: "You have exceeded your GPU quota"'));
+  expect(await buildModel(files, 'hero', 0, '')).toBe(false);
+  expect(reconstruct).toHaveBeenCalledTimes(1);
+});
+
+test('an auto-rig outage leaves a person in 2D instead of failing the build', async () => {
+  files.write(files.path('cast', 'figures.json'), { hero: { height: 1.6, upright: true } });
+  vi.mocked(reconstruct).mockResolvedValue(valid);
+  vi.mocked(autoRig).mockRejectedValue(new Error('jasongzy/Make-It-Animatable /pipeline: queue 502'));
+  expect(await buildModel(files, 'hero', 0, '')).toBe(false);
+  expect(files.readJson(files.path('cast', 'hero', 'model', 'attempt.json'))).toMatchObject({ state: 'fallback', reason: `${SERVICE_DOWN}: jasongzy/Make-It-Animatable /pipeline: queue 502` });
 });
 
 test('an explicit animate request fails honestly when all models are rejected, while a batch allows 2D fallback', async () => {
