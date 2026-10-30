@@ -2,35 +2,79 @@
   "fps": 30,
   "shots": [
     {
-      "name": "1 Cold open: Diorama asks",
-      "dur": 1.4,
-      "src": "footage/walk-review/take.mp4",
-      "from": 25
+      "name": "1 Cold open: the lighthouse",
+      "src": "footage/places/key-before-sunrise--lantern-rock-lighthouse.mp4",
+      "from": 1,
+      "dur": 2.2,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ]
     },
     {
-      "name": "1 Cold open: a place being painted",
-      "dur": 1.4,
-      "src": "footage/walkthrough/take.mp4",
-      "from": 380,
-      "fade": 0.2
+      "name": "1 Cold open: a crayon valley",
+      "src": "footage/places/demo35--crayon-dream-valley.mp4",
+      "from": 3,
+      "dur": 2,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
     },
     {
-      "name": "1 Cold open: the change lands",
-      "dur": 1.6,
-      "src": "footage/walk-change/take.mp4",
-      "from": 176,
-      "fade": 0.2,
-      "caption": "Diorama"
+      "name": "1 Cold open: a kid's room in 1991",
+      "src": "footage/places/demo35--boyhood-room-1991.mp4",
+      "from": 3,
+      "dur": 2,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "1 Cold open: the broken bridge",
+      "src": "footage/places/living-drawing--crayon-game-land.mp4",
+      "from": 3,
+      "dur": 2,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "1 Cold open: the harbour",
+      "src": "footage/places/key-before-sunrise--mug-harbour-town.mp4",
+      "from": 4,
+      "dur": 2.4,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3,
+      "caption": "Diorama: your idea, a playable painted world"
     },
     {
       "name": "2 Camera: who I am, what Diorama does",
-      "dur": 11,
+      "dur": 8,
       "src": "footage/camera-intro.mp4",
-      "fade": 0.4
+      "fade": 0.5
     },
     {
       "name": "3 Studio: an idea and two photos",
-      "dur": 4.8,
+      "dur": 4,
       "src": "footage/walk-review/take.mp4",
       "from": 1.5,
       "fade": 0.4,
@@ -38,7 +82,7 @@
     },
     {
       "name": "3 Diorama reads them",
-      "dur": 3.5,
+      "dur": 3,
       "src": "footage/walk-review/take.mp4",
       "from": 6.3,
       "speed": 5,
@@ -48,7 +92,7 @@
     },
     {
       "name": "3 Who do you play?",
-      "dur": 3.7,
+      "dur": 3.5,
       "src": "footage/walk-review/take.mp4",
       "from": 23.8,
       "caption": "and asks only what it cannot guess, in pictures",
@@ -56,7 +100,7 @@
     },
     {
       "name": "3 Diorama sketches the next question",
-      "dur": 4,
+      "dur": 3,
       "src": "footage/walk-review/take.mp4",
       "from": 27.5,
       "speed": 8.3,
@@ -64,7 +108,7 @@
     },
     {
       "name": "3 Which thing stirs first? Build",
-      "dur": 7.4,
+      "dur": 4.5,
       "src": "footage/walk-review/take.mp4",
       "from": 60.6,
       "caption": "Two clicks, then build",
@@ -72,7 +116,7 @@
     },
     {
       "name": "4 Build: the story",
-      "dur": 6,
+      "dur": 3.5,
       "src": "footage/walkthrough/take.mp4",
       "from": 82,
       "speed": 10,
@@ -83,7 +127,7 @@
     },
     {
       "name": "4 Build: painting",
-      "dur": 7,
+      "dur": 3.5,
       "src": "footage/walkthrough/take.mp4",
       "from": 380,
       "speed": 12,
@@ -93,7 +137,7 @@
     },
     {
       "name": "4 Build: cut out",
-      "dur": 7,
+      "dur": 3.5,
       "src": "footage/walkthrough/take.mp4",
       "from": 470,
       "speed": 13,
@@ -102,18 +146,8 @@
       "speedup": "13x"
     },
     {
-      "name": "4 Build: the story is played through",
-      "dur": 5,
-      "src": "footage/walkthrough/take.mp4",
-      "from": 562,
-      "speed": 60,
-      "caption": "Plays the story through until every ending works",
-      "by": "Muse Spark",
-      "speedup": "60x"
-    },
-    {
       "name": "4 Build: depth and walk",
-      "dur": 6,
+      "dur": 3,
       "src": "footage/walkthrough/take.mp4",
       "from": 862,
       "speed": 33,
@@ -123,7 +157,7 @@
     },
     {
       "name": "4 Build: voices and sound",
-      "dur": 4,
+      "dur": 3,
       "src": "footage/walkthrough/take.mp4",
       "from": 1062,
       "speed": 25,
@@ -133,7 +167,7 @@
     },
     {
       "name": "4 Build: the cast in 3D",
-      "dur": 6,
+      "dur": 3.5,
       "src": "footage/walkthrough/take.mp4",
       "from": 1162,
       "speed": 33,
@@ -142,34 +176,142 @@
       "speedup": "33x"
     },
     {
-      "name": "4 Build: a bot plays it",
-      "dur": 5,
-      "src": "footage/walkthrough/take.mp4",
-      "from": 1362,
-      "speed": 17.6,
-      "caption": "A bot plays every ending before you do",
-      "by": "play test",
-      "speedup": "18x"
+      "name": "5 How: the plan",
+      "image": "footage/method-harbour/1-plan.png",
+      "dur": 3,
+      "fade": 0.5,
+      "caption": "Plans where every thing stands",
+      "by": "Muse Spark"
     },
     {
-      "name": "5 Play",
-      "dur": 18,
-      "src": "footage/walkthrough/take.mp4",
-      "from": 1455,
+      "name": "5 How: the painting",
+      "image": "footage/method-harbour/2-painting.png",
+      "dur": 3,
+      "fade": 0.8,
+      "caption": "Paints over the plan",
+      "by": "Muse Image"
+    },
+    {
+      "name": "5 How: the cut-outs",
+      "image": "footage/method-harbour/3-masks.png",
+      "dur": 3,
+      "fade": 0.6,
+      "caption": "Cuts out every thing you can touch",
+      "by": "SAM 3.1"
+    },
+    {
+      "name": "5 How: depth",
+      "image": "footage/method-harbour/4-depth.png",
+      "dur": 3,
+      "fade": 0.6,
+      "caption": "Depth: what is near, what is far",
+      "by": "Depth Anything"
+    },
+    {
+      "name": "5 How: floor and scale",
+      "image": "footage/method-harbour/6-walk.png",
+      "dur": 3,
+      "fade": 0.6,
+      "caption": "The floor you walk on, the hero's size at every step"
+    },
+    {
+      "name": "5 How: parallax",
+      "src": "footage/method-harbour/parallax.mp4",
+      "from": 0.5,
+      "dur": 5,
+      "fade": 0.6,
+      "caption": "Cut-outs float over the painting, like a real diorama"
+    },
+    {
+      "name": "5 How: walk sheets",
+      "src": "footage/cast/take.mp4",
+      "from": 12.3,
+      "dur": 4,
+      "crop": [
+        545,
+        300,
+        1375,
+        773
+      ],
+      "fade": 0.4,
+      "caption": "Paints the hero walking, from every side",
+      "by": "Muse Image"
+    },
+    {
+      "name": "5 How: 3D body",
+      "src": "footage/cast/take.mp4",
+      "from": 18,
+      "dur": 5,
+      "crop": [
+        545,
+        300,
+        1375,
+        773
+      ],
+      "fade": 0.3,
+      "caption": "Builds a 3D body with a skeleton",
+      "by": "TRELLIS"
+    },
+    {
+      "name": "5 How: talking",
+      "src": "footage/cast/take.mp4",
+      "from": 26.3,
+      "dur": 3,
+      "crop": [
+        545,
+        300,
+        1375,
+        773
+      ],
+      "caption": "Walks, stands and talks with its hands"
+    },
+    {
+      "name": "6 Play: the study",
+      "src": "../../worlds/key-before-sunrise/playthrough/lighthouse-dawn.mp4",
+      "from": 9,
+      "dur": 4,
       "fade": 0.4,
       "audio": 0.8
     },
     {
-      "name": "6 Change: click, screenshot, ask",
-      "dur": 10,
+      "name": "6 Play: out to the harbour",
+      "src": "../../worlds/key-before-sunrise/playthrough/lighthouse-dawn.mp4",
+      "from": 55,
+      "dur": 4,
+      "audio": 0.8
+    },
+    {
+      "name": "6 Play: picking up the lantern",
+      "src": "../../worlds/key-before-sunrise/playthrough/lighthouse-dawn.mp4",
+      "from": 80,
+      "dur": 4,
+      "audio": 0.8
+    },
+    {
+      "name": "6 Play: talking to the fisher woman",
+      "src": "../../worlds/key-before-sunrise/playthrough/lighthouse-dawn.mp4",
+      "from": 113,
+      "dur": 4,
+      "audio": 0.8
+    },
+    {
+      "name": "6 Play: the lighthouse",
+      "src": "footage/places/key-before-sunrise--lantern-rock-lighthouse.mp4",
+      "from": 2,
+      "dur": 4,
+      "fade": 0.4
+    },
+    {
+      "name": "7 Change: click, screenshot, ask",
+      "dur": 7,
       "src": "footage/walk-change/take.mp4",
       "from": 3,
       "fade": 0.4,
       "caption": "Click a thing, paste a screenshot, say what you want"
     },
     {
-      "name": "6 Change: the agent works",
-      "dur": 5,
+      "name": "7 Change: the agent works",
+      "dur": 4,
       "src": "footage/walk-change/take.mp4",
       "from": 13.4,
       "speed": 32.2,
@@ -178,28 +320,81 @@
       "speedup": "32x"
     },
     {
-      "name": "6 Change: the change, Undo, Redo",
-      "dur": 13,
+      "name": "7 Change: the change, Undo, Redo",
+      "dur": 11,
       "src": "footage/walk-change/take.mp4",
       "from": 173.5
     },
     {
-      "name": "7 Export: a zip",
-      "dur": 8,
+      "name": "8 Export: a zip",
+      "dur": 6,
       "src": "footage/walkthrough/take.mp4",
       "from": 1689,
       "fade": 0.4,
       "caption": "Export: a zip, or a GitHub Pages link"
     },
     {
-      "name": "7 Export: plays in any browser",
-      "dur": 8,
+      "name": "8 Export: plays in any browser",
+      "dur": 6,
       "src": "footage/walkthrough/take.mp4",
       "from": 1705,
       "caption": "Plays in any browser"
     },
     {
-      "name": "8 Thanks",
+      "name": "9 More worlds: a drawing come alive",
+      "src": "footage/places/living-drawing--boy-room-1991.mp4",
+      "from": 2,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.4,
+      "caption": "Every world here was made with Diorama"
+    },
+    {
+      "name": "9 More worlds: the crayon castle",
+      "src": "footage/places/demo35--crayon-dream-valley.mp4",
+      "from": 5,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "9 More worlds: the bridge",
+      "src": "footage/places/living-drawing--crayon-game-land.mp4",
+      "from": 0,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "9 More worlds: back to the desk",
+      "src": "footage/places/demo35--developer-study-today.mp4",
+      "from": 2,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "10 Thanks",
       "dur": 7,
       "card": "Diorama  ·  github.com/gtanczyk/diorama",
       "fade": 0.6
@@ -212,23 +407,27 @@
   "voice": [
     {
       "src": "footage/vo/ask.wav",
-      "at": 20.2
+      "at": 25.9
     },
     {
       "src": "footage/vo/build.wav",
-      "at": 38.8
+      "at": 36.9
+    },
+    {
+      "src": "footage/vo/how.wav",
+      "at": 56.9
     },
     {
       "src": "footage/vo/change.wav",
-      "at": 102.8
+      "at": 108.9
     },
     {
       "src": "footage/vo/export.wav",
-      "at": 130.8
+      "at": 130.9
     },
     {
       "src": "footage/vo/end.wav",
-      "at": 146.8
+      "at": 154.9
     }
   ]
 }

@@ -8,14 +8,14 @@
 // whole film and ducks while a `voice` line (voice-over, placed at `at` seconds) plays: one voice at a time.
 // The mix is normalised to -14 LUFS, where YouTube and X play it without turning it down.
 // `caption` lays a lower third over a shot (what happens), with `by` as a badge naming the model that does it,
-// and `speedup` marks a sped-up wait in the corner ("70x").
+// and `speedup` marks a sped-up wait in the corner ("70x"). `crop` [x, y, w, h] in the clip's pixels zooms in on part of it.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
 
-type Shot = { name: string; dur: number; src?: string; from?: number; speed?: number; image?: string; card?: string; fade?: number; audio?: number; caption?: string; by?: string; speedup?: string };
+type Shot = { name: string; dur: number; src?: string; from?: number; speed?: number; image?: string; card?: string; fade?: number; audio?: number; caption?: string; by?: string; speedup?: string; crop?: [number, number, number, number] };
 type Cut = { fps?: number; shots: Shot[]; music?: { src: string; volume?: number }; voice?: { src: string; at: number; volume?: number }[] };
 
 const W = 1920, H = 1080;
@@ -66,7 +66,8 @@ async function main() {
       else fs.writeFileSync(png, await cardPng(shot.card ?? shot.name, shot.card ? '' : `placeholder: ${shot.src ?? shot.image ?? 'to shoot'}`));
       input = ['-loop', '1', '-t', String(len), '-i', png];
     }
-    const picture = `${speed === 1 ? '' : `setpts=PTS/${speed},`}${fit},tpad=stop_mode=clone:stop_duration=${len}`;
+    const crop = shot.crop ? `crop=${shot.crop[2]}:${shot.crop[3]}:${shot.crop[0]}:${shot.crop[1]},` : '';
+    const picture = `${crop}${speed === 1 ? '' : `setpts=PTS/${speed},`}${fit},tpad=stop_mode=clone:stop_duration=${len}`;
     let filter = ['-vf', picture];
     if (shot.caption || shot.by || shot.speedup) {
       const png = path.join(tmp, `${i}-caption.png`);
