@@ -1,0 +1,171 @@
+{
+  "fps": 30,
+  "shots": [
+    {
+      "name": "1 Hook: real room, painted room, hero in the door",
+      "dur": 5,
+      "src": "footage/hook.mp4"
+    },
+    {
+      "name": "2 Pitch at the desk",
+      "dur": 20,
+      "src": "footage/pitch.mp4"
+    },
+    {
+      "name": "3 WOW: today's study, the screens flicker",
+      "dur": 4,
+      "src": "footage/d35-back.webm",
+      "from": 10.5,
+      "fade": 0.6
+    },
+    {
+      "name": "3 WOW: 1991, the 12-year-old at his computer",
+      "dur": 4,
+      "src": "footage/d35-back.webm",
+      "from": 17,
+      "fade": 0.4
+    },
+    {
+      "name": "3 WOW: through the drawing's portal",
+      "dur": 4.5,
+      "src": "footage/d35-back.webm",
+      "from": 44,
+      "fade": 0.25
+    },
+    {
+      "name": "3 WOW: into the crayon valley",
+      "dur": 3.5,
+      "src": "footage/d35-back.webm",
+      "from": 51.5,
+      "fade": 0.4
+    },
+    {
+      "name": "3 WOW: the castle colours itself in",
+      "dur": 5,
+      "src": "footage/d35-back.webm",
+      "from": 136.5,
+      "fade": 0.25
+    },
+    {
+      "name": "3 WOW: back today",
+      "dur": 3,
+      "src": "footage/d35-back.webm",
+      "from": 193,
+      "fade": 0.4
+    },
+    {
+      "name": "4 Studio: the idea and two photos on the front page",
+      "dur": 6,
+      "src": "footage/studio-new/take.mp4",
+      "from": 3,
+      "speed": 1.6,
+      "fade": 0.4
+    },
+    {
+      "name": "4 Studio: Build it",
+      "dur": 4,
+      "src": "footage/studio-new/take.mp4",
+      "from": 12,
+      "speed": 2
+    },
+    {
+      "name": "4 Studio: the build on the stage (sped up)",
+      "dur": 8,
+      "src": "footage/studio-new/take.mp4",
+      "from": 20,
+      "speed": 70,
+      "fade": 0.3
+    },
+    {
+      "name": "5 How it's made: the study, one step per beat",
+      "dur": 29.7,
+      "src": "footage/d35/conjure.mp4",
+      "fade": 0.4
+    },
+    {
+      "name": "6 Studio: click the computer, ask the agent",
+      "dur": 7,
+      "src": "footage/studio/take.mp4",
+      "from": 4.5,
+      "fade": 0.4
+    },
+    {
+      "name": "6 Studio: the agent works (sped up)",
+      "dur": 5,
+      "src": "footage/studio/take.mp4",
+      "from": 11.5,
+      "speed": 49.5
+    },
+    {
+      "name": "6 Studio: the change, Undo, Redo",
+      "dur": 16,
+      "src": "footage/studio/take.mp4",
+      "from": 259
+    },
+    {
+      "name": "7 Technique: SAM 3.1 cuts out every thing",
+      "dur": 5,
+      "image": "footage/d35/masks-room.png",
+      "fade": 0.5
+    },
+    {
+      "name": "7 Technique: floor, scale and occlusion from the masks",
+      "dur": 5,
+      "image": "footage/d35/walk-valley.png",
+      "fade": 0.4
+    },
+    {
+      "name": "7 Technique: depth and parallax in play",
+      "dur": 4,
+      "src": "footage/d35-back.webm",
+      "from": 60,
+      "fade": 0.4
+    },
+    {
+      "name": "7 Technique: Spark critiques the painting",
+      "dur": 5,
+      "image": "footage/d35/critic-valley.png",
+      "fade": 0.4
+    },
+    {
+      "name": "7 Technique: Muse repaints only those regions",
+      "dur": 4,
+      "image": "footage/d35/repaint-valley.png",
+      "fade": 0.3
+    },
+    {
+      "name": "7 Technique: MusicGen score, cast voices",
+      "dur": 4,
+      "src": "footage/sound.mp4",
+      "fade": 0.4
+    },
+    {
+      "name": "8 Thanks",
+      "dur": 12.3,
+      "card": "Thanks for watching  \u00b7  github.com/gtanczyk/diorama",
+      "fade": 0.6
+    }
+  ],
+  "music": {
+    "src": "footage/music.mp3",
+    "volume": 0.35
+  },
+  "voice": [
+    {
+      "src": "footage/vo/how.wav",
+      "at": 67.0
+    },
+    {
+      "src": "footage/vo/studio.wav",
+      "at": 96.7
+    },
+    {
+      "src": "footage/vo/techniques.wav",
+      "at": 124.7
+    },
+    {
+      "src": "footage/vo/thanks.wav",
+      "at": 151.7
+    }
+  ]
+}

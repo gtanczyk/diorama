@@ -1,5 +1,5 @@
-// The demo film's edit as data: demo/cut.json lists the shots, this script renders them with ffmpeg.
-// npx tsx demo/cut.ts [demo/cut.json] [out.mp4]
+// The demo film's edit as data: app/demo/cut.json lists the shots, this script renders them with ffmpeg.
+// npx tsx app/demo/cut.ts [app/demo/cut.json] [out.mp4]
 // A shot is a clip (`src`, optional `from`), a still (`image`) or a title card (`card`), held for `dur` seconds;
 // `fade` blends it in over the previous shot; `speed` plays a clip faster (a model's wait at 40x).
 // Paths are relative to the cut file. Missing clips render as a labelled placeholder card,
@@ -7,13 +7,15 @@
 // Sound: a shot's `audio` is the volume of its clip's own sound (left out = silent), `music` loops under the
 // whole film and ducks while a `voice` line (voice-over, placed at `at` seconds) plays: one voice at a time.
 // The mix is normalised to -14 LUFS, where YouTube and X play it without turning it down.
+// `caption` lays a lower third over a shot (what happens), with `by` as a badge naming the model that does it,
+// and `speedup` marks a sped-up wait in the corner ("70x").
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
 
-type Shot = { name: string; dur: number; src?: string; from?: number; speed?: number; image?: string; card?: string; fade?: number; audio?: number };
+type Shot = { name: string; dur: number; src?: string; from?: number; speed?: number; image?: string; card?: string; fade?: number; audio?: number; caption?: string; by?: string; speedup?: string };
 type Cut = { fps?: number; shots: Shot[]; music?: { src: string; volume?: number }; voice?: { src: string; at: number; volume?: number }[] };
 
 const W = 1920, H = 1080;
@@ -24,6 +26,17 @@ async function cardPng(title: string, note: string): Promise<Buffer> {
 <text x="120" y="500" font-family="DejaVu Sans, sans-serif" font-size="64" font-weight="bold" fill="#fff">${esc(title)}</text>
 <text x="120" y="580" font-family="DejaVu Sans, sans-serif" font-size="34" fill="#9a9aa8">${esc(note)}</text></svg>`;
   return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+/** The lower third of a shot: a dark band with the model's badge and what happens, plus a speed mark. */
+async function captionPng(shot: Shot): Promise<Buffer> {
+  const badge = shot.by ? Math.round(shot.by.length * 15 + 48) : 0;
+  const text = shot.caption ?? '';
+  const band = text || shot.by ? `<rect x="64" y="${H - 150}" width="${badge + (badge ? 24 : 0) + text.length * 17 + 56}" height="86" rx="18" fill="#0b0b10" fill-opacity="0.78"/>
+${shot.by ? `<rect x="88" y="${H - 129}" width="${badge}" height="44" rx="22" fill="#2f5bea"/><text x="${88 + badge / 2}" y="${H - 99}" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="23" font-weight="bold" fill="#fff">${esc(shot.by)}</text>` : ''}
+<text x="${88 + badge + (badge ? 24 : 0)}" y="${H - 97}" font-family="DejaVu Sans, sans-serif" font-size="30" fill="#f2f0ea">${esc(text)}</text>` : '';
+  const speed = shot.speedup ? `<rect x="${W - 194}" y="${H - 138}" width="130" height="62" rx="31" fill="#0b0b10" fill-opacity="0.78"/><text x="${W - 129}" y="${H - 96}" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="32" font-weight="bold" fill="#ffb347">${esc(shot.speedup)} ▸▸</text>` : '';
+  return sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${band}${speed}</svg>`)).png().toBuffer();
 }
 
 async function main() {
@@ -53,7 +66,15 @@ async function main() {
       else fs.writeFileSync(png, await cardPng(shot.card ?? shot.name, shot.card ? '' : `placeholder: ${shot.src ?? shot.image ?? 'to shoot'}`));
       input = ['-loop', '1', '-t', String(len), '-i', png];
     }
-    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...input, '-vf', `${speed === 1 ? '' : `setpts=PTS/${speed},`}${fit},tpad=stop_mode=clone:stop_duration=${len}`, '-an', '-t', String(len), '-c:v', 'libx264', '-crf', '18', '-video_track_timescale', '15360', seg]);
+    const picture = `${speed === 1 ? '' : `setpts=PTS/${speed},`}${fit},tpad=stop_mode=clone:stop_duration=${len}`;
+    let filter = ['-vf', picture];
+    if (shot.caption || shot.by || shot.speedup) {
+      const png = path.join(tmp, `${i}-caption.png`);
+      fs.writeFileSync(png, await captionPng(shot));
+      input.push('-loop', '1', '-t', String(len), '-i', png);
+      filter = ['-filter_complex', `[0:v]${picture}[v];[1:v]format=rgba,fade=in:st=0.25:d=0.35:alpha=1[c];[v][c]overlay=0:0,format=yuv420p`];
+    }
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...input, ...filter, '-an', '-t', String(len), '-c:v', 'libx264', '-crf', '18', '-video_track_timescale', '15360', seg]);
     segments.push(seg);
   }
 
@@ -83,6 +104,9 @@ async function main() {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
+/** Whether a clip has a sound track: a screen recording has none. */
+const hasSound = (file: string) => execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'csv=p=0', file], { encoding: 'utf8' }).trim() !== '';
+
 /** The film's sound as ffmpeg inputs and a filter graph ending in [mix], or nothing when the cut has no sound. */
 function mixSound(cut: Cut, base: string, total: number): { inputs: string[]; graph: string } | undefined {
   const inputs: string[] = [];
@@ -93,7 +117,7 @@ function mixSound(cut: Cut, base: string, total: number): { inputs: string[]; gr
   for (const shot of cut.shots) {
     const src = shot.src && path.resolve(base, shot.src);
     // A sped-up clip's sound would be noise, so only clips at normal speed keep theirs.
-    if (shot.audio && src && fs.existsSync(src) && (shot.speed ?? 1) === 1) {
+    if (shot.audio && src && fs.existsSync(src) && (shot.speed ?? 1) === 1 && hasSound(src)) {
       const k = add(['-ss', String(shot.from ?? 0), '-t', String(shot.dur), '-i', src]);
       const ms = Math.round(at * 1000);
       parts.push(`[${k}:a]afade=t=in:d=0.3,afade=t=out:st=${Math.max(0, shot.dur - 0.3)}:d=0.3,volume=${shot.audio},adelay=${ms}|${ms}[g${k}]`);

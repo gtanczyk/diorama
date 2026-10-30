@@ -2,147 +2,206 @@
   "fps": 30,
   "shots": [
     {
-      "name": "1 Hook: real room, painted room, hero in the door",
-      "dur": 5,
-      "src": "footage/hook.mp4"
+      "name": "1 Cold open: Diorama asks",
+      "dur": 1.4,
+      "src": "footage/walk-review/take.mp4",
+      "from": 25
     },
     {
-      "name": "2 Pitch at the desk",
-      "dur": 20,
-      "src": "footage/pitch.mp4"
+      "name": "1 Cold open: a place being painted",
+      "dur": 1.4,
+      "src": "footage/walkthrough/take.mp4",
+      "from": 380,
+      "fade": 0.2
     },
     {
-      "name": "3 WOW: today's study, the screens flicker",
-      "dur": 4,
-      "src": "footage/d35-back.webm",
-      "from": 10.5,
-      "fade": 0.6
+      "name": "1 Cold open: the change lands",
+      "dur": 1.6,
+      "src": "footage/walk-change/take.mp4",
+      "from": 176,
+      "fade": 0.2,
+      "caption": "Diorama"
     },
     {
-      "name": "3 WOW: 1991, the 12-year-old at his computer",
-      "dur": 4,
-      "src": "footage/d35-back.webm",
-      "from": 17,
+      "name": "2 Camera: who I am, what Diorama does",
+      "dur": 11,
+      "src": "footage/camera-intro.mp4",
       "fade": 0.4
     },
     {
-      "name": "3 WOW: through the drawing's portal",
-      "dur": 4.5,
-      "src": "footage/d35-back.webm",
-      "from": 44,
-      "fade": 0.25
+      "name": "3 Studio: an idea and two photos",
+      "dur": 4.8,
+      "src": "footage/walk-review/take.mp4",
+      "from": 1.5,
+      "fade": 0.4,
+      "caption": "An idea, photos or a video"
     },
     {
-      "name": "3 WOW: into the crayon valley",
+      "name": "3 Diorama reads them",
       "dur": 3.5,
-      "src": "footage/d35-back.webm",
-      "from": 51.5,
-      "fade": 0.4
+      "src": "footage/walk-review/take.mp4",
+      "from": 6.3,
+      "speed": 5,
+      "caption": "Diorama reads the idea and the photos",
+      "by": "Muse Spark",
+      "speedup": "5x"
     },
     {
-      "name": "3 WOW: the castle colours itself in",
-      "dur": 5,
-      "src": "footage/d35-back.webm",
-      "from": 136.5,
-      "fade": 0.25
+      "name": "3 Who do you play?",
+      "dur": 3.7,
+      "src": "footage/walk-review/take.mp4",
+      "from": 23.8,
+      "caption": "and asks only what it cannot guess, in pictures",
+      "by": "Muse Spark"
     },
     {
-      "name": "3 WOW: back today",
-      "dur": 3,
-      "src": "footage/d35-back.webm",
-      "from": 193,
-      "fade": 0.4
+      "name": "3 Diorama sketches the next question",
+      "dur": 4,
+      "src": "footage/walk-review/take.mp4",
+      "from": 27.5,
+      "speed": 8.3,
+      "speedup": "8x"
     },
     {
-      "name": "4 Studio: the idea and two photos on the front page",
+      "name": "3 Which thing stirs first? Build",
+      "dur": 7.4,
+      "src": "footage/walk-review/take.mp4",
+      "from": 60.6,
+      "caption": "Two clicks, then build",
+      "by": "Muse Image"
+    },
+    {
+      "name": "4 Build: the story",
       "dur": 6,
-      "src": "footage/studio-new/take.mp4",
-      "from": 3,
-      "speed": 1.6,
-      "fade": 0.4
+      "src": "footage/walkthrough/take.mp4",
+      "from": 82,
+      "speed": 10,
+      "fade": 0.4,
+      "caption": "Writes the places, the hero and the story",
+      "by": "Muse Spark",
+      "speedup": "10x"
     },
     {
-      "name": "4 Studio: Build it",
-      "dur": 4,
-      "src": "footage/studio-new/take.mp4",
-      "from": 12,
-      "speed": 2
-    },
-    {
-      "name": "4 Studio: the build on the stage (sped up)",
-      "dur": 8,
-      "src": "footage/studio-new/take.mp4",
-      "from": 20,
-      "speed": 70,
-      "fade": 0.3
-    },
-    {
-      "name": "5 How it's made: the study, one step per beat",
-      "dur": 29.7,
-      "src": "footage/d35/conjure.mp4",
-      "fade": 0.4
-    },
-    {
-      "name": "6 Studio: click the computer, ask the agent",
+      "name": "4 Build: painting",
       "dur": 7,
-      "src": "footage/studio/take.mp4",
-      "from": 4.5,
-      "fade": 0.4
+      "src": "footage/walkthrough/take.mp4",
+      "from": 380,
+      "speed": 12,
+      "caption": "Paints every place",
+      "by": "Muse Image",
+      "speedup": "12x"
     },
     {
-      "name": "6 Studio: the agent works (sped up)",
+      "name": "4 Build: cut out",
+      "dur": 7,
+      "src": "footage/walkthrough/take.mp4",
+      "from": 470,
+      "speed": 13,
+      "caption": "Cuts out everything you can touch",
+      "by": "SAM 3.1",
+      "speedup": "13x"
+    },
+    {
+      "name": "4 Build: the story is played through",
       "dur": 5,
-      "src": "footage/studio/take.mp4",
-      "from": 11.5,
-      "speed": 49.5
+      "src": "footage/walkthrough/take.mp4",
+      "from": 562,
+      "speed": 60,
+      "caption": "Plays the story through until every ending works",
+      "by": "Muse Spark",
+      "speedup": "60x"
     },
     {
-      "name": "6 Studio: the change, Undo, Redo",
-      "dur": 16,
-      "src": "footage/studio/take.mp4",
-      "from": 259
+      "name": "4 Build: depth and walk",
+      "dur": 6,
+      "src": "footage/walkthrough/take.mp4",
+      "from": 862,
+      "speed": 33,
+      "caption": "Depth: the floor, scale, shadows and parallax",
+      "by": "Depth Anything",
+      "speedup": "33x"
     },
     {
-      "name": "7 Technique: SAM 3.1 cuts out every thing",
-      "dur": 5,
-      "image": "footage/d35/masks-room.png",
-      "fade": 0.5
-    },
-    {
-      "name": "7 Technique: floor, scale and occlusion from the masks",
-      "dur": 5,
-      "image": "footage/d35/walk-valley.png",
-      "fade": 0.4
-    },
-    {
-      "name": "7 Technique: depth and parallax in play",
+      "name": "4 Build: voices and sound",
       "dur": 4,
-      "src": "footage/d35-back.webm",
-      "from": 60,
-      "fade": 0.4
+      "src": "footage/walkthrough/take.mp4",
+      "from": 1062,
+      "speed": 25,
+      "caption": "Voices and sound",
+      "by": "ElevenLabs",
+      "speedup": "25x"
     },
     {
-      "name": "7 Technique: Spark critiques the painting",
+      "name": "4 Build: the cast in 3D",
+      "dur": 6,
+      "src": "footage/walkthrough/take.mp4",
+      "from": 1162,
+      "speed": 33,
+      "caption": "The cast, painted from four sides and built in 3D",
+      "by": "Muse Image · 3D",
+      "speedup": "33x"
+    },
+    {
+      "name": "4 Build: a bot plays it",
       "dur": 5,
-      "image": "footage/d35/critic-valley.png",
-      "fade": 0.4
+      "src": "footage/walkthrough/take.mp4",
+      "from": 1362,
+      "speed": 17.6,
+      "caption": "A bot plays every ending before you do",
+      "by": "play test",
+      "speedup": "18x"
     },
     {
-      "name": "7 Technique: Muse repaints only those regions",
-      "dur": 4,
-      "image": "footage/d35/repaint-valley.png",
-      "fade": 0.3
+      "name": "5 Play",
+      "dur": 18,
+      "src": "footage/walkthrough/take.mp4",
+      "from": 1455,
+      "fade": 0.4,
+      "audio": 0.8
     },
     {
-      "name": "7 Technique: MusicGen score, cast voices",
-      "dur": 4,
-      "src": "footage/sound.mp4",
-      "fade": 0.4
+      "name": "6 Change: click, screenshot, ask",
+      "dur": 10,
+      "src": "footage/walk-change/take.mp4",
+      "from": 3,
+      "fade": 0.4,
+      "caption": "Click a thing, paste a screenshot, say what you want"
+    },
+    {
+      "name": "6 Change: the agent works",
+      "dur": 5,
+      "src": "footage/walk-change/take.mp4",
+      "from": 13.4,
+      "speed": 32.2,
+      "caption": "Muse Code changes the world with the Studio's tools",
+      "by": "Muse Code",
+      "speedup": "32x"
+    },
+    {
+      "name": "6 Change: the change, Undo, Redo",
+      "dur": 13,
+      "src": "footage/walk-change/take.mp4",
+      "from": 173.5
+    },
+    {
+      "name": "7 Export: a zip",
+      "dur": 8,
+      "src": "footage/walkthrough/take.mp4",
+      "from": 1689,
+      "fade": 0.4,
+      "caption": "Export: a zip, or a GitHub Pages link"
+    },
+    {
+      "name": "7 Export: plays in any browser",
+      "dur": 8,
+      "src": "footage/walkthrough/take.mp4",
+      "from": 1705,
+      "caption": "Plays in any browser"
     },
     {
       "name": "8 Thanks",
-      "dur": 12.3,
-      "card": "Thanks for watching  \u00b7  github.com/gtanczyk/diorama",
+      "dur": 7,
+      "card": "Diorama  ·  github.com/gtanczyk/diorama",
       "fade": 0.6
     }
   ],
@@ -152,20 +211,24 @@
   },
   "voice": [
     {
-      "src": "footage/vo/how.wav",
-      "at": 67.0
+      "src": "footage/vo/ask.wav",
+      "at": 20.2
     },
     {
-      "src": "footage/vo/studio.wav",
-      "at": 96.7
+      "src": "footage/vo/build.wav",
+      "at": 38.8
     },
     {
-      "src": "footage/vo/techniques.wav",
-      "at": 124.7
+      "src": "footage/vo/change.wav",
+      "at": 102.8
     },
     {
-      "src": "footage/vo/thanks.wav",
-      "at": 151.7
+      "src": "footage/vo/export.wav",
+      "at": 130.8
+    },
+    {
+      "src": "footage/vo/end.wav",
+      "at": 146.8
     }
   ]
 }

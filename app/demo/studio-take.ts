@@ -4,7 +4,7 @@
 //     npx tsx app/demo/studio-take.ts --new "<idea>" [--photo room.jpg --photo me.jpg ...] [--out app/demo/footage/studio-new]
 //   Change a world: a thing is clicked on the stage, the agent is asked about it, its change shows, Undo takes it
 //   back, Redo brings it again, then the game is played.
-//     npx tsx app/demo/studio-take.ts <slug> --place <place> --thing <thing> --prompt "<what to ask>" [--agent muse|claude|codex] [--out app/demo/footage/studio]
+//     npx tsx app/demo/studio-take.ts <slug> --place <place> --thing <thing> --prompt "<what to ask>" [--screenshot] [--agent muse|claude|codex] [--out app/demo/footage/studio]
 // Writes take.mp4 (1920x1080) and take.json (seconds into the video of each beat, so the cut can speed up the waits).
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -20,6 +20,8 @@ const place = takeOption(args, 'place', '');
 const thing = takeOption(args, 'thing', '');
 const prompt = takeOption(args, 'prompt', '');
 const agent = takeOption(args, 'agent', 'muse');
+// --screenshot: a screenshot of the stage goes with the message, as a person pastes one.
+const screenshot = args.includes('--screenshot');
 const out = path.resolve(takeOption(args, 'out', idea ? 'app/demo/footage/studio-new' : 'app/demo/footage/studio'));
 const [slug] = args.filter((a) => !a.startsWith('--'));
 if (!idea && (!slug || !place || !thing || !prompt)) {
@@ -101,6 +103,13 @@ try {
     beat('thing picked');
     // However the agent's job ends (a verify flag fails it too), the take goes on once the agent is ready again.
     const changed = next((e) => e.type === 'job.end' && (e.job as Job).by === 'agent', 20, 'end of the agent job');
+    if (screenshot) {
+      const shot = path.join(out, 'screenshot.png');
+      await page.locator('.stage-body').screenshot({ path: shot });
+      await page.locator('section.convo input[type=file][accept^="image"]').setInputFiles(shot);
+      await page.waitForTimeout(1500);
+      beat('screenshot added');
+    }
     const box = page.locator('section.convo textarea');
     await typeSlowly(box, prompt);
     await box.press('Enter');
@@ -108,7 +117,7 @@ try {
     await changed;
     await page.locator('section.convo .live.on', { hasText: 'ready' }).waitFor({ timeout: 10 * 60_000 });
     // The change on the stage: the Changed card shows the place the agent touched.
-    await page.locator('.wcard', { hasText: 'Changed' }).locator('.thumb').first().click().catch(() => {});
+    await page.locator('.wcard', { hasText: 'Changed' }).last().locator('.thumb').first().click().catch(() => {});
     await page.waitForTimeout(4000);
     beat('change shown');
     await page.locator('.wcard button', { hasText: '↶ Undo' }).last().click();

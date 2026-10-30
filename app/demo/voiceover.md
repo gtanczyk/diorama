@@ -1,14 +1,17 @@
 # Voice-over
 
-One voice at a time, about 140 words in total. Music ducks under every line (`voice` in `cut.json`).
-Only the pitch is spoken on camera. The other lines go to `footage/vo/<name>.wav`, recorded dry, mono, 48 kHz.
+The film is a walk through the Studio: Grzegorz on camera, then the screen. One voice at a time, about 110 words.
+Music ducks under every line (`voice` in `cut.json`). The intro is spoken on camera; the rest goes to
+`footage/vo/<name>.wav`, recorded dry, mono, 48 kHz. The captions in `cut.json` already say which model does what,
+so the voice can stay short.
 
 | at | file | line |
 |---|---|---|
-| 0:05 | on camera | Thirty-five years ago I was twelve, drawing games I could never build. Today I type one sentence, and Diorama turns it into a painted world you can play. Let me show you. |
-| 1:07 | how.wav | Muse Spark writes the world and its story. Muse Image paints every place. Spark looks at the painting, and Muse fixes only what's wrong. SAM 3.1 cuts out every object, so you can walk behind them. Then a bot plays it to the end. |
-| 1:37 | studio.wav | Want a change? Just ask. The agent edits the world, rebuilds it, and checks it still plays. Undo is one click. |
-| 2:05 | techniques.wav | From the masks come the floor, the scale and who stands in front. Depth gives shadows and parallax. MusicGen writes the score. |
-| 2:32 | thanks.wav | Thanks for watching. It's open source. Go build the game you dreamed of. |
+| 0:04 | on camera | I'm Grzegorz. Diorama turns an idea, a few photos or a video into a painted adventure game you can play. It runs on Meta's Muse models and SAM. Here's how. |
+| 0:20 | ask.wav | Before it builds, Diorama asks what it can't guess. In pictures. |
+| 0:39 | build.wav | Muse Spark writes the story. Muse Image paints each place. SAM cuts out everything you can touch. Depth gives the floor, the scale and the shadows. And a bot plays every ending before I do. |
+| 1:43 | change.wav | Want something different? Click it, paste a screenshot, ask. Muse Code changes the world, and Undo takes it back. |
+| 2:11 | export.wav | One zip. Any browser. |
+| 2:27 | end.wav | Diorama. Open source. Go build the game you dreamed of. |
 
-The hook, the world montage and the Studio front page have no voice.
+The cold open, the build's last seconds and the game itself have no voice.
