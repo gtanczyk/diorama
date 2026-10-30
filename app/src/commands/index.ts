@@ -12,6 +12,7 @@ import './icons.ts';
 import './derive.ts';
 import './backdrop.ts';
 import './weather.ts';
+import './reactions.ts';
 import './sound.ts';
 import './voices.ts';
 import './voice-retry.ts';

@@ -66,7 +66,7 @@ export function callCounts(dir: string): Record<string, number> {
 
 /** How long each build step usually takes here: the median over the worlds built so far, for a world that has no times of its own. */
 // A first world on a new machine: the step times of a four-place build (2026-10-27), so its first job still says about how long.
-const FIRST_BUILD: Record<string, number> = { world: 17, story: 47, layout: 30, paint: 66, masks: 66, plates: 45, icons: 21, derive: 161, backdrop: 48, weather: 21, cast: 61, model: 179, sprites: 188, sound: 67, voices: 49, verify: 1 };
+const FIRST_BUILD: Record<string, number> = { world: 17, story: 47, layout: 30, paint: 66, masks: 66, plates: 45, icons: 21, derive: 161, backdrop: 48, weather: 21, reactions: 21, cast: 61, model: 179, sprites: 188, sound: 67, voices: 49, verify: 1 };
 
 export function typicalSeconds(root: string): Record<string, number> {
   const seen: Record<string, number[]> = {};

@@ -10,7 +10,7 @@ export const SCOPES = ['world', 'place', 'cast'] as const;
 export type Scope = (typeof SCOPES)[number];
 
 /** The place steps a new painting runs again; the restyle edit takes paint's place. Sound and voices stay as they are. */
-export const PLACE_REDO = ['paint', 'masks', 'plates', 'icons', 'derive', 'backdrop', 'weather', 'verify'] as const;
+export const PLACE_REDO = ['paint', 'masks', 'plates', 'icons', 'derive', 'backdrop', 'weather', 'reactions', 'verify'] as const;
 /** The character steps; model and sprites only for those who had them. */
 export const CAST_REDO = ['cast', 'model', 'sprites'] as const;
 
@@ -18,7 +18,7 @@ type Calls = Record<string, number>;
 /** Calls one place (or one character) costs per step when the world has no record of its own. */
 const ROUGH: Record<string, Calls> = {
   paint: { spark: 2, muse: 2 }, masks: { spark: 1, sam: 8 }, plates: { muse: 1 }, icons: { muse: 1 }, derive: { spark: 3 },
-  backdrop: { muse: 1, sam: 2 }, weather: { spark: 1 }, verify: {},
+  backdrop: { muse: 1, sam: 2 }, weather: { spark: 1 }, reactions: { spark: 1 }, verify: {},
   cast: { muse: 1, sam: 1 }, model: { muse: 3 }, sprites: { muse: 5 },
 };
 

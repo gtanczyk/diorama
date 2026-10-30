@@ -16,12 +16,14 @@ import { spokenLine, type SoundData } from '../src/play/sound.ts';
 import type { Figure3D, ModelInfo } from './hero3d.ts';
 import type { Weather } from '../src/play/weather.ts';
 import { WeatherFx } from './weather.ts';
+import type { Reactions } from '../src/play/reactions.ts';
+import { ReactionFx } from './reactions.ts';
 import { creatureMotion } from '../src/play/creature.ts';
 
 type Data = {
   slug: string;
   world: World;
-  places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; weather?: Weather; issue?: string }>;
+  places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; weather?: Weather; reactions?: Reactions; issue?: string }>;
   /** Figure per hero or NPC key: a cut-out image, and its rig when `diorama cast` could cut it into parts. */
   cast: Record<string, { image: string; height?: number; upright?: boolean; rig?: Rig; parts?: string; model?: { dir: string; info: ModelInfo }; sprites?: { dir: string; info: SpriteInfo } }>;
   story: Story | null;
@@ -95,6 +97,7 @@ type Place = {
   catches?: { gone: string; on: Uint8Array };
   /** Rain or snow, rings, splashes and drips (weather.json). */
   weather?: WeatherFx;
+  reactions?: ReactionFx;
 };
 
 /**
@@ -442,8 +445,9 @@ class Game {
     const wx = entry.weather && !params.has('still') && params.get('weather') !== '0' ? entry.weather : undefined;
     const ripples = wx?.ripples ? await loadBits(files(wx.ripples), g.frame.width, g.frame.height).catch(() => undefined) : undefined;
     const weather = wx && new WeatherFx(wx, g, ripples?.bits, key);
+    const reactions = entry.reactions && params.get('reactions') !== '0' ? new ReactionFx(entry.reactions, g, key, matchMedia('(prefers-reduced-motion: reduce)').matches) : undefined;
     const focus = focusScale > 0 || separateScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather };
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions };
     this.cache.set(key, place);
     return place;
   }
@@ -481,6 +485,7 @@ class Game {
   async enter(key: string, from?: string) {
     const place = await this.load(key);
     this.place = place;
+    place.reactions?.reset();
     const back = from ? place.spec.exits.find((e) => e.to === from) : undefined;
     const arrive = back ? place.g.things.find((t) => t.key === back.via)?.stand : undefined;
     [this.hero.x, this.hero.y] = arrive ?? place.g.start;
@@ -670,7 +675,17 @@ class Game {
     this.emit('silent', {});
     let say: string[];
     if (story) {
+      const matched = action.kind === 'do' ? pickInteraction(story, this.state, action) : -1;
       const step = apply(this.data.world, story, this.state, action);
+      if (matched >= 0 && action.kind === 'do' && !this.gone().has(action.thing)) {
+        const target = this.place.hots.find((h) => h.thing.key === action.thing);
+        // act() is also exposed to scripts; physical effects require the hero to be in reach.
+        if (target) {
+          const [x, y] = this.approach(target);
+          if (Math.hypot(this.hero.x - x, this.hero.y - y) <= this.place.g.cell * 2)
+            this.place.reactions?.triggers.interact(JSON.stringify(story.interactions[matched]), this.hero, (k) => this.thingY(k));
+        }
+      }
       this.state = step.state;
       say = step.say;
       // A new item flies into the bag from the thing it was, or from whoever handed it over.
@@ -874,6 +889,7 @@ class Game {
     }
     this.swayCamera(dt);
     this.place.weather?.update(dt);
+    this.place.reactions?.update(dt);
     for (const b of this.party) this.move(b, dt);
     this.move(hero, dt);
   }
@@ -885,6 +901,7 @@ class Game {
     // The budget is floor walked, not screen pixels: going into the picture or out of it covers more floor per
     // pixel than going across, so the body moves fewer pixels there and its feet do not skate over the floor.
     while (budget > 0 && hero.path.length) {
+      const beforeStep = { x: hero.x, y: hero.y, phase: hero.phase, foot: hero.foot };
       const [tx, ty] = hero.path[0];
       const k = depthStretch(this.place.g, hero.y);
       const d = Math.hypot(tx - hero.x, (ty - hero.y) * k);
@@ -902,6 +919,8 @@ class Game {
       }
       // One cycle per CYCLE heights walked: the rig's planted foot keeps pace with the floor.
       hero.phase += moved / (CYCLE * personPx(this.place.g, hero.y));
+      this.place.reactions?.triggers.move(hero, beforeStep, { x: hero.x, y: hero.y, phase: hero.phase,
+        foot: stepFootY(this.place.g, hero.x, hero.y) }, this.state);
       if (!hero.path.length) hero.run = false;
       if (!hero.path.length && hero === this.hero) {
         this.emit('arrive', { x: hero.x, y: hero.y });
@@ -1285,7 +1304,13 @@ class Game {
       if (!burnt) this.drawFlame(fire!);
       burnt = true;
     };
+    let reactionDepth = -Infinity;
+    const drawReactions = (until: number) => {
+      this.place.reactions?.draw(ctx, reactionDepth, until, (y) => this.shift(y), (r, y) => this.occlude(r, y, gone));
+      reactionDepth = until;
+    };
     for (const who of people) {
+      drawReactions(who.y);
       if (!burnt && who.y > g.light!.at![1] + 2) burn();
       if (who.npc) {
         const drawn = this.drawWho(who, lit, 'body');
@@ -1298,6 +1323,7 @@ class Game {
       }
     }
     burn();
+    drawReactions(Infinity);
     // The rain falls in front of everyone; the speech bubble stays over it.
     this.place.weather?.drawAir(ctx);
     if (this.grid) {

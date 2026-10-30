@@ -5,6 +5,7 @@ import './studio.ts';
 import './history.ts';
 import './depth.ts';
 import './weather.ts';
+import './reactions.ts';
 import './fix.ts';
 import './feedback.ts';
 import './budget.ts';

@@ -75,6 +75,6 @@ test('key values never survive into logs or an agent environment', () => {
   process.env.ELEVENLABS_API_KEY = 'sk_eleven_abcdef123456';
   expect(redact('called with sk_eleven_abcdef123456 ok')).toBe('called with [redacted] ok');
   expect(redact('Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345')).toBe('Authorization: Bearer [redacted]');
-  const env = withoutSecrets({ PATH: '/bin', META_API_KEY: 'x', META_MUSE_API_KEY: 'y', ELEVEN_API_KEY: 'z', HF_TOKEN: 'h' });
+  const env = withoutSecrets({ PATH: '/bin', META_API_KEY: 'x', META_MUSE_API_KEY: 'y', ELEVEN_API_KEY: 'z', HF_TOKEN: 'h', CLAUDE_API_KEY: 'c' });
   expect(env).toEqual({ PATH: '/bin' });
 });

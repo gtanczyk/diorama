@@ -2,10 +2,10 @@
 // steps as fast as it can, and the world's steps (cast, voices, sound...) start as soon as what they read is there.
 // Plain data, so the Studio can work out the time left from the same web the build runs.
 
-export const STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'icons', 'derive', 'backdrop', 'weather', 'cast', 'model', 'sprites', 'sound', 'voices', 'verify'] as const;
+export const STEPS = ['world', 'story', 'layout', 'paint', 'masks', 'plates', 'icons', 'derive', 'backdrop', 'weather', 'reactions', 'cast', 'model', 'sprites', 'sound', 'voices', 'verify'] as const;
 export type Step = (typeof STEPS)[number];
 /** The steps that work place by place; `--place` runs only these, for that one place. */
-export const PLACE_STEPS: readonly Step[] = ['layout', 'paint', 'masks', 'plates', 'derive', 'backdrop', 'weather', 'verify'];
+export const PLACE_STEPS: readonly Step[] = ['layout', 'paint', 'masks', 'plates', 'derive', 'backdrop', 'weather', 'reactions', 'verify'];
 
 /**
  * What a step reads, as steps. A place step needs the same place's step before it (PLACE_STEPS order) plus these;
@@ -29,6 +29,7 @@ export const NEEDS: Record<Step, readonly Step[]> = {
   derive: [],
   backdrop: [],
   weather: [],
+  reactions: ['story'],
   cast: ['world'],
   model: ['story', 'cast'],
   sprites: ['model', 'derive'],

@@ -12,6 +12,7 @@ import { scene } from './fixtures/scene.ts';
 
 const FAKE = fileURLToPath(new URL('./fixtures/fake-diorama.mjs', import.meta.url));
 const cases: Array<[string, Record<string, unknown>, string]> = [
+  ['reactions_set', { place: 'room', hint: 'Keep the floor clean' }, 'places/room/reactions-wish.json'],
   ['weather_set', { place: 'room', fall: 'rain' }, 'places/room/weather-wish.json'],
   ['water_flow', { place: 'room', flow: 'reverse' }, 'places/room/depth.json'],
   ['fog_drift', { place: 'room', drift: 'left', speed: 2 }, 'places/room/depth.json'],
