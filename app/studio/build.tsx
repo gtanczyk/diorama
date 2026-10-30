@@ -115,7 +115,7 @@ export function extensionDetail(progress?: ExtensionProgress, step?: string): st
 /** What each step leaves on the stage, for a click on its segment: the place layer it makes. */
 export const STEP_SHOWS: Record<string, LayerName> = { layout: 'blockin', paint: 'painting', masks: 'masks', plates: 'masks', derive: 'walk', backdrop: 'depth', weather: 'painting', reactions: 'painting' };
 
-export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: JobLike; all: string[]; live: Live; build: Record<string, { seconds: number }>; typical: Record<string, number>; onOpen?: (phase: string, step?: string) => void }) {
+export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: JobLike; all: string[]; live: Live; build: Record<string, { seconds: number; status?: string; warnings?: string[] }>; typical: Record<string, number>; onOpen?: (phase: string, step?: string) => void }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!job) return;
@@ -124,9 +124,10 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
   }, [!!job]);
   const { plan, done, running } = live;
   const took = (s: string) => build[s]?.seconds ?? typical[s] ?? 30;
-  const state = (s: string): 'ok' | 'existing' | 'run' | 'fail' | 'todo' | 'skip' => {
+  const state = (s: string): 'ok' | 'existing' | 'run' | 'fail' | 'todo' | 'skip' | 'warn' => {
     if (running[s] === 'fail') return 'fail';
     if (running[s] === 'run') return 'run';
+    if (build[s]?.status === 'incomplete') return 'warn';
     if (done[s] !== undefined) return 'ok';
     // A partial job does not erase the earlier world build. Keep it distinct from work finished in this job.
     if (job && !plan.includes(s)) return build[s] ? 'existing' : 'skip';
@@ -174,24 +175,24 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
         {phases.map((p) => {
           const states = p.steps.map(state);
           const all = weight(p);
-          const phase = states.includes('fail') ? 'fail' : states.includes('run') ? 'run' : states.every((x) => x === 'ok') ? 'ok' : states.every((x) => x === 'ok' || x === 'existing') ? 'existing' : states.every((x) => x === 'skip') ? 'skip' : 'todo';
+          const phase = states.includes('fail') ? 'fail' : states.includes('run') ? 'run' : states.includes('warn') ? 'warn' : states.every((x) => x === 'ok') ? 'ok' : states.every((x) => x === 'ok' || x === 'existing') ? 'existing' : states.every((x) => x === 'skip') ? 'skip' : 'todo';
           // Something to show once a step has run (or runs now); a click puts it on the stage.
           // A phase only partly done (sprites still to come) shows what its done steps made too.
-          const open = onOpen && states.some((x) => x === 'ok' || x === 'existing' || x === 'run' || x === 'fail');
-          const tip = `${p.title} · ${p.by.map(nowBy).join(', ')}\n` + p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'existing' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : '·'} ${s}${states[i] === 'existing' ? ' (previous build)' : done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}`).join('\n');
+          const open = onOpen && states.some((x) => x === 'ok' || x === 'existing' || x === 'run' || x === 'fail' || x === 'warn');
+          const tip = `${p.title} · ${p.by.map(nowBy).join(', ')}\n` + p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'existing' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : states[i] === 'warn' ? '!' : '·'} ${s}${states[i] === 'existing' ? ' (previous build)' : done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}`).join('\n');
           let at = 0;
           return (
             <li class={`${phase}${open ? ' open' : ''}`} style={{ flexGrow: Math.max(1, all) }}>
               <span class="bar">{p.steps.map((s, i) => {
                 const before = p.steps.slice(0, i).reduce((sum, step) => sum + took(step), 0);
-                const amount = states[i] === 'ok' || states[i] === 'existing' || states[i] === 'fail' ? took(s) : states[i] === 'run' ? Math.min(took(s) * 0.95, runFor(s) / 1000) : 0;
+                const amount = states[i] === 'ok' || states[i] === 'existing' || states[i] === 'fail' || states[i] === 'warn' ? took(s) : states[i] === 'run' ? Math.min(took(s) * 0.95, runFor(s) / 1000) : 0;
                 return <span class={`fill ${states[i]}`} style={{ left: `${100 * before / Math.max(1, all)}%`, width: `${100 * amount / Math.max(1, all)}%` }} />;
               })}
                 {p.steps.slice(1).map((s) => <span class="tick" style={{ left: `${(100 * p.steps.slice(0, p.steps.indexOf(s)).reduce((a, x) => a + took(x), 0)) / Math.max(1, all)}%` }} />)}
                 {open && p.steps.map((s, i) => {
                   const from = at;
                   at += took(s);
-                  const ready = states[i] === 'ok' || states[i] === 'existing' || states[i] === 'run';
+                  const ready = states[i] === 'ok' || states[i] === 'existing' || states[i] === 'run' || states[i] === 'warn';
                   return ready && <button type="button" class="seg" style={{ left: `${(100 * from) / Math.max(1, all)}%`, width: `${(100 * took(s)) / Math.max(1, all)}%` }}
                     title={`${s}${states[i] === 'run' ? ', running' : done[s] !== undefined ? `, ${Math.round(done[s])} s` : ''}. Click to see what it made`} onClick={() => onOpen!(p.key, s)} />;
                 })}
@@ -203,6 +204,11 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
           );
         })}
       </ol>
+      {build.faces?.status === 'incomplete' && <div class="speech-warning">
+        <span>Some speaking animations are incomplete. Other build steps can continue.</span>
+        {onOpen && <button type="button" class="ghost small" onClick={() => onOpen('cast', 'faces')}>View characters</button>}
+        {!!build.faces.warnings?.length && <details><summary>Animation details</summary><ul>{build.faces.warnings.map(w => <li>{w}</li>)}</ul></details>}
+      </div>}
       {job && <span class="detail">Earlier build shown in muted green · orange: updating now. Built steps do not confirm visual quality or a playthrough.</span>}
     </section>
   );

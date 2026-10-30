@@ -126,6 +126,12 @@ defineAction({
     const raw = World.safeParse(readJson(path.join(dir, 'world.json')));
     const parsed = raw.success ? { success: true as const, data: withThingEdits(raw.data, dir) } : raw;
     const build = readJson<{ steps?: Record<string, unknown> }>(path.join(dir, 'build.json'));
+    const animation = readJson<Record<string, { face?: string | null; audio?: string[] }>>(path.join(dir, 'face-preparation.json'));
+    const buildSteps = { ...build?.steps };
+    if (animation) {
+      const warnings = Object.entries(animation).flatMap(([key, state]) => [state.face, ...(state.audio ?? [])].filter(Boolean).map(reason => `${key}: ${reason}`));
+      if (buildSteps.faces || warnings.length) buildSteps.faces = { ...(buildSteps.faces as object ?? {}), status: warnings.length ? 'incomplete' : 'complete', warnings };
+    }
     const places = (parsed.success ? parsed.data.places : []).map((p) => {
       const at = (f: string) => path.join(dir, 'places', p.key, f);
       const stages = Object.fromEntries(STAGES.map(([name, f]) => [name, stamp(at(f))]));
@@ -149,7 +155,7 @@ defineAction({
       ...worldSummary(ctx.root, slug),
       world: parsed.success ? { start: parsed.data.start, hero: parsed.data.hero, style: parsed.data.style } : null,
       placeDetail: places,
-      build: build?.steps ?? {},
+      build: buildSteps,
       typical: typicalSeconds(ctx.root),
       calls: callCounts(dir),
       jobs: ctx.jobs.list(slug).slice(-10),

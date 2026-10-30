@@ -39,3 +39,14 @@ test('the prompt names each place with its errors and the limits from the brief'
   expect(text).toMatch(/place_view/);
   expect(text).toMatch(/at most three fixes a place/);
 });
+
+test('a completed build with missing animation wakes one repair turn without calling the build failed',()=>{
+  const done=job({state:'done',unplayable:[],warnings:{faces:['dozorca: Generated lip frame X uncertain']}});
+  expect(wantsRepair(done,on)).toBe(true);
+  expect(wantsRepair({...done,by:'agent'},on)).toBe(false);
+  expect(wantsRepair({...done,state:'cancelled'},on)).toBe(false);
+  expect(wantsRepair(done,{enabled:false})).toBe(false);
+  expect(repairPrompt(done)).toContain('finished with incomplete speaking animation');
+  expect(repairPrompt(done)).toContain('face_lips_set');
+  expect(repairPrompt(done)).not.toContain('job_retry');
+});

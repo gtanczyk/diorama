@@ -16,6 +16,7 @@ import { NEEDS, needs, PLACE_STEPS, STEPS, type Step } from '../world/schedule.t
 import { itemSources } from '../scene/icons.ts';
 import { Story } from '../story/schema.ts';
 import { assetReport } from '../scene/assets.ts';
+import { FacePreparationError } from '../scene/face-work.ts';
 
 export { PLACE_STEPS, STEPS } from '../world/schedule.ts';
 
@@ -120,6 +121,7 @@ defineCommand({
 
     emit('build.start', { slug, steps: range });
     const saved = process.exitCode;
+    const optionalWarnings = new Map<Step,string[]>();
     const run = (step: Step) => range.includes(step);
     /** Each step's run: when it began, its longest single run (one place, or the world), what is still to do. */
     const runs = new Map<Step, { at: string; started: number; longest: number; left: number; done: Promise<void>; end: () => void; fail: (error: unknown) => void }>();
@@ -158,7 +160,7 @@ defineCommand({
       r.end();
       if (!r.started) return;
       // A step's time is what one place (or the world) took with it, so it adds up along the web, not the clock.
-      const done = { at: r.at, seconds: Math.round(r.longest / 100) / 10, sent: callsSince(files, r.at) };
+      const done = { at: r.at, seconds: Math.round(r.longest / 100) / 10, sent: callsSince(files, r.at), ...(optionalWarnings.has(step) && { status: 'incomplete', warnings: optionalWarnings.get(step) }) };
       // A one-place rerun does not stand for the whole step.
       if (!only) {
         log.steps[step] = done;
@@ -174,6 +176,11 @@ defineCommand({
       try {
         await registry.get(step)!.run(args);
       } catch (error) {
+        if (step === 'faces' && error instanceof FacePreparationError) {
+          optionalWarnings.set(step,error.failures);
+          console.log(`Speaking animation incomplete; game build continues: ${error.failures.join('; ')}`);
+          finish(step,since);return;
+        }
         emit('step.fail', { step, error: error instanceof Error ? error.message : String(error) });
         abort(error);
         throw error;

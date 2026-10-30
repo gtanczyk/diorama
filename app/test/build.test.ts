@@ -151,3 +151,21 @@ test('a world step that fails ends the build with its error once what was runnin
   defineCommand({ name: 'cast', usage: 'cast', async run() { throw new Error('the hero could not be painted'); } });
   await expect(registry.get('build')!.run(['w', '--from', 'layout', '--repair', 'off'])).rejects.toThrow(/hero could not be painted/);
 });
+
+test('speaking-animation failure is recorded as incomplete while playable places finish', async () => {
+  const { FacePreparationError } = await import('../src/scene/face-work.ts');
+  const { dir, ran } = world();
+  defineCommand({ name: 'faces', usage: 'faces', async run() { throw new FacePreparationError(['wren: F/V needs repair']); } });
+  await registry.get('build')!.run(['w', '--from', 'derive', '--to', 'verify']);
+  expect(ran).toContain('verify:good');
+  expect(process.exitCode).toBeUndefined();
+  const log = JSON.parse(fs.readFileSync(path.join(dir, 'build.json'), 'utf8'));
+  expect(log.steps.faces).toMatchObject({ status: 'incomplete', warnings: ['wren: F/V needs repair'] });
+  expect(log.steps.verify).toBeDefined();
+});
+
+test('unexpected faces command failure is not silently classified as optional degradation', async () => {
+  world();
+  defineCommand({ name: 'faces', usage: 'faces', async run() { throw new Error('broken command'); } });
+  await expect(registry.get('build')!.run(['w', '--from', 'faces', '--to', 'faces'])).rejects.toThrow('broken command');
+});

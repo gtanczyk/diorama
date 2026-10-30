@@ -213,3 +213,47 @@ test('a picture handed to the agent is kept with the world and shown back as an 
   await expect(runAction('picture_view', { slug: 'foghorn', file: '../world.json' }, ctx)).rejects.toThrow();
   await expect(runAction('picture_add', { slug: 'foghorn', name: 'notes.txt', data: png }, ctx)).rejects.toThrow();
 });
+
+test('optional animation warnings survive child events without changing successful job state',async()=>{
+  const job=studio.jobs.start('foghorn',['face-warning','foghorn'],'faces warning','user');
+  const done=await studio.jobs.wait(job.id);
+  expect(done.state).toBe('done');
+  expect(done.warnings).toEqual({faces:['wren: lips need review']});
+  expect(done.error).toBeUndefined();
+});
+
+test('face repair tools show exact pixels and queue inspected revisions through HTTP and MCP',async()=>{
+  const {WorldFiles}=await import('../src/world/files.ts');
+  const {openFaceWork,saveFaceWork,workRevision}=await import('../src/scene/face-work.ts');
+  const files=new WorldFiles('foghorn',root);
+  const image=await sharp({create:{width:90,height:90,channels:3,background:'#aaaaff'}}).png().toBuffer();
+  files.write(files.path('cast/wren.png'),image);
+  const work=openFaceWork(files,'wren','image',0,image);work.accepted=true;saveFaceWork(files,'wren',work,image);
+  const input={slug:'foghorn',key:'wren',id:work.id,mouth:'G'};
+  const http=JSON.parse((await act('faces_inspect',input)).body).result;
+  expect(http.width).toBe(30);expect(http.images).toHaveLength(2);
+  const mcp=await request('/mcp',{method:'POST',headers:{authorization:`Bearer ${studio.agentToken}`,'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:51,method:'tools/call',params:{name:'faces_inspect',arguments:input}})});
+  const result=JSON.parse(mcp.body).result;
+  expect(result.content.filter((c:{type:string})=>c.type==='image')).toHaveLength(2);
+  const invalid=await act('face_lips_set',{...input,revision:'0'.repeat(64),box:[.2,.4,.4,.1]});
+  expect(invalid.status).not.toBe(200);
+  const corrected=await act('face_lips_set',{...input,revision:http.revision,box:[.2,.4,.4,.1]});
+  expect(corrected.status).toBe(200);
+  const queued=JSON.parse(corrected.body).result;
+  expect(queued.args).toContain('--calibrate-frame');
+  expect(queued.args).toContain(http.revision);
+  await studio.jobs.wait(queued.id);
+  // Fake worker does not mutate anything: queueing itself must not apply the correction.
+  expect(workRevision(work)).toBe(http.revision);
+});
+
+test('current face repair warnings replace stale build warnings without hiding another character',async()=>{
+  const dir=path.join(root,'foghorn');
+  fs.writeFileSync(path.join(dir,'build.json'),JSON.stringify({steps:{faces:{seconds:2,status:'incomplete',warnings:['old error']}}}));
+  fs.writeFileSync(path.join(dir,'face-preparation.json'),JSON.stringify({wren:{face:null},dozorca:{face:'F/V rejected'}}));
+  const status=JSON.parse((await act('world_status',{slug:'foghorn'})).body).result;
+  expect(status.build.faces.warnings).toEqual(['dozorca: F/V rejected']);
+  fs.writeFileSync(path.join(dir,'face-preparation.json'),JSON.stringify({wren:{face:null},dozorca:{face:null}}));
+  const fixed=JSON.parse((await act('world_status',{slug:'foghorn'})).body).result;
+  expect(fixed.build.faces).toMatchObject({status:'complete',warnings:[]});
+});

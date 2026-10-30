@@ -164,7 +164,7 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
     // A busy agent gets it after its turn: the Studio's messages wait as notes.
     if (!agents || !wantsRepair(job, { enabled: readBudget().autoRepair })) return;
     const places = (job.unplayable ?? []).map((u) => u.place);
-    const step = places.length ? undefined : job.step;
+    const step = places.length ? undefined : job.step ?? (job.warnings?.faces?.length ? 'faces' : undefined);
     // With no agent on this machine there is nobody to wake; the person is told what would help instead.
     const using = agents.agents(e.world).find((a) => a.using);
     if (!using?.installed) return events.publish('repair.agent', { world: e.world, job: job.id, places, step, missing: using?.label ?? 'an agent' });

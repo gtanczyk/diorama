@@ -73,6 +73,8 @@ export function zodToJson(schema: z.ZodTypeAny): Record<string, unknown> {
       const required = Object.entries(shape).filter(([, v]) => !(v as z.ZodTypeAny).isOptional()).map(([k]) => k);
       return withDesc({ type: 'object', properties: Object.fromEntries(Object.entries(shape).map(([k, v]) => [k, zodToJson(v as z.ZodTypeAny)])), required, additionalProperties: false });
     }
+    case 'ZodLiteral': return withDesc({ const: (schema as z.ZodLiteral<unknown>).value });
+    case 'ZodDiscriminatedUnion': return withDesc({ oneOf: (schema as z.ZodDiscriminatedUnion<string, z.ZodDiscriminatedUnionOption<string>[]>).options.map(zodToJson) });
     case 'ZodString': return withDesc({ type: 'string' });
     case 'ZodNumber': return withDesc({ type: 'number' });
     case 'ZodBoolean': return withDesc({ type: 'boolean' });

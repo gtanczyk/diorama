@@ -129,7 +129,7 @@ function Card({ slug, c, onError, focused }: { slug: string; c: Character; onErr
           <div class="row" style="margin-bottom:8px">
             <button type="button" class="ghost small" disabled={busy || !c.figure} onClick={() => void act('faces_prepare', {})}>{c.face?.ready ? 'Refresh speech animation' : 'Prepare speech animation'}</button>
             {c.face?.ready && <small>{c.face.model3d?.mouth ? `2D + 3D speech ready (${c.face.model3d.method === 'morphs' ? 'facial morphs' : 'painted surfaces'})` : '2D speaking face ready'}</small>}
-            {c.face?.attempt?.state === 'failed' && <small class="error">{c.face.attempt.reason}</small>}
+            {c.face?.attempt?.state === 'failed' && <details class="detail"><summary>Speech animation incomplete · previous appearance kept</summary><p>{c.face.attempt.reason}</p></details>}
           </div>
           <form class="say" onSubmit={(e) => (e.preventDefault(), changed && void act('cast_redo', { looks: looks.trim() }))}>
             <textarea rows={3} value={looks} title="How the character looks. Change it and press Repaint" onInput={(e) => setLooks(e.currentTarget.value)} aria-label={`How ${c.key} looks`} />

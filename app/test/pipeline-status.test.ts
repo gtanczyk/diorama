@@ -40,3 +40,19 @@ test('progress shows the current extension milestone instead of old build result
     expect(await sound.locator('.label').getAttribute('title')).toContain('sound (previous build)');
   } finally { await browser.close(); }
 }, 30_000);
+
+test('optional face failure is amber and inspectable while other steps remain complete',async()=>{
+  const source=(await build({stdin:{contents:`import {h,render} from 'preact'; import {Pipeline} from './app/studio/build.tsx';
+    render(h(Pipeline,{all:['faces','verify'],live:{plan:[],done:{faces:2,verify:1},running:{},since:{},calls:{},lastCall:null,cut:{},tail:''},build:{faces:{seconds:2,status:'incomplete',warnings:['dozorca: F/V needs review']},verify:{seconds:1}},typical:{},onOpen:(phase,step)=>window.opened=[phase,step]}),document.body);`,resolveDir:process.cwd()},bundle:true,format:'iife',write:false,jsx:'automatic',jsxImportSource:'preact'})).outputFiles[0].text;
+  const browser=await chromium.launch();
+  try {
+    const page=await browser.newPage();await page.goto('about:blank');await page.addScriptTag({content:source});
+    expect(await page.locator('.phases li.warn .name').textContent()).toBe('Cast');
+    expect(await page.locator('.phases li.ok .name').textContent()).toBe('Checks');
+    expect(await page.locator('.phases .fail').count()).toBe(0);
+    await page.getByRole('button',{name:'View characters'}).click();
+    expect(await page.evaluate(()=>(window as unknown as {opened:string[]}).opened)).toEqual(['cast','faces']);
+    await page.getByText('Animation details',{exact:true}).click();
+    expect(await page.getByText('dozorca: F/V needs review',{exact:true}).isVisible()).toBe(true);
+  } finally {await browser.close();}
+},30000);

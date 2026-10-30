@@ -26,6 +26,8 @@ export type Job = {
   /** Last confirmed extension milestone, available when a client opens mid-job. */
   extension?: ExtensionProgress;
   error?: string;
+  /** Optional stages completed with missing assets; distinct from a failed job. */
+  warnings?: Record<string, string[]>;
   /** A queued addition reserves its key before its source correction is applied. */
   addedThing?: { place: string; key: string };
   /** Places verify found not playable, with why: the reason a build that finished still fails. */
@@ -232,6 +234,7 @@ export class Jobs {
           const next = data as ExtensionProgress;
           job.extension = { ...next, newPlaces: next.newPlaces ?? job.extension?.newPlaces };
         }
+        if (step && type === 'step.end' && data.status === 'incomplete' && Array.isArray(data.warnings)) (job.warnings ??= {})[step] = data.warnings.filter((v): v is string => typeof v === 'string');
         if (step && type === 'step.start') job.steps = [...(job.steps ?? []).filter((s) => s !== step), step];
         if (step && (type === 'step.end' || type === 'step.fail')) job.steps = (job.steps ?? []).filter((s) => s !== step);
         // A failed step stays shown, so the job says where it broke; a finished one leaves the steps still running.

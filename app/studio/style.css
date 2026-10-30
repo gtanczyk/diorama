@@ -392,6 +392,10 @@ section.agent .gc-fold > summary { display: block; cursor: pointer; }
 .pipeline .fill.existing { opacity: 0.55; }
 .pipeline .tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--panel); }
 .pipeline .fill.run, .extension-pipeline li.run .fill { background: linear-gradient(90deg, var(--accent), #ffd59a, var(--accent)); background-size: 200% 100%; animation: flow 1.6s linear infinite; }
+.pipeline .fill.warn { background: var(--accent); }
+.pipeline li.warn .name, .speech-warning { color: var(--accent); }
+.speech-warning { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 13px; }
+.speech-warning details { flex-basis: 100%; color: var(--muted); overflow-wrap: anywhere; }
 .pipeline .fill.fail, .extension-pipeline li.fail .fill { background: var(--bad); }
 .pipeline li.skip { opacity: 0.45; }
 .pipeline li.todo .name, .pipeline li.skip .name { color: var(--faint); }
