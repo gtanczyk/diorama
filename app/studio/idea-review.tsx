@@ -10,6 +10,13 @@ import { ReviewSketch } from './review-sketch.tsx';
 export type ReviewInput = { idea: string; photos: Array<{ name: string; data: string }>; videos: string[]; places?: number; language?: string };
 type Decision = { review: Review; answer: string; style: string };
 
+function ReviewOption({ textOnly, ...props }: Parameters<typeof IdeaCard>[0] & { textOnly: boolean }) {
+  if (!textOnly) return <IdeaCard {...props} />;
+  return <button type="button" class={`review-text-option${props.selected ? ' selected' : ''}`} aria-label={props.label} aria-pressed={props.selected} hidden={props.hidden} disabled={props.disabled} onClick={props.onPick}>
+    {props.selected && <span aria-hidden="true">✓</span>}<span>{props.label}</span>
+  </button>;
+}
+
 function AnsweredChoice({ decision, input, editing, busy, onEdit, onCancel, onChoose }: {
   decision: Decision; input: ReviewInput; editing: boolean; busy: boolean;
   onEdit: () => void; onCancel: () => void; onChoose: (answer: string) => void;
@@ -20,9 +27,9 @@ function AnsweredChoice({ decision, input, editing, busy, onEdit, onCancel, onCh
   useLayoutEffect(() => { setDraft(decision.answer); setWriting(!q.options.includes(decision.answer)); }, [editing, decision.answer]);
   return <section class={`review-exchange${editing ? ' is-editing' : ' is-collapsed'}`} aria-label={`Decision: ${q.question}`}>
     <div class="review-decision-heading"><p class="review-says">{q.question}</p><button type="button" class="ghost small" disabled={busy} aria-label={`${editing ? 'Cancel change' : 'Change answer'}: ${q.question}`} onClick={editing ? onCancel : onEdit}>{editing ? 'Cancel' : 'Change'}</button></div>
-    <div class="review-cards">{q.options.map((option, i) => {
+    <div class={q.presentation === 'text' ? 'review-text-options' : 'review-cards'}>{q.options.map((option, i) => {
       const visual = q.visuals?.[i];
-      return <IdeaCard key={i} label={option} image={visual?.photo !== undefined ? input.photos[visual.photo]?.data : undefined} idea={input.idea} scene={visual?.scene ?? `${q.question} — ${option}`} style={decision.style || undefined} references={input.photos.slice(0, 4).map(p => p.data)} selected={option === decision.answer} hidden={!editing && option !== decision.answer} disabled={busy} onPick={() => editing ? onChoose(option) : onEdit()} />;
+      return <ReviewOption key={i} textOnly={q.presentation === 'text'} label={option} image={visual?.photo !== undefined ? input.photos[visual.photo]?.data : undefined} idea={input.idea} scene={visual?.scene ?? `${q.question} — ${option}`} style={decision.style || undefined} references={input.photos.slice(0, 4).map(p => p.data)} selected={option === decision.answer} hidden={!editing && option !== decision.answer} disabled={busy} onPick={() => editing ? onChoose(option) : onEdit()} />;
     })}</div>
     {!q.options.includes(decision.answer) && !editing && <button type="button" class="review-written-choice" disabled={busy} onClick={onEdit}>{decision.answer}</button>}
     {editing && <>
@@ -133,9 +140,9 @@ export function IdeaReview({ input, busy, error, onBuild, onBack }: {
         {question?.photo !== undefined && input.photos[question.photo] && <img class="review-reference" src={input.photos[question.photo].data} alt={input.photos[question.photo].name} />}
         {question?.video && <p class="detail">Video {input.videos.indexOf(question.video.id) + 1} · {Math.floor(question.video.seconds / 60)}:{String(Math.floor(question.video.seconds % 60)).padStart(2, '0')}</p>}
         {question && <>
-          <div class="review-cards">{question.options.map((option, i) => {
+          <div class={question.presentation === 'text' ? 'review-text-options' : 'review-cards'}>{question.options.map((option, i) => {
             const visual = question.visuals?.[i];
-            return <IdeaCard key={`${question.question}:${i}`} label={option} image={visual?.photo !== undefined ? input.photos[visual.photo]?.data : undefined} idea={input.idea} scene={visual?.scene ?? `${question.question} — ${option}`} style={style || undefined} references={references} disabled={busy} onPick={() => reply(option)} />;
+            return <ReviewOption key={`${question.question}:${i}`} textOnly={question.presentation === 'text'} label={option} image={visual?.photo !== undefined ? input.photos[visual.photo]?.data : undefined} idea={input.idea} scene={visual?.scene ?? `${question.question} — ${option}`} style={style || undefined} references={references} disabled={busy} onPick={() => reply(option)} />;
           })}</div>
           {!writing && question.options.length > 0 && <button type="button" class="ghost small" disabled={busy} onClick={() => setWriting(true)}>Something else…</button>}
           {(writing || !question.options.length) && <form class="review-compose" onSubmit={e => { e.preventDefault(); reply(draft); }}>

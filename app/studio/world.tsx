@@ -7,7 +7,7 @@ import { call, fileUrl } from './api.ts';
 import { named } from './build.tsx';
 import { Icon } from './icons.tsx';
 
-export type StageView = { kind: 'build' | 'place' | 'cast' | 'story' | 'play' | 'work'; place?: string; step?: string };
+export type StageView = { kind: 'build' | 'place' | 'cast' | 'story' | 'play' | 'work'; place?: string; step?: string; build?: { place?: string } };
 export type Picked = { place?: string; thing: string; name: string };
 
 type Pic = { file: string; v: number | null } | null;

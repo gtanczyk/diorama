@@ -790,7 +790,8 @@ function Workshop({ slug }: { slug: string }) {
     return () => clearInterval(timer);
   }, [!!building]);
   const fresh = livePlace && Date.now() - livePlace.at < 4000 ? livePlace.key : null;
-  const stageKey = fresh ?? (busy.length ? busy[spin % busy.length] : null) ?? livePlace?.key ?? status?.placeDetail[0]?.key;
+  const watchedPlace = stage?.kind === 'build' && status?.placeDetail.some(p => p.key === stage.place) ? stage.place : undefined;
+  const stageKey = watchedPlace ?? fresh ?? (busy.length ? busy[spin % busy.length] : null) ?? livePlace?.key ?? status?.placeDetail[0]?.key;
   const stagePlace = status?.placeDetail.find((p) => p.key === stageKey);
   // A click on the build bar: the story, the cast or the game, or the place layer the step made.
   const [hold, setHold] = useState<{ layer: LayerName; at: number } | null>(null);
@@ -805,7 +806,10 @@ function Workshop({ slug }: { slug: string }) {
     if (phase === 'sound') return setByHand('#cast');
     if (phase === 'verify') return playable ? onStage({ kind: 'play' }) : setLogOpen(true);
     const layer = (step && STEP_SHOWS[step]) ?? ({ paint: 'painting', cut: 'masks', space: 'walk' } as Record<string, LayerName>)[phase];
-    if (layer) setHold({ layer, at: Date.now() });
+    if (layer) {
+      setHold({ layer, at: Date.now() });
+      if (shownView.kind !== 'build') onStage({ kind: 'build', place: shownView.build?.place });
+    }
   };
   const playLine = (text: string) => setLines((l) => [...l.slice(-600), { seq: -Date.now() - Math.random(), text, kind: 'play', at: Date.now() }]);
 
@@ -813,7 +817,10 @@ function Workshop({ slug }: { slug: string }) {
   const pendingPlaces = job?.args[0] === 'extend' ? (liveBuild.extension?.newPlaces ?? []).filter(key => !places.some(place => place.key === key)) : [];
   const shownView: StageView = playing ? { kind: 'play' } : stage ?? (building ? { kind: 'build' } : { kind: 'place', place: places[0]?.key });
   const onStage = (s: StageView) => {
-    setStage(s.kind === 'play' ? null : s);
+    // Story and cast opened from the build remain within it, including its manual place choice.
+    const buildContext = shownView.kind === 'build' ? { place: watchedPlace } : shownView.build;
+    const destination = ['story', 'cast', 'work'].includes(s.kind) && buildContext ? { ...s, build: buildContext } : s;
+    setStage(s.kind === 'play' ? null : destination);
     if (s.kind === 'play') setPlaying((p) => p ?? { place: undefined });
     else setPlaying(null);
     if (s.kind !== 'place') setPicked((p) => (p && !p.place ? p : null));
@@ -936,17 +943,17 @@ function Workshop({ slug }: { slug: string }) {
   }, [status?.title, slug]);
   const stageTitle = shownView.kind === 'place' ? nice(stagedPlace?.key ?? '') : shownView.kind === 'cast' || shownView.kind === 'work' ? 'Cast' : shownView.kind === 'story' ? 'Story' : shownView.kind === 'build' ? (stagePlace ? nice(stagePlace.key) : 'Building') : status?.title ?? slug;
   const stageHint = shownView.kind === 'place' ? 'Click a thing to talk about it' : shownView.kind === 'cast' ? 'Click someone to talk about them' : shownView.kind === 'play' ? 'Click to walk, right click to look, or a gamepad' : '';
-  // Story, Cast and a step at work sit over the places: ← (or Esc) goes back to the place last shown, or the build.
+  // An inspection opened from Build returns to Build; standalone views return to the last place.
   const away = shownView.kind === 'cast' || shownView.kind === 'story' || shownView.kind === 'work' || (shownView.kind === 'build' && !building);
   const lastPlace = useRef<string | undefined>(undefined);
   if (shownView.kind === 'place') lastPlace.current = shownView.place;
-  const back = () => (lastPlace.current && places.some((p) => p.key === lastPlace.current) ? onStage({ kind: 'place', place: lastPlace.current }) : setStage(null));
+  const back = () => shownView.build ? onStage({ kind: 'build', place: shownView.build.place }) : (lastPlace.current && places.some((p) => p.key === lastPlace.current) ? onStage({ kind: 'place', place: lastPlace.current }) : setStage(null));
   useEffect(() => {
     if (!away || byHand || notesOpen || logOpen || historyOpen || styleOpen) return;
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && !(e.target instanceof HTMLElement && e.target.closest('input, textarea, select')) && back();
     addEventListener('keydown', esc);
     return () => removeEventListener('keydown', esc);
-  }, [away, byHand, notesOpen, logOpen, historyOpen, styleOpen]);
+  }, [away, shownView.kind, shownView.build, byHand, notesOpen, logOpen, historyOpen, styleOpen]);
 
   return (
     <>
@@ -961,7 +968,7 @@ function Workshop({ slug }: { slug: string }) {
         </section>
         <section class="theatre" ref={stageRef}>
           <div class="stage-top">
-            {away && <button type="button" class="ghost back" aria-label="Back" title={`Back to ${lastPlace.current ? nice(lastPlace.current) : building ? 'the build' : 'the places'} (Esc)`} onClick={back}>←</button>}
+            {away && <button type="button" class="ghost back" aria-label="Back" title={`Back to ${shownView.build ? 'the build' : lastPlace.current ? nice(lastPlace.current) : building ? 'the build' : 'the places'} (Esc)`} onClick={back}>←</button>}
             <h2>{stageTitle}</h2>
             {stageHint && <small>{stageHint}</small>}
             <span class="grow" />
@@ -988,6 +995,10 @@ function Workshop({ slug }: { slug: string }) {
             {shownView.kind === 'build' && status && (
               <div class="build-on-stage">
                 <Pipeline job={pipelineJob} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
+                {places.length > 1 && <nav class="build-places" aria-label="Build places">
+                  <div class="build-place-list">{places.map(p => <button type="button" class="ghost small" aria-pressed={stagePlace?.key === p.key} title={`Keep watching ${nice(p.key)}`} onClick={() => onStage({ kind: 'build', place: p.key })}>{p.image && <img src={fileUrl(slug, p.image.file, p.image.v)} alt="" />}{nice(p.key)}</button>)}</div>
+                  {building && <button type="button" class="ghost small build-follow" aria-pressed={!watchedPlace} title="Automatically follow the places being built" onClick={() => onStage({ kind: 'build' })}>Follow build</button>}
+                </nav>}
                 {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} hold={hold} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? named('Muse Spark is dreaming up the places…')}</span></div></div></figure>}
               </div>
             )}
@@ -1003,7 +1014,10 @@ function Workshop({ slug }: { slug: string }) {
             {shownView.kind === 'place' && !stagedPlace && <div class="mat"><p class="detail">{status?.pitch ?? named('Muse Spark is dreaming up the places…')}</p></div>}
             {shownView.kind === 'cast' && <CastStage slug={slug} version={tick} picked={picked} onPick={setPicked} onOpen={(key) => setByHand(`#cast:${key}`)} />}
             {shownView.kind === 'place' && stagedPlace?.stages.painting && <button type="button" class="stage-tool" title="Masks, floors, stand spots and repaints for this place, by hand. Or just ask the agent" onClick={() => setByHand(stagedPlace.key)}><Icon name="pencil" /> Fix this place by hand</button>}
-            {shownView.kind === 'story' && <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} /></div>}
+            {shownView.kind === 'story' && (shownView.build && status ? <div class="build-on-stage">
+              <Pipeline job={pipelineJob} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
+              <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} /></div>
+            </div> : <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} /></div>)}
           </div>
         </section>
       </main>

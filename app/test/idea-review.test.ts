@@ -106,3 +106,24 @@ test('a chosen drawing style replaces the hardcoded crayon instruction without d
   expect(brief).toContain(review.styles[0].description);
   expect(brief).toContain('looking as drawn'); expect(brief).toContain('a long crooked key');
 });
+
+test('a creative story decision can use text without requesting option pictures', async () => {
+  const question = { question: 'Dlaczego kot ukradł bilet?', why: 'Motyw kota zmieni rozwiązanie przygody.', presentation: 'text', options: ['Chce zatrzymać przyjaciela', 'Chroni sekret promu', 'Sam chce odpłynąć'] };
+  ask.mockResolvedValue({ ...review, questions: [question] });
+  const got = await runAction('idea_review', { idea: 'We mgle kot ukradł ostatni bilet na prom.' }, ctx);
+  expect(got).toMatchObject({ questions: [question] });
+  expect(ask).toHaveBeenCalledTimes(1);
+  expect(start).not.toHaveBeenCalled();
+});
+
+test('presentation validation repairs decorative images on text answers and missing images on picture answers', async () => {
+  const plain = { ...review.questions[0], presentation: 'text' };
+  ask.mockResolvedValueOnce({ ...review, questions: [{ ...plain, visuals: [{ scene: 'A secret' }, { scene: 'A friendship' }] }] })
+    .mockResolvedValueOnce({ ...review, questions: [plain] });
+  expect(await runAction('idea_review', { idea: 'Smok szuka domu' }, ctx)).toMatchObject({ questions: [plain] });
+  expect(ask.mock.calls[1][1].prompt).toContain('text choices must not request generated pictures');
+  ask.mockReset().mockResolvedValueOnce({ ...review, questions: [{ ...plain, presentation: 'pictures' }] })
+    .mockResolvedValueOnce({ ...review, questions: [{ ...plain, presentation: 'pictures', visuals: [{ scene: 'A dragon' }, { scene: 'An owl' }] }] });
+  expect(await runAction('idea_review', { idea: 'Smok szuka domu' }, ctx)).toMatchObject({ questions: [{ presentation: 'pictures', visuals: [{ scene: 'A dragon' }, { scene: 'An owl' }] }] });
+  expect(ask.mock.calls[1][1].prompt).toContain('picture choices need 2–3 options');
+});

@@ -235,3 +235,78 @@ test.each([true, false])('opening keeps the creator idea separate from model ins
     } else expect(await choices.count()).toBe(0);
   } finally { await page.close(); }
 });
+
+test('Build lets the creator watch a place through updates and resume automatic following', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await page.route('**/api/actions/world_status', async r => {
+      const response = await r.fetch(), body = await response.json();
+      body.result.jobs = [{ id: 'watch-build', state: 'running', by: 'user', label: 'build world > verify', args: ['build', 'w'], startedAt: new Date().toISOString(), createdAt: new Date().toISOString() }];
+      await r.fulfill({ response, json: body });
+    });
+    await open(page);
+    const nav = page.getByRole('navigation', { name: 'Build places' });
+    await nav.waitFor();
+    await nav.getByRole('button', { name: 'Room b', exact: true }).click();
+    expect(await page.locator('.stage-top h2').textContent()).toBe('Room b');
+    expect(await nav.getByRole('button', { name: 'Follow build' }).getAttribute('aria-pressed')).toBe('false');
+    await nav.getByRole('button', { name: 'Room a', exact: true }).click();
+    studio.events.publish('file.changed', { world: 'w', file: 'places/room-b/painting.png', exists: true });
+    // A live update and the build's rotation timer must not replace a manually watched place.
+    await page.waitForTimeout(4700);
+    expect(await page.locator('.stage-top h2').textContent()).toBe('Room a');
+    expect(await page.locator('.stage-body.build').count()).toBe(1);
+    await nav.getByRole('button', { name: 'Follow build' }).click();
+    await expect.poll(() => page.locator('.stage-top h2').textContent()).toBe('Room b');
+    expect(await nav.getByRole('button', { name: 'Follow build' }).getAttribute('aria-pressed')).toBe('true');
+    await page.screenshot({ path: '/tmp/diorama-build-places.png' });
+  } finally { await page.close(); }
+}, 15000);
+
+test.each([true, false])('Story opened from Build returns to Build and its watched place (running: %s)', async running => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  page.setDefaultTimeout(3500);
+  try {
+    await page.route('**/api/actions/world_status', async r => {
+      const response = await r.fetch(), body = await response.json();
+      body.result.jobs = running ? [{ id: 'story-build', state: 'running', by: 'user', label: 'build world > verify', args: ['build', 'w', '--from', 'masks'], startedAt: new Date().toISOString(), createdAt: new Date().toISOString() }] : [];
+      body.result.build = { ...body.result.build, story: { seconds: 1 }, paint: { seconds: 1 } };
+      await r.fulfill({ response, json: body });
+    });
+    await open(page);
+    // Reproduce an older Places visit before opening the Build inspector.
+    await page.locator('.convo .thumb:is([title^="Room a:"], [data-tip^="Room a:"])').click();
+    await page.locator('.stage-body.place').waitFor();
+    await page.locator('.convo .to-build').click();
+    const nav = page.getByRole('navigation', { name: 'Build places' });
+    await nav.getByRole('button', { name: 'Room b', exact: true }).click();
+    const story = () => page.locator('.stage-body .pipeline button.label').filter({ hasText: 'Story' });
+    await story().click();
+    await page.locator('.stage-body.story .paper-panel').waitFor();
+    expect(await page.locator('.stage-body.story .pipeline').count()).toBe(1);
+    expect(await page.getByRole('button', { name: 'Back', exact: true }).getAttribute('title')).toBe('Back to the build (Esc)');
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await page.locator('.stage-body.build').waitFor();
+    expect(await page.locator('.stage-top h2').textContent()).toBe('Room b');
+    await story().click();
+    await page.locator('.stage-body.story').waitFor();
+    await page.waitForTimeout(150); // Let the view's Escape listener attach after paint.
+    await page.keyboard.press('Escape');
+    await page.locator('.stage-body.build').waitFor();
+    expect(await page.locator('.stage-top h2').textContent()).toBe('Room b');
+    await story().click();
+    await page.locator('.stage-body.story .story').waitFor();
+    await page.screenshot({ path: `/tmp/diorama-build-story-${running}.png` });
+    await page.locator('.stage-body .pipeline button.label').filter({ hasText: 'Paint' }).click();
+    await page.locator('.stage-body.build').waitFor();
+    expect(await page.locator('.stage-top h2').textContent()).toBe('Room b');
+    // The ordinary Story card still returns to Places when opened from there.
+    await page.locator('.convo .thumb:is([title^="Room a:"], [data-tip^="Room a:"])').click();
+    await page.locator('.convo [data-opening="story"]').click();
+    await page.locator('.stage-body.story .paper-panel').waitFor();
+    expect(await page.locator('.stage-body.story .pipeline').count()).toBe(0);
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await page.locator('.stage-body.place').waitFor();
+    expect(await page.locator('.stage-top h2').textContent()).toBe('Room a');
+  } finally { await page.close(); }
+}, 15000);

@@ -399,3 +399,40 @@ test('a preview enlarges and accepts pasted visual direction; retries preserve t
     expect(await page.evaluate(() => (window as any).builds[0].sketch)).toEqual({ id, selections: { 'character:dragon': 2, 'character:owl': 0 } });
   } finally { await page.close(); }
 });
+
+test('text story choices make no images, mix with visual follow-ups and stay editable', async () => {
+  const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+  const reviews: any[] = [], images: any[] = [];
+  const first = { question: 'Dlaczego kot ukradł bilet?', why: '', presentation: 'text', options: ['Chce zatrzymać przyjaciela', 'Chroni sekret promu', 'Sam chce odpłynąć'] };
+  const next = { question: 'Gdzie schował bilet?', why: '', presentation: 'pictures', options: ['Pod kapeluszem', 'W latarni'], visuals: [{ scene: 'A ferry ticket hidden under a hat' }, { scene: 'A ferry ticket hidden in a lantern' }] };
+  page.on('request', r => { if (r.url().endsWith('/idea_preview')) images.push(r.postDataJSON()); });
+  try {
+    await page.route('**/api/actions/idea_review', r => {
+      const body = r.request().postDataJSON(); reviews.push(body);
+      const answer = body.choices?.answers[0]?.answer;
+      return r.fulfill({ json: { result: { understanding: 'Kot i ostatni prom.', questions: !answer ? [first] : answer === first.options[0] ? [next] : [], styles: [] } } });
+    });
+    await open(page);
+    await page.getByRole('button', { name: first.options[0], exact: true }).waitFor();
+    expect(await page.locator('.idea-card').count()).toBe(0);
+    expect(images).toEqual([]);
+    await page.screenshot({ path: '/tmp/diorama-text-question-desktop.png' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.locator('.idea-review').evaluate(e => e.scrollWidth <= e.clientWidth)).toBe(true);
+    await page.screenshot({ path: '/tmp/diorama-text-question-mobile.png' });
+    await page.getByRole('button', { name: first.options[0], exact: true }).click();
+    await page.getByRole('button', { name: next.options[0], exact: true }).locator('img').waitFor();
+    expect(images).toHaveLength(2);
+    await page.getByRole('button', { name: next.options[0], exact: true }).click();
+    const history = page.getByRole('region', { name: `Decision: ${first.question}` });
+    expect(await history.locator('img').count()).toBe(0);
+    expect(await history.getByRole('button', { name: first.options[0], exact: true }).getAttribute('aria-pressed')).toBe('true');
+    await history.getByRole('button', { name: `Change answer: ${first.question}` }).click();
+    await history.getByRole('button', { name: first.options[1], exact: true }).click();
+    await page.getByRole('button', { name: 'Build my world', exact: true }).waitFor();
+    expect(reviews.at(-1).choices.answers).toEqual([{ question: first.question, answer: first.options[1] }]);
+    expect(images).toHaveLength(2);
+    await page.getByRole('button', { name: 'Build my world', exact: true }).click();
+    expect(await page.evaluate(() => (window as any).builds[0].choices.answers)).toEqual([{ question: first.question, answer: first.options[1] }]);
+  } finally { await page.close(); }
+});

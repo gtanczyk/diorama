@@ -5,7 +5,8 @@ export const IdeaReview = z.object({
   questions: z.array(z.object({
     question: z.string().min(1).max(100),
     why: z.string().max(300),
-    options: z.array(z.string().min(1).max(48)).max(3),
+    presentation: z.enum(['pictures', 'text']).optional(),
+    options: z.array(z.string().min(1).max(96)).max(3),
     visuals: z.array(z.object({ scene: z.string().min(1).max(500), photo: z.number().int().nonnegative().optional() })).max(3).optional(),
     photo: z.number().int().nonnegative().optional(),
     video: z.object({ id: z.string(), seconds: z.number().nonnegative() }).optional(),
