@@ -155,9 +155,10 @@ export function players(files: WorldFiles): Array<{ key: string; looks: string }
 }
 
 /** What the world designer is told: every drawing is in the world, under its key, as drawn. */
-export function drawingsBrief(drawn: Drawn[]): string {
+export function drawingsBrief(drawn: Drawn[], style = KIDS_STYLE, chooseHero = false): string {
   const once = [...new Map(drawn.map((d) => [d.key, d])).values()];
-  const line = (d: Drawn) => ({
+  const line = (d: Drawn) => chooseHero && (d.kind === 'hero' || d.kind === 'npc')
+    ? `- a character, key "${d.key}": ${d.looks} (hero or npc according to the creator's idea and clarifications)` : ({
     hero: `- the hero, key "${d.key}": ${d.looks}`,
     npc: `- an npc in one of the places, key "${d.key}", role "npc": ${d.looks}`,
     item: `- an item to pick up in one of the places, key "${d.key}", role "item": ${d.looks}`,
@@ -167,7 +168,8 @@ export function drawingsBrief(drawn: Drawn[]): string {
   })[d.kind];
   return `The children drew these, and every one of them must be in the world, under exactly this key, looking as drawn:
 ${once.filter((d) => d.kind !== 'player').map(line).join('\n')}
-The style is exactly: "${KIDS_STYLE}".`;
+${chooseHero ? 'Choose exactly one of these drawn characters as the hero according to the creator\'s idea and answers; the other characters are NPCs. Do not choose the first drawing just because it came first.' : ''}
+The style is exactly: "${style}".`;
 }
 
 /** What the designed world left out of the drawings, said so Spark can put it back. */

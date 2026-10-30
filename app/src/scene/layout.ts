@@ -186,11 +186,11 @@ export function repairSmallBoxes(layout: Layout): Layout {
 }
 
 /** With a photo, measure existing positions without resizing them. */
-export async function layOut(memo: Memo, world: World, place: Place, photo?: Buffer, guidance?: string): Promise<Layout> {
+export async function layOut(memo: Memo, world: World, place: Place, photo?: Buffer, guidance?: string, concept?: Buffer): Promise<Layout> {
   const ask = () => (photo ? `${brief(world, place)}\n\nThe place already exists: it is the attached photo, ${FRAME.width}x${FRAME.height} px. Do not place anything; measure where each thing, floor and light is in it.` : brief(world, place));
-  const base = ask() + (guidance ? `\n\nLayout repair guidance: ${guidance}` : '');
+  const base = ask() + (!photo && concept ? '\n\nThe attached image is the creator-approved concept for this place. Start from its camera and relative arrangement of the listed things, scaled to the output frame. Preserve the recognizable composition where possible, but adapt positions, sizes and floor connections to satisfy every walkability rule above. This is a concept, not a fixed photograph; do not copy inaccessible areas or invent extra things.' : '') + (guidance ? `\n\nLayout repair guidance: ${guidance}` : '');
   // Keep paid replies. An exhausted batch becomes feedback for the next batch, never an identical replay.
-  const stateFile = path.join(memo.dir, 'layout-retries', `${inputHash(base, photo ?? '')}.json`);
+  const stateFile = path.join(memo.dir, 'layout-retries', `${inputHash(base, photo ?? '', ...(!photo && concept ? [concept] : []))}.json`);
   const saved = z.object({ round: z.number().int().nonnegative(), answer: z.unknown(), issues: z.array(z.string()) });
   let previous: z.infer<typeof saved> | undefined;
   if (fs.existsSync(stateFile)) previous = saved.parse(JSON.parse(fs.readFileSync(stateFile, 'utf8')));
@@ -199,7 +199,7 @@ export async function layOut(memo: Memo, world: World, place: Place, photo?: Buf
   let prompt = previous ? feedback(previous.answer, previous.issues, 1) : base;
   let last: { answer: unknown; issues: string[] } | undefined;
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const answer = await askSparkJson(memo, { label: `layout:${place.key}#${attempt}`, prompt, images: photo ? [photo] : [] });
+    const answer = await askSparkJson(memo, { label: `layout:${place.key}#${attempt}`, prompt, images: photo ? [photo] : concept ? [concept] : [] });
     const raw = Layout.safeParse(answer);
     const parsed = raw.success && !photo ? Layout.safeParse(repairSmallBoxes(raw.data)) : raw;
     const issues = parsed.success ? layoutIssues(parsed.data, place, !photo) : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);

@@ -13,6 +13,7 @@ import { refusedByFilter, reword, withWords, worded, type Words } from '../scene
 import { defineCommand, takeOption } from '../registry.ts';
 import { drawingsIn } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
+import { approvedConcept } from '../world/sketch.ts';
 import { markStyled, placeStyle, readStyled } from '../world/styled.ts';
 
 /** Rewords Spark may try after the image safety filter refuses a painting, before the place is set aside. */
@@ -34,12 +35,14 @@ defineCommand({
       const world = { ...base, style };
       const layout = Layout.parse(files.readJson(files.place(place.key, 'layout.json')));
       const blockin = fs.readFileSync(files.place(place.key, 'blockin.png'));
+      const concept = approvedConcept(files, 'place', place.key);
       // The first painting is kept while its block-in, layout and take stay the same, even without the model
       // cache (a world copied without memo/): a person's region repaint must not repaint the whole place.
       const hash = (words?: Words) => {
         const h = createHash('sha256').update(blockin).update(JSON.stringify(layout)).update(String(take));
         // A new wording paints the place anew; a place never reworded keeps the inputs it had.
         if (words) h.update(JSON.stringify(words));
+        if (concept) h.update(concept);
         return h.digest('hex');
       };
       let words = readCorrections(files.place(place.key)).words;
@@ -83,8 +86,8 @@ defineCommand({
           files.write(files.place(place.key, 'brief.json'), brief);
           try {
             first = fromPhoto
-              ? await paintPhoto(files.memo, world, told, blockin, brief, take)
-              : await paintPlace(files.memo, world, told, layout, blockin, brief, take, drawingsIn(files, place));
+              ? await paintPhoto(files.memo, world, told, blockin, brief, take, concept)
+              : await paintPlace(files.memo, world, told, layout, blockin, brief, take, drawingsIn(files, place), concept);
             break;
           } catch (error) {
             if (!refusedByFilter(error)) throw error;

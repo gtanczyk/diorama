@@ -78,12 +78,14 @@ Plain flat light grey background, no paper, no table, no written name, no floor,
  * that comes out sitting, lying or cut off is painted once more, as a seated painting makes a seated walker and a
  * 3D model with the chair grown into it.
  */
-export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, from?: { photo?: Buffer; standing?: boolean; drawing?: Buffer; restyle?: { painting: Buffer; was: string } }, upright = false): Promise<{ painting: Buffer; figure: Buffer }> {
+export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, from?: { photo?: Buffer; standing?: boolean; drawing?: Buffer; concept?: Buffer; restyle?: { painting: Buffer; was: string } }, upright = false): Promise<{ painting: Buffer; figure: Buffer }> {
   let fallback: { painting: Buffer; figure: Buffer; why: string } | undefined;
   // A take SAM finds no one in (a drawing painted back as loose scribble) is painted once more before giving up.
   for (const t of [take, take + 1]) {
     const painting = from?.restyle
       ? await museEdit(memo, { label: `figure:${who.key}:restyle`, prompt: restyleFigurePrompt(who.looks, from.restyle.was, world.style, !!from.drawing), images: [from.restyle.painting, ...(from.drawing ? [from.drawing] : [])], take: t })
+      : from?.concept
+      ? await museEdit(memo, { label: `figure:${who.key}:approved`, prompt: (from.photo ? from.standing ? photoPrompt(world) : photoStandPrompt(world, who) : from.drawing ? drawingPrompt(world, who) : figurePrompt(world, who)) + '\nThe LAST image is the creator-approved character concept. Keep that identity: face, silhouette, proportions, clothing, markings and colours. Any earlier image is the original source drawing or photo: keep the person or drawn character recognizable. Adapt pose and background only as instructed above. The current written style and any explicit appearance edits take precedence over the old concept.', images: [...(from.photo ? [from.photo] : from.drawing ? [from.drawing] : []), from.concept], take: t })
       : from?.photo
       ? from.standing
         ? await museEdit(memo, { label: `figure:${who.key}:photo`, prompt: photoPrompt(world), images: [await sharp(from.photo).rotate().png().toBuffer()], take: t })

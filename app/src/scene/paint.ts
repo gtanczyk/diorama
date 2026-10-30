@@ -62,8 +62,9 @@ The other images are children's drawings on paper: ${which.join(', ')}. Paint wh
 }
 
 /** One Muse edit, scaled back to the layout frame (Muse answers larger than asked). */
-export async function paintPlace(memo: Memo, world: World, place: Place, layout: Layout, blockin: Buffer, brief?: Brief, take = 0, drawings: Drawing[] = []): Promise<Buffer> {
-  const prompt = paintPrompt(world, place, layout, brief) + drawingsPrompt(place, drawings);
-  const painted = await museEdit(memo, { label: `paint:${place.key}`, prompt, images: [blockin, ...drawings.map((d) => d.image)], take });
+export async function paintPlace(memo: Memo, world: World, place: Place, layout: Layout, blockin: Buffer, brief?: Brief, take = 0, drawings: Drawing[] = [], concept?: Buffer): Promise<Buffer> {
+  const prompt = paintPrompt(world, place, layout, brief) + drawingsPrompt(place, drawings)
+    + (concept ? '\nThe LAST image is the creator-approved concept for this place. Preserve its distinctive architecture, palette, materials and visual identity. The FIRST image remains the authoritative layout: adapt the approved appearance to those positions and clear walking areas. Do not add characters or extra objects from the concept.' : '');
+  const painted = await museEdit(memo, { label: `paint:${place.key}`, prompt, images: [blockin, ...drawings.map((d) => d.image), ...(concept ? [concept] : [])], take });
   return sharp(painted).resize(FRAME.width, FRAME.height, { fit: 'fill' }).png().toBuffer();
 }

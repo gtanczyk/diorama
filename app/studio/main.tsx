@@ -8,6 +8,9 @@ import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
 import { AudioSetup } from './audio-setup.tsx';
 import { VideoInput, type VideoResult } from './video.tsx';
+import { IdeaReview, type ReviewInput } from './idea-review.tsx';
+import { CreatorIdea, useCreatorBrief } from './creator-idea.tsx';
+import type { CreativeChoices } from '../src/world/idea-review.ts';
 import { AudioMissing } from './audio-missing.tsx';
 import { base64, Camera, shrink } from './camera.tsx';
 import { StoryView } from './story.tsx';
@@ -421,6 +424,8 @@ function Start() {
   const [places, setPlaces] = useState(0);
   const [language, setLanguage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [reviewInput, setReviewInput] = useState<(ReviewInput & { slug?: string }) | null>(null);
+  const building = useRef(false);
   const [drop, setDrop] = useState(false);
   const [camera, setCamera] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -444,26 +449,33 @@ function Start() {
     const bytes = Uint8Array.from(atob(jpeg.slice(jpeg.indexOf(',') + 1)), (c) => c.charCodeAt(0));
     await addPhotos([new File([bytes], `photo-${photos.length + 1}.jpg`, { type: 'image/jpeg' })]);
   };
-  const build = async (e?: Event) => {
+  const review = (e?: Event) => {
     e?.preventDefault();
-    if (!ready) return;
+    if (!ready || reviewInput) return;
+    setError('');
+    setReviewInput({ idea: idea.trim(), photos, videos, ...(slug && { slug }), ...(places && { places }), ...(language && { language }) });
+  };
+  const build = async (choices?: CreativeChoices, sketch?: import('../src/world/sketch.ts').SketchApproval) => {
+    if (!reviewInput || building.current) return;
+    building.current = true;
     setError('');
     setBusy(true);
     try {
-      const made = await call<{ slug: string }>('world_new', { idea: idea.trim(), ...(slug && { slug }), ...(places && { places }), ...(language && { language }), ...(photos.length && { photos }), ...(videos.length && { videos }) });
+      const made = await call<{ slug: string }>('world_new', { ...reviewInput, ...(choices && { choices }), ...(sketch && { sketch }) });
       void call('world_list').then((w) => (allWorlds.value = w as typeof allWorlds.value)).catch(() => {});
       go(`/w/${made.slug}`);
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
+      building.current = false;
     }
   };
   return (
     <>
-      <main class="start">
+      <main class={`start${reviewInput ? ' reviewing' : ''}`}>
         <Corner />
         <SetupBanner needs={needs} />
-        <form class="hero" onSubmit={build}>
+        <form class="hero" hidden={!!reviewInput} onSubmit={review}>
           <Logo size={44} />
           <h1>What should the <em>world</em> be?</h1>
           <p class="lead">{named('Say it in a sentence. Muse Spark writes the story, Muse Image paints the places, SAM 3.1 cuts out everything you can touch, and the agent looks after it with you.')}</p>
@@ -474,7 +486,7 @@ function Start() {
             <textarea ref={box} disabled={videoBusy} rows={4} aria-label="Your idea" placeholder="A lighthouse keeper's last night before the foghorn is switched off for good…" value={idea}
               onInput={(e) => setIdea(e.currentTarget.value)}
               onPaste={(e) => { const files = [...(e.clipboardData?.files ?? [])]; if (files.length) (e.preventDefault(), void addPhotos(files)); }}
-              onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && void build()} />
+              onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && review(e)} />
             {photos.length > 0 && (
               <div class="attached">
                 {photos.map((p, i) => (
@@ -494,18 +506,18 @@ function Start() {
               </label>
               <button type="button" class="ghost bare" title="Take photos with the camera, one after another: drawings, a room, a person" onClick={() => setCamera(true)}><Icon name="camera" /> Camera</button>
               <SayIt onText={(text) => (setIdea((old) => `${old.trim()} ${text}`.trim()), box.current?.focus())} onError={setError} />
+              <VideoInput note={idea} disabled={busy || noKey} onBusy={setVideoBusy} onResult={(id, result) => {
+                setVideos(v => [...v, id]); setVideoReview(result);
+                setIdea(result.idea);
+                setPhotos(p => [...p, ...result.photos]);
+              }} />
               <span class="grow" />
               <button type="submit" class="primary" disabled={!ready}
-                title={taken ? 'A world has this name already: change it under More' : noKey ? 'Add the Meta key in Setup first' : idea.trim().length < 10 ? 'Write the idea first (at least 10 letters)' : 'Spark names the world and picks how many places it needs, then the whole game is built: story, paintings, cut-outs, depth, cast, sound, play test. A few minutes; per place about 1 Muse Image + several SAM and Spark calls'}>
+                title={taken ? 'A world has this name already: change it under More' : noKey ? 'Add the Meta key in Setup first' : idea.trim().length < 10 ? 'Write the idea first (at least 10 letters)' : 'Review optional questions and visual directions before building. You can skip them and build immediately.'}>
                 {busy ? 'Spark reads the idea…' : taken ? 'Name taken' : noKey ? 'Needs the Meta key' : 'Build it'}
               </button>
             </div>
           </div>
-          <VideoInput note={idea} disabled={busy || noKey} onBusy={setVideoBusy} onResult={(id, result) => {
-            setVideos(v => [...v, id]); setVideoReview(result);
-            setIdea(result.idea);
-            setPhotos(p => [...p, ...result.photos]);
-          }} />
           {videoReview && <details open><summary>Review what the video means</summary>
             <p>Edit the idea above and remove any reference pictures you do not want. Each picture’s name includes its time in the recording.</p>
             {videoReview.idea.length > 4000 && <p class="error">The full interpretation exceeds the idea field. Condense it before building; the complete interpretation is shown below and kept with the video.</p>}
@@ -526,6 +538,7 @@ function Start() {
           </details>
           {error && <p class="error">{error}</p>}
         </form>
+        {reviewInput && <IdeaReview input={reviewInput} busy={busy} error={error} onBuild={build} onBack={() => { setReviewInput(null); setError(''); }} />}
         {camera && (
           <div class="shoot" role="dialog" aria-label="Camera">
             <Camera tip={photos.length >= MAX_WORLD_PHOTOS ? `One world takes up to ${MAX_WORLD_PHOTOS} photos. Remove extras before building.` : 'Hold each drawing flat, filling the picture. Take as many as you like, then Done.'} words={{ snap: photos.length ? `Take another (${photos.length})` : 'Take the photo', done: 'Done', none: 'No camera' }}
@@ -563,10 +576,9 @@ function Workshop({ slug }: { slug: string }) {
   const [stage, setStage] = useState<StageView | null>(null);
   const [picked, setPicked] = useState<Picked | null>(null);
   const [byHand, setByHand] = useState<string | null>(null);
-  const [idea, setIdea] = useState('');
+  const creatorBrief = useCreatorBrief(slug);
   const worldRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLElement>(null);
-  useEffect(() => void fetch(fileUrl(slug, 'idea.txt', Date.now()), { cache: 'no-store' }).then((r) => (r.ok ? r.text() : '')).then((t) => setIdea(t.trim())).catch(() => {}), [slug]);
   useEffect(() => {
     if (!byHand) return;
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && setByHand(null);
@@ -811,7 +823,7 @@ function Workshop({ slug }: { slug: string }) {
   const castDone = !!status?.steps.includes('cast');
   // What the conversation opens with: the idea, then the world as the build made it, card by card.
   const opening = [
-    idea && { id: 'idea', afterTurn: 0, text: <div class="idea-bubble">{idea}</div> },
+    creatorBrief?.idea && { id: 'idea', afterTurn: 0, text: <CreatorIdea brief={creatorBrief} /> },
     status?.title && status.steps.includes('story') && { id: 'story', afterTurn: 0, text: (
       <Card kind="Story" by="Muse Spark" on={shownView.kind === 'story'} onClick={() => onStage({ kind: 'story' })} opening>
         <h3>{status.title}</h3>

@@ -105,6 +105,7 @@ test('the start form sends all 18 drawings in order and never silently drops exc
   page.setDefaultTimeout(8000);
   const sent: Array<{ photos: Array<{ name: string; data: string }> }> = [];
   await page.route('**/api/actions/setup_status', (r) => r.fulfill({ json: { result: [] } }));
+  await page.route('**/api/actions/idea_review', (r) => r.fulfill({ json: { result: { understanding: 'A story from drawings', questions: [{ question: 'Who should lead?', why: '', options: [] }], styles: [] } } }));
   await page.route('**/api/actions/world_new', async (r) => {
     sent.push(r.request().postDataJSON());
     // Keep the form open; this test must never call a live model or build a world.
@@ -114,6 +115,9 @@ test('the start form sends all 18 drawings in order and never silently drops exc
   const files = (count: number, from = 1) => Array.from({ length: count }, (_, i) => ({ name: `drawing-${from + i}.png`, mimeType: 'image/png', buffer: photo }));
   try {
     await page.goto(`${studio.url}#${studio.token}`);
+    await page.getByRole('button', { name: 'Video', exact: true }).waitFor();
+    expect(await page.getByLabel('Choose a video').isVisible()).toBe(false);
+    await page.screenshot({ path: '/tmp/diorama-start-video.png' });
     await page.getByRole('textbox', { name: 'Your idea' }).fill('Make a story from these drawings');
     const picker = page.locator('form.hero input[type=file][accept="image/*"]');
     const build = page.getByRole('button', { name: 'Build it', exact: true });
@@ -121,8 +125,14 @@ test('the start form sends all 18 drawings in order and never silently drops exc
     await expect.poll(() => page.locator('.attached .att').count()).toBe(18);
     await expect.poll(() => build.isEnabled()).toBe(true);
     await build.click();
+    await page.getByRole('region', { name: 'Shape your world' }).waitFor();
+    expect(await page.getByRole('dialog').count()).toBe(0);
+    expect(await page.getByRole('textbox', { name: 'Your idea' }).isVisible()).toBe(false);
+    expect(sent).toHaveLength(0);
+    await page.getByRole('button', { name: 'Skip & build', exact: true }).click();
     await expect.poll(() => sent.length).toBe(1);
     expect(sent[0].photos.map((p) => p.name)).toEqual(files(18).map((p) => p.name.replace('.png', '.jpg')));
+    await page.getByRole('button', { name: 'Back to idea', exact: true }).click();
     await expect.poll(() => build.isEnabled()).toBe(true);
 
     await picker.setInputFiles(files(MAX_WORLD_PHOTOS + 1 - 18, 19));
@@ -197,3 +207,31 @@ test('an acknowledged completion stays read after a page reload', async () => {
     await expect.poll(() => page.locator('.bell').getAttribute('aria-label')).toBe('Notifications');
   } finally { await page.close(); }
 }, 30_000);
+
+test.each([true, false])('opening keeps the creator idea separate from model instructions (reviewed: %s)', async reviewed => {
+  const slug = reviewed ? 'reviewed-opening' : 'legacy-opening';
+  const dir = path.join(root, slug);
+  fs.cpSync(path.join(root, 'w'), dir, { recursive: true });
+  const idea = 'A night market where paper lanterns hold lost memories, and one lantern has gone dark';
+  const instruction = "Creator's clarifications (these override earlier ambiguity; keep the original story language unless explicitly changed):";
+  const style = 'Warm hand-inked night market on textured rice paper, deep indigo shadows and glowing amber lanterns.';
+  fs.writeFileSync(path.join(dir, 'idea.txt'), reviewed ? `${idea}\n\n${instruction}\nWho do you play?\nThe lantern keeper\nVisual style chosen by the creator: ${style}` : 'A quiet lighthouse beside a stormy sea.');
+  if (reviewed) fs.writeFileSync(path.join(dir, 'creative-brief.json'), JSON.stringify({ idea, choices: { answers: [{ question: 'Who do you play?', answer: 'The lantern keeper' }, { question: 'Whose memory is in the dark lantern?', answer: 'Your own' }], style } }));
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  try {
+    await page.goto(`${studio.url}w/${slug}#${studio.token}`);
+    const bubble = page.locator('.creator-idea .idea-bubble');
+    await bubble.waitFor();
+    expect(await bubble.textContent()).toBe(reviewed ? idea : 'A quiet lighthouse beside a stormy sea.');
+    expect(await page.locator('.creator-idea').textContent()).not.toContain(instruction);
+    const choices = page.locator('.creator-choices');
+    if (reviewed) {
+      expect(await choices.getAttribute('open')).toBeNull();
+      await choices.locator('summary').click();
+      expect(await choices.locator('dd').allTextContents()).toEqual(['The lantern keeper', 'Your own', style]);
+      await page.locator('.convo .gc-scroll').evaluate(e => e.scrollTop = 0);
+      await page.locator('.convo').screenshot({ path: '/tmp/diorama-clean-opening.png' });
+      expect(fs.readFileSync(path.join(dir, 'idea.txt'), 'utf8')).toContain(instruction);
+    } else expect(await choices.count()).toBe(0);
+  } finally { await page.close(); }
+});

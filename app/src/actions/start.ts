@@ -13,8 +13,10 @@ import { PICTURE } from '../world/drawings.ts';
 import { pieces, SOUND } from '../world/told.ts';
 import { Slug } from '../world/schema.ts';
 import { MAX_WORLD_PHOTOS } from '../world/photo-limits.ts';
+import { CreativeChoices, refinedIdea } from '../world/idea-review.ts';
 import { VideoId, videoDir, videoState, VIDEO_STEP } from '../world/video.ts';
 import { ActionError, defineAction } from './registry.ts';
+import { SketchApproval, publishSketch } from '../world/sketch.ts';
 
 /** Calls made before a world has a folder are remembered here (a dot folder, so it is never listed as a world). */
 const startMemo = (root: string) => new Memo(path.join(root, '.start', 'memo'));
@@ -72,12 +74,36 @@ function freeSlug(root: string, wanted: string): string {
 
 const bytesOf = (data: string) => Buffer.from(data.replace(/^data:[^,]*,/, ''), 'base64');
 
+/** Seed the same source material for a preview and a direct build. Videos are copied only on publication. */
+export function seedIdea(dir: string, idea: string, choices: CreativeChoices | undefined, photos: Array<{ name: string; data: string }>, images: Buffer[], shape: Shape) {
+  if (choices) {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'creative-brief.json'), JSON.stringify({ idea, choices }, null, 2));
+  }
+  const photoFiles: { photoFile?: string; heroFile?: string } = {};
+  for (const role of ['place', 'hero'] as const) {
+    const at = (shape.pictures ?? []).indexOf(role);
+    if (at < 0 || !images[at]) continue;
+    const file = path.join(dir, 'start', `${role}.png`);
+    fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, images[at]);
+    photoFiles[role === 'place' ? 'photoFile' : 'heroFile'] = file;
+  }
+  const drawings = (shape.pictures ?? []).flatMap((role, i) => role === 'drawing' && images[i] ? [i] : []);
+  drawings.forEach((i, n) => {
+    const file = path.join(dir, 'drawings', `${String(n + 1).padStart(2, '0')}-${photos[i].name.replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'drawing'}.png`);
+    fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, images[i]);
+  });
+  return { ...photoFiles, drawings: drawings.length };
+}
+
 defineAction({
   name: 'world_new',
   description: 'Make a new world from an idea and build it: Spark picks its title, folder name, how many places the story needs (2 to 5) and its language, '
     + 'unless given; photos (optional) of a real room become the first place, of a person the hero, and drawings the characters, things and places they show. Starts the world_build job and returns the slug.',
   input: z.object({
     idea: z.string().min(10).max(4000),
+    choices: CreativeChoices.optional().describe('Only answers, style and notes explicitly chosen by the creator in the optional idea review'),
+    sketch: SketchApproval.optional().describe('Build this exact reviewed world plan and selected visual references'),
     slug: Slug.optional().describe('the folder name; picked from the idea when left out'),
     places: z.number().int().min(1).max(8).optional().describe('picked from the idea when left out'),
     language: z.string().min(2).max(30).optional().describe('the game\'s language ("Polish"); read from the idea when left out'),
@@ -85,42 +111,29 @@ defineAction({
     photos: z.array(z.object({ name: z.string().min(1).max(120), data: z.string().min(10) })).max(MAX_WORLD_PHOTOS).optional().describe('photos, base64: a real room becomes the first place, a person the hero, drawings the characters, things and places they show'),
   }),
   job: true,
-  async run({ idea, slug, places, language, photos = [], videos = [] }, ctx) {
+  async run({ idea, choices, sketch, slug, places, language, photos = [], videos = [] }, ctx) {
     for (const id of videos) {
       const dir = videoDir(ctx.root, id), state = videoState(dir);
       if (!state.duration || !fs.existsSync(path.join(dir, `part-${Math.ceil(state.duration / VIDEO_STEP) - 1}.json`))) throw new ActionError(409, 'Finish interpreting the video before building.');
     }
+    if (sketch) return publishSketch(ctx, { idea, choices, slug, places, language, photos, videos }, sketch);
     for (const p of photos) if (!PICTURE.test(p.name)) throw new ActionError(400, `${p.name}: a photo is png, jpg, webp or heic`);
     const images = await Promise.all(photos.map((p) => normalisePhoto(bytesOf(p.data))));
-    const shape = await shapeIdea(startMemo(ctx.root), idea.trim(), images);
+    const brief = refinedIdea(idea, choices);
+    const shape = await shapeIdea(startMemo(ctx.root), brief, images);
     if (slug && fs.existsSync(path.join(ctx.root, slug, 'world.json'))) throw new ActionError(409, `${slug} is built already: pick another name`);
     const name = slug ?? freeSlug(ctx.root, shape.slug);
     const dir = path.join(ctx.root, name);
+    const seeded = seedIdea(dir, idea, choices, photos, images, shape);
     for (const id of videos) {
       const dest = path.join(dir, 'videos', id);
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.cpSync(videoDir(ctx.root, id), dest, { recursive: true });
     }
-    // Photos go with the world, and the build reads them from there.
-    const kept = (role: 'place' | 'hero') => {
-      const at = (shape.pictures ?? []).indexOf(role);
-      if (at < 0 || !images[at]) return [];
-      const file = path.join(dir, 'start', `${role}.png`);
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, images[at]);
-      return [role === 'place' ? '--photo' : '--hero-photo', file];
-    };
-    // Drawings are kept with the world; the world step reads each one (what it shows, who leads) and the game is drawn after them.
-    const drawings = (shape.pictures ?? []).flatMap((role, i) => (role === 'drawing' && images[i] ? [i] : []));
-    drawings.forEach((i, n) => {
-      const file = path.join(dir, 'drawings', `${String(n + 1).padStart(2, '0')}-${photos[i].name.replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'drawing'}.png`);
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, images[i]);
-    });
     const lang = language ?? shape.language;
-    const args = ['build', name, idea.trim(), '--from', 'world', '--places', String(places ?? shape.places), ...(/^english$/i.test(lang) ? [] : ['--language', lang]), ...kept('place'), ...kept('hero')];
+    const args = ['build', name, brief, '--from', 'world', '--places', String(places ?? shape.places), ...(/^english$/i.test(lang) ? [] : ['--language', lang]), ...(seeded.photoFile ? ['--photo', seeded.photoFile] : []), ...(seeded.heroFile ? ['--hero-photo', seeded.heroFile] : [])];
     const job = await ctx.jobs.start(name, args, 'build world > verify', ctx.by);
-    return { slug: name, title: shape.title, places: places ?? shape.places, language: lang, drawings: drawings.length, job };
+    return { slug: name, title: shape.title, places: places ?? shape.places, language: lang, drawings: seeded.drawings, job };
   },
 });
 

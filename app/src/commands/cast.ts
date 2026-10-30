@@ -10,6 +10,7 @@ import { PART_NAMES } from '../play/rig.ts';
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
 import { drawingFor, players, readDrawn } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
+import { approvedConcept } from '../world/sketch.ts';
 import { castStyle, markStyled, readStyled } from '../world/styled.ts';
 
 defineCommand({
@@ -52,7 +53,7 @@ defineCommand({
       const before = files.path('cast', `${who.key}-painting.png`);
       const heroPhoto = who.key === world.hero.key ? photo : undefined;
       const restyle = was && was !== style && !heroPhoto && fs.existsSync(before) ? { painting: fs.readFileSync(before), was } : undefined;
-      const made = await paintFigure(files.memo, { ...world, style }, who, fixes[who.key]?.take ?? take, { photo: heroPhoto, standing, drawing: drawingFor(files, who.key), restyle }, bodies[who.key]?.upright !== false).catch((error: Error) => {
+      const made = await paintFigure(files.memo, { ...world, style }, who, fixes[who.key]?.take ?? take, { photo: heroPhoto, standing, drawing: drawingFor(files, who.key), concept: approvedConcept(files, 'character', who.key), restyle }, bodies[who.key]?.upright !== false).catch((error: Error) => {
         if (who.key === world.hero.key) throw error;
         missing.push(`${who.key}: ${error.message}`);
         return null;

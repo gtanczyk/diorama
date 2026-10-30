@@ -69,8 +69,9 @@ ${looks.join('\n')}
 Remove every person; paint the furniture and floor behind them. Keep the floor clear to walk on. No text or letters, no border.`;
 }
 
-export async function paintPhoto(memo: Memo, world: World, place: Place, photo: Buffer, brief?: Brief, take = 0): Promise<Buffer> {
-  const painted = await museEdit(memo, { label: `paint:${place.key}`, prompt: photoPaintPrompt(world, place, brief), images: [photo], take });
+export async function paintPhoto(memo: Memo, world: World, place: Place, photo: Buffer, brief?: Brief, take = 0, concept?: Buffer): Promise<Buffer> {
+  const prompt = photoPaintPrompt(world, place, brief) + (concept ? '\nThe second image is the creator-approved visual concept: preserve its palette and treatment. The first photo is authoritative for the real room, furniture, perspective and layout.' : '');
+  const painted = await museEdit(memo, { label: `paint:${place.key}`, prompt, images: [photo, ...(concept ? [concept] : [])], take });
   return sharp(painted).resize(FRAME.width, FRAME.height, { fit: 'fill' }).png().toBuffer();
 }
 

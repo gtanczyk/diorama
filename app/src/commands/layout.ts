@@ -5,6 +5,7 @@ import { readCorrections } from '../scene/corrections.ts';
 import { layOut } from '../scene/layout.ts';
 import { defineCommand } from '../registry.ts';
 import { WorldFiles } from '../world/files.ts';
+import { approvedConcept } from '../world/sketch.ts';
 
 defineCommand({
   name: 'layout',
@@ -18,7 +19,7 @@ defineCommand({
       // A place made from a photo is measured from it, and the photo stands in for the block-in.
       const photoFile = files.place(place.key, 'photo.png');
       const photo = fs.existsSync(photoFile) ? fs.readFileSync(photoFile) : undefined;
-      const layout = await layOut(files.memo, world, place, photo, readCorrections(files.place(place.key)).layout?.guidance);
+      const layout = await layOut(files.memo, world, place, photo, readCorrections(files.place(place.key)).layout?.guidance, approvedConcept(files, 'place', place.key));
       files.write(files.place(place.key, 'layout.json'), layout);
       const blockin = photo ?? await renderBlockin(layout, place);
       files.write(files.place(place.key, 'blockin.png'), blockin);

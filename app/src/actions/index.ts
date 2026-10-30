@@ -24,3 +24,6 @@ import './start.ts';
 import './sound.ts';
 
 import './video.ts';
+import './idea-review.ts';
+import './idea-preview.ts';
+import './idea-sketch.ts';

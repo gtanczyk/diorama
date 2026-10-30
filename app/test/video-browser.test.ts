@@ -16,7 +16,10 @@ test('movie upload shows progress, recovers from an analysis error, and returns 
       throw new Error(`Unexpected action ${name}`);
     });
     await page.goto('http://video.test'); await page.addScriptTag({ content: source });
-    await page.locator('input[type=file]').setInputFiles({ name: 'brief.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(3 * 1024 * 1024, 1) });
+    expect(await page.locator('input[type=file]').isVisible()).toBe(false);
+    const picker = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Video', exact: true }).click();
+    await (await picker).setFiles({ name: 'brief.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(3 * 1024 * 1024, 1) });
     await page.getByRole('alert').waitFor();
     expect(await page.getByRole('alert').innerText()).toContain('Speech service unavailable');
     expect(received).toBe(3 * 1024 * 1024);
