@@ -1,3 +1,4 @@
+import { STYLE_REFERENCE_PROMPT, worldStyleReference } from '../world/style-reference.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -50,7 +51,7 @@ defineAction({
         const images = await Promise.all(input.photos.map(p => normalisePhoto(Buffer.from(p.data.replace(/^data:[^,]*,/, ''), 'base64'))));
         const brief = refinedIdea(input.idea, input.choices);
         const shape = await shapeIdea(new Memo(path.join(ctx.root, '.start', 'memo')), brief, images);
-        const seeded = seedIdea(files.dir, input.idea, input.choices, input.photos, images, shape);
+        const seeded = seedIdea(files.dir, input.idea, input.choices, input.photos, images, shape, ctx.root);
         await designInitialWorld(files, { places: input.places ?? shape.places, language: input.language ?? shape.language, given: brief, ...seeded });
         files.write(files.path('sketch.json'), { fingerprint, slug: shape.slug, worldHash: inputHash(fs.readFileSync(files.path('world.json'))) } satisfies SketchRecord);
       }
@@ -92,6 +93,9 @@ defineAction({
           const photo = files.place(key, 'photo.png');
           if (fs.existsSync(photo)) references.unshift(fs.readFileSync(photo));
         }
+        const styleImage = worldStyleReference(files, world.style);
+        if (styleImage) references.push(styleImage);
+        const styleIndex = styleImage ? references.length : 0;
         if (baseTake !== undefined) references.push(fs.readFileSync(sketchImagePath(files, asset, baseTake)));
         if (reference) {
           const added = await normalisePhoto(Buffer.from(reference.data.replace(/^data:[^,]*,/, ''), 'base64'));
@@ -102,6 +106,7 @@ defineAction({
 ${kind === 'character' ? 'Show one full-body character, head to feet or paws, in a walking-ready pose on a quiet plain background. No other characters.' : 'Show this place as a wide stage for a point-and-click game, with clear open walking space, no people. Include these important objects: ' + world.places.find(p => p.key === key)!.things.filter(t => t.role !== 'npc').map(t => t.looks).join('; ')}
 Subject: ${asset.looks}
 Style: ${world.style}
+${styleImage ? `Image ${styleIndex}: ${STYLE_REFERENCE_PROMPT}` : ''}
 Preserve the identity, distinctive shapes, colours and proportions of any original reference drawings or photos. Keep the entire subject in frame. Simple readable composition, no text, labels, watermarks, panels or interface. This image will be the approved appearance reference for the finished game.
 ${baseTake === undefined ? '' : `Revise the ${reference ? 'second-to-last' : 'last'} reference image: it is the creator's selected current version. Keep everything not explicitly changed, including its character identity and world style. ${change ? `Creator's visual direction: ${change}` : 'Explore a fresh visual variation of this version.'}`}
 ${reference ? 'The last image is an additional reference supplied for this revision. Use its relevant visual details according to the creator\'s direction; it does not replace the whole world style or story.' : ''}`;

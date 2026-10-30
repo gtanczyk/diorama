@@ -19,8 +19,9 @@ export type IdeaReview = z.infer<typeof IdeaReview>;
 export const CreativeChoices = z.object({
   answers: z.array(z.object({ question: z.string().min(1).max(240), answer: z.string().trim().min(1).max(600) })).max(3),
   style: z.string().trim().min(10).max(500).optional(),
+  styleReference: z.string().regex(/^[a-f0-9]{32}$/).optional(),
   note: z.string().trim().max(1000).optional(),
-});
+}).refine(v => !v.styleReference || !!v.style, 'A style reference needs a chosen style.');
 export type CreativeChoices = z.infer<typeof CreativeChoices>;
 export function refinedIdea(idea: string, choices?: CreativeChoices): string {
   if (!choices) return idea.trim();

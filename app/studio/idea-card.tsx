@@ -6,11 +6,11 @@ import { ReviewSketch } from './review-sketch.tsx';
 const previews = new Map<string, { task: Promise<string>; image?: string }>();
 
 /** Reference drawings are immediate. New concepts paint in the background and never block a choice. */
-export function IdeaCard({ label, image, idea, scene, style, references, disabled, selected, hidden, onPick }: {
-  label: string; image?: string; idea: string; scene: string; style?: string; references: string[];
+export function IdeaCard({ label, image, idea, scene, style, styleReference, references, disabled, selected, hidden, onPick }: {
+  label: string; image?: string; idea: string; scene: string; style?: string; styleReference?: string; references: string[];
   disabled: boolean; selected?: boolean; hidden?: boolean; onPick: () => void;
 }) {
-  const request = JSON.stringify({ idea, scene, ...(style && { style }), references });
+  const request = JSON.stringify({ idea, scene, ...(style && { style }), ...(styleReference && { styleReference }), references });
   const [preview, setPreview] = useState(image ?? previews.get(request)?.image ?? '');
   const [failed, setFailed] = useState(false);
   useEffect(() => {

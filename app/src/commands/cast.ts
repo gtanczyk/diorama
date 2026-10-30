@@ -1,3 +1,4 @@
+import { worldStyleReference } from '../world/style-reference.ts';
 // diorama cast <slug>: the hero and every NPC of world.json as cut-out figures the runtime walks around.
 import fs from 'node:fs';
 import { defineCommand, takeOption } from '../registry.ts';
@@ -53,7 +54,7 @@ defineCommand({
       const before = files.path('cast', `${who.key}-painting.png`);
       const heroPhoto = who.key === world.hero.key ? photo : undefined;
       const restyle = was && was !== style && !heroPhoto && fs.existsSync(before) ? { painting: fs.readFileSync(before), was } : undefined;
-      const made = await paintFigure(files.memo, { ...world, style }, who, fixes[who.key]?.take ?? take, { photo: heroPhoto, standing, drawing: drawingFor(files, who.key), concept: approvedConcept(files, 'character', who.key), restyle }, bodies[who.key]?.upright !== false).catch((error: Error) => {
+      const made = await paintFigure(files.memo, { ...world, style }, who, fixes[who.key]?.take ?? take, { photo: heroPhoto, standing, drawing: drawingFor(files, who.key), concept: approvedConcept(files, 'character', who.key), styleReference: worldStyleReference(files, style), restyle }, bodies[who.key]?.upright !== false).catch((error: Error) => {
         if (who.key === world.hero.key) throw error;
         missing.push(`${who.key}: ${error.message}`);
         return null;

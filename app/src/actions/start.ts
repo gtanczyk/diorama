@@ -1,3 +1,4 @@
+import { styleReferencePath } from '../world/style-reference.ts';
 // A new world from one idea: Spark reads it (and any photos) and picks the world's name, how many places the
 // story needs and the language it is told in, so the person writes the idea and nothing else. A spoken idea is heard here too.
 import fs from 'node:fs';
@@ -75,10 +76,12 @@ function freeSlug(root: string, wanted: string): string {
 const bytesOf = (data: string) => Buffer.from(data.replace(/^data:[^,]*,/, ''), 'base64');
 
 /** Seed the same source material for a preview and a direct build. Videos are copied only on publication. */
-export function seedIdea(dir: string, idea: string, choices: CreativeChoices | undefined, photos: Array<{ name: string; data: string }>, images: Buffer[], shape: Shape) {
+export function seedIdea(dir: string, idea: string, choices: CreativeChoices | undefined, photos: Array<{ name: string; data: string }>, images: Buffer[], shape: Shape, sourceRoot: string) {
+  const styleImage = choices?.styleReference ? fs.readFileSync(styleReferencePath(sourceRoot, choices.styleReference)) : undefined;
   if (choices) {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'creative-brief.json'), JSON.stringify({ idea, choices }, null, 2));
+    if (styleImage) fs.writeFileSync(path.join(dir, 'style-reference.png'), styleImage);
   }
   const photoFiles: { photoFile?: string; heroFile?: string } = {};
   for (const role of ['place', 'hero'] as const) {
@@ -124,7 +127,7 @@ defineAction({
     if (slug && fs.existsSync(path.join(ctx.root, slug, 'world.json'))) throw new ActionError(409, `${slug} is built already: pick another name`);
     const name = slug ?? freeSlug(ctx.root, shape.slug);
     const dir = path.join(ctx.root, name);
-    const seeded = seedIdea(dir, idea, choices, photos, images, shape);
+    const seeded = seedIdea(dir, idea, choices, photos, images, shape, ctx.root);
     for (const id of videos) {
       const dest = path.join(dir, 'videos', id);
       fs.mkdirSync(path.dirname(dest), { recursive: true });

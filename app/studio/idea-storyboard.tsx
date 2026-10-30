@@ -17,7 +17,7 @@ async function turn<T>(work: () => Promise<T>): Promise<T> {
 
 function Concept({ sketch, asset, disabled, onSelect, onBusy }: {
   sketch: string; asset: SketchAsset; disabled: boolean;
-  onSelect: (take: number) => void; onBusy: (busy: boolean) => void;
+  onSelect: (take: number) => void; onBusy: (busy: boolean, working: boolean) => void;
 }) {
   const [versions, setVersions] = useState<Record<number, string>>({});
   const [largeVersions, setLargeVersions] = useState<Record<number, string>>({});
@@ -34,7 +34,7 @@ function Concept({ sketch, asset, disabled, onSelect, onBusy }: {
   const [error, setError] = useState('');
   useEffect(() => {
     let current = true;
-    setLoading(true); setPaintingNow(false); setError(''); onBusy(true);
+    setLoading(true); setPaintingNow(false); setError(''); onBusy(true, true);
     void turn(async () => {
       if (!current) return;
       setPaintingNow(true);
@@ -48,10 +48,10 @@ function Concept({ sketch, asset, disabled, onSelect, onBusy }: {
     }).catch(e => { if (current) setError(e.message); }).finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
   }, [sketch, asset.kind, asset.key, requested, attempt, revision]);
-  useEffect(() => { onBusy(loading || editing); }, [loading, editing]);
+  useEffect(() => { onBusy(loading || editing, loading); }, [loading, editing]);
   const regenerate = (change: ConceptChange = {}) => {
     if (disabled || loading || nextTake > 9) return;
-    setLoading(true); onBusy(true); setError('');
+    setLoading(true); onBusy(true, true); setError('');
     setRevision({ ...change, baseTake: selected }); setRequested(nextTake); setNextTake(nextTake + 1);
   };
   const progress = paintingNow ? 'Sketching…' : 'Waiting for a brush…';
@@ -84,6 +84,7 @@ export function IdeaStoryboard({ input, choices, busy, error, onBuild, onSkip }:
   const [attempt, setAttempt] = useState(0);
   const [selections, setSelections] = useState<Record<string, number>>({});
   const [pending, setPending] = useState<Record<string, boolean>>({});
+  const [working, setWorking] = useState<Record<string, boolean>>({});
   const submitting = useRef(false);
   useEffect(() => {
     let current = true;
@@ -93,6 +94,7 @@ export function IdeaStoryboard({ input, choices, busy, error, onBuild, onSkip }:
   }, [input, choices, attempt]);
   useEffect(() => { if (!busy) submitting.current = false; }, [busy]);
   const ready = !!sketch && sketch.assets.every(a => Number.isInteger(selections[`${a.kind}:${a.key}`]) && !pending[`${a.kind}:${a.key}`]);
+  const generating = !sketch && !failure || Object.values(working).some(Boolean);
   return <div class="idea-storyboard" data-lightbox-group>
     {!sketch && !failure ? <div class="review-thinking"><ReviewSketch /><div class="review-thinking-copy"><span class="review-kicker">The first sketches</span><p class="review-says" role="status">Finding your characters and places…</p><p class="review-aside">Your cast. Your corners of the world.</p><span class="review-ink-trail" aria-hidden="true" /></div></div> : <p class="review-says">{sketch ? <>Meet <em>your world.</em></> : 'The preview needs another try.'}</p>}
     {sketch && <>
@@ -102,12 +104,12 @@ export function IdeaStoryboard({ input, choices, busy, error, onBuild, onSkip }:
         <h3>{kind === 'character' ? 'Who’s in the story' : 'Where you’ll go'}</h3>
         <div class={`concept-grid ${kind}`}>{sketch.assets.filter(a => a.kind === kind).map(asset => {
           const key = `${asset.kind}:${asset.key}`;
-          return <Concept key={key} sketch={sketch.id} asset={asset} disabled={busy} onSelect={take => setSelections(s => ({ ...s, [key]: take }))} onBusy={value => setPending(p => ({ ...p, [key]: value }))} />;
+          return <Concept key={key} sketch={sketch.id} asset={asset} disabled={busy} onSelect={take => setSelections(s => ({ ...s, [key]: take }))} onBusy={(value, active) => { setPending(p => ({ ...p, [key]: value })); setWorking(p => ({ ...p, [key]: active })); }} />;
         })}</div>
       </section>)}
     </>}
     {failure && <div role="alert"><button type="button" class="ghost" disabled={busy} onClick={() => setAttempt(n => n + 1)}>Retry preview</button><details class="detail"><summary>Details</summary>{failure}</details></div>}
     {error && <p class="error" role="alert">{error}</p>}
-    <footer><button type="button" class="ghost" disabled={busy} onClick={onSkip}>Skip & build</button><button type="button" class="primary" disabled={busy || !ready} onClick={() => { if (ready && sketch && !submitting.current) { submitting.current = true; onBuild({ id: sketch.id, selections }); } }}>{busy ? 'Starting the build…' : 'Build this version'}</button></footer>
+    <footer><button type="button" class="ghost" disabled={busy} onClick={onSkip}>Skip & build</button><button type="button" class="primary" aria-busy={busy || generating} disabled={busy || !ready} onClick={() => { if (ready && sketch && !submitting.current) { submitting.current = true; onBuild({ id: sketch.id, selections }); } }}>{(busy || generating) && <span class="review-spinner" aria-hidden="true" />}{busy ? 'Starting the build…' : 'Build this version'}</button></footer>
   </div>;
 }

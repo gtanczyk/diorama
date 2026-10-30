@@ -724,6 +724,10 @@ main.start.reviewing { justify-content: flex-start; scroll-padding-bottom: calc(
 .review-style-actions .amber { background: var(--amber); color: #fffdf7; border-color: var(--amber); }
 .review-style-cancel { border-color: transparent; background: transparent; color: var(--muted); }
 .review-style-cancel:hover:not(:disabled) { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
+.review-question-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; margin-top: 16px; }
+.review-question-actions:empty { display: none; }
+.review-question-actions .review-explore-looks { display: inline-flex; align-items: center; gap: 8px; border-color: transparent; background: transparent; color: #996022; }
+.review-question-actions .review-explore-looks:hover:not(:disabled) { background: #c47b2510; border-color: transparent; text-decoration: underline; text-underline-offset: 4px; }
 .review-text-options { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
 .review-text-option { display: inline-flex; align-items: baseline; gap: 9px; max-width: 100%; padding: 13px 18px; border-radius: 7px; background: var(--panel); text-align: left; font: 19px/1.4 var(--display); box-shadow: 0 3px 10px #59442808; white-space: normal; overflow-wrap: anywhere; }
 .review-text-option:hover:not(:disabled), .review-text-option.selected { border-color: var(--amber); background: #f7eddd; }
@@ -774,7 +778,11 @@ main.start.reviewing { justify-content: flex-start; scroll-padding-bottom: calc(
 .review-compose button { flex: none; }
 .review-reference { max-width: 150px; max-height: 110px; object-fit: contain; border-radius: 3px; margin-bottom: 12px; }
 .review-chosen { display: flex; gap: 6px; align-items: center; }
-.idea-review footer { display: flex; justify-content: flex-end; align-items: center; padding: 14px 18px; position: fixed; bottom: calc(12px + env(safe-area-inset-bottom)); left: max(12px, calc((100% - 824px) / 2)); right: max(12px, calc((100% - 824px) / 2)); background: #faf6eef2; backdrop-filter: blur(12px); border: 1px solid #ded3bf; border-radius: 18px; box-shadow: 0 8px 32px #59442820, 0 1px 0 #fff inset; margin: 0; z-index: 20; gap: 14px; flex-wrap: wrap; }
+.idea-review footer { display: flex; justify-content: center; align-items: center; padding: 9px; position: fixed; bottom: calc(16px + env(safe-area-inset-bottom)); left: 50%; right: auto; transform: translateX(-50%); width: max-content; max-width: calc(100% - 24px); background: #e7ddcbcc; backdrop-filter: blur(18px); border: 1px solid #bca88740; border-radius: 32px; box-shadow: 0 8px 28px #59442816; margin: 0; z-index: 20; gap: 10px; flex-wrap: wrap; }
+.idea-review footer button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; }
+.review-spinner { width: 15px; height: 15px; flex: 0 0 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: review-spin .85s linear infinite; }
+@keyframes review-spin { to { transform: rotate(360deg); } }
+.idea-review footer button[aria-busy=true]:disabled { opacity: .85; cursor: progress; }
 .idea-review footer .ghost { border-color: transparent; color: var(--muted); font-size: 13px; }
 .idea-review footer .ghost:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
 .idea-review footer .primary { background: var(--amber); color: #fffdf7; border-color: var(--amber); padding: 13px 24px; box-shadow: 0 4px 10px #bc7a2420; }
@@ -1215,7 +1223,7 @@ button > .icon, .detail > .icon, .pick-chip > .icon { margin-right: 2px; }
   .concept-caption { padding: 10px; }
   .concept-caption strong { font-size: 19px; }
   .concept-card > button { font-size: 12px; padding: 8px 10px; margin-left: 8px; }
-  .idea-review footer { justify-content: space-between; }
+  .idea-review footer { justify-content: center; border-radius: 24px; gap: 4px; }
   .idea-review footer button { font-size: 14px; padding: 12px 16px; }
 }
 
@@ -1283,3 +1291,10 @@ button > .icon, .detail > .icon, .pick-chip > .icon { margin-right: 2px; }
   .concept-placeholder .review-sketch.compact { max-width: 100px; }
   .concept-paper-stack { width: 60px; height: 48px; margin: 4px 0; }
 }
+
+.custom-look { margin: 20px 0; }
+.custom-look .concept-edit { margin: 0; }
+.custom-look > [role=status] { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+.custom-look-preview { max-width: 480px; margin: 20px auto; text-align: center; }
+.custom-look-preview img { width: 100%; display: block; border-radius: 5px; }
+.custom-look-preview p { color: var(--muted); font-size: 14px; line-height: 1.5; }

@@ -1,3 +1,4 @@
+import { worldStyleReference } from '../world/style-reference.ts';
 // diorama paint <slug> [place...]: painting.png for each laid-out place.
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -36,6 +37,7 @@ defineCommand({
       const layout = Layout.parse(files.readJson(files.place(place.key, 'layout.json')));
       const blockin = fs.readFileSync(files.place(place.key, 'blockin.png'));
       const concept = approvedConcept(files, 'place', place.key);
+      const styleReference = worldStyleReference(files, style);
       // The first painting is kept while its block-in, layout and take stay the same, even without the model
       // cache (a world copied without memo/): a person's region repaint must not repaint the whole place.
       const hash = (words?: Words) => {
@@ -43,6 +45,7 @@ defineCommand({
         // A new wording paints the place anew; a place never reworded keeps the inputs it had.
         if (words) h.update(JSON.stringify(words));
         if (concept) h.update(concept);
+        if (styleReference) h.update(styleReference);
         return h.digest('hex');
       };
       let words = readCorrections(files.place(place.key)).words;
@@ -86,8 +89,8 @@ defineCommand({
           files.write(files.place(place.key, 'brief.json'), brief);
           try {
             first = fromPhoto
-              ? await paintPhoto(files.memo, world, told, blockin, brief, take, concept)
-              : await paintPlace(files.memo, world, told, layout, blockin, brief, take, drawingsIn(files, place), concept);
+              ? await paintPhoto(files.memo, world, told, blockin, brief, take, concept, styleReference)
+              : await paintPlace(files.memo, world, told, layout, blockin, brief, take, drawingsIn(files, place), concept, styleReference);
             break;
           } catch (error) {
             if (!refusedByFilter(error)) throw error;

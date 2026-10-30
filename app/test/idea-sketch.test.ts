@@ -1,3 +1,4 @@
+import { styleReferencePath } from '../src/world/style-reference.ts';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -149,4 +150,21 @@ test('a failed revision retries its exact inputs and a concurrent conflicting re
   await expect(runAction('idea_sketch_image', request, ctx)).resolves.toHaveProperty('image');
   expect(museEdit).toHaveBeenCalledTimes(2);
   expect(vi.mocked(museEdit).mock.calls[0][1]).toEqual(vi.mocked(museEdit).mock.calls[1][1]);
+});
+
+
+test('a chosen style reference survives planning and publication and guides preview assets', async () => {
+  const id = 'e'.repeat(32), reference = styleReferencePath(root, id);
+  fs.mkdirSync(path.dirname(reference), { recursive: true }); fs.writeFileSync(reference, png);
+  const withStyle = { ...input, choices: { ...input.choices, styleReference: id } };
+  const sketch = await runAction('idea_sketch', withStyle, ctx) as Sketch;
+  const files = sketchFiles(root, sketch.id);
+  expect(fs.readFileSync(files.path('style-reference.png'))).toEqual(png);
+  const selections = await paint(sketch);
+  expect(musePaint).not.toHaveBeenCalled();
+  for (const [, args] of vi.mocked(museEdit).mock.calls) {
+    expect(args.images).toEqual([png]); expect(args.prompt).toContain('STYLE reference only');
+  }
+  const built = await runAction('world_new', { ...withStyle, sketch: { id: sketch.id, selections } }, ctx) as { slug: string };
+  expect(fs.readFileSync(path.join(root, built.slug, 'style-reference.png'))).toEqual(png);
 });

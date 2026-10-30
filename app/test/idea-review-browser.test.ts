@@ -39,6 +39,10 @@ test('one conversational question at a time, optional looks, and explicit choice
     await page.getByRole('button', { name: 'Something else…' }).waitFor();
     expect(await page.getByRole('dialog').count()).toBe(0);
     expect(await page.getByText('Smok szuka domu', {exact:true}).count()).toBe(1);
+    await page.screenshot({ path: '/tmp/diorama-question-actions-desktop.png' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: '/tmp/diorama-question-actions-mobile.png' });
+    await page.setViewportSize({ width: 980, height: 900 });
     await page.getByRole('button', { name: 'Something else…' }).click();
     expect(await page.getByRole('textbox').count()).toBe(1);
     expect(await page.locator('fieldset').count()).toBe(0);
@@ -51,12 +55,13 @@ test('one conversational question at a time, optional looks, and explicit choice
     await page.getByRole('region', { name: 'Shape your world' }).screenshot({ path: '/tmp/diorama-idea-review-mobile.png' });
     await page.getByRole('textbox', { name: 'Your reply' }).fill('Sowy, ale smok go pożyczył. Bez walki.');
     await page.getByRole('button', { name: 'Send reply' }).click();
-    await page.getByText('Ready to build your world.').waitFor();
+    await page.getByText('Next, choose your cast and places.').waitFor();
     expect(requests[1].choices.answers).toEqual([{ question: 'Czyj to klucz?', answer: 'Sowy, ale smok go pożyczył. Bez walki.' }]);
     await page.getByRole('button', { name: 'Show me some looks' }).click();
     await page.getByRole('button', { name: /^Ołówek/ }).click();
-    expect(await page.getByRole('button', { name: 'Build my world', exact: true }).getAttribute('class')).toBe('primary');
-    await page.getByRole('button', { name: 'Build my world', exact: true }).click();
+    expect(await page.getByRole('button', { name: 'Skip & build now', exact: true }).getAttribute('class')).toBe('ghost');
+    expect(await page.getByRole('button', { name: 'Choose cast & places', exact: true }).getAttribute('class')).toBe('primary');
+    await page.getByRole('button', { name: 'Skip & build now', exact: true }).click();
     const builds = await page.evaluate(() => (window as any).builds);
     expect(builds).toEqual([{ input: { idea: 'Smok szuka domu', photos: [], videos: [] }, choices: { answers: [{ question: 'Czyj to klucz?', answer: 'Sowy, ale smok go pożyczył. Bez walki.' }], style: result.styles[0].description } }]);
     expect(JSON.stringify(builds)).not.toContain(result.understanding);
@@ -72,7 +77,14 @@ test('skip stays usable during analysis; a late result cannot start another buil
   try {
     await page.route('**/api/actions/idea_review', async r => { entered(); await wait; await r.fulfill({ json: { result } }).catch(() => {}); });
     await open(page); await requested;
-    expect(await page.getByRole('button', { name: 'Preview cast & places' }).isDisabled()).toBe(true);
+    const thinking = page.getByRole('button', { name: 'Thinking…', exact: true });
+    expect(await thinking.isDisabled()).toBe(true);
+    expect(await thinking.getAttribute('aria-busy')).toBe('true');
+    expect(await thinking.locator('.review-spinner').count()).toBe(1);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    expect(await thinking.locator('.review-spinner').evaluate(e => getComputedStyle(e).animationName)).toBe('review-spin');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    expect(await thinking.locator('.review-spinner').evaluate(e => getComputedStyle(e).animationName)).toBe('none');
     await page.setViewportSize({ width: 1100, height: 900 });
     await page.screenshot({ path: '/tmp/diorama-review-waiting-desktop.png' });
     await page.setViewportSize({ width: 390, height: 844 });
@@ -126,7 +138,7 @@ test('skip during a follow-up keeps the answer already given', async () => {
     await open(page);
     await page.getByRole('button', { name: 'Sowy', exact: true }).click();
     await page.getByText('Got it. One moment…').waitFor();
-    expect(await page.getByRole('button', { name: 'Preview cast & places' }).isDisabled()).toBe(true);
+    expect(await page.getByRole('button', { name: 'Thinking…', exact: true }).isDisabled()).toBe(true);
     await page.getByRole('button', { name: 'Skip & build' }).click();
     expect(await page.evaluate(() => (window as any).builds[0].choices)).toEqual({ answers: [{ question: 'Czyj to klucz?', answer: 'Sowy' }] });
   } finally { release(); await page.close(); }
@@ -139,16 +151,17 @@ test('a quick reply advances and the conversation stops after one follow-up', as
     await page.route('**/api/actions/idea_review', r => { calls++; return r.fulfill({ json: { result: calls === 1 ? result : { ...result, questions: [{ question: 'Co otwiera?', why: '', options: ['Dom', 'Skrzynię'] }] } } }); });
     await open(page);
     await page.getByRole('button', { name: 'Sowy', exact: true }).waitFor();
-    expect(await page.getByRole('button', { name: 'Preview cast & places' }).isDisabled()).toBe(true);
+    expect(await page.getByRole('button', { name: 'Choose cast & places' }).isDisabled()).toBe(true);
+    expect(await page.locator('footer .review-spinner').count()).toBe(0);
     await page.getByRole('button', { name: 'Sowy', exact: true }).click();
     await page.getByRole('button', { name: 'Dom', exact: true }).waitFor();
-    expect(await page.getByRole('button', { name: 'Preview cast & places' }).isDisabled()).toBe(true);
+    expect(await page.getByRole('button', { name: 'Choose cast & places' }).isDisabled()).toBe(true);
     await page.getByRole('button', { name: 'Dom', exact: true }).click();
-    await page.getByRole('button', { name: 'Build my world', exact: true }).waitFor();
-    expect(await page.getByRole('button', { name: 'Preview cast & places' }).isEnabled()).toBe(true);
+    await page.getByRole('button', { name: 'Skip & build now', exact: true }).waitFor();
+    expect(await page.getByRole('button', { name: 'Choose cast & places' }).isEnabled()).toBe(true);
     expect(calls).toBe(2);
     expect(await page.getByRole('textbox').count()).toBe(0);
-    await page.getByRole('button', { name: 'Build my world', exact: true }).click();
+    await page.getByRole('button', { name: 'Skip & build now', exact: true }).click();
     expect((await page.evaluate(() => (window as any).builds[0].choices.answers)).length).toBe(2);
   } finally { await page.close(); }
 });
@@ -184,7 +197,7 @@ test('world storyboard keeps alternatives selectable and builds only the approve
       return r.fulfill({ json: { result: { image } } });
     });
     await open(page);
-    await page.getByRole('button', { name: 'Preview cast & places' }).click();
+    await page.getByRole('button', { name: 'Choose cast & places' }).click();
     await page.getByRole('button', { name: 'Build this version' }).waitFor();
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('.idea-storyboard button.primary')!.disabled);
     expect(await page.evaluate(() => (window as any).builds)).toEqual([]);
@@ -220,9 +233,10 @@ test('a failed storyboard image prevents approval but skip still builds with the
     await page.route('**/api/actions/idea_sketch_image', r => r.fulfill({ status: 502, json: { error: 'Image service unavailable' } }));
     await open(page);
     await page.getByRole('button', { name: 'Sowy', exact: true }).click();
-    await page.getByRole('button', { name: 'Preview cast & places' }).click();
+    await page.getByRole('button', { name: 'Choose cast & places' }).click();
     await page.getByRole('button', { name: 'Retry preview' }).waitFor();
     expect(await page.getByRole('button', { name: 'Build this version' }).isDisabled()).toBe(true);
+    await expect.poll(() => page.locator('footer .review-spinner').count()).toBe(0);
     await page.getByRole('button', { name: 'Skip & build' }).click();
     expect(await page.evaluate(() => (window as any).builds[0])).toEqual({ input: { idea: 'Smok szuka domu', photos: [], videos: [] }, choices: { answers: [{ question: 'Czyj to klucz?', answer: 'Sowy' }] } });
   } finally { await page.close(); }
@@ -301,7 +315,7 @@ test('free-text answers can be edited; cancelling or choosing the same answer ke
     await page.getByRole('button', { name: 'Change answer: Czyj to klucz?' }).click();
     await page.getByRole('textbox', { name: 'Change your reply', exact: true }).fill('To klucz babci.');
     await page.getByRole('button', { name: 'Save change' }).click();
-    await page.getByRole('button', { name: 'Preview cast & places' }).click();
+    await page.getByRole('button', { name: 'Choose cast & places' }).click();
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('.idea-storyboard button.primary')!.disabled);
     for (const same of [false, true]) {
       await page.getByRole('button', { name: 'Change answer: Czyj to klucz?' }).click();
@@ -326,12 +340,12 @@ test('changing the chosen style from the storyboard invalidates its approval and
     await page.getByRole('button', { name: 'Show me some looks' }).click();
     await page.getByRole('button', { name: 'Ołówek', exact: true }).click();
     await page.getByRole('region', { name: 'Chosen look' }).locator('img').waitFor();
-    await page.getByRole('button', { name: 'Preview cast & places' }).click();
+    await page.getByRole('button', { name: 'Choose cast & places' }).click();
     await page.getByRole('button', { name: 'Build this version' }).waitFor();
     await page.getByRole('button', { name: 'Change look' }).click();
     await page.getByRole('button', { name: 'Papierowa wycinanka', exact: true }).click();
     expect(await page.getByRole('button', { name: 'Build this version' }).count()).toBe(0);
-    await page.getByRole('button', { name: 'Preview cast & places' }).click();
+    await page.getByRole('button', { name: 'Choose cast & places' }).click();
     await page.getByRole('button', { name: 'Build this version' }).waitFor();
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('.idea-storyboard button.primary')!.disabled);
     expect(previews.map(p => p.choices.style)).toEqual(result.styles.map(s => s.description));
@@ -354,7 +368,7 @@ test('a preview enlarges and accepts pasted visual direction; retries preserve t
       return r.fulfill({ json: { result: { image: body.take ? picture(480, '#c78132') : small, largeImage: body.take ? picture(1600, '#c78132') : large, nextTake: body.take + 1 } } });
     });
     await open(page);
-    await page.getByRole('button', { name: 'Preview cast & places' }).click();
+    await page.getByRole('button', { name: 'Choose cast & places' }).click();
     const dragon = page.getByRole('article', { name: 'Smok', exact: true });
     await dragon.getByRole('button', { name: 'Enlarge Smok' }).click();
     const box = page.getByRole('dialog', { name: 'Picture' });
@@ -429,10 +443,101 @@ test('text story choices make no images, mix with visual follow-ups and stay edi
     expect(await history.getByRole('button', { name: first.options[0], exact: true }).getAttribute('aria-pressed')).toBe('true');
     await history.getByRole('button', { name: `Change answer: ${first.question}` }).click();
     await history.getByRole('button', { name: first.options[1], exact: true }).click();
-    await page.getByRole('button', { name: 'Build my world', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Skip & build now', exact: true }).waitFor();
     expect(reviews.at(-1).choices.answers).toEqual([{ question: first.question, answer: first.options[1] }]);
     expect(images).toHaveLength(2);
-    await page.getByRole('button', { name: 'Build my world', exact: true }).click();
+    await page.getByRole('button', { name: 'Skip & build now', exact: true }).click();
     expect(await page.evaluate(() => (window as any).builds[0].choices.answers)).toEqual([{ question: first.question, answer: first.options[1] }]);
+  } finally { await page.close(); }
+});
+
+test.each(['choose', 'dismiss', 'build'])('an all-text conversation offers looks automatically without blocking build: %s', async action => {
+  const page = await browser.newPage({ viewport: { width: 1100, height: 1000 } });
+  const images: unknown[] = [];
+  const first = { question: 'Dlaczego pasażer wraca?', why: '', presentation: 'text', options: ['Szuka przyjaciela', 'Chce odzyskać wspomnienie'] };
+  const second = { question: 'Komu zaufa?', why: '', presentation: 'text', options: ['Motorniczemu', 'Nieznajomej'] };
+  page.on('request', r => { if (r.url().endsWith('/idea_preview')) images.push(r.postDataJSON()); });
+  try {
+    await page.route('**/api/actions/idea_review', r => r.fulfill({ json: { result: { ...result, questions: [r.request().postDataJSON().choices ? second : first] } } }));
+    await open(page);
+    await page.getByRole('button', { name: first.options[0], exact: true }).click();
+    await page.getByRole('button', { name: second.options[0], exact: true }).waitFor();
+    expect(images).toHaveLength(0);
+    await page.getByRole('button', { name: second.options[0], exact: true }).click();
+    const looks = page.getByRole('region', { name: 'Looks for your world' });
+    await looks.waitFor();
+    await expect.poll(() => images.length).toBe(2);
+    expect(await page.getByRole('button', { name: 'Skip & build now', exact: true }).isEnabled()).toBe(true);
+    expect(await page.getByRole('button', { name: 'Choose cast & places', exact: true }).isEnabled()).toBe(true);
+    if (action === 'choose') {
+      await looks.locator('.idea-card img').first().waitFor();
+      await page.screenshot({ path: '/tmp/diorama-automatic-looks.png' });
+      await looks.getByRole('button', { name: result.styles[0].title, exact: true }).click();
+      await page.getByRole('region', { name: 'Chosen look' }).waitFor();
+    } else if (action === 'dismiss') {
+      await looks.getByRole('button', { name: 'Not now', exact: true }).click();
+      expect(await looks.count()).toBe(0);
+      await page.getByText('Next, choose your cast and places.').waitFor();
+      expect(images).toHaveLength(2);
+    }
+    await page.getByRole('button', { name: 'Skip & build now', exact: true }).click();
+    const choices = await page.evaluate(() => (window as any).builds[0].choices);
+    expect(choices.answers).toEqual([{ question: first.question, answer: first.options[0] }, { question: second.question, answer: second.options[0] }]);
+    expect(choices.style).toBe(action === 'choose' ? result.styles[0].description : undefined);
+  } finally { await page.close(); }
+});
+
+test.each([false, true])('a custom style is previewed, explicitly selected and passed to cast planning (reference: %s)', async reference => {
+  const page = await browser.newPage({ viewport: { width: 1100, height: 1000 } });
+  const requests: any[] = [], previewRequests: any[] = [], plans: any[] = [];
+  const style = 'Cobalt ink on rough paper with warm lantern light.';
+  const referenceId = 'f'.repeat(32), sketchId = 'a'.repeat(32);
+  try {
+    await page.route('**/api/actions/idea_review', r => r.fulfill({ json: { result: { ...result, questions: [], styles: [] } } }));
+    await page.route('**/api/actions/idea_style', r => { requests.push(r.request().postDataJSON()); return r.fulfill({ json: { result: { title: 'My blue ink', description: style, ...(reference && { reference: referenceId }) } } }); });
+    await page.route('**/api/actions/idea_sketch', r => { plans.push(r.request().postDataJSON()); return r.fulfill({ json: { result: { id: sketchId, title: 'Blue tram', pitch: 'An owl catches a tram', assets: [{ kind: 'character', key: 'owl', label: 'Owl', role: 'hero', looks: 'A round owl' }] } } }); });
+    await page.route('**/api/actions/idea_sketch_image', r => r.fulfill({ json: { result: { image: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="360"><rect width="480" height="360" fill="#789"/></svg>') } } }));
+    page.on('request', r => { if (r.url().endsWith('/idea_preview')) previewRequests.push(r.postDataJSON()); });
+    await open(page);
+    await page.getByRole('button', { name: 'My own style…', exact: true }).click();
+    const editor = page.getByRole('region', { name: 'Your own style' });
+    const words = editor.getByRole('textbox', { name: 'Changes for your style' });
+    await words.fill(style);
+    if (reference) {
+      await words.evaluate(el => {
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 20;
+        canvas.getContext('2d')!.fillRect(0, 0, 20, 20);
+        const bytes = Uint8Array.from(atob(canvas.toDataURL().split(',')[1]), c => c.charCodeAt(0));
+        const data = new DataTransfer(); data.items.add(new File([bytes], 'ink.png', { type: 'image/png' }));
+        el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+      });
+      await editor.getByAltText('Your reference').waitFor();
+    }
+    await editor.getByRole('button', { name: 'Preview my style' }).click();
+    await editor.getByRole('button', { name: 'Use this style' }).waitFor();
+    expect(await page.getByRole('region', { name: 'Chosen look' }).count()).toBe(0);
+    expect(requests[0]).toMatchObject({ words: style });
+    expect(!!requests[0].reference).toBe(reference);
+    expect(previewRequests[0].styleReference).toBe(reference ? referenceId : undefined);
+    // A changed draft must not silently select the older generated result.
+    await words.fill(style + ' Softer shadows.');
+    await editor.getByRole('button', { name: 'Use this style' }).waitFor({ state: 'detached' });
+    await editor.getByRole('button', { name: 'Preview my style' }).click();
+    await editor.getByRole('button', { name: 'Use this style' }).waitFor();
+    await page.screenshot({ path: `/tmp/diorama-custom-style-${reference}.png` });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await editor.getByRole('button', { name: 'Use this style' }).scrollIntoViewIfNeeded();
+    expect(await page.locator('.idea-review').evaluate(e => e.scrollWidth <= e.clientWidth)).toBe(true);
+    await page.screenshot({ path: '/tmp/diorama-custom-style-mobile.png' });
+    await editor.getByRole('button', { name: 'Use this style' }).click();
+    await page.getByRole('region', { name: 'Chosen look' }).waitFor();
+    await page.setViewportSize({ width: 1100, height: 1000 });
+    await page.screenshot({ path: '/tmp/diorama-style-next-step.png' });
+    await page.getByRole('button', { name: 'Choose cast & places', exact: true }).click();
+    await page.getByRole('article', { name: 'Owl', exact: true }).waitFor();
+    expect(plans[0].choices).toEqual({ answers: [], style, ...(reference && { styleReference: referenceId }) });
+    expect(await page.evaluate(() => (window as any).builds)).toEqual([]);
+    await page.getByRole('button', { name: 'Build this version' }).click();
+    expect(await page.evaluate(() => (window as any).builds[0])).toMatchObject({ choices: plans[0].choices, sketch: { id: sketchId, selections: { 'character:owl': 0 } } });
   } finally { await page.close(); }
 });

@@ -45,3 +45,24 @@ test('layout uses the approved composition but still repairs invalid walkable fl
   expect(vi.mocked(askSparkJson).mock.calls[2][1].images).toEqual([photo]);
   expect(vi.mocked(askSparkJson).mock.calls[2][1].prompt).toContain('Do not place anything; measure');
 });
+
+
+test('style references reach cast and backgrounds without taking over approved composition or identity', async () => {
+  const png = await sharp({ create: { width: 24, height: 32, channels: 4, background: '#5588cc' } }).png().toBuffer();
+  const concept = await sharp(png).tint('green').png().toBuffer();
+  const styleReference = await sharp(png).tint('red').png().toBuffer();
+  vi.mocked(museEdit).mockReset().mockResolvedValue(png); vi.mocked(musePaint).mockReset();
+  vi.mocked(samFind).mockResolvedValue([{ mask: { width: 24, height: 32, bits: new Uint8Array(24 * 32).fill(1) }, score: 1 }] as any);
+  const memo = new Memo('/tmp/unused-style-references');
+  await paintFigure(memo, world, world.hero, 0, { concept, styleReference });
+  expect(vi.mocked(museEdit).mock.calls[0][1]).toMatchObject({ images: [concept, styleReference], prompt: expect.stringContaining('second-to-last image is the creator-approved') });
+  await paintFigure(memo, world, world.hero, 0, { styleReference });
+  expect(vi.mocked(museEdit).mock.calls[1][1].images).toEqual([styleReference]);
+  const layout: Layout = { horizon: 300, sky: '#ffffff', ground: '#eeeeee', floors: [{ key: 'yard', is: 'grass', colour: '#00aa00', outline: [[0, 896], [0, 400], [1200, 400], [1200, 896]] }], things: [], lights: [] };
+  await paintPlace(memo, world, world.places[0], layout, png, undefined, 0, [{ key: 'home', image: png }], concept, styleReference);
+  expect(vi.mocked(museEdit).mock.calls[2][1]).toMatchObject({ images: [png, png, styleReference, concept], prompt: expect.stringContaining('Image 3:') });
+  await paintPhoto(memo, world, world.places[0], png, undefined, 0, concept, styleReference);
+  expect(vi.mocked(museEdit).mock.calls[3][1].images).toEqual([png, concept, styleReference]);
+  for (const [, args] of vi.mocked(museEdit).mock.calls) expect(args.prompt).toContain('STYLE reference only');
+  expect(musePaint).not.toHaveBeenCalled();
+});

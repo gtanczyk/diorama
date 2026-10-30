@@ -4,8 +4,8 @@ import { shrink } from './camera.tsx';
 export type ConceptChange = { change?: string; reference?: { name: string; data: string } };
 
 /** A small conversation beside the picture, rather than another setup form. */
-export function ConceptEdit({ label, disabled, onGenerate, onClose }: {
-  label: string; disabled: boolean; onGenerate: (change: ConceptChange) => void; onClose: () => void;
+export function ConceptEdit({ label, disabled, onGenerate, onClose, onDraftChange, purpose = 'change' }: {
+  label: string; disabled: boolean; purpose?: 'change' | 'style'; onGenerate: (change: ConceptChange) => void; onClose: () => void; onDraftChange?: () => void;
 }) {
   const [words, setWords] = useState('');
   const [reference, setReference] = useState<ConceptChange['reference']>();
@@ -14,6 +14,7 @@ export function ConceptEdit({ label, disabled, onGenerate, onClose }: {
   const picker = useRef<HTMLInputElement>(null);
   const form = useRef<HTMLFormElement>(null);
   const uploading = useRef(false);
+  useEffect(() => { onDraftChange?.(); }, [words, reference]);
   useEffect(() => {
     form.current?.querySelector('textarea')?.focus({ preventScroll: true });
     form.current?.scrollIntoView({ block: 'center', behavior: 'instant' });
@@ -36,11 +37,11 @@ export function ConceptEdit({ label, disabled, onGenerate, onClose }: {
     const file = [...(e.clipboardData?.files ?? [])].find(f => f.type.startsWith('image/'));
     if (file) { e.preventDefault(); void add(file); }
   }}>
-    <label>What would you change?<textarea autoFocus aria-label={`Changes for ${label}`} value={words} maxLength={1200} rows={3} disabled={disabled} placeholder="A bigger hat, warmer colours…" onInput={e => setWords(e.currentTarget.value)} /></label>
-    <p>Describe the picture, or paste a reference here.</p>
+    <label>{purpose === 'style' ? 'What should your world look like?' : 'What would you change?'}<textarea autoFocus aria-label={`Changes for ${label}`} value={words} maxLength={purpose === 'style' ? 500 : 1200} rows={3} disabled={disabled} placeholder={purpose === 'style' ? 'Blue ink, grainy paper, warm lantern light…' : 'A bigger hat, warmer colours…'} onInput={e => setWords(e.currentTarget.value)} /></label>
+    <p>{purpose === 'style' ? 'Describe a look, or paste a picture for its colours and textures.' : 'Describe the picture, or paste a reference here.'}</p>
     {reference && <div class="concept-reference"><button type="button" class="ghost bare" data-lightbox={reference.data} aria-label="Enlarge reference"><img src={reference.data} alt="Your reference" /></button><button type="button" class="ghost small" disabled={disabled || reading} onClick={() => setReference(undefined)}>Remove</button></div>}
     <input hidden ref={picker} type="file" accept="image/*" aria-label={`Reference for ${label}`} onChange={e => { void add(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} />
-    <div class="concept-edit-tools"><button type="button" class="ghost small" disabled={disabled || reading} onClick={() => picker.current?.click()}>{reading ? 'Reading picture…' : '+ Picture'}</button><button type="button" class="ghost small" disabled={disabled || reading} onClick={onClose}>Cancel</button><button type="submit" class="primary small" disabled={disabled || reading || !words.trim() && !reference}>Regenerate</button></div>
+    <div class="concept-edit-tools"><button type="button" class="ghost small" disabled={disabled || reading} onClick={() => picker.current?.click()}>{reading ? 'Reading picture…' : '+ Picture'}</button><button type="button" class="ghost small" disabled={disabled || reading} onClick={onClose}>Cancel</button><button type="submit" class="primary small" disabled={disabled || reading || !words.trim() && !reference}>{purpose === 'style' ? disabled ? 'Preparing your style…' : 'Preview my style' : 'Regenerate'}</button></div>
     {error && <p class="error" role="alert">{error}</p>}
   </form>;
 }

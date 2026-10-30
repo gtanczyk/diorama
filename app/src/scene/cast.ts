@@ -1,3 +1,4 @@
+import { STYLE_REFERENCE_PROMPT } from '../world/style-reference.ts';
 // The hero and every NPC as one painted figure each: Muse paints them alone on a plain ground, SAM cuts them out.
 import sharp from 'sharp';
 import type { Mask } from '../image/mask.ts';
@@ -78,21 +79,25 @@ Plain flat light grey background, no paper, no table, no written name, no floor,
  * that comes out sitting, lying or cut off is painted once more, as a seated painting makes a seated walker and a
  * 3D model with the chair grown into it.
  */
-export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, from?: { photo?: Buffer; standing?: boolean; drawing?: Buffer; concept?: Buffer; restyle?: { painting: Buffer; was: string } }, upright = false): Promise<{ painting: Buffer; figure: Buffer }> {
+export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, from?: { photo?: Buffer; standing?: boolean; drawing?: Buffer; concept?: Buffer; styleReference?: Buffer; restyle?: { painting: Buffer; was: string } }, upright = false): Promise<{ painting: Buffer; figure: Buffer }> {
+  const edit = (args: Parameters<typeof museEdit>[1]) => museEdit(memo, from?.styleReference ? {
+    ...args, prompt: args.prompt.replace('The LAST image is the creator-approved', 'The second-to-last image is the creator-approved') + '\nThe LAST image: ' + STYLE_REFERENCE_PROMPT,
+    images: [...args.images, from.styleReference],
+  } : args);
   let fallback: { painting: Buffer; figure: Buffer; why: string } | undefined;
   // A take SAM finds no one in (a drawing painted back as loose scribble) is painted once more before giving up.
   for (const t of [take, take + 1]) {
     const painting = from?.restyle
-      ? await museEdit(memo, { label: `figure:${who.key}:restyle`, prompt: restyleFigurePrompt(who.looks, from.restyle.was, world.style, !!from.drawing), images: [from.restyle.painting, ...(from.drawing ? [from.drawing] : [])], take: t })
+      ? await edit({ label: `figure:${who.key}:restyle`, prompt: restyleFigurePrompt(who.looks, from.restyle.was, world.style, !!from.drawing), images: [from.restyle.painting, ...(from.drawing ? [from.drawing] : [])], take: t })
       : from?.concept
-      ? await museEdit(memo, { label: `figure:${who.key}:approved`, prompt: (from.photo ? from.standing ? photoPrompt(world) : photoStandPrompt(world, who) : from.drawing ? drawingPrompt(world, who) : figurePrompt(world, who)) + '\nThe LAST image is the creator-approved character concept. Keep that identity: face, silhouette, proportions, clothing, markings and colours. Any earlier image is the original source drawing or photo: keep the person or drawn character recognizable. Adapt pose and background only as instructed above. The current written style and any explicit appearance edits take precedence over the old concept.', images: [...(from.photo ? [from.photo] : from.drawing ? [from.drawing] : []), from.concept], take: t })
+      ? await edit({ label: `figure:${who.key}:approved`, prompt: (from.photo ? from.standing ? photoPrompt(world) : photoStandPrompt(world, who) : from.drawing ? drawingPrompt(world, who) : figurePrompt(world, who)) + '\nThe LAST image is the creator-approved character concept. Keep that identity: face, silhouette, proportions, clothing, markings and colours. Any earlier image is the original source drawing or photo: keep the person or drawn character recognizable. Adapt pose and background only as instructed above. The current written style and any explicit appearance edits take precedence over the old concept.', images: [...(from.photo ? [from.photo] : from.drawing ? [from.drawing] : []), from.concept], take: t })
       : from?.photo
       ? from.standing
-        ? await museEdit(memo, { label: `figure:${who.key}:photo`, prompt: photoPrompt(world), images: [await sharp(from.photo).rotate().png().toBuffer()], take: t })
-        : await museEdit(memo, { label: `figure:${who.key}:photo-stand`, prompt: photoStandPrompt(world, who), images: [await sharp(from.photo).rotate().png().toBuffer()], take: t })
+        ? await edit({ label: `figure:${who.key}:photo`, prompt: photoPrompt(world), images: [await sharp(from.photo).rotate().png().toBuffer()], take: t })
+        : await edit({ label: `figure:${who.key}:photo-stand`, prompt: photoStandPrompt(world, who), images: [await sharp(from.photo).rotate().png().toBuffer()], take: t })
       : from?.drawing
-        ? await museEdit(memo, { label: `figure:${who.key}:drawing`, prompt: drawingPrompt(world, who), images: [from.drawing], take: t })
-        : await musePaint(memo, { label: `figure:${who.key}`, prompt: figurePrompt(world, who), take: t });
+        ? await edit({ label: `figure:${who.key}:drawing`, prompt: drawingPrompt(world, who), images: [from.drawing], take: t })
+        : (from?.styleReference ? await edit({ label: `figure:${who.key}`, prompt: figurePrompt(world, who), images: [], take: t }) : await musePaint(memo, { label: `figure:${who.key}`, prompt: figurePrompt(world, who), take: t }));
     const png = await sharp(painting).png().toBuffer();
     // Not every character is a person (a flock of pigeons, a cat): SAM is asked by their own description next.
     let found: Awaited<ReturnType<typeof samFind>> = [];
