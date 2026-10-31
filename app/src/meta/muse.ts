@@ -19,11 +19,25 @@ export function imageVia(): string | null {
 
 type MuseAsk = { label: string; prompt: string; size?: string; /** Changes only the memo key, to get a new take. */ take?: number };
 
+/** The picture behind a URL answer, its download retried like the request was (a dropped connection, a 5xx). */
+async function fetchImage(url: string): Promise<Buffer> {
+  for (let n = 1; ; n++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+      if (res.ok) return Buffer.from(await res.arrayBuffer());
+      if (res.status < 500 || n >= 6) throw new Error(`image download: ${res.status}`);
+    } catch (error) {
+      if (n >= 6 || (error instanceof Error && error.message.startsWith('image download:'))) throw error;
+    }
+    await new Promise((r) => setTimeout(r, Math.min(30_000, 1000 * 2 ** n)));
+  }
+}
+
 async function firstImage(res: Response, label: string): Promise<Buffer> {
   const body = (await res.json()) as { data?: { b64_json?: string; url?: string }[] };
   const item = body.data?.[0];
   if (item?.b64_json) return Buffer.from(item.b64_json, 'base64');
-  if (item?.url) return Buffer.from(await (await fetch(item.url)).arrayBuffer());
+  if (item?.url) return fetchImage(item.url);
   throw new Error(`muse ${label}: no image in the answer`);
 }
 
