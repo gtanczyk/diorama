@@ -18,6 +18,8 @@ export class MetaHttpError extends Error {
 
 const TRANSIENT = new Set([408, 409, 429, 500, 502, 503, 504]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Tries for a request whose connection dropped: 2+4+8+16+30+30+30+30 s of waiting. */
+const OFFLINE_TRIES = 9;
 
 /**
  * How long one try may take before it is given up and tried again. Without a limit a stalled request waits for the
@@ -57,7 +59,7 @@ async function inLane<T>(lane: string, work: () => Promise<T>): Promise<T> {
   }
 }
 
-/** POSTs JSON. Rate limits, server errors, network drops and stalls are retried with backoff (2, 4, 8 s). */
+/** POSTs JSON. Rate limits, server errors and stalls are retried with backoff (2, 4, 8 s); network drops for longer. */
 export async function metaPost(route: string, body: unknown, accept?: string): Promise<Response> {
   const tries = 4;
   const limit = patience(route, body);
@@ -81,10 +83,13 @@ export async function metaPost(route: string, body: unknown, accept?: string): P
       if (error instanceof MetaHttpError && !TRANSIENT.has(error.status)) throw error;
       failure = error;
     }
-    if (n === tries) throw failure;
+    // A dropped connection (Wi-Fi gone, the laptop dozing: "fetch failed") gets longer: up to ~3 min in all, so a
+    // short outage does not cost a place its painting.
+    const offline = failure instanceof TypeError || (failure instanceof Error && /fetch failed|ECONNRESET|ENOTFOUND|EAI_AGAIN|socket/i.test(failure.message));
+    if (n >= (offline ? OFFLINE_TRIES : tries)) throw failure;
     // Said in the job log, so a slow step shows why.
     const why = failure instanceof Error && failure.name === 'TimeoutError' ? `no answer in ${limit / 1000} s` : failure instanceof Error ? failure.message.slice(0, 120) : String(failure);
     console.log(`  POST ${route}: ${why}; trying again (${n + 1}/${tries})`);
-    await sleep(1000 * 2 ** n);
+    await sleep(Math.min(30_000, 1000 * 2 ** n));
   }
 }

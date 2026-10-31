@@ -86,6 +86,24 @@ defineCommand({
     const log = (fs.existsSync(logFile) ? files.readJson(logFile) : { steps: {} }) as { steps: Record<string, unknown>; places?: Report[]; repairs?: Array<Repair & { at: string }> };
     // A place whose step threw is set aside with why; the other places go on, and so do the world's own steps.
     const broken = new Map<string, { step: Step; error: string }>();
+    const placeStep = async (step: Step, place: string) => {
+      // A place step that lost the network (every retry of a request failed: "fetch failed") gets the step
+      // again after a pause, twice, before the place is set aside: an outage of a few minutes costs time, not a place.
+      for (let again = 0; ; again++) {
+        try {
+          await registry.get(step)!.run([slug, place]);
+          return;
+        } catch (reason) {
+          const error = reason instanceof Error ? reason.message : String(reason);
+          if (again < 2 && /fetch failed|ECONNRESET|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(error)) {
+            console.log(`${place}: ${step} lost the network (${error.slice(0, 80)}); trying the step again in ${60 * (again + 1)} s`);
+            await new Promise((r) => setTimeout(r, 60_000 * (again + 1)));
+            continue;
+          }
+          throw reason;
+        }
+      }
+    };
     /** Runs a place step for one place; a place that throws is set aside, the others go on. */
     const runPlace = async (step: Step, place: string) => {
       // A place an earlier job left unfinished (its paint refused, say) is set aside at the step it never got past,
@@ -98,7 +116,7 @@ defineCommand({
         return;
       }
       try {
-        await registry.get(step)!.run([slug, place]);
+        await placeStep(step, place);
       } catch (reason) {
         const error = reason instanceof Error ? reason.message : String(reason);
         broken.set(place, { step, error });
