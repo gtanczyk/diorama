@@ -690,6 +690,10 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .bell:not(.loud) b { background: var(--amber); }
 .bell-pop { position: absolute; right: 0; top: calc(100% + 8px); width: 360px; max-height: 70vh; overflow: auto; z-index: 20; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 18px 44px rgba(60, 40, 20, 0.18); padding: 6px; }
 .bell-pop .detail { padding: 10px; margin: 0; }
+.bell-row { display: flex; align-items: center; gap: 2px; }
+.bell-row .bell-item { flex: 1; min-width: 0; }
+.bell-x { flex: none; align-self: flex-start; margin-top: 8px; }
+.bell-clear { display: block; margin: 4px 6px 4px auto; }
 .bell-item { display: flex; gap: 10px; align-items: center; padding: 9px; border-radius: 8px; color: var(--text); text-decoration: none; font-size: 13.5px; }
 .bell-item:hover { background: var(--bg); }
 .bell-item .th { width: 48px; height: 36px; border-radius: 4px; flex: none; background: var(--raised) center / cover; }

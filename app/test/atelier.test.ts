@@ -208,6 +208,20 @@ test('an acknowledged completion stays read after a page reload', async () => {
   } finally { await page.close(); }
 }, 30_000);
 
+test('a finished job can be dismissed from the bell with its cross and stays dismissed after a reload', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+  try {
+    await open(page);
+    const job = studio.jobs.start('w', ['test', 'w'], 'Dismiss test', 'user'); await studio.jobs.wait(job.id);
+    await expect.poll(() => page.locator('.bell').getAttribute('aria-label')).toBe('Notifications: 1');
+    await page.locator('.bell').click(); await page.locator('.bell-x').first().click();
+    await expect.poll(() => page.locator('.bell').getAttribute('aria-label')).toBe('Notifications');
+    expect(await page.locator('.bell-pop').isVisible()).toBe(true);
+    await page.reload(); await page.locator('.convo header h1').waitFor();
+    await expect.poll(() => page.locator('.bell').getAttribute('aria-label')).toBe('Notifications');
+  } finally { await page.close(); }
+}, 30_000);
+
 test.each([true, false])('opening keeps the creator idea separate from model instructions (reviewed: %s)', async reviewed => {
   const slug = reviewed ? 'reviewed-opening' : 'legacy-opening';
   const dir = path.join(root, slug);

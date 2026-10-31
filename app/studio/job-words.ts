@@ -23,3 +23,11 @@ export function jobWords(label: string): string {
   if (STEP_WORDS[label]) return STEP_WORDS[label];
   return label.replace(/\b[a-z0-9]+(?:-[a-z0-9]+)+\b/g, (k) => name(k));
 }
+
+/** A finished job in the past tense, for the bell's "is ready": "Repaired Stand, rebuilt from painting", not what it was doing. */
+export function doneWords(label: string): string {
+  let m: RegExpExecArray | null;
+  if ((m = /^fix (\S+) from (\S+)/.exec(label))) return `Repaired ${name(m[1])}: rebuilt from ${stepWords(m[2]).replace(/^planning the places$/, 'the plan')}`;
+  if (/^build\b/.test(label)) return 'Built the world';
+  return `Finished: ${jobWords(label)}`;
+}

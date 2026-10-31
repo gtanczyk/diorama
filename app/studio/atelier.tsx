@@ -5,7 +5,7 @@ import { signal } from '@preact/signals';
 import { useEffect, useState } from 'preact/hooks';
 import { call, fileUrl, follow } from './api.ts';
 import { go, route } from './nav.ts';
-import { jobWords, stepWords } from './job-words.ts';
+import { doneWords, jobWords, stepWords } from './job-words.ts';
 
 /** The Diorama mark: an arched opening onto painted layers, a moon and the ground you walk on. */
 export function Logo({ size = 28 }: { size?: number }) {
@@ -39,6 +39,24 @@ function readSeen(): Record<string, number> {
     return {};
   }
 }
+/** Bell notes put away by hand, per world: the note's words. The same note stays away; a new one (other words) shows again. */
+const dismissed = signal<Record<string, string>>(readDismissed());
+function readDismissed(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem('diorama.dismissed') ?? '{}') as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+function dismiss(slug: string, note: string) {
+  dismissed.value = { ...dismissed.value, [slug]: note };
+  try {
+    localStorage.setItem('diorama.dismissed', JSON.stringify(dismissed.value));
+  } catch {
+    // A private window keeps it for this visit only.
+  }
+}
+
 function markSeen(slug: string) {
   seen.value = { ...seen.value, [slug]: Date.now() };
   try {
@@ -178,10 +196,13 @@ export function Bell() {
   }, [open]);
   const list = worlds.value ?? [];
   const items = [
-    ...list.flatMap((w) => (needs(w) ? [{ w, kind: 'needs', text: needs(w)! }] : [])),
+    ...list.flatMap((w) => (needs(w) && dismissed.value[w.slug] !== `needs:${needs(w)}` ? [{ w, kind: 'needs', text: needs(w)! }] : [])),
     ...list.flatMap((w) => { const b = busy.value[w.slug]; return b ? [{ w, kind: 'busy', text: busyWords(b) }] : []; }),
-    ...list.flatMap((w) => { const e = ended.value[w.slug]; return e?.ok && !busy.value[w.slug] && e.at > (seen.value[w.slug] ?? 0) ? [{ w, kind: 'done', text: `Finished: ${jobWords(e.label)}` }] : []; }),
+    ...list.flatMap((w) => { const e = ended.value[w.slug]; return e?.ok && !busy.value[w.slug] && e.at > (seen.value[w.slug] ?? 0) ? [{ w, kind: 'done', text: doneWords(e.label) }] : []; }),
   ];
+  // A note that waits for you, or a finished job, can be put away; a build in progress is live and stays.
+  const put = (i: (typeof items)[number]) => (i.kind === 'done' ? markSeen(i.w.slug) : dismiss(i.w.slug, `needs:${i.text}`));
+  const away = items.filter((i) => i.kind !== 'busy');
   const loud = items.filter((i) => i.kind !== 'busy').length;
   return (
     <div class="bell-wrap">
@@ -192,12 +213,19 @@ export function Bell() {
       {open && (
         <div class="bell-pop" role="menu">
           {items.length === 0 && <p class="detail">Nothing building, nothing waiting for you.</p>}
-          {items.map(({ w, kind, text }) => (
-            <a href={`/w/${w.slug}`} class={`bell-item ${kind}`} onClick={(e) => (e.preventDefault(), markSeen(w.slug), setOpen(false), go(`/w/${w.slug}`))}>
-              <span class="th" style={w.cover ? { backgroundImage: `url("${fileUrl(w.slug, w.cover.file, w.cover.v)}")` } : undefined} />
-              <span><strong>{w.title}</strong> {kind === 'needs' ? 'needs you' : kind === 'busy' ? 'is building' : 'is ready'}<small>{text}</small></span>
-            </a>
-          ))}
+          {items.map((i) => {
+            const { w, kind, text } = i;
+            return (
+              <div class="bell-row">
+                <a href={`/w/${w.slug}`} class={`bell-item ${kind}`} onClick={(e) => (e.preventDefault(), markSeen(w.slug), setOpen(false), go(`/w/${w.slug}`))}>
+                  <span class="th" style={w.cover ? { backgroundImage: `url("${fileUrl(w.slug, w.cover.file, w.cover.v)}")` } : undefined} />
+                  <span><strong>{w.title}</strong> {kind === 'needs' ? 'needs you' : kind === 'busy' ? 'is building' : 'is ready'}<small>{text}</small></span>
+                </a>
+                {kind !== 'busy' && <button type="button" class="ghost tiny bell-x" aria-label={`Dismiss: ${w.title}`} title={kind === 'needs' ? 'Dismiss. It comes back only if something new needs you' : 'Dismiss'} onClick={() => put(i)}>✕</button>}
+              </div>
+            );
+          })}
+          {away.length > 1 && <button type="button" class="ghost small bell-clear" onClick={() => away.forEach(put)}>Clear all</button>}
         </div>
       )}
     </div>
