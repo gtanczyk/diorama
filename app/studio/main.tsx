@@ -569,6 +569,8 @@ function Workshop({ slug }: { slug: string }) {
   const [jobTail, setJobTail] = useState('');
   // The story step's own progress (each draft, the checker's verdict, the dialogue review), for the Story view while it writes.
   const [storyLog, setStoryLog] = useState<StoryProgress[]>([]);
+  // Places this job set aside, by the step that failed for them; a repair that makes one playable takes it off.
+  const [aside, setAside] = useState<Record<string, string>>({});
   const [jobPlan, setJobPlan] = useState<string[] | null>(null);
   /** What the last undo or redo put back, until the next job. */
   const [undone, setUndone] = useState<string | null>(null);
@@ -699,7 +701,7 @@ function Workshop({ slug }: { slug: string }) {
         }
         case 'feedback.changed': return soon();
         case 'job.start': case 'job.end': case 'job.queued': {
-          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setStoryLog([]), setExtension(null), setCut({}), setCastWork({}));
+          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setStoryLog([]), setAside({}), setExtension(null), setCut({}), setCastWork({}));
           const job = e.job as Job;
           soon();
           // What the agent changed shows in an open game at once; after the person's own builds the banner offers it.
@@ -717,11 +719,11 @@ function Workshop({ slug }: { slug: string }) {
           return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.redo ? 'redo' : `undo to ${e.id}`} · ${(e.restored as string[]).length} restored, ${(e.removed as string[]).length} removed`, e.by === 'agent' ? 'agent' : 'act');
         }
         // The build mending itself: free fixes first, then the agent is asked.
-        case 'place.fail': return add(e, `✕ ${e.place}: ${e.step} failed, set aside · ${e.error}`, 'err');
+        case 'place.fail': setAside((a) => ({ ...a, [String(e.place)]: String(e.step) })); return add(e, `✕ ${e.place}: ${e.step} failed, set aside · ${e.error}`, 'err');
         // A place is told playable as soon as it is done, while the build goes on with the rest: show it now.
         case 'place.verdict': soon(); if (e.ok) { const n = (e.flagged as string[] | undefined)?.length ?? 0; return add(e, `✓ ${e.place}: playable${n ? ` · ${n} note${n === 1 ? '' : 's'}, nothing to do (open the place to read them)` : ''}`, 'step'); } return add(e, `✕ ${e.place}: not playable · ${(e.errors as string[] | undefined)?.join('; ') || 'see verify'}`, 'err');
         case 'repair.start': setRepairing((r) => ({ ...r, [String(e.place)]: `repairing: ${(e.fixes as string[]).join('; ')}` })); return add(e, `↻ ${e.place}: repairing · ${(e.fixes as string[]).join('; ')}`, 'step');
-        case 'repair.end': setRepairing((r) => { const n = { ...r }; delete n[String(e.place)]; return n; }); soon(); return add(e, `${e.ok ? '✓' : '✕'} ${e.place}: ${e.ok ? 'repaired, playable' : 'still not playable, left for the agent'}`, e.ok ? 'step' : 'err');
+        case 'repair.end': if (e.ok) setAside((a) => { const n = { ...a }; delete n[String(e.place)]; return n; }); setRepairing((r) => { const n = { ...r }; delete n[String(e.place)]; return n; }); soon(); return add(e, `${e.ok ? '✓' : '✕'} ${e.place}: ${e.ok ? 'repaired, playable' : 'still not playable, left for the agent'}`, e.ok ? 'step' : 'err');
         case 'repair.agent': {
           // Places left unplayable, or (no places) the build that broke, at its step.
           const what = (e.places as string[]).length ? (e.places as string[]).join(', ') : `the failed build${e.step ? ` (${e.step})` : ''}`;
@@ -785,7 +787,7 @@ function Workshop({ slug }: { slug: string }) {
     done: jobDone,
     running: loneRuns ? { ...running, [lone!]: 'run' } : running,
     since: loneRuns && job!.startedAt ? { ...since, [lone!]: Date.parse(job!.startedAt) } : since,
-    calls: jobCalls, lastCall, tail: jobTail, cut,
+    calls: jobCalls, lastCall, tail: jobTail, cut, aside,
     extension: job && extension?.job === job.id ? { ...extension.progress, newPlaces: extension.progress.newPlaces ?? job.extension?.newPlaces } : job?.extension,
   };
   // On stage: the place picked; else a new picture as it lands; else, in turn, the places a step is working on.

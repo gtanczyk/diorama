@@ -56,3 +56,24 @@ test('optional face failure is amber and inspectable while other steps remain co
     expect(await page.getByText('dozorca: F/V needs review',{exact:true}).isVisible()).toBe(true);
   } finally {await browser.close();}
 },30000);
+
+test('a step that set a place aside is not plain green and says which place', async () => {
+  const source = (await build({ stdin: { contents: `import { h, render } from 'preact';
+    import { Pipeline } from './app/studio/build.tsx';
+    window.show = (job, live) => render(h(Pipeline, {job, live, all:['layout','paint','masks'], build:{}, typical:{}, onOpen: () => {}}), document.body);`, resolveDir: process.cwd() }, bundle: true, format: 'iife', write: false, jsx: 'automatic', jsxImportSource: 'preact' })).outputFiles[0].text;
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto('about:blank');
+    await page.addScriptTag({ content: source });
+    const live = { plan: ['layout', 'paint', 'masks'], done: { layout: 1, paint: 1 }, running: { masks: 'run' }, since: {}, calls: {}, lastCall: null, cut: {}, tail: '', aside: { 'lower-stands': 'paint' } };
+    await page.evaluate((live) => (window as unknown as { show: (j: object, l: object) => void }).show({ by: 'you', state: 'running', label: 'build', args: ['build'] }, live), live);
+    expect(await page.locator('.fill.warn').count()).toBe(1);
+    expect(await page.locator('.fill.ok').count()).toBe(1);
+    const titles = await page.locator('.seg').evaluateAll((s) => s.map((b) => b.getAttribute('title')));
+    expect(titles.find((t) => t?.startsWith('Painting'))).toContain('failed for lower-stands');
+    expect(titles.find((t) => t?.startsWith('Plan sketch'))).toContain('Click to see the plan sketch');
+  } finally {
+    await browser.close();
+  }
+});

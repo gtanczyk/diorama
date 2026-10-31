@@ -89,6 +89,8 @@ export type Live = {
   cut: Record<string, string[]>;
   tail: string;
   extension?: ExtensionProgress;
+  /** Places this job set aside, by the step that failed for them (place.fail): that step is green for the others only. */
+  aside?: Record<string, string>;
 };
 
 type JobLike = { label: string; by: string; state: string; startedAt?: string; args?: string[]; extension?: ExtensionProgress };
@@ -135,11 +137,14 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
     return () => clearInterval(timer);
   }, [!!job]);
   const { plan, done, running } = live;
+  const asideAt = (s: string) => Object.entries(live.aside ?? {}).filter(([, step]) => step === s).map(([place]) => place);
   const took = (s: string) => build[s]?.seconds ?? typical[s] ?? 30;
   const state = (s: string): 'ok' | 'existing' | 'run' | 'fail' | 'todo' | 'skip' | 'warn' => {
     if (running[s] === 'fail') return 'fail';
     if (running[s] === 'run') return 'run';
     if (build[s]?.status === 'incomplete') return 'warn';
+    // Done for the world, but a place was set aside at this step: not green, since that place has nothing from it.
+    if (asideAt(s).length && (done[s] !== undefined || running[s] === undefined)) return 'warn';
     if (done[s] !== undefined) return 'ok';
     // A partial job does not erase the earlier world build. Keep it distinct from work finished in this job.
     if (job && !plan.includes(s)) return build[s] ? 'existing' : 'skip';
@@ -191,7 +196,7 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
           // Something to show once a step has run (or runs now); a click puts it on the stage.
           // A phase only partly done (sprites still to come) shows what its done steps made too.
           const open = onOpen && states.some((x) => x === 'ok' || x === 'existing' || x === 'run' || x === 'fail' || x === 'warn');
-          const tip = `${p.title} · ${p.by.map(nowBy).join(', ')}\n` + p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'existing' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : states[i] === 'warn' ? '!' : '·'} ${STEP_TITLE[s] ?? s}${states[i] === 'existing' ? ' (previous build)' : done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}`).join('\n');
+          const tip = `${p.title} · ${p.by.map(nowBy).join(', ')}\n` + p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'existing' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : states[i] === 'warn' ? '!' : '·'} ${STEP_TITLE[s] ?? s}${states[i] === 'existing' ? ' (previous build)' : done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}${asideAt(s).length ? `: failed for ${asideAt(s).join(', ')} (set aside; later steps skip it)` : ''}`).join('\n');
           let at = 0;
           return (
             <li class={`${phase}${open ? ' open' : ''}`} style={{ flexGrow: Math.max(1, all) }}>
@@ -206,7 +211,7 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
                   at += took(s);
                   const ready = states[i] === 'ok' || states[i] === 'existing' || states[i] === 'run' || states[i] === 'warn';
                   return ready && <button type="button" class="seg" style={{ left: `${(100 * from) / Math.max(1, all)}%`, width: `${(100 * took(s)) / Math.max(1, all)}%` }}
-                    title={`${STEP_TITLE[s] ?? s} (${s})${states[i] === 'run' ? ': working now, not finished' : states[i] === 'existing' ? ': from the earlier build' : done[s] !== undefined ? `: done in ${Math.round(done[s])} s` : ': done'}.\nClick to see ${STEP_OPENS[s] ?? 'what it made'}${states[i] === 'run' ? ' (what it works from, until it is ready)' : ''}`} onClick={() => onOpen!(p.key, s)} />;
+                    title={`${STEP_TITLE[s] ?? s} (${s})${states[i] === 'run' ? ': working now, not finished' : asideAt(s).length ? `: failed for ${asideAt(s).join(', ')}, set aside (later steps skip it); done for the other places` : states[i] === 'existing' ? ': from the earlier build' : done[s] !== undefined ? `: done in ${Math.round(done[s])} s` : ': done'}.\nClick to see ${STEP_OPENS[s] ?? 'what it made'}${states[i] === 'run' ? ' (what it works from, until it is ready)' : ''}`} onClick={() => onOpen!(p.key, s)} />;
                 })}
               </span>
               {open
@@ -341,7 +346,8 @@ export function Stage({ slug, place, live, building, hold }: { slug: string; pla
             <span>{caption.text}</span>
           </figcaption>
         )}
-        {wanted && <span class="wanted" role="status">{wanted.title}: not made yet for this place{top ? `; showing ${SHOWN.find((s) => s.layer === top)!.title.toLowerCase()} until it is` : ''}</span>}
+        {(live.aside?.[place.key] || place.trouble) && <span class="wanted trouble" role="status">{live.aside?.[place.key] ? `${STEP_TITLE[live.aside[place.key]] ?? live.aside[place.key]} failed for this place: set aside, so the steps after it skip it. ` : ''}{place.trouble?.why ?? ''}{place.trouble && !building ? ' · Fix it below the stage' : ''}</span>}
+        {!(live.aside?.[place.key] || place.trouble) && wanted && <span class="wanted" role="status">{wanted.title}: not made yet for this place{top ? `; showing ${SHOWN.find((s) => s.layer === top)!.title.toLowerCase()} until it is` : ''}</span>}
         <span class="where">{place.key}</span>
         {shown.length > 1 && (
           <div class="layers" role="tablist" aria-label="Layers">
