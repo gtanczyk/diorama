@@ -22,6 +22,8 @@ export type Critique = z.infer<typeof Critique>;
 
 export async function critique(memo: Memo, place: Place, brief: Brief, painting: Buffer): Promise<Critique> {
   const expected = place.things.filter((t) => t.role !== 'npc').map((t) => `- ${t.key}: ${brief.looks[t.key] ?? t.looks}`);
+  // The place's people stand in the game as figures of their own: one also painted into the background is a double.
+  const cast = place.things.filter((t) => t.role === 'npc').map((t) => t.looks ?? t.key.replace(/-/g, ' '));
   const prompt = `This is a painted background (${FRAME.width}x${FRAME.height} px) for a 2D point-and-click adventure. It should show:
 ${expected.join('\n')}
 The whole picture is meant to be: ${place.shows}
@@ -30,7 +32,7 @@ List at most 4 problems a player would notice, worst first:
 - missing: a listed thing is not there, or a big part of the scene above is (a tall tower, a castle with two towers, a house on top): key "scene" for that
 - wrong: it is there but does not look like its description
 - flat: it is a plain block or smear instead of a painted object
-- unwanted: people, ${paintedAnimals(brief).length ? 'animals other than the listed ones' : 'animals'}, text, letters or a border that should not be there
+- unwanted: people (any person or figure at all${cast.length ? `, even one that looks like ${cast.join(' or ')}: they are added over the picture later, so a painted one would be a double` : ''}), ${paintedAnimals(brief).length ? 'animals other than the listed ones' : 'animals'}, text, letters or a border that should not be there
 For each give the region to repaint as [x0, y0, x1, y1] in pixels and one sentence on what to paint there. Never ask for text or letters. If the painting is fine, give no issues.
 
 Reply with JSON only: {"issues": [{"key": "...", "problem": "missing | wrong | flat | unwanted", "region": [0, 0, 0, 0], "fix": "..."}]}`;
