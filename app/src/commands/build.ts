@@ -18,6 +18,9 @@ import { Story } from '../story/schema.ts';
 import { assetReport } from '../scene/assets.ts';
 import { FacePreparationError } from '../scene/face-work.ts';
 
+/** How the build's own repaints of a missing thing start, so a new take can drop them. */
+const BUILD_REPAINT = 'Paint the';
+
 export { PLACE_STEPS, STEPS } from '../world/schedule.ts';
 
 /** What each place step leaves that later steps read; a place missing one never got past that step. */
@@ -358,7 +361,36 @@ defineCommand({
         repairs.push({ place, by: 'auto', fixes: fixes.map((f) => f.what), ok: r.ok });
         emit('repair.end', { place, by: 'auto', ok: r.ok });
       }
-      return paintMissing(place, r);
+      return paintMissing(place, await newTake(place, r));
+    }
+
+    /**
+     * A painting that left the layout so far that a floor of it cannot be walked on (FLOOR_LOST: the stairs or the trail
+     * an exit leads off painted somewhere else) gets a new take of the whole painting: one Muse painting, kept in
+     * corrections.json as the place's take, and the place is rebuilt from paint. At most two new takes per place; the
+     * repaints the build asked for on the old painting are dropped, as they were placed for it.
+     */
+    async function newTake(place: string, r: Report | null): Promise<Report | null> {
+      if (!r || r.ok || r.from || !r.issues.some((i) => i.code === 'FLOOR_LOST')) return r;
+      const dir = files.place(place);
+      const before = readCorrections(dir);
+      const take = (before.take ?? 0) + 1;
+      if (take > 2) return r;
+      const after = Corrections.parse(JSON.parse(JSON.stringify(before)));
+      after.take = take;
+      after.repaint = after.repaint.filter((x) => !x.fix.startsWith(BUILD_REPAINT));
+      writeCorrections(dir, after);
+      const lost = r.issues.filter((i) => i.code === 'FLOOR_LOST').map((i) => i.key).join(', ');
+      const what = [`painted take ${take}: floor ${lost} was painted away from its layout (one Muse painting)`];
+      console.log(`\n# repair ${place}: ${what[0]}`);
+      emit('repair.start', { place, by: 'auto', fixes: what });
+      for (const step of PLACE_STEPS.slice(PLACE_STEPS.indexOf('paint'))) {
+        if (!broken.has(place)) await runPlace(step, place);
+      }
+      const next = reportOf(place) ?? r;
+      repairs.push({ place, by: 'auto', fixes: what, ok: next.ok });
+      emit('repair.end', { place, by: 'auto', ok: next.ok });
+      return next;
     }
 
     /**
@@ -381,7 +413,7 @@ defineCommand({
           const t = layout.things.find((x) => x.key === key);
           if (!t) continue;
           const looks = (listed.find((x) => x.key === key)?.looks ?? key.replace(/-/g, ' ')).replace(/^(a|an|the)\s+/i, '');
-          const fix = `Paint the ${looks} here, clearly visible and whole, standing where it meets the floor, in the painting's own style and light; keep everything around it`;
+          const fix = `${BUILD_REPAINT} ${looks} here, clearly visible and whole, standing where it meets the floor, in the painting's own style and light; keep everything around it`;
           if (after.repaint.some((x) => x.fix === fix)) continue;
           // The layout box with room round it, so Muse can fit the thing in, at least 120 px each way.
           const w = Math.max(120, t.width * 1.4), h = Math.max(120, t.height * 1.3);

@@ -20,6 +20,8 @@
   /* The HTML over the game sits in the canvas's own 1200 x 896 frame, scaled with it, so it lines up with the picture at any window size and in recordings. */
   #hud { position: absolute; left: 0; top: 0; width: 1200px; height: 896px; transform-origin: 0 0; pointer-events: none; }
   #hud > * { pointer-events: auto; }
+  /* What only shows (a toast, a flying icon, the held cursor) never takes a click, even faded out over the answers. */
+  #hud > .toast, #hud > .flying, #hud > .held-cursor, #hud > #handover { pointer-events: none; }
   :root { --paper: #f3e8cf; --paper-hi: #fbf4e2; --ink: #2b2118; --glow: #ffe7a8; --clay: #c9774a; }
   #inventory { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 10px 14px 10px 10px; background: var(--paper); border: 2.5px solid var(--ink); border-radius: 18px; box-shadow: 0 5px 0 #2b211840, 0 12px 28px #0006; transition: opacity .3s, left .3s, transform .3s; }
   #inventory[hidden] { display: none; }

@@ -43,7 +43,9 @@ function kindWords(key: string, looks = ''): Set<string> {
 /** Does Spark's word for what it sees name the same kind of thing? */
 export function sameKind(seen: string, key: string, looks?: string): boolean {
   const kind = kindWords(key, looks);
-  return words(seen).some((w) => kind.has(w));
+  // What Spark says is not there does not count: "the hull of a rowboat, no can in its mask" saw no can.
+  const said = seen.replace(/\b(?:no|not|without|nor|missing)\s+(?:a|an|the|any)?\s*[a-z-]+/gi, ' ');
+  return words(said).some((w) => kind.has(w));
 }
 
 export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates: PlateNotes = {}, backdrop: BackdropNotes = {}): Verdict {
@@ -97,6 +99,12 @@ export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates:
     if (t.coarse && thing.role !== 'npc') flags.push({ code: 'COARSE_MASK', key: thing.key, detail: `mask is a ${notes.things[thing.key]?.source ?? 'box'}, so it hides no one` });
   }
 
+  // A floor painted nowhere near its layout that the hero cannot walk on at all: the painting left the plan (stairs
+  // or a trail drawn somewhere else, or not drawn as floor), and whatever exit leads off it is only a click at an edge.
+  Object.entries(notes.floors).forEach(([key, f], z) => {
+    if (!g.zone || f.coarse || f.iouLayout >= 0.05) return;
+    if (![...grid.zone.keys()].some((i) => grid.zone[i] === z && reached[i])) errors.push({ code: 'FLOOR_LOST', key, detail: `painted floor overlaps its layout only ${f.iouLayout.toFixed(2)} and none of it can be walked on` });
+  });
   for (const [key, f] of Object.entries(notes.floors)) {
     if (f.coarse) flags.push({ code: 'FLOOR_COARSE', key, detail: `floor taken from ${f.source}` });
     else if (f.iouLayout < 0.3) flags.push({ code: 'FLOOR_MOVED', key, detail: `painted floor overlaps its layout only ${f.iouLayout.toFixed(2)} (the painting wins)` });

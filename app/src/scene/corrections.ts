@@ -59,6 +59,8 @@ export const Corrections = z.object({
     /** Spark's rewords so far: each asks anew, so a rebuild after refused rewords does not get the same words back. */
     tries: z.number().int().min(0).optional(),
   }).optional(),
+  /** Which take of the painting (paint --take): the build asks for a new one when the painting left the layout (FLOOR_LOST). */
+  take: z.number().int().min(0).optional(),
   /** Where the hero begins in this place (hero_start_set), instead of the front middle of the biggest floor. */
   start: XY.optional(),
   /** This place's own painting style over world.json's (style_set with scope place). */

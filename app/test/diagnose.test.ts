@@ -111,6 +111,8 @@ test('a thing Spark finds nowhere, seeing another kind of thing in its box, was 
   expect(sameKind('a bronze bell', 'bell', 'a small brass bell')).toBe(true);
   expect(sameKind('two wooden barrels', 'barrel', 'an old barrel')).toBe(true);
   expect(sameKind('hay in an empty stall', 'horse', 'a chestnut horse in its stall')).toBe(false);
+  // Spark naming what it does NOT see is not seeing it.
+  expect(sameKind('the blue hull of the rowboat, no can in its mask', 'oil-can', 'a dented oil can')).toBe(false);
 });
 
 test('a floor cut off after derive shut rows too near the camera gets the close-up play, not a bridge', async () => {

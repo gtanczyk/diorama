@@ -24,7 +24,7 @@ defineCommand({
   name: 'paint',
   usage: 'paint <slug> [place...]  brief, paint, critique and repaint laid-out places [--take N]',
   async run(args) {
-    const take = Number(takeOption(args, 'take', '0'));
+    const takeArg = takeOption(args, 'take', '');
     const [slug, ...only] = args;
     if (!slug) throw new Error('usage: diorama paint <slug> [place...] [--take N]');
     const files = new WorldFiles(slug);
@@ -33,6 +33,8 @@ defineCommand({
     await Promise.all(places.map(async (place) => {
       // The place's own style, when the person gave it one, is the world's style for everything painted here.
       const style = placeStyle(files, base, place.key);
+      // --take wins; else the take the place's corrections keep (a new take the build asked for stays across rebuilds).
+      const take = takeArg ? Number(takeArg) : readCorrections(files.place(place.key)).take ?? 0;
       const world = { ...base, style };
       const layout = Layout.parse(files.readJson(files.place(place.key, 'layout.json')));
       const blockin = fs.readFileSync(files.place(place.key, 'blockin.png'));

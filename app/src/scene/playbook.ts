@@ -69,6 +69,11 @@ export const PLAYBOOK: Record<string, Play> = {
     tools: ['mask_fix box: when you do see it painted somewhere else'],
     last: 'repaint_region: paint the thing in at its box with its looks (one Muse edit), then rebuild the place from masks; the build already tried this once at the layout box (corrections_get shows it), so look at where it landed first',
   },
+  FLOOR_LOST: {
+    look: 'place_view layer walk: the floor (stairs, a trail) is painted somewhere else than the layout put it, or not as floor at all, so nothing on it can be walked to; the build already asked for one new take of the painting',
+    tools: ['floor_cells add: the cells where the floor is painted, when it is painted as floor somewhere', 'mask_fix phrase: a name SAM finds the painted floor by'],
+    last: 'paint with a new take (run_step paint --take N for the place), then rebuild the place from masks',
+  },
   THING_MISSING: {
     look: 'world_status: the place lost the thing between layout and derive',
     tools: ['run_step masks, then derive, for the world'],
