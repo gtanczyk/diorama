@@ -36,6 +36,16 @@ export type FigureLight = {
   rim?: { dir: [number, number, number]; color: number; intensity: number };
 };
 
+/**
+ * Default light for a painted model: the textures are the painted sides, shading already in them, so the light
+ * gives back their own brightness. three.js lights are physical (a white surface under a white light of
+ * intensity 1 shows 1/PI), so the hemisphere is PI times as strong: a wall-facing surface (half sky, half
+ * ground) comes out at 1.0 of its paint, a top at 1.12, an underside at 0.88, enough to keep the form readable.
+ * The old light (white over 0x888888 at 2.2) gave a side 0.44 of its paint in linear light: models looked
+ * a third darker than the four painted sides, and so did the sprite guides Muse painted over.
+ */
+export const PAINTED_LIGHT: FigureLight = { sky: 0xffffff, ground: 0xe5e5e5, ambient: 1.12 * Math.PI };
+
 function footAt(p: number, step: number) {
   p = ((p % 1) + 1) % 1;
   if (p < STANCE) return { dx: step / 2 - (step * p) / STANCE, lift: 0, stance: true, u: p / STANCE };
@@ -581,7 +591,7 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
     cam.position.set(0, Math.sin(elevation) * 5, Math.cos(elevation) * 5);
     cam.lookAt(0, 0, 0);
     cam.updateProjectionMatrix();
-    const L = light ?? { sky: 0xffffff, ground: 0x888888, ambient: 2.2 };
+    const L = light ?? PAINTED_LIGHT;
     this.hemi.color.set(L.sky);
     this.hemi.groundColor.set(L.ground);
     this.hemi.intensity = L.ambient;
