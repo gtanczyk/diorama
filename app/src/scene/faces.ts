@@ -26,7 +26,7 @@ type Grid = { cols: number; rows: number; count: number };
 const validBox = ([x, y, w, h]: Box) => x + w <= 1.005 && y + h <= 1.005;
 export const pixels = ([x, y, w, h]: Box, width: number, height: number): Box => [x * width, y * height, w * width, h * height];
 
-async function locate(files: WorldFiles, key: string, image: Buffer, grid: Grid, reference?: Buffer): Promise<Array<Located | null>> {
+async function locate(files: WorldFiles, key: string, image: Buffer, grid: Grid, reference?: Buffer, allow: number[] = []): Promise<Array<Located | null>> {
   if (!reference && grid.count > 1) {
     const meta=await sharp(image).metadata(),cw=meta.width!/grid.cols,ch=meta.height!/grid.rows,poses:Array<Located|null>=[];
     for(let first=0;first<grid.count;first+=3)await Promise.all(Array.from({length:Math.min(3,grid.count-first)},async(_,n)=>{
@@ -54,7 +54,10 @@ Reply JSON only: {poses:[{head:[...],mouth:[...],eyes:[[...]],confidence:0.9}|nu
   if (reference) prompt += '\nAlso return invalidFrames: the ZERO-BASED indices (0..8) of every frame failing identity, view, style or its requested mouth shape. F/V is index 7: upper incisors touch the lower lip, with no lower teeth row or open grin. OH is index 5: rounded opening, distinct from AH. An empty list means no invalid frames. Judge articulation appropriate to the reference view, including profiles; do not require a frontal view.';
   const result = LocatedGrid.parse(await askSparkJson(files.memo, { schema: LocatedGrid, label: `face-locate:${key}`, prompt, images: [...images, ...(reference ? [reference] : [])], personal: true }));
   if (result.poses.length !== grid.count) throw new Error(`face locator returned ${result.poses.length} poses, expected ${grid.count}`);
-  if (reference && (!result.matches || !result.articulation || result.invalidFrames?.length)) throw new AtlasRejected(result.reason, [...new Set(result.invalidFrames ?? [])]);
+  const invalid = [...new Set(result.invalidFrames ?? [])].filter((i) => !allow.includes(i));
+  // A frame the caller stood in for another (F/V shown with B) may fail its own articulation; nothing else may.
+  const excused = allow.length > 0 && (result.invalidFrames ?? []).some((i) => allow.includes(i)) && invalid.length === 0;
+  if (reference && (!result.matches || (!result.articulation && !excused) || invalid.length)) throw new AtlasRejected(result.reason, invalid);
   return result.poses.map(p => p && p.confidence >= 0.6 && [p.head, p.mouth, ...p.eyes].every(validBox) ? p : null);
 }
 
@@ -121,6 +124,9 @@ async function calibrateFrames(files: WorldFiles, key: string, info: FaceDefinit
   return changed;
 }
 
+/** Index of F/V (G) in the atlas, and of B (teeth nearly together), which stands in for it. */
+const FV = MOUTHS.indexOf('G'), FV_STAND_IN = MOUTHS.indexOf('B');
+
 const ATLAS_PROMPT = `The first image is a fixed 3 by 3 grid of nine copies of ONE painted character head. The second image is its identity reference. Create a production lip-sync atlas by changing ONLY the mouth and a small part of the lower jaw in each cell. Preserve the EXACT head size, position, angle, identity, eyes, eyebrows, hat, hair, moustache, beard, lighting, palette and painting texture. Keep the 3x3 layout and all head landmarks perfectly registered. The mouths must actually have these distinct shapes, in row-major order: 1 relaxed CLOSED at rest; 2 CLOSED lips pressed together for M/B/P; 3 slightly open with teeth nearly together; 4 moderately OPEN for EH; 5 conversational OPEN for AH, never shouting; 6 ROUNDED OPEN for OH; 7 small PUCKERED for OO; 8 upper teeth touching lower lip for F/V; 9 slightly open with the tongue raised for L. Keep the original small lip width, thin lip thickness, age and wrinkles. No inflated glossy lips. Conversational movement: open the lips modestly inside the original beard, keep the jaw outline fixed. Natural dark mouth interiors and restrained teeth; no smile unless required by the original character. No text, no labels, no borders, no added objects. Do not repaint the upper face or rotate the head. Keep the background plain and constant.`;
 
 const MOUTH_DIRECTIONS = ['relaxed CLOSED lips at rest', 'CLOSED lips pressed together for M/B/P', 'slightly open lips with teeth nearly together', 'moderately OPEN for EH', 'conversational OPEN for AH, never shouting', 'ROUNDED opening for OH, visibly rounder than AH', 'small PUCKERED lips for OO', 'F/V as in saying VERY: gently BITE the LOWER LIP with the upper front teeth. Lift the lower lip UP and curl it INWARD until it physically touches the bottom edges of the upper incisors, closing the dark gap underneath them. Expose only a few upper incisor tips above that raised lip. Keep the mouth corners neutral, not pulled back. The lower lip is skin, not another row of teeth. No smile, no horizontal open cavity beneath the teeth', 'slightly open lips with tongue raised for L'];
@@ -133,10 +139,22 @@ async function mouthPatches(files: WorldFiles, character: string, view: string, 
   const template = await sharp({ create: { width: 960, height: 960, channels: 3, background: '#d9d9d9' } }).composite(MOUTHS.map((_, i) => ({ input: square, left: (i % 3) * 320, top: Math.floor(i / 3) * 320 }))).png().toBuffer();
   let failure: unknown;
   let rejected: Buffer | undefined;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // F/V is the one shape Muse keeps painting as a grin, and the briefest in speech. When it alone still fails after
+  // the repairs, the atlas is taken with F/V shown as B (teeth nearly together): eight true shapes and a near one,
+  // instead of no talking face at all.
+  const fvOnly = (e: unknown) => e instanceof AtlasRejected && e.frames.length === 1 && e.frames[0] === FV;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt === 2 && !(fvOnly(failure) && rejected)) break;
     try {
       let atlas: Buffer;
-      if (!attempt && work.atlas) {
+      if (attempt === 2) {
+        const meta = await sharp(rejected!).metadata(), width = meta.width!, height = meta.height!;
+        const cell = (i: number) => { const left = Math.floor(i % 3 * width / 3), top = Math.floor(Math.floor(i / 3) * height / 3); return { left, top, width: Math.floor((i % 3 + 1) * width / 3) - left, height: Math.floor((Math.floor(i / 3) + 1) * height / 3) - top }; };
+        const from = cell(FV_STAND_IN), to = cell(FV);
+        const patch = await sharp(rejected!).extract(from).resize(to.width, to.height, { fit: 'fill' }).png().toBuffer();
+        atlas = await sharp(rejected!).composite([{ input: patch, left: to.left, top: to.top }]).png().toBuffer();
+        console.log(`${key}: F/V still a grin after the repairs; F/V shown with the teeth-together mouth`);
+      } else if (!attempt && work.atlas) {
         atlas = faceWorkAtlas(files, character, work);
       } else if (attempt && rejected && failure instanceof AtlasRejected && failure.frames.length > 0 && failure.frames.length <= 3) {
         const meta = await sharp(rejected).metadata(), width = meta.width!, height = meta.height!;
@@ -158,7 +176,7 @@ async function mouthPatches(files: WorldFiles, character: string, view: string, 
       }
       rejected = atlas;
       saveFaceWork(files, character, work, atlas);
-      const poses = work.accepted && work.poses ? work.poses : await locate(files, `${key}:atlas:${take}:${attempt}`, atlas, { cols: 3, rows: 3, count: 9 }, square);
+      const poses = work.accepted && work.poses ? work.poses : await locate(files, `${key}:atlas:${take}:${attempt}`, atlas, { cols: 3, rows: 3, count: 9 }, square, attempt === 2 ? [FV] : []);
       if (poses.some(p => !p)) throw new Error('a generated mouth is obscured or could not be located confidently');
       work.accepted = true; work.poses = poses; work.stage = 'lips'; work.invalidFrames = []; delete work.reason;
       saveFaceWork(files, character, work);
@@ -216,7 +234,7 @@ async function mouthPatches(files: WorldFiles, character: string, view: string, 
       if (e instanceof AtlasRejected) { work.stage = 'articulation'; work.accepted = false; work.invalidFrames = e.frames; }
       saveFaceWork(files, character, work);
       if (work.accepted) throw e; // Calibration errors never repaint a validated atlas.
-      console.log(`${key}: ${work.reason}; ${attempt ? 'leaving existing face assets unchanged' : 'retrying with validation feedback'}`);
+      console.log(`${key}: ${work.reason}; ${attempt === 1 && fvOnly(e) ? 'F/V alone failed: standing in the teeth-together mouth' : attempt ? 'leaving existing face assets unchanged' : 'retrying with validation feedback'}`);
     }
   }
   throw failure;

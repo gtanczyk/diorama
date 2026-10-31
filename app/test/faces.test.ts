@@ -98,11 +98,24 @@ test('a failed targeted repair stays bounded and never replaces the existing fac
   mocks.paint.mockClear();
   mocks.vision.mockImplementation(async (...args) => {
     const found = await vision(...args);
+    return args[1].label.includes(':atlas:') ? { ...found, articulation: false, invalidFrames: [3, 7], reason: 'EH and F/V are still a grin' } : found;
+  });
+  await expect(prepareFace(files, 'hero', { imageOnly: true, force: true, take: 1 })).rejects.toThrow('EH and F/V are still a grin');
+  // One atlas and one repair per failing frame, then it stops.
+  expect(mocks.paint).toHaveBeenCalledTimes(3);
+  expect(fs.readFileSync(files.path('cast/hero/face.json'))).toEqual(before);
+});
+
+test('when F/V alone stays a grin after its repair, B stands in for it and the face is made with no more paint', async () => {
+  const vision = mocks.vision.getMockImplementation()!;
+  mocks.paint.mockClear();
+  mocks.vision.mockImplementation(async (...args) => {
+    const found = await vision(...args);
     return args[1].label.includes(':atlas:') ? { ...found, articulation: false, invalidFrames: [7], reason: 'F/V is still a grin' } : found;
   });
-  await expect(prepareFace(files, 'hero', { imageOnly: true, force: true, take: 1 })).rejects.toThrow('F/V is still a grin');
+  await prepareFace(files, 'hero', { imageOnly: true, force: true, take: 2 });
   expect(mocks.paint).toHaveBeenCalledTimes(2);
-  expect(fs.readFileSync(files.path('cast/hero/face.json'))).toEqual(before);
+  expect(registeredFace(files, 'hero')?.info.imagePose).toBeDefined();
 });
 
 test.each([.95, .4])('uncertain generated lips are reinspected in a lower-face crop without repainting (confidence %s)', async confidence => {
