@@ -78,6 +78,16 @@ defineCommand({
       } else if (reuse) {
         first = fs.readFileSync(files.place(place.key, 'painting-first.png'));
         found = files.readJson(files.place(place.key, 'critique.json')) as typeof found;
+        // The critic is asked again (a memo hit while its prompt stays the same): what it now finds unwanted (a person
+        // painted in, a double of the place's NPC) is painted out over the painting as it is; the rest stays.
+        const brief = files.readJson(files.place(place.key, 'brief.json')) as Awaited<ReturnType<typeof writeBrief>>;
+        const again = await critique(files.memo, worded(place, words), brief, first);
+        const had = new Set(found.issues.map((i) => JSON.stringify([i.region, i.fix])));
+        const unwanted = again.issues.filter((i) => i.problem === 'unwanted' && !had.has(JSON.stringify([i.region, i.fix])));
+        if (unwanted.length) {
+          found = { issues: [...found.issues, ...unwanted].slice(0, 8) };
+          files.write(files.place(place.key, 'critique.json'), found);
+        }
       } else {
         const fromPhoto = fs.existsSync(files.place(place.key, 'photo.png'));
         let brief: Awaited<ReturnType<typeof writeBrief>>;

@@ -116,7 +116,9 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   // A coarse box wider than a third of the picture is a row or a group (mooring posts along a quay, a line of
   // stalls), not one thing to walk round: as a box it would wall the place in two. It stays a thing to click, but
   // only sharp masks and narrower boxes stand in the way.
-  const sprawling = (t: ThingIn) => t.coarse && (() => { const b = maskBox(t.mask); return !!b && b[2] - b[0] > W / 3; })();
+  // A sharp mask over a quarter of the picture is no prop either: SAM took the quay with the posts on it.
+  const sprawling = (t: ThingIn) => t.kind !== 'walk-on' && t.kind !== 'flat'
+    && ((t.coarse && (() => { const b = maskBox(t.mask); return !!b && b[2] - b[0] > W / 3; })()) || maskArea(t.mask) > (W * H) / 4);
   const inTheWay = unionAll(W, H, things.filter((t) => t.kind !== 'walk-on' && !sprawling(t)).map((t) => t.mask));
   const ground = union(floorAny, walkOn);
 
@@ -137,7 +139,7 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     flagged.push(line);
     log(line);
   };
-  for (const t of things) if (sprawling(t)) flag(`${t.key}: its coarse box is ${Math.round(W / 3)}+ px wide, so it does not block the floor`);
+  for (const t of things) if (sprawling(t)) flag(`${t.key}: its mask is too big for one thing (a row, or the floor it stands on), so it does not block the floor`);
 
   // Join up the floor: closed cells on a painted floor are cheap to open, the layout's floors dearer,
   // things and footprints never.
