@@ -158,15 +158,19 @@ test('a late mask response cannot change the new place or the object sent to the
   try {
     await open(page); await request;
     await page.locator('.wcard .thumb').nth(1).click();
-    await page.getByRole('button', { name: 'Talk about the blue key', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Open the blue key', exact: true }).waitFor();
     release(); await done;
     // A fresh request settles the browser task queue after the delayed response.
     await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-    expect(await page.getByRole('button', { name: 'Talk about the token', exact: true }).count()).toBe(0);
-    await page.getByRole('button', { name: 'Talk about the blue key', exact: true }).click();
+    expect(await page.getByRole('button', { name: 'Open the token', exact: true }).count()).toBe(0);
+    // One click opens the thing; after its drawer closes the agent is still told what was open.
+    await page.getByRole('button', { name: 'Open the blue key', exact: true }).click();
+    await page.locator('.drawer.by-hand').waitFor();
+    expect(await page.locator('.pick-chip, .who-acts').count()).toBe(0);
+    await page.keyboard.press('Escape'); await page.locator('.drawer.by-hand').waitFor({ state: 'detached' });
     await page.locator('section.agent textarea').fill('Change this'); await page.locator('section.agent textarea').press('Enter');
     await expect.poll(() => sent.length).toBe(1);
-    expect(sent[0].text).toBe('[Looking at: room-b / blue-key]\nChange this');
+    expect(sent[0].text).toBe('[On screen: room-b / blue-key]\nChange this');
   } finally { release(); await page.close(); }
 }, 30_000);
 

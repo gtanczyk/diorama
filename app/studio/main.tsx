@@ -22,7 +22,7 @@ import type { ExtensionProgress } from '../src/world/extension-progress.ts';
 import { Bell, Logo, Rail, forgetWorld, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
 import { CAST_STEPS, castFile, castLine, CastWorkStage, type CastWork } from './cast-work.tsx';
 import { SayIt } from './say-it.tsx';
-import { Card, CastCard, CastStage, nice, PlacesCard, PlaceStage, WorldStrip, type Picked, type StageView } from './world.tsx';
+import { Card, CastCard, CastStage, nice, PlacesCard, PlaceStage, WorldStrip, type StageView } from './world.tsx';
 import { Tips } from './tip.tsx';
 import { Lightbox } from './lightbox.tsx';
 import { Activity, type ActivityJob, type ActivityLine } from './activity.tsx';
@@ -578,8 +578,9 @@ function Workshop({ slug }: { slug: string }) {
   /** Activity shows what happened; what each step prints is there too, on request (the job card shows its last line). */
   const [allLines, setAllLines] = useState(false);
   const [stage, setStage] = useState<StageView | null>(null);
-  const [picked, setPicked] = useState<Picked | null>(null);
   const [byHand, setByHand] = useState<string | null>(null);
+  const opened = useRef<string | null>(null);
+  if (byHand) opened.current = byHand;
   const creatorBrief = useCreatorBrief(slug);
   const worldRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLElement>(null);
@@ -831,7 +832,6 @@ function Workshop({ slug }: { slug: string }) {
     setStage(s.kind === 'play' ? null : destination);
     if (s.kind === 'play') setPlaying((p) => p ?? { place: undefined });
     else setPlaying(null);
-    if (s.kind !== 'place') setPicked((p) => (p && !p.place ? p : null));
   };
   const stagedPlace = shownView.kind === 'place' ? places.find((p) => p.key === shownView.place) ?? places[0] : undefined;
   const unplayable = !job ? places.filter((p) => p.trouble) : [];
@@ -950,7 +950,14 @@ function Workshop({ slug }: { slug: string }) {
     return () => void (document.title = 'Diorama Studio');
   }, [status?.title, slug]);
   const stageTitle = shownView.kind === 'place' ? nice(stagedPlace?.key ?? '') : shownView.kind === 'cast' || shownView.kind === 'work' ? 'Cast' : shownView.kind === 'story' ? 'Story' : shownView.kind === 'build' ? (stagePlace ? nice(stagePlace.key) : 'Building') : status?.title ?? slug;
-  const stageHint = shownView.kind === 'place' ? 'Click a thing to talk about it' : shownView.kind === 'cast' ? 'Click someone to talk about them' : shownView.kind === 'play' ? 'Click to walk, right click to look, or a gamepad' : '';
+  const stageHint = shownView.kind === 'play' ? 'Click to walk, right click to look, or a gamepad' : '';
+  // What is open, told to the agent with each message so "this" means something; nothing shows for it.
+  // The last thing opened stays meant after its drawer closes, while the stage still shows where it is.
+  const fits = (o: string | null) => !!o && (o.startsWith('#cast') ? shownView.kind === 'cast' : shownView.kind === 'place' && o.split('@')[0] === stagedPlace?.key);
+  const openNow = byHand ?? (fits(opened.current) ? opened.current : null);
+  const onScreen = openNow
+    ? openNow.startsWith('#cast') ? (openNow.split(':')[1] ? `cast / ${openNow.split(':')[1].replace(/^item-/, 'item ')}` : 'cast') : openNow.replace('@', ' / ')
+    : shownView.kind === 'place' ? stagedPlace?.key ?? null : shownView.kind === 'cast' ? 'cast' : null;
   // An inspection opened from Build returns to Build; standalone views return to the last place.
   const away = shownView.kind === 'cast' || shownView.kind === 'story' || shownView.kind === 'work' || (shownView.kind === 'build' && !building);
   const lastPlace = useRef<string | undefined>(undefined);
@@ -971,7 +978,7 @@ function Workshop({ slug }: { slug: string }) {
             <h1 title={status?.pitch ?? undefined}>{status?.title ?? slug}</h1>
             <small class="to-build" role="button" tabIndex={0} title="The build bar: every step, clickable" onClick={() => onStage({ kind: 'build' })}>{places.length ? `${places.length} places` : 'being made'}{status && status.playable ? ` · ${status.playable} playable` : ''}{job ? ' · building' : playable ? ' · ready to play' : ''}{live ? '' : ' · reconnecting…'}</small>
           </header>
-          <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} notices={opening} pinned={places.length > 0 && <WorldStrip slug={slug} version={tick} title={status?.title} places={places} pending={pendingPlaces} castDone={castDone} stage={shownView} onStage={onStage} />} afterTurn={afterTurn} footer={footer} picked={picked} onUnpick={() => setPicked(null)}
+          <AgentPanel slug={slug} replay={replay} speed={speed} jobs={status?.jobs ?? []} notices={opening} pinned={places.length > 0 && <WorldStrip slug={slug} version={tick} title={status?.title} places={places} pending={pendingPlaces} castDone={castDone} stage={shownView} onStage={onStage} />} afterTurn={afterTurn} footer={footer} onScreen={onScreen}
             empty={<span />} />
         </section>
         <section class="theatre" ref={stageRef}>
@@ -1018,9 +1025,9 @@ function Workshop({ slug }: { slug: string }) {
                   only={job && job.args[0] === shownView.step ? job.args[2] : undefined} onOpen={(key) => setByHand(`#cast:${key}`)} />
               </div>
             )}
-            {shownView.kind === 'place' && stagedPlace && <PlaceStage slug={slug} place={stagedPlace} version={tick} picked={picked} onPick={setPicked} onOpen={(thing) => setByHand(`${stagedPlace.key}@${thing}`)} />}
+            {shownView.kind === 'place' && stagedPlace && <PlaceStage slug={slug} place={stagedPlace} version={tick} onOpen={(thing) => setByHand(`${stagedPlace.key}@${thing}`)} />}
             {shownView.kind === 'place' && !stagedPlace && <div class="mat"><p class="detail">{status?.pitch ?? named('Muse Spark is dreaming up the places…')}</p></div>}
-            {shownView.kind === 'cast' && <CastStage slug={slug} version={tick} picked={picked} onPick={setPicked} onOpen={(key) => setByHand(`#cast:${key}`)} />}
+            {shownView.kind === 'cast' && <CastStage slug={slug} version={tick} onOpen={(key) => setByHand(`#cast:${key}`)} />}
             {shownView.kind === 'place' && stagedPlace?.stages.painting && <button type="button" class="stage-tool" title="Masks, floors, stand spots and repaints for this place, by hand. Or just ask the agent" onClick={() => setByHand(stagedPlace.key)}><Icon name="pencil" /> Fix this place by hand</button>}
             {shownView.kind === 'story' && (shownView.build && status ? <div class="build-on-stage">
               <Pipeline job={pipelineJob} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
@@ -1032,7 +1039,7 @@ function Workshop({ slug }: { slug: string }) {
       {byHand && (
         <div class="drawer-back" onClick={(e) => e.target === e.currentTarget && setByHand(null)}>
           <section class="drawer by-hand" role="dialog" aria-label="By hand">
-            <div class="row"><h2>{byHand.startsWith('#cast') ? 'Cast' : `${nice(byHand.split('@')[0])}, by hand`}</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setByHand(null)}>✕</button></div>
+            <div class="row"><h2>{byHand.startsWith('#cast') ? 'Cast' : byHand.includes('@') ? `${nice(byHand.split('@')[1])} · ${nice(byHand.split('@')[0])}` : `${nice(byHand)}, by hand`}</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setByHand(null)}>✕</button></div>
             {byHand.startsWith('#cast') ? <CastView slug={slug} version={tick} onError={setError} focus={byHand.split(':')[1]} /> : <PlaceEditor slug={slug} place={byHand.split('@')[0]} focus={byHand.split('@')[1]} version={tick} onError={setError} />}
           </section>
         </div>

@@ -42,7 +42,7 @@ export function CastView({ slug, version, onError, focus }: { slug: string; vers
       <ul class="cast">
         {cast.map((c) => <Card key={c.key} slug={slug} c={c} onError={onError} focused={c.key === focus} />)}
       </ul>
-      <Items slug={slug} version={version} onError={onError} />
+      <Items slug={slug} version={version} onError={onError} focus={focus?.startsWith('item-') ? focus.slice(5) : undefined} />
     </div>
   );
 }
@@ -51,10 +51,18 @@ type Item = { key: string; name: string; from: { place: string; thing: string } 
 const HOW = { cut: 'cut from the painting', redraw: 'redrawn by Muse', paint: 'painted by Muse' };
 
 /** The inventory: one icon per story item, with where it comes from; a hint or another take is icon_redo. */
-function Items({ slug, version, onError }: { slug: string; version: number; onError: (m: string) => void }) {
+function Items({ slug, version, onError, focus }: { slug: string; version: number; onError: (m: string) => void; focus?: string }) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [hints, setHints] = useState<Record<string, string>>({});
   useEffect(() => void call<Item[]>('icons_status', { slug }).then(setItems).catch(() => setItems([])), [slug, version]);
+  // Opened on one item (a click on the shelf): scroll to it once the list is there, again once pictures above loaded.
+  useEffect(() => {
+    if (!items || !focus) return;
+    const go = () => document.getElementById(`item-${focus}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    go();
+    const again = setTimeout(go, 600);
+    return () => clearTimeout(again);
+  }, [!!items, focus]);
   if (!items?.length) return null;
   const act = (name: string, input: object) => call(name, { slug, ...input }).catch((e) => onError((e as Error).message));
   return (
@@ -62,7 +70,7 @@ function Items({ slug, version, onError }: { slug: string; version: number; onEr
       <h3>Inventory</h3>
       <ul>
         {items.map((it) => (
-          <li key={it.key}>
+          <li key={it.key} id={`item-${it.key}`} class={it.key === focus ? 'focus' : undefined}>
             {it.icon ? <img src={fileUrl(slug, it.icon.file, it.icon.v)} alt={it.name} /> : <div class="noimg">no icon yet</div>}
             <div class="body">
               <strong>{it.name}</strong>

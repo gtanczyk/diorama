@@ -1,6 +1,6 @@
 // A world in the atelier: the conversation with the agent that looks after it, told in cards (the story, the
 // places, the cast, what waits for you, what a turn changed, the game), beside a stage that shows what the
-// card is about. Click a thing on the stage and it goes into the next message as "this".
+// card is about. Click a thing on the stage and it opens; the agent is told what is open with each message.
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
@@ -8,7 +8,6 @@ import { named } from './build.tsx';
 import { Icon } from './icons.tsx';
 
 export type StageView = { kind: 'build' | 'place' | 'cast' | 'story' | 'play' | 'work'; place?: string; step?: string; build?: { place?: string } };
-export type Picked = { place?: string; thing: string; name: string };
 
 type Pic = { file: string; v: number | null } | null;
 export type CardPlace = { key: string; shows: string; image: Pic; stages: Record<string, number | null>; verdict: { ok: boolean } | null; trouble?: { why: string } | null };
@@ -102,10 +101,10 @@ type Box = [number, number, number, number];
 type Masks = { things?: Record<string, { box?: Box; phrase?: string }> };
 
 /**
- * The place as a framed painting. Every thing SAM cut out is a spot to point at: hovering lights up its mask,
- * a click puts it into the next message. "Fix by hand" opens the old tools for whoever wants them.
+ * The place as a framed painting. Every thing SAM cut out is a spot: hovering lights up its mask,
+ * a click opens it (its mask, kind, stand spot: by hand).
  */
-export function PlaceStage({ slug, place, version, picked, onPick, onOpen, children }: { slug: string; place: CardPlace; version: number; picked: Picked | null; onPick: (p: Picked) => void; onOpen?: (thing: string) => void; children?: ComponentChildren }) {
+export function PlaceStage({ slug, place, version, onOpen, children }: { slug: string; place: CardPlace; version: number; onOpen?: (thing: string) => void; children?: ComponentChildren }) {
   const [masks, setMasks] = useState<Masks | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   useEffect(() => {
@@ -122,33 +121,20 @@ export function PlaceStage({ slug, place, version, picked, onPick, onOpen, child
       <div class="frame">
         <div class="pic">
           {place.image ? <img src={fileUrl(slug, place.image.file, place.image.v)} alt={place.shows} /> : <div class="empty"><strong>{nice(place.key)}</strong><span>{named('Muse Image paints it next')}</span></div>}
-          {(hover ?? (picked?.place === place.key ? picked.thing : null)) && (
-            <div class="glow" style={{ maskImage: `url("${fileUrl(slug, `places/${place.key}/masks/${hover ?? picked!.thing}.png`)}")`, WebkitMaskImage: `url("${fileUrl(slug, `places/${place.key}/masks/${hover ?? picked!.thing}.png`)}")` }} />
+          {hover && (
+            <div class="glow" style={{ maskImage: `url("${fileUrl(slug, `places/${place.key}/masks/${hover}.png`)}")`, WebkitMaskImage: `url("${fileUrl(slug, `places/${place.key}/masks/${hover}.png`)}")` }} />
           )}
           {spots.map(([key, t]) => {
             const [x0, y0, x1, y1] = t.box!;
             return (
-              <button type="button" class={`spot${picked?.place === place.key && picked.thing === key ? ' picked' : ''}`} aria-label={`Talk about the ${nice(key).toLowerCase()}`}
+              <button type="button" class="spot" aria-label={`Open the ${nice(key).toLowerCase()}`} title={`${nice(key)}: click to open it`}
                 style={{ left: `${(x0 / 1200) * 100}%`, top: `${(y0 / 896) * 100}%`, width: `${((x1 - x0) / 1200) * 100}%`, height: `${((y1 - y0) / 896) * 100}%` }}
                 onMouseEnter={() => setHover(key)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(key)} onBlur={() => setHover(null)}
-                onClick={() => onPick({ place: place.key, thing: key, name: nice(key).toLowerCase() })}>
+                onClick={() => onOpen?.(key)}>
                 {hover === key && <span class="name">{nice(key).toLowerCase()}</span>}
               </button>
             );
           })}
-          {/* Picked, as in the cast: it goes into the next message, and its details are one click away. */}
-          {(() => {
-            const on = picked?.place === place.key ? spots.find(([k]) => k === picked.thing) : undefined;
-            if (!on) return null;
-            const [x0, , x1, y1] = on[1].box!;
-            const below = y1 / 896 < 0.86;
-            return (
-              <div class={`who-acts on-pic${below ? '' : ' above'}`} style={{ left: `${Math.min(80, Math.max(20, (((x0 + x1) / 2) / 1200) * 100))}%`, top: `${((below ? y1 : on[1].box![1]) / 896) * 100}%` }}>
-                <span class="detail"><Icon name="pin" /> {nice(on[0]).toLowerCase()} · in your next message</span>
-                {onOpen && <button type="button" class="ghost small" title="Its mask, kind, the words SAM looks for, where the hero stands to use it, remove it: by hand. Free to look" onClick={() => onOpen(on[0])}><Icon name="pencil" /> Details</button>}
-              </div>
-            );
-          })()}
         </div>
       </div>
       {children}
@@ -157,8 +143,8 @@ export function PlaceStage({ slug, place, version, picked, onPick, onOpen, child
 }
 const area = (b: Box) => (b[2] - b[0]) * (b[3] - b[1]);
 
-/** The cast standing in a row; a click puts them into the next message. */
-export function CastStage({ slug, version, picked, onPick, onOpen }: { slug: string; version: number; picked: Picked | null; onPick: (p: Picked) => void; onOpen?: (key: string) => void }) {
+/** The cast standing in a row and their items on a shelf; a click opens one. */
+export function CastStage({ slug, version, onOpen }: { slug: string; version: number; onOpen?: (key: string) => void }) {
   const cast = useCast(slug, version);
   const [items, setItems] = useState<Item[]>([]);
   useEffect(() => void call<Item[]>('icons_status', { slug }).then(setItems).catch(() => setItems([])), [slug, version]);
@@ -169,37 +155,24 @@ export function CastStage({ slug, version, picked, onPick, onOpen }: { slug: str
     <div class="mat lineup">
       {/* Any cast fits the stage: up to 6 a row, more rows when there are more, each figure smaller then. */}
       <div class="figures" style={{ '--per-row': Math.min(shown.length, Math.ceil(shown.length / Math.ceil(shown.length / 6))), '--rows': Math.ceil(shown.length / 6) }}>
-      {shown.map((c) => {
-        const on = !!picked && !picked.place && picked.thing === c.key;
-        return (
-          <div class={`who-at${on ? ' on' : ''}`}>
-            <button type="button" class={`who${on ? ' picked' : ''}`} title={`${c.looksNow}. Click to talk about ${nice(c.key)}, double-click for their details`} onClick={() => onPick({ thing: c.key, name: nice(c.key) })} onDblClick={() => onOpen?.(c.key)}>
-              <img src={fileUrl(slug, c.figure!.file, c.figure!.v)} alt="" />
-              <span>{nice(c.key)}{c.role === 'hero' ? ' · hero' : ''}</span>
-            </button>
-            {/* Picked: it goes into the next message, and its details are one click away. */}
-            {on && (
-              <div class="who-acts">
-                <span class="detail"><Icon name="pin" /> in your next message</span>
-                {onOpen && <button type="button" class="ghost small" title="Looks, voice, 3D model and sprites, by hand. Free to look" onClick={() => onOpen(c.key)}><Icon name="pencil" /> Details</button>}
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {shown.map((c) => (
+        <div class="who-at">
+          <button type="button" class="who" title={`${c.looksNow}. Click to open: looks, voice, 3D model and sprites`} onClick={() => onOpen?.(c.key)}>
+            <img src={fileUrl(slug, c.figure!.file, c.figure!.v)} alt="" />
+            <span>{nice(c.key)}{c.role === 'hero' ? ' · hero' : ''}</span>
+          </button>
+        </div>
+      ))}
       </div>
-      {/* The story's items on a shelf: what the hero picks up or is handed; a click talks about one. */}
+      {/* The story's items on a shelf: what the hero picks up or is handed; a click opens one. */}
       {items.length > 0 && (
         <div class="shelf" aria-label="Items">
-          {items.map((it) => {
-            const on = !!picked && !picked.place && picked.thing === it.key;
-            return (
-              <button type="button" class={`item${on ? ' picked' : ''}`} title={`${it.name}: ${it.from ? `picked up in ${nice(it.from.place)}` : 'handed over'}. Click to talk about it`} onClick={() => onPick({ thing: it.key, name: it.name.toLowerCase() })}>
-                {it.icon ? <img src={fileUrl(slug, it.icon.file, it.icon.v)} alt="" /> : <span class="noicon">?</span>}
-                <span>{it.name}</span>
-              </button>
-            );
-          })}
+          {items.map((it) => (
+            <button type="button" class="item" title={`${it.name}: ${it.from ? `picked up in ${nice(it.from.place)}` : 'handed over'}. Click to open its icon`} onClick={() => onOpen?.(`item-${it.key}`)}>
+              {it.icon ? <img src={fileUrl(slug, it.icon.file, it.icon.v)} alt="" /> : <span class="noicon">?</span>}
+              <span>{it.name}</span>
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -207,11 +180,9 @@ export function CastStage({ slug, version, picked, onPick, onOpen }: { slug: str
 }
 type Item = { key: string; name: string; from: { place: string; thing: string } | null; icon: Pic };
 
-/** The message prefix a pick adds, and how a sent message with one is shown again. */
-export const pickPrefix = (p: Picked) => `[Looking at: ${p.place ? `${p.place} / ` : ''}${p.thing}]\n`;
-export function shownPick(text: string): { pick: string | null; rest: string } {
-  const m = /^\[Looking at: ([^\]]+)\]\n?/.exec(text);
-  if (!m) return { pick: null, rest: text };
-  const thing = m[1].split(' / ').at(-1)!;
-  return { pick: nice(thing).toLowerCase(), rest: text.slice(m[0].length) };
-}
+/**
+ * What the person has open, sent ahead of each message so "this" means something to the agent; never shown.
+ * "[Looking at: …]" is the same from older conversations.
+ */
+export const screenPrefix = (on: string) => `[On screen: ${on}]\n`;
+export const shownScreen = (text: string) => text.replace(/^\[(?:On screen|Looking at): [^\]]+\]\n?/, '');

@@ -208,6 +208,7 @@ section.agent .row { padding: 12px 14px 0; }
 .items h3 { margin: 0 0 10px; font-size: 15px; }
 .items ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
 .items li { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.items li.focus { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(194, 122, 44, 0.15); }
 .items img, .items .noimg { width: 88px; height: 88px; object-fit: contain; border-radius: 10px; background: var(--raised); display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 12px; text-align: center; }
 .items .body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .items .row { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -854,9 +855,6 @@ main.world { display: grid; grid-template-columns: minmax(340px, 30%) minmax(0, 
 .creator-choices dl > div + div { margin-top: 14px; }
 .creator-choices dt { font-size: 12px; color: var(--muted); }
 .creator-choices dd { margin: 3px 0 0; color: var(--ink); font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
-.pick-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 1px 4px 1px 8px; color: var(--text); }
-.pick-chip button { min-height: 0; padding: 0 4px; line-height: 1; }
-.pick-chip.sent { background: rgba(255, 255, 255, 0.14); border-color: transparent; color: inherit; padding-right: 8px; margin-right: 6px; }
 
 .wcard { display: block; margin: 6px 0; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; color: var(--text); transition: border-color .15s; }
 .wcard.click { cursor: pointer; }
@@ -905,12 +903,12 @@ main.world { display: grid; grid-template-columns: minmax(340px, 30%) minmax(0, 
 .mat .pic .empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--muted); font-family: var(--display); }
 .mat .pic .empty strong { font-size: 28px; font-weight: 400; color: var(--text); }
 .mat .glow { position: absolute; inset: 0; background: rgba(255, 214, 150, 0.42); mask-size: 100% 100%; -webkit-mask-size: 100% 100%; mask-mode: luminance; pointer-events: none; mix-blend-mode: screen; }
-.mat .spot { position: absolute; min-height: 0; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: crosshair; }
-.mat .spot:hover, .mat .spot:focus-visible, .mat .spot.picked { outline: 2px solid rgba(255, 255, 255, 0.85); outline-offset: 0; box-shadow: 0 0 0 4px var(--amber); }
+.mat .spot { position: absolute; min-height: 0; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+.mat .spot:hover, .mat .spot:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.85); outline-offset: 0; box-shadow: 0 0 0 4px var(--amber); }
 .mat .spot .name { position: absolute; left: 0; top: -26px; background: var(--panel); color: var(--text); font-size: 12px; padding: 2px 8px; border-radius: 6px; white-space: nowrap; pointer-events: none; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
 .mat.lineup { gap: clamp(16px, 4cqw, 48px); align-items: flex-end; padding-bottom: 6cqh; }
 .mat.lineup .who { display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 0; padding: 10px; border: 2px solid transparent; border-radius: 14px; background: none; color: var(--muted); font-size: 13.5px; }
-.mat.lineup .who:hover, .mat.lineup .who.picked { border-color: var(--amber); color: var(--text); }
+.mat.lineup .who:hover, .mat.lineup .who:focus-visible { border-color: var(--amber); color: var(--text); }
 .mat.lineup .who img { height: 52cqh; max-width: 26cqw; object-fit: contain; filter: drop-shadow(0 12px 14px rgba(60, 40, 20, 0.25)); }
 .paper-panel { flex: 1; min-height: 0; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
 .build-on-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -1042,9 +1040,6 @@ main.start .more .fields input:focus, main.start .more .fields select:focus { ou
 /* By hand: whatever the drawer holds (a place's editor, the cast) scrolls inside it, under its title row. */
 .drawer.by-hand > :not(.row) { flex: 1; min-height: 0; overflow: auto; }
 .mat.lineup .who-at { position: relative; display: flex; flex-direction: column; align-items: center; }
-.mat.lineup .who-acts { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 6px; display: flex; align-items: center; gap: 10px; white-space: nowrap; padding: 4px 4px 4px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 18px rgba(80, 55, 25, 0.12); animation: drawer-in 0.15s ease-out; }
-.mat.lineup .who-acts .detail { font-size: 12px; }
-.mat.lineup .who-acts button { min-height: 30px; padding: 0 12px; }
 .drawer.by-hand .cast-view { display: flex; flex-direction: column; gap: 14px; }
 .drawer.by-hand .cast { scroll-margin-top: 0; }
 
@@ -1055,10 +1050,9 @@ main.start .more .fields input:focus, main.start .more .fields select:focus { ou
 .mat.lineup .who { max-width: 100%; }
 .mat.lineup .who span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mat.lineup .who img { height: calc(44cqh / var(--rows, 1) + 6cqh * (var(--rows, 1) - 1) / var(--rows, 1)); max-width: 100%; }
-.mat.lineup .who-acts { z-index: 2; }
 .mat.lineup .shelf { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; max-width: 92cqw; padding-top: 16px; border-top: 1px solid var(--line); }
 .mat.lineup .item { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 0; width: 92px; padding: 6px 4px; border: 2px solid transparent; border-radius: 12px; background: none; color: var(--muted); font-size: 12px; line-height: 1.25; text-align: center; }
-.mat.lineup .item:hover, .mat.lineup .item.picked { border-color: var(--amber); color: var(--text); }
+.mat.lineup .item:hover, .mat.lineup .item:focus-visible { border-color: var(--amber); color: var(--text); }
 .mat.lineup .item img { width: 52px; height: 52px; object-fit: contain; filter: drop-shadow(0 4px 6px rgba(60, 40, 20, 0.2)); }
 .mat.lineup .item .noicon { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 12px; background: var(--raised); color: var(--faint); font-size: 18px; }
 /* Cast details: signs for what a character has, a round play button, and the one opened from the stage. */
@@ -1152,11 +1146,6 @@ main.start .more .fields input:focus, main.start .more .fields select:focus { ou
 .cw-stages li.stop { background: #f3d9d2; color: #8a2b17; }
 .cw-slots .to-come.still { animation: none; opacity: 0.5; }
 .stage-top .back { flex: none; width: 36px; height: 36px; min-height: 0; padding: 0; border-radius: 50%; font-size: 18px; line-height: 1; }
-/* A thing picked on the place: the same chip as a picked character, under it (above it near the bottom edge). */
-.mat .who-acts.on-pic { position: absolute; z-index: 3; transform: translate(-50%, 8px); display: flex; align-items: center; gap: 10px; white-space: nowrap; padding: 4px 4px 4px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 18px rgba(80, 55, 25, 0.18); animation: drawer-in 0.15s ease-out; }
-.mat .who-acts.on-pic.above { transform: translate(-50%, calc(-100% - 8px)); }
-.mat .who-acts.on-pic .detail { font-size: 12px; }
-.mat .who-acts.on-pic button { min-height: 30px; padding: 0 12px; }
 table.things tr.focus td { background: color-mix(in srgb, var(--amber) 16%, transparent); }
 /* The editor scrolls as a whole: none of its rows (the tool tabs above all) is squeezed to fit. */
 .editor > * { flex-shrink: 0; }
@@ -1198,7 +1187,7 @@ select:not([multiple]) { padding-right: 28px !important; }
 
 /* Line icons (icons.tsx) sit on the text's baseline and take its colour. */
 .icon { vertical-align: -3px; flex: none; }
-button > .icon, .detail > .icon, .pick-chip > .icon { margin-right: 2px; }
+button > .icon, .detail > .icon { margin-right: 2px; }
 .a-sign .icon { vertical-align: middle; }
 .cast .who .sign .icon { vertical-align: 0; }
 

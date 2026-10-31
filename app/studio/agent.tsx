@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, fileUrl, token } from './api.ts';
 import { Camera } from './camera.tsx';
 import { SayIt } from './say-it.tsx';
-import { pickPrefix, shownPick, type Picked } from './world.tsx';
+import { screenPrefix, shownScreen } from './world.tsx';
 import { Icon } from './icons.tsx';
 
 /** What each Studio tool does, as the person would say it. */
@@ -157,10 +157,10 @@ function steps(args: readonly string[]): string[] {
 }
 const clock = (s: number) => (s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`);
 
-/** In the atelier the panel is the world's conversation: cards before and between turns, and the thing picked on the stage. */
-type Atelier = { pinned?: ComponentChildren; notices?: readonly ChatNotice[]; afterTurn?: (turn: SessionTurn, index: number, last: boolean) => ComponentChildren; footer?: (agentBusy: boolean) => ComponentChildren; picked?: Picked | null; onUnpick?: () => void; empty?: ComponentChildren };
+/** In the atelier the panel is the world's conversation: cards before and between turns, and what the stage has open. */
+type Atelier = { pinned?: ComponentChildren; notices?: readonly ChatNotice[]; afterTurn?: (turn: SessionTurn, index: number, last: boolean) => ComponentChildren; footer?: (agentBusy: boolean) => ComponentChildren; onScreen?: string | null; empty?: ComponentChildren };
 
-export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterTurn, footer, picked, onUnpick, empty, pinned }: { slug: string; replay?: string | null; speed?: number; jobs?: readonly JobInfo[] } & Atelier) {
+export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterTurn, footer, onScreen, empty, pinned }: { slug: string; replay?: string | null; speed?: number; jobs?: readonly JobInfo[] } & Atelier) {
   const [liveState, live] = useSession(replay ? '' : slug);
   const [replayed, replayDone] = useReplay(slug, replay ?? null, speed);
   const state = describeCalls(replay ? replayed : liveState, jobs);
@@ -211,10 +211,9 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
   };
   const images = (list: DataTransfer | null) => [...(list?.files ?? [])].filter((f) => f.type.startsWith('image/'));
   const send = (text: string) => {
-    const looked = picked ? pickPrefix(picked) + text : text;
+    const looked = onScreen ? screenPrefix(onScreen) + text : text;
     const said = pics.length ? `[Pictures: ${pics.join(', ')}]\n${looked}` : looked;
     setPics([]);
-    onUnpick?.();
     void post('say', { text: said });
   };
   const choose = async (name: string) => {
@@ -292,7 +291,7 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
           return (handover || after ? <>{after}{handover}</> : null) as never;
         }}
         renderFooter={footer && (() => footer(running) as never)}
-        placeholder={running ? undefined : picked ? `What about the ${picked.name}?` : `Ask for a change, or click something in the picture…`}
+        placeholder={running ? undefined : 'Ask for a change…'}
         theme="light"
         disabled={!!replay || !live}
         header={
@@ -320,7 +319,6 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
         emptyState={empty ?? <p class="note">Ask for a world, a fix or a check. Each step shows here and in Activity, and Undo takes back everything the agent did in its last turn.</p>}
         hint={replay ? null : (
           <div class="pics">
-            {picked && <span class="pick-chip" title="Goes with your next message: the agent knows what you mean by this"><Icon name="pin" /> {picked.name}<button type="button" class="ghost bare" aria-label="Forget it" onClick={onUnpick}>×</button></span>}
             {pics.map((f) => (
               <span class="pic">
                 <img src={fileUrl(slug, f)} alt="" />
@@ -363,12 +361,11 @@ function shownPrompt(text: string, slug: string) {
   const asked = /^\[Ask: ([^\]\n]+)\]\n/.exec(text);
   if (asked) return <details class="ask-note"><summary>{asked[1]}</summary><p>{text.slice(asked[0].length)}</p></details>;
   const m = /^\[Pictures: ([^\]]+)\]\n?/.exec(text);
-  const { pick, rest } = shownPick(m ? text.slice(m[0].length) : text);
-  if (!m && !pick) return studioNote(text);
+  const rest = shownScreen(m ? text.slice(m[0].length) : text);
+  if (!m && rest === text) return studioNote(text);
   return (
     <>
       {m && <span class="pics sent">{m[1].split(', ').map((f) => <button type="button" class="pic-open" data-lightbox={fileUrl(slug, f)} title="See it big"><img src={fileUrl(slug, f)} alt="" /></button>)}</span>}
-      {pick && <span class="pick-chip sent"><Icon name="pin" /> {pick}</span>}
       {rest}
     </>
   );
