@@ -14,7 +14,10 @@ const STAND = 'standing still in a clear rigging A-pose: both straight arms exte
 // Looks often say "hand in pocket"; this pose wins over it.
 // Empty hands make Muse put down what the painting had in them: a suitcase standing at the feet in one view
 // becomes a slab TRELLIS fuses to a boot, and it swings with the leg in every sprite. So it is left out, not put down.
-const HANDS = 'Both hands empty and fully visible, well separated from the thighs, never touching clothing: not in pockets, not on the hips, not holding anything, not in front of the body. Whatever the description has in their hands (a suitcase, a basket, a tool) is left out of the picture altogether, never put down on the ground beside them.';
+// A held flag left "out of the hands" ends up waving behind the figure; TRELLIS fuses it to the back as a
+// mangled sheet and the auto-rig skins it to the spine, so a held pole or flag is named and banned outright.
+const HANDS = 'Both hands empty and fully visible, well separated from the thighs, never touching clothing: not in pockets, not on the hips, not holding anything, not in front of the body. Whatever the description has in their hands (a suitcase, a basket, a tool) is left out of the picture altogether, never put down on the ground beside them. ' +
+  'A flag, banner, pole, staff, spear, broom, umbrella, sign or lantern they held is left out too: not behind them, not over the shoulder, not on the back, nowhere in the picture.';
 const SAME_HEAD = 'Whatever is on the head (hood up or down, hat, hair) is exactly as in the front picture, from this side too.';
 // Looks written from a photo may still say where the person sat or lay ("against a headboard"): a profile then
 // paints the headboard behind them, and TRELLIS grows it into the body as a slab around the model.
@@ -44,7 +47,8 @@ export function spotIn(view: ViewName, at: Spot): string {
 export async function readCarried(memo: Memo, key: string, front: Buffer): Promise<Carried[]> {
   const a = await askSparkJson<{ items?: { name?: unknown; at?: unknown; strap?: unknown }[] }>(memo, {
     label: `views-carried:${key}`, images: [front],
-    prompt: 'This character is seen straight from the front (their left hand is on the right of the picture). List what they wear or carry that is not plain clothing and that could end up on the wrong side in a drawing from another side: bags, satchels, backpacks, pouches, a sword, a lantern, a quiver, a scarf end, a badge. '
+    prompt: 'This character is seen straight from the front (their left hand is on the right of the picture). List what they wear on the body that is not plain clothing and that could end up on the wrong side in a drawing from another side: bags, satchels, backpacks, pouches, a sword in a belt, a quiver, a scarf end, a badge. '
+      + 'Only things fastened to the body (a strap, a belt, a hook, worn): never something held in a hand or held up, and never a flag, banner, pole, staff, umbrella or lantern, even when one shows behind them (those do not belong in this picture). '
       + 'For each: where its main part sits on the body from the character\'s own point of view, one of "front", "back", "left", "right" (a bag hanging at their left hip is "left", one on their belly is "front"), and the strap if any (e.g. "over the right shoulder, across the chest"). '
       + 'Reply with JSON only: {"items": [{"name": "brown leather satchel", "at": "front", "strap": "over the right shoulder, across the chest"}]} or {"items": []}.',
   });
@@ -66,7 +70,7 @@ export async function checkCarried(memo: Memo, key: string, views: Record<ViewNa
     label: `views-carried-check:${key}#${round}`, images: names.map((v) => views[v]),
     prompt: `Four pictures of one character, seen from the front, back, their left side (facing the picture's left) and their right side (facing the picture's right). Check only where the carried things are, and that nothing stands or lies on the ground; ignore everything else.\n${expect}\n\n`
       + 'A thing that shows on the wrong side of the body, on the front when it should be on the back (or the other way round), twice, or missing where it should be fully visible, is wrong. '
-      + 'Anything standing or lying on the ground, at the feet or beside them (a suitcase, a bag, a box, a plank), or held in a hand, is wrong in every view, the front too. '
+      + 'Anything standing or lying on the ground, at the feet or beside them (a suitcase, a bag, a box, a plank), or held in a hand, is wrong in every view, the front too; so is a flag, banner, pole, staff or umbrella anywhere in the picture, behind the figure or over the shoulder too. '
       + `Reply with JSON only: {${names.map((v) => `"${v}": {"ok": true or false, "why": "a few words"}`).join(', ')}}`,
   });
   return Object.fromEntries(names.flatMap((v) => (a[v]?.ok === false ? [[v, String(a[v]?.why ?? 'carried thing in the wrong place')]] : [])));
