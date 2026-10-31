@@ -18,7 +18,20 @@ export async function playRoute(page: Page, steps: Step[]): Promise<{ ending: st
       finally { game.pointerRoutePending--; }
     };
   })()`);
-  const settled = () => page.waitForFunction('window.diorama.place && !window.diorama.busy && !window.diorama.pointerRoutePending && !window.diorama.speech && window.diorama.dark === 0', undefined, { timeout: 60_000 });
+  // Settled is a game-clock matter: on a busy machine a long line takes minutes of wall time. Each minute the game
+  // clock moved on counts as progress; only a minute without a frame is a game that hangs.
+  const settled = async () => {
+    for (let last = -1; ;) {
+      try {
+        await page.waitForFunction('window.diorama.place && !window.diorama.busy && !window.diorama.pointerRoutePending && !window.diorama.speech && window.diorama.dark === 0', undefined, { timeout: 60_000 });
+        return;
+      } catch (error) {
+        const frame = await page.evaluate('window.diorama.frame') as number;
+        if (typeof frame !== 'number' || frame === last) throw error;
+        last = frame;
+      }
+    }
+  };
   for (const step of steps) {
     if ('wait' in step) {
       await page.evaluate(`window.diorama.wait(${JSON.stringify(step.wait)})`);

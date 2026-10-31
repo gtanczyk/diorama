@@ -36,8 +36,36 @@ List at most 4 problems a player would notice, worst first:
 For each give the region to repaint as [x0, y0, x1, y1] in pixels and one sentence on what to paint there. Never ask for text or letters. If the painting is fine, give no issues.
 
 Reply with JSON only: {"issues": [{"key": "...", "problem": "missing | wrong | flat | unwanted", "region": [0, 0, 0, 0], "fix": "..."}]}`;
-  return Critique.parse(await askSparkJson(memo, { schema: Critique, label: `critic:${place.key}`, prompt, images: [painting] }));
+  const found = Critique.parse(await askSparkJson(memo, { schema: Critique, label: `critic:${place.key}`, prompt, images: [painting] }));
+  // The critic weighs the whole picture and lets a figure pass when the place's words name one ("a child floats
+  // candle boats"); people are asked about on their own, as every one of them is a double or a stranger.
+  const people = await paintedPeople(memo, place.key, painting);
+  const near = (a: number[], b: number[]) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) < 120;
+  const extra = people.filter((p) => !found.issues.some((i) => i.problem === 'unwanted' && near(i.region, p.box))).map((p) => ({
+    key: 'person', problem: 'unwanted' as const, region: pad(p.box, 24),
+    fix: `Paint out the ${p.what}: continue what is behind them (planks, water, wall), add nothing new`,
+  }));
+  return { issues: [...found.issues, ...extra].slice(0, 6) };
 }
+
+const People = z.object({ people: z.array(z.object({ what: z.string(), box: z.tuple([z.number(), z.number(), z.number(), z.number()]) })).max(6) });
+
+/** Every person or figure painted in, with a box: none belongs in a background, the game adds its people itself. */
+export async function paintedPeople(memo: Memo, key: string, painting: Buffer): Promise<Array<{ what: string; box: [number, number, number, number] }>> {
+  const prompt = `This is a painted background (${FRAME.width}x${FRAME.height} px) for a 2D adventure. It must show no people at all.
+List every person or human figure painted in it: adults, children, sitting, crouching or far away, a silhouette in a window or a doorway. Not statues, scarecrows, posters or pictures of people.
+For each give what it is in a few words ("a crouching child in a grey hoodie") and its box [x0, y0, x1, y1] in pixels, tight around the figure.
+Reply with JSON only: {"people": [{"what": "...", "box": [0, 0, 0, 0]}]}`;
+  try {
+    const { people } = People.parse(await askSparkJson(memo, { schema: People, label: `people:${key}`, prompt, images: [painting] }));
+    return people.filter((p) => p.box[2] - p.box[0] >= 12 && p.box[3] - p.box[1] >= 20);
+  } catch {
+    return [];
+  }
+}
+
+const pad = (b: [number, number, number, number], n: number): [number, number, number, number] =>
+  [Math.max(0, b[0] - n), Math.max(0, b[1] - n), Math.min(FRAME.width, b[2] + n), Math.min(FRAME.height, b[3] + n)];
 
 /** A soft-edged alpha mask covering the regions, so patches blend into the painting. */
 function regionAlpha(regions: [number, number, number, number][], feather = 14): Promise<Buffer> {
