@@ -7,6 +7,7 @@ import { defineCommand } from '../registry.ts';
 import { placeNpcs, readCorrections } from '../scene/corrections.ts';
 import { derive, type ThingIn } from '../scene/derive.ts';
 import { depthMap } from '../scene/depthmap.ts';
+import { paintedGlows } from '../scene/glows.ts';
 import { carryFrom, ran, tilesLine } from '../scene/carry.ts';
 import { Layout, FRAME } from '../scene/layout.ts';
 import { CELL } from '../scene/walk.ts';
@@ -76,7 +77,13 @@ defineCommand({
       const previousScale = before && { ...before, source: before.source ?? ('spark' as const) };
       const lastScale = carry ? previousScale : undefined;
       const start = readCorrections(at()).start;
-      const out = await derive(files.memo, { place, layout, things, floors, painting, plates, carry, lastScale, previousScale, ...(start && { start }) }, (line) => console.log(`  ${place.key}: ${line}`));
+      // The lights as painted: the layout's points are guesses made before the painting (a lighthouse lamp drawn
+      // 170 px above its point). The runtime glows sit on them, and the lamp that lights the ground is found by them.
+      const holders = things.filter((t) => t.kind !== 'walk-on' && t.kind !== 'flat').map((t) => t.mask);
+      const glows = await paintedGlows(painting, layout.lights, holders);
+      if (glows.line) console.log(`  ${place.key}: ${glows.line}`);
+      const asPainted = { ...layout, lights: glows.glows.map((g) => ({ ...layout.lights.find((l) => l.key === g.key)!, x: g.x, y: g.y })) };
+      const out = await derive(files.memo, { place, layout: asPainted, things, floors, painting, plates, carry, lastScale, previousScale, ...(start && { start }) }, (line) => console.log(`  ${place.key}: ${line}`));
       // Shadows only with a light: without one the runtime has nothing to darken by.
       const lit = out.shadows.light && maskArea(out.shadows.mask) > 0;
       if (lit) files.write(at('masks', 'shadows.png'), await maskToPng(out.shadows.mask));
@@ -94,7 +101,7 @@ defineCommand({
         fs.rmSync(at('depth.png'), { force: true });
         measured.flagged = [...(measured.flagged ?? []), `depth: ${depth.reason}, shadows stay flat`];
       }
-      const geometry = Geometry.parse({ ...measured, ...('png' in depth && { depth: 'depth.png' }) });
+      const geometry = Geometry.parse({ ...measured, ...('png' in depth && { depth: 'depth.png' }), ...(layout.lights.length && { glows: glows.glows }) });
       files.write(at('geometry.json'), geometry);
       files.write(at('walk.png'), await walkPicture(painting, geometry, out.footprint));
       ran(at(), 'derive', carry?.old ?? painting);

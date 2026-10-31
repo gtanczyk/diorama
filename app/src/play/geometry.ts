@@ -66,6 +66,11 @@ export const Geometry = z.object({
    * `every` px from x0 (-1 where the step doesn't reach). People's feet stay on a tread and step between them.
    */
   steps: z.array(z.object({ x0: z.number(), every: z.number().positive(), top: z.array(z.number()), bottom: z.array(z.number()) })).optional(),
+  /**
+   * Where layout.lights were painted (src/scene/glows.ts): the runtime glows sit here, not on the planned
+   * points. A light missing from the list was painted nowhere near its point and gets no glow.
+   */
+  glows: z.array(z.object({ key: z.string(), x: z.number(), y: z.number() })).optional(),
   flagged: z.array(z.string()).optional(),
   /** Made from layout.json, not measured from the painting. */
   preview: z.boolean().optional(),

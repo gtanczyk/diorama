@@ -67,7 +67,10 @@ export function worldData(files: WorldFiles) {
     // layout.lights: the painted lights, to breathe, flicker, twinkle or turn their beam (src/play/glow.ts).
     const layoutFile = files.place(place.key, 'layout.json');
     const lights = painted === 'painting.png' && fs.existsSync(layoutFile) ? Layout.safeParse(files.readJson(layoutFile)) : undefined;
-    const glows = lights?.success && lights.data.lights.length ? glowsOf(lights.data.lights) : undefined;
+    // On the lights as painted when derive found them (geometry.glows); an older derive has only the planned points.
+    const paintedAt = geometry?.glows;
+    const sources = lights?.success ? (paintedAt ? lights.data.lights.flatMap((l) => { const p = paintedAt.find((g) => g.key === l.key); return p ? [{ ...l, x: p.x, y: p.y }] : []; }) : lights.data.lights) : [];
+    const glows = sources.length ? glowsOf(sources) : undefined;
     let reactions: Reactions | undefined;
     const reactionsFile = files.place(place.key, 'reactions.json');
     if (fs.existsSync(reactionsFile)) {
