@@ -172,6 +172,7 @@ const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
 const params = new URLSearchParams(location.search);
 const capture = params.has('capture');
+const nobody = params.get('people') === '0';
 const hideCursor = capture || params.get('cursor') === '0';
 // ?parallax=0 turns the diorama sway off, ?parallax=1.5 makes it stronger. Capture runs (QA, the bot) stay flat
 // unless they ask for it, since they read frame pixels at painting coordinates. ?sway=1 adds a slow idle drift.
@@ -1373,6 +1374,8 @@ class Game {
     for (const who of people) {
       drawReactions(who.y);
       if (!burnt && who.y > g.light!.at![1] + 2) burn();
+      // ?people=0: the place alone, for a landscape take; everyone keeps playing, just unseen.
+      if (nobody) continue;
       if (who.npc) {
         const drawn = this.drawWho(who, lit, 'body');
         this.drawn.push({ hot: who.npc, rect: drawn });

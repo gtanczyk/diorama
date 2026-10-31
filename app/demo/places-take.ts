@@ -1,6 +1,6 @@
 // The game itself for the film: every place of the given worlds (or only --places a,b), the hero walking a few
 // steps with the tracking camera and parallax on, one clip per place, stepped frame by frame so it plays smooth
-// at 30 fps whatever the machine (smooth.ts). --walk 0 leaves the hero standing: the place alone, alive.
+// at 30 fps whatever the machine (smooth.ts). --walk 0 hides everyone (?people=0): the place alone, alive.
 // Free: it only plays what the builds made.
 //   npx tsx app/demo/places-take.ts <slug> [<slug>...] [--places a,b] [--seconds 9] [--walk 1] [--out app/demo/footage/places]
 // Writes <slug>--<place>.mp4 (1440x1080, the game's 4:3) per place.
@@ -32,7 +32,7 @@ for (const slug of slugs) {
   for (const place of places) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1080 } });
     await page.addInitScript(HOLD_FRAMES);
-    await page.goto(`http://127.0.0.1:${port}/?place=${encodeURIComponent(place)}&capture=1&parallax=1.5&track=1&sway=1&glow=1&separate=1&rim=1`);
+    await page.goto(`http://127.0.0.1:${port}/?place=${encodeURIComponent(place)}&capture=1&parallax=1.5&track=1&sway=1&glow=1&separate=1&rim=1${walking ? '' : '&people=0'}`);
     // Loaded: the first frames draw once the place's pictures are in.
     await page.waitForTimeout(2500);
     await page.evaluate(() => (window as unknown as { __step: (n: number) => void }).__step(30));
