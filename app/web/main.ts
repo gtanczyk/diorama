@@ -125,6 +125,11 @@ type Fire = {
 };
 
 const LIGHT_CELL = 40;
+/** A whole line wrapped in one pair of quotes, without them. */
+const unquoted = (text: string) => {
+  const m = text.trim().match(/^(['"\u2018\u201c])([\s\S]+)(['"\u2019\u201d])$/);
+  return m && !m[2].includes(m[1] === "'" || m[1] === '\u2018' ? "' " : '"') ? m[2].trim() : text;
+};
 const fract = (v: number) => v - Math.floor(v);
 
 function lightMap(bg: HTMLImageElement, w: number, h: number): Place['light'] {
@@ -817,7 +822,8 @@ class Game {
     // A voiced line stays up until it has been said.
     const voiced = spokenLine(this.data.sound, text, who ?? 'narrator')?.seconds ?? 0;
     const seconds = Math.max(2.2 + text.length * 0.045, voiced + 0.5);
-    this.speech = { text, until: this.time + seconds, who, from: this.time };
+    // A line the story wrote inside quotes ('Off with you!') is shown without them: the bubble is the quotes.
+    this.speech = { text: unquoted(text), until: this.time + seconds, who, from: this.time };
     this.emit('say', { text, who: who ?? 'narrator' });
     return new Promise((resolve) => {
       const done = this.speech;
