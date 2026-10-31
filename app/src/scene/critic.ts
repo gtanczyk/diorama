@@ -35,8 +35,11 @@ List at most 4 problems a player would notice, worst first:
 - unwanted: people (any person or figure at all${cast.length ? `, even one that looks like ${cast.join(' or ')}: they are added over the picture later, so a painted one would be a double` : ''}), ${paintedAnimals(brief).length ? 'animals other than the listed ones' : 'animals'}, text, letters or a border that should not be there
 For each give the region to repaint as [x0, y0, x1, y1] in pixels and one sentence on what to paint there. Never ask for text or letters. If the painting is fine, give no issues.
 
+Never ask to paint a person in: the game adds its people over the picture.
+
 Reply with JSON only: {"issues": [{"key": "...", "problem": "missing | wrong | flat | unwanted", "region": [0, 0, 0, 0], "fix": "..."}]}`;
-  const found = Critique.parse(await askSparkJson(memo, { schema: Critique, label: `critic:${place.key}`, prompt, images: [painting] }));
+  const parsed = Critique.parse(await askSparkJson(memo, { schema: Critique, label: `critic:${place.key}`, prompt, images: [painting] }));
+  const found = { issues: parsed.issues.filter((i) => !addsPerson(i)) };
   // The critic weighs the whole picture and lets a figure pass when the place's words name one ("a child floats
   // candle boats"); people are asked about on their own, as every one of them is a double or a stranger.
   const people = await paintedPeople(memo, place.key, painting);
@@ -47,6 +50,14 @@ Reply with JSON only: {"issues": [{"key": "...", "problem": "missing | wrong | f
   }));
   return { issues: [...found.issues, ...extra].slice(0, 6) };
 }
+
+const PERSON = /\b(child|children|kid|boy|girl|man|woman|men|women|person|people|figure|keeper|seller|vendor|fisherman|sailor|someone|crowd|silhouette)s?\b/i;
+
+/**
+ * A fix that would paint a person in: the place's words often name its people ("a child sets candle boats on the
+ * water"), and the critic asks for them as missing, but the game draws its people over the picture itself.
+ */
+export const addsPerson = (i: { problem: string; fix: string }) => i.problem !== 'unwanted' && /\b(paint|add|show|draw)\b/i.test(i.fix) && PERSON.test(i.fix);
 
 const People = z.object({ people: z.array(z.object({ what: z.string(), box: z.tuple([z.number(), z.number(), z.number(), z.number()]) })).max(6) });
 

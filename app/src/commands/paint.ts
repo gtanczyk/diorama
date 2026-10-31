@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { writeBrief } from '../scene/brief.ts';
 import { seedRan } from '../scene/carry.ts';
-import { critique, repaint } from '../scene/critic.ts';
+import { addsPerson, critique, paintedPeople, repaint } from '../scene/critic.ts';
 import { readCorrections, writeCorrections } from '../scene/corrections.ts';
 import { Layout } from '../scene/layout.ts';
 import { paintPlace } from '../scene/paint.ts';
@@ -81,10 +81,19 @@ defineCommand({
         // The critic is asked again (a memo hit while its prompt stays the same): what it now finds unwanted (a person
         // painted in, a double of the place's NPC) is painted out over the painting as it is; the rest stays.
         const brief = files.readJson(files.place(place.key, 'brief.json')) as Awaited<ReturnType<typeof writeBrief>>;
+        // A person the critic itself once asked for ("a child kneeling at the dock edge") is taken out of its fixes,
+        // so the painting is made again from the first one without them.
+        const before = found.issues.length;
+        found = { issues: found.issues.filter((i) => !addsPerson(i)) };
         const again = await critique(files.memo, worded(place, words), brief, first);
+        // People are looked for on the painting as the game shows it, with every fix in, not only the first one.
+        const shown = fs.existsSync(files.place(place.key, 'painting.png')) ? fs.readFileSync(files.place(place.key, 'painting.png')) : first;
+        for (const p of shown === first ? [] : await paintedPeople(files.memo, place.key, shown)) {
+          again.issues.push({ key: 'person', problem: 'unwanted', region: p.box, fix: `Paint out the ${p.what}: continue what is behind them (planks, water, wall), add nothing new` });
+        }
         const had = new Set(found.issues.map((i) => JSON.stringify([i.region, i.fix])));
         const unwanted = again.issues.filter((i) => i.problem === 'unwanted' && !had.has(JSON.stringify([i.region, i.fix])));
-        if (unwanted.length) {
+        if (unwanted.length || found.issues.length !== before) {
           found = { issues: [...found.issues, ...unwanted].slice(0, 8) };
           files.write(files.place(place.key, 'critique.json'), found);
         }
