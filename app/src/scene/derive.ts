@@ -113,11 +113,15 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   const role = new Map(place.things.map((t) => [t.key, t.role]));
   const floorAny = unionAll(W, H, floors);
   const walkOn = unionAll(W, H, things.filter((t) => t.kind === 'walk-on').map((t) => t.mask));
-  const inTheWay = unionAll(W, H, things.filter((t) => t.kind !== 'walk-on').map((t) => t.mask));
+  // A coarse box wider than a third of the picture is a row or a group (mooring posts along a quay, a line of
+  // stalls), not one thing to walk round: as a box it would wall the place in two. It stays a thing to click, but
+  // only sharp masks and narrower boxes stand in the way.
+  const sprawling = (t: ThingIn) => t.coarse && (() => { const b = maskBox(t.mask); return !!b && b[2] - b[0] > W / 3; })();
+  const inTheWay = unionAll(W, H, things.filter((t) => t.kind !== 'walk-on' && !sprawling(t)).map((t) => t.mask));
   const ground = union(floorAny, walkOn);
 
   // Standing things (and things on top of nothing) meet the floor; coarse masks still block it.
-  const standing = things.filter((t) => t.kind === 'standing' || t.kind === 'on-top');
+  const standing = things.filter((t) => (t.kind === 'standing' || t.kind === 'on-top') && !sprawling(t));
   const blobs = standing.flatMap((t) => blobsOf(t.key, t.mask));
   const onFloor = blobs.filter((b) => things.find((t) => t.key === b.thing)!.kind === 'standing');
   // A coarse mask is a box, not a silhouette: nobody walks behind it, and all of it is in the way.
@@ -133,6 +137,7 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     flagged.push(line);
     log(line);
   };
+  for (const t of things) if (sprawling(t)) flag(`${t.key}: its coarse box is ${Math.round(W / 3)}+ px wide, so it does not block the floor`);
 
   // Join up the floor: closed cells on a painted floor are cheap to open, the layout's floors dearer,
   // things and footprints never.

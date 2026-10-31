@@ -60,7 +60,7 @@ function callsSince(files: WorldFiles, since: string): Record<string, number> {
 
 defineCommand({
   name: 'build',
-  usage: 'build <slug> ["<idea>"] run every step, world to verify, in order [--from STEP] [--to STEP] [--places N] [--photo room.jpg] [--hero-photo me.jpg] [--drawings DIR] [--told DIR] [--kids] [--language L] [--place KEY: only the place steps, for one place] [--repair off: leave errors for the agent and the person, no free fixes]',
+  usage: 'build <slug> ["<idea>"] run every step, world to verify, in order [--from STEP] [--to STEP] [--places N] [--photo room.jpg] [--hero-photo me.jpg] [--drawings DIR] [--told DIR] [--kids] [--language L] [--place KEY: only the place steps, for one place] [--repair off: leave errors for the agent and the person, no free fixes] [--max-take N: new paintings the build may ask for, default 2, 0 keeps them]',
   async run(args) {
     const from = takeOption(args, 'from', STEPS[0]) as Step;
     const to = takeOption(args, 'to', STEPS[STEPS.length - 1]) as Step;
@@ -77,6 +77,8 @@ defineCommand({
     if (kids >= 0) (args.splice(kids, 1), worldArgs.push('--kids'));
     const only = takeOption(args, 'place', '');
     const repair = takeOption(args, 'repair', 'auto');
+    // The highest take of a painting the build may ask for by itself (FLOOR_LOST); 0 keeps every painting as it is.
+    const maxTake = Number(takeOption(args, 'max-take', '2'));
     const [slug, idea] = args;
     if (!slug) throw new Error('usage: diorama build <slug> ["<idea>"] [--from STEP] [--to STEP]');
     const range = STEPS.slice(STEPS.indexOf(from), STEPS.indexOf(to) + 1).filter((s) => !only || PLACE_STEPS.includes(s));
@@ -375,7 +377,7 @@ defineCommand({
       const dir = files.place(place);
       const before = readCorrections(dir);
       const take = (before.take ?? 0) + 1;
-      if (take > 2) return r;
+      if (take > maxTake) return r;
       const after = Corrections.parse(JSON.parse(JSON.stringify(before)));
       after.take = take;
       after.repaint = after.repaint.filter((x) => !x.fix.startsWith(BUILD_REPAINT));
