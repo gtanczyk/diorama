@@ -32,7 +32,11 @@ const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
 const fact = (f: string) => f.replace(/^!has:(.*)/, 'without $1').replace(/^has:(.*)/, 'has $1').replace(/^at:(.*)/, 'at $1').replace(/^!(.*)/, 'not $1');
 const effect = (e: Effect) => Object.entries(e).map(([k, v]) => (k === 'go' ? `go to ${v}` : k === 'ending' ? `ends: ${v}` : `${k} ${v}`)).join(' ');
 
-export function StoryView({ slug, version, onError }: { slug: string; version: number; onError: (m: string) => void }) {
+/** One thing the story step did while writing: a draft from the model, or what the checker found in it. */
+export type StoryProgress = { at: number; text: string; kind: 'call' | 'check'; by?: string };
+type Writing = { since?: number; log: StoryProgress[] };
+
+export function StoryView({ slug, version, onError, writing }: { slug: string; version: number; onError: (m: string) => void; writing?: Writing }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [pick, setPick] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
@@ -42,7 +46,7 @@ export function StoryView({ slug, version, onError }: { slug: string; version: n
   useEffect(() => void load(), [slug, version]);
   if (!status) return <p class="detail">Reading the story…</p>;
   const { story } = status;
-  if (!story) return <p class="detail">No story yet: it is written by the story step of the build.</p>;
+  if (!story) return <PlanOnly status={status} writing={writing} />;
   const save = (path: string, text: string) => call('story_text', { slug, path, text }).then(load).catch((e) => onError(e.message));
   const ask = async (step: 'voices' | 'plates') => {
     if (asking) return;
@@ -63,6 +67,7 @@ export function StoryView({ slug, version, onError }: { slug: string; version: n
   const ending = story.endings.find((e) => `ending:${e.key}` === pick);
   return (
     <div class="story">
+      {writing && <Writing writing={writing} again />}
       <Verdict status={status} onAsk={ask} asking={asking} onFirst={() => call('story_redo', { slug }).catch((e) => onError(e.message))} />
       {asked && <p class="detail" role="status">Sent to the agent. Review the scope and cost in the conversation before approving generation.</p>}
       <StoryMap key={slug} status={status} story={story} pick={pick} onPick={(k) => setPick(pick === k ? null : k)} />
@@ -72,6 +77,53 @@ export function StoryView({ slug, version, onError }: { slug: string; version: n
           ? <EndingStory story={story} ending={ending.key} route={status.routes.find((r) => r.ending === ending.key)?.steps ?? null} onSave={save} />
           : <Overview story={story} onSave={save} />}
     </div>
+  );
+}
+
+/**
+ * Before the story step has written story.json, the places step has already planned the world:
+ * show that plan (what the story will be written over) rather than an empty page.
+ */
+function PlanOnly({ status, writing }: { status: Status; writing?: Writing }) {
+  return (
+    <div class="story plan-only">
+      {writing
+        ? <Writing writing={writing} />
+        : <p class="detail">The story is not written yet: the story step of the build writes it over this plan. It shows here when done.</p>}
+      <p class="detail">Hero: <strong>{status.hero}</strong> · starts in <strong>{status.start}</strong></p>
+      <ul class="plan-places">
+        {status.places.map((p) => (
+          <li>
+            <strong>{p.key}</strong>
+            <span>{p.shows}</span>
+            {!!p.things.length && <span class="detail">Things: {p.things.map((t) => t.key).join(', ')}</span>}
+            {!!p.exits.length && <span class="detail">Exits: {p.exits.map((e) => `${e.to} (${e.via})`).join(', ')}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * The story step at work: a draft, the checker plays every state and lists what breaks, the next draft fixes it
+ * (up to 4), then a dialogue review. Each of those lands here as it happens, with the step's own clock.
+ */
+function Writing({ writing, again }: { writing: Writing; again?: boolean }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const secs = writing.since ? Math.max(0, Math.round((now - writing.since) / 1000)) : null;
+  const drafts = writing.log.filter((l) => l.kind === 'call' && l.text.startsWith('draft')).length;
+  const doing = writing.log.at(-1)?.kind === 'call' && drafts ? (writing.log.at(-1)!.text.startsWith('draft') ? 'the checker plays it through' : 'deciding') : drafts ? `writing draft ${drafts + 1} of up to 4` : 'writing the first draft';
+  return (
+    <section class="story-writing" role="status" aria-live="polite">
+      <strong>{again ? 'Rewriting the story' : 'Writing the story'}{secs !== null ? ` · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}` : ''}</strong>
+      <span class="detail">Now: {doing}. Each draft is played through every state by a checker; what breaks goes back for the next draft (up to 4), then the dialogue is reviewed.{again ? ' Below: the story as it was until the new one is ready.' : ''}</span>
+      {!!writing.log.length && <ol class="story-log">{writing.log.map((l) => <li class={l.kind}>{l.by ? `${l.by}: ` : 'checker: '}{l.text}</li>)}</ol>}
+    </section>
   );
 }
 

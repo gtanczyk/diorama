@@ -29,7 +29,7 @@ test('progress shows the current extension milestone instead of old build result
     await run({ ...job, args: ['build'] }, live);
     expect(await page.locator('.phases li.run .name').allTextContents()).toContain('Cut out');
     expect(await page.locator('.phases li.existing .name').allTextContents()).toContain('Story');
-    expect(await page.locator('.pipeline').innerText()).toContain('Earlier build shown in muted green');
+    expect(await page.locator('.pipeline').innerText()).toContain('faded green: kept from the earlier build');
     expect(await page.locator('.phases li.existing .label').first().getAttribute('title')).toContain('previous build');
     await run({ ...job, label: 'voices', args: ['voices'] }, { ...live, plan: ['voices'], done: {}, running: { voices: 'run' }, since: { voices: Date.now() - 500 } });
     expect(await page.locator('.phases li.existing .name').allTextContents()).toContain('Story');
@@ -37,7 +37,7 @@ test('progress shows the current extension milestone instead of old build result
     const sound = page.locator('.phases li.run');
     expect(await sound.locator('.fill.existing').count()).toBe(1);
     expect(await sound.locator('.fill.run').count()).toBe(1);
-    expect(await sound.locator('.label').getAttribute('title')).toContain('sound (previous build)');
+    expect(await sound.locator('.label').getAttribute('title')).toContain('Sounds (previous build)');
   } finally { await browser.close(); }
 }, 30_000);
 

@@ -113,6 +113,18 @@ export function extensionDetail(progress?: ExtensionProgress, step?: string): st
  * times (world_status.typical), never a made-up countdown.
  */
 /** What each step leaves on the stage, for a click on its segment: the place layer it makes. */
+/** Step names as people say them, for the build bar's segments. */
+export const STEP_TITLE: Record<string, string> = {
+  world: 'Places plan', story: 'Story', layout: 'Plan sketch', paint: 'Painting', masks: 'Cut out things', plates: 'Change plates', icons: 'Item icons',
+  derive: 'Walkable floor', backdrop: 'Depth', weather: 'Weather', reactions: 'Reactions', cast: 'Characters', model: '3D models', sprites: 'Sprites',
+  faces: 'Talking faces', sound: 'Sounds', voices: 'Voices', verify: 'Checks',
+};
+/** What a click on a step's segment opens. */
+const STEP_OPENS: Record<string, string> = {
+  world: 'the places plan (the story is written over it)', story: 'the story', layout: 'the plan sketch Muse paints over', paint: 'the painting',
+  masks: 'what SAM cut out', plates: 'what SAM cut out', icons: 'what SAM cut out', derive: 'the walkable floor', backdrop: 'the depth map',
+};
+
 export const STEP_SHOWS: Record<string, LayerName> = { layout: 'blockin', paint: 'painting', masks: 'masks', plates: 'masks', derive: 'walk', backdrop: 'depth', weather: 'painting', reactions: 'painting' };
 
 export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: JobLike; all: string[]; live: Live; build: Record<string, { seconds: number; status?: string; warnings?: string[] }>; typical: Record<string, number>; onOpen?: (phase: string, step?: string) => void }) {
@@ -179,7 +191,7 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
           // Something to show once a step has run (or runs now); a click puts it on the stage.
           // A phase only partly done (sprites still to come) shows what its done steps made too.
           const open = onOpen && states.some((x) => x === 'ok' || x === 'existing' || x === 'run' || x === 'fail' || x === 'warn');
-          const tip = `${p.title} · ${p.by.map(nowBy).join(', ')}\n` + p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'existing' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : states[i] === 'warn' ? '!' : '·'} ${s}${states[i] === 'existing' ? ' (previous build)' : done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}`).join('\n');
+          const tip = `${p.title} · ${p.by.map(nowBy).join(', ')}\n` + p.steps.map((s, i) => `${states[i] === 'ok' ? '✓' : states[i] === 'existing' ? '✓' : states[i] === 'run' ? '…' : states[i] === 'fail' ? '✕' : states[i] === 'warn' ? '!' : '·'} ${STEP_TITLE[s] ?? s}${states[i] === 'existing' ? ' (previous build)' : done[s] !== undefined ? ` ${Math.round(done[s])}s` : ''}`).join('\n');
           let at = 0;
           return (
             <li class={`${phase}${open ? ' open' : ''}`} style={{ flexGrow: Math.max(1, all) }}>
@@ -194,7 +206,7 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
                   at += took(s);
                   const ready = states[i] === 'ok' || states[i] === 'existing' || states[i] === 'run' || states[i] === 'warn';
                   return ready && <button type="button" class="seg" style={{ left: `${(100 * from) / Math.max(1, all)}%`, width: `${(100 * took(s)) / Math.max(1, all)}%` }}
-                    title={`${s}${states[i] === 'run' ? ', running' : done[s] !== undefined ? `, ${Math.round(done[s])} s` : ''}. Click to see what it made`} onClick={() => onOpen!(p.key, s)} />;
+                    title={`${STEP_TITLE[s] ?? s} (${s})${states[i] === 'run' ? ': working now, not finished' : states[i] === 'existing' ? ': from the earlier build' : done[s] !== undefined ? `: done in ${Math.round(done[s])} s` : ': done'}.\nClick to see ${STEP_OPENS[s] ?? 'what it made'}${states[i] === 'run' ? ' (what it works from, until it is ready)' : ''}`} onClick={() => onOpen!(p.key, s)} />;
                 })}
               </span>
               {open
@@ -209,7 +221,7 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
         {onOpen && <button type="button" class="ghost small" onClick={() => onOpen('cast', 'faces')}>View characters</button>}
         {!!build.faces.warnings?.length && <details><summary>Animation details</summary><ul>{build.faces.warnings.map(w => <li>{w}</li>)}</ul></details>}
       </div>}
-      {job && <span class="detail">Earlier build shown in muted green · orange: updating now. Built steps do not confirm visual quality or a playthrough.</span>}
+      {job && <span class="detail">Each bar is split into its steps. Green: done now · faded green: kept from the earlier build · orange: working now. Built steps do not confirm visual quality or a playthrough.</span>}
     </section>
   );
 }
@@ -295,7 +307,12 @@ export function Stage({ slug, place, live, building, hold }: { slug: string; pla
   }, [building, pick, hover, shown.length, turn]);
   // A click on the build bar holds the layer its step made, on this place and the next the stage moves to.
   const held = useRef<LayerName | null>(null);
-  useEffect(() => void (hold && (held.current = hold.layer, setPick(has(place, hold.layer) ? hold.layer : newest))), [hold?.at]);
+  // Asked for a layer this place does not have yet (its step still works): say so, and switch to it once it lands.
+  const [want, setWant] = useState<LayerName | null>(null);
+  useEffect(() => void (hold && (held.current = hold.layer, setWant(hold.layer), setPick(has(place, hold.layer) ? hold.layer : newest))), [hold?.at]);
+  const ready = !!want && has(place, want);
+  useEffect(() => void (want && ready && (setPick(want), setWant(null))), [want, ready]);
+  const wanted = want && !ready ? SHOWN.find((s) => s.layer === want) : undefined;
   useEffect(() => (setPick(held.current && has(place, held.current) ? held.current : null), setTurn(0)), [place.key]);
   const cycle = ['painting', ...shown.map((s) => s.layer).filter((l) => l !== 'painting' && l !== 'blockin')] as LayerName[];
   const top: LayerName | null = pick ?? (building || shown.length < 3 ? newest : cycle[turn % cycle.length]);
@@ -324,11 +341,12 @@ export function Stage({ slug, place, live, building, hold }: { slug: string; pla
             <span>{caption.text}</span>
           </figcaption>
         )}
+        {wanted && <span class="wanted" role="status">{wanted.title}: not made yet for this place{top ? `; showing ${SHOWN.find((s) => s.layer === top)!.title.toLowerCase()} until it is` : ''}</span>}
         <span class="where">{place.key}</span>
         {shown.length > 1 && (
           <div class="layers" role="tablist" aria-label="Layers">
             {shown.map((s) => (
-              <button type="button" role="tab" aria-selected={top === s.layer} class={`ghost small${top === s.layer ? ' on' : ''}`} title={named(`${LAYER_TIPS[s.layer] ?? s.title}, by ${s.by}. Click to hold it, again to let the stage cycle`)} onClick={() => ((held.current = null), setPick(pick === s.layer ? null : s.layer))}>{s.title}</button>
+              <button type="button" role="tab" aria-selected={top === s.layer} class={`ghost small${top === s.layer ? ' on' : ''}`} title={named(`${LAYER_TIPS[s.layer] ?? s.title}, by ${s.by}. Click to hold it, again to let the stage cycle`)} onClick={() => ((held.current = null), setWant(null), setPick(pick === s.layer ? null : s.layer))}>{s.title}</button>
             ))}
           </div>
         )}

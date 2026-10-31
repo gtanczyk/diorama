@@ -13,7 +13,7 @@ import { CreatorIdea, useCreatorBrief } from './creator-idea.tsx';
 import type { CreativeChoices } from '../src/world/idea-review.ts';
 import { AudioMissing } from './audio-missing.tsx';
 import { base64, Camera, shrink } from './camera.tsx';
-import { StoryView } from './story.tsx';
+import { StoryView, type StoryProgress } from './story.tsx';
 import { StyleView } from './style-menu.tsx';
 import { askSure, Sure } from './sure.tsx';
 import { PlaceEditor } from './place.tsx';
@@ -567,6 +567,8 @@ function Workshop({ slug }: { slug: string }) {
   /** Steps the running job finished, with their seconds; the last thing it printed. */
   const [jobDone, setJobDone] = useState<Record<string, number>>({});
   const [jobTail, setJobTail] = useState('');
+  // The story step's own progress (each draft, the checker's verdict, the dialogue review), for the Story view while it writes.
+  const [storyLog, setStoryLog] = useState<StoryProgress[]>([]);
   const [jobPlan, setJobPlan] = useState<string[] | null>(null);
   /** What the last undo or redo put back, until the next job. */
   const [undone, setUndone] = useState<string | null>(null);
@@ -656,6 +658,8 @@ function Workshop({ slug }: { slug: string }) {
           const line = String(e.line).replace(/\/(?:Users|home)\/[^/\s]+/g, '~');
           if (/^\s+flag\s|^# |^calls sent:|^[a-z][a-z0-9-]*: (ok|\d+ error\(s\)), \d+ flag\(s\)$|^[a-z][a-z0-9-]*: playable, flagged and continued/.test(line)) return;
           if (line.trim()) setJobTail(line.trim().slice(0, 160));
+          const tried = /^\s*story (try \d+|: kept)/.test(line);
+          if (tried) setStoryLog((l) => [...l, { at: Date.now(), text: line.trim().replace(/^story /, '').slice(0, 220), kind: 'check' }]);
           const about = castLine(line);
           if (about) setCastWork((w) => ({ ...w, [about[0]]: { files: w[about[0]]?.files ?? {}, first: w[about[0]]?.first ?? Date.now(), said: about[1], at: Date.now() } }));
           return add(e, line, e.stream === 'err' ? 'err' : 'out');
@@ -680,6 +684,8 @@ function Workshop({ slug }: { slug: string }) {
           if (typeof e.job === 'string') setCosts((c) => ({ ...c, [e.job as string]: { ...c[e.job as string], [String(e.model)]: (c[e.job as string]?.[String(e.model)] ?? 0) + 1 } }));
           const by = callBy(String(e.model), e.via);
           setJobCalls((c) => ({ ...c, [by]: (c[by] ?? 0) + 1 }));
+          const draft = /^story(?:#(\d+)|-dialogue-review)$/.exec(String(e.label ?? ''));
+          if (draft) setStoryLog((l) => [...l, { at: Date.now(), by, text: draft[1] ? `draft ${draft[1]} written` : 'dialogue reviewed', kind: 'call' }]);
           return setLastCall({ by, label: String(e.label ?? '').replace(/#\d+$/, ''), at: Date.now() });
         }
         case 'file.changed': {
@@ -693,7 +699,7 @@ function Workshop({ slug }: { slug: string }) {
         }
         case 'feedback.changed': return soon();
         case 'job.start': case 'job.end': case 'job.queued': {
-          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setExtension(null), setCut({}), setCastWork({}));
+          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setStoryLog([]), setExtension(null), setCut({}), setCastWork({}));
           const job = e.job as Job;
           soon();
           // What the agent changed shows in an open game at once; after the person's own builds the banner offers it.
@@ -1016,8 +1022,8 @@ function Workshop({ slug }: { slug: string }) {
             {shownView.kind === 'place' && stagedPlace?.stages.painting && <button type="button" class="stage-tool" title="Masks, floors, stand spots and repaints for this place, by hand. Or just ask the agent" onClick={() => setByHand(stagedPlace.key)}><Icon name="pencil" /> Fix this place by hand</button>}
             {shownView.kind === 'story' && (shownView.build && status ? <div class="build-on-stage">
               <Pipeline job={pipelineJob} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
-              <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} /></div>
-            </div> : <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} /></div>)}
+              <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} writing={liveBuild.running.story === 'run' ? { since: liveBuild.since.story, log: storyLog } : undefined} /></div>
+            </div> : <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} writing={liveBuild.running.story === 'run' ? { since: liveBuild.since.story, log: storyLog } : undefined} /></div>)}
           </div>
         </section>
       </main>
