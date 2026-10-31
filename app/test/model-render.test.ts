@@ -95,11 +95,9 @@ test('an oversized draw fails before changing the canvas or producing a WebGL er
   } finally { await page.close(); }
 }, 30_000);
 
-test('model texture mode keeps the UV paint and does not request projected paintings', async () => {
+test('model texture mode keeps the UV paint on the body (the paintings only set its brightness and, with face: views, the face)', async () => {
   const red = await sharp({ create: { width: 4, height: 4, channels: 3, background: '#ff0000' } }).png().toBuffer();
   const page = await open(boxGlb([1.2, 1, 0.4], 1, [0, 0, 0], red));
-  const paintings: string[] = [];
-  page.on('request', (r) => { if (r.url().startsWith('http://model.test/') && r.url().endsWith('.png')) paintings.push(r.url()); });
   try {
     const result = await page.evaluate(async (info) => {
       const fig = await window.Figures.Figure3D.load({ ...info, texture: 'model' }, (f) => '/' + f, 0);
@@ -109,7 +107,6 @@ test('model texture mode keeps the UV paint and does not request projected paint
       const centre = Array.from(ctx.getImageData(c.width >> 1, c.height >> 1, 1, 1).data);
       const error = c.getContext('webgl2')!.getError(); fig.dispose(); return { centre, error };
     }, info);
-    expect(paintings).toEqual([]);
     expect(result.error).toBe(0);
     expect(result.centre[0]).toBeGreaterThan(150);
     expect(result.centre[1]).toBeLessThan(10);

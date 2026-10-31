@@ -10,6 +10,7 @@ import sharp from 'sharp';
 import type { AnimationSettings } from './animation.ts';
 import { chromium } from '../commands/explore.ts';
 import { museEdit } from '../meta/muse.ts';
+import { askSparkJson } from '../meta/spark.ts';
 import type { Memo } from '../meta/memo.ts';
 import { emptyMask, maskArea, type Mask } from '../image/mask.ts';
 import { components, dilate, maskBox, maskIou } from '../image/raster.ts';
@@ -58,8 +59,8 @@ export const OFF_GAIT = 0.88;
  * The model walking (or, given `gestures`, standing in those talking poses of src/play/gestures.ts, one
  * per cell), one transparent sheet per facing, rendered in headless Chromium with WebGL.
  */
-export async function renderGuides(modelDir: string, facings: Facing[], gestures?: number[], /** grey clay, no textures */ plain = false, animation?: AnimationSettings): Promise<Record<string, Buffer>> {
-  const info = JSON.parse(fs.readFileSync(path.join(modelDir, 'model.json'), 'utf8'));
+export async function renderGuides(modelDir: string, facings: Facing[], gestures?: number[], /** grey clay, no textures */ plain = false, animation?: AnimationSettings, /** model.json fields to override */ over: Record<string, unknown> = {}): Promise<Record<string, Buffer>> {
+  const info = { ...JSON.parse(fs.readFileSync(path.join(modelDir, 'model.json'), 'utf8')), ...over };
   if (animation) {
     info.texture = animation.texture;
     if (animation.coatCorrection !== undefined) info.coatCorrection = animation.coatCorrection;
@@ -265,3 +266,25 @@ export async function cutSheet(guidePng: Buffer, paintedPng: Buffer): Promise<{ 
   return { sheet: await sharp(out, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer(), iou, legs, same, stand: Math.max(0, stand), off };
 }
 
+
+/**
+ * Whether the model wears the front painting on its face (web/hero3d.ts `face: 'views'`) instead of its own
+ * UV texture. TRELLIS often bakes the face to a blank smudge or a dark band over the eyes; the painting then
+ * gives the face Muse drew. But the painting is fitted only by silhouette and can land a second pair of eyes
+ * beside the model's, so Spark compares the two heads, as the sprites will show them, and picks.
+ */
+export async function uvFaceLost(memo: Memo, key: string, modelDir: string, animation: AnimationSettings): Promise<boolean> {
+  const head = async (face: 'views' | undefined) => {
+    const render = (await renderGuides(modelDir, ['front'], [0], false, animation, { face })).front;
+    const trimmed = await sharp(render).trim().png().toBuffer({ resolveWithObject: true });
+    return sharp(trimmed.data).extract({ left: 0, top: 0, width: trimmed.info.width, height: Math.max(1, Math.round(trimmed.info.height * 0.2)) })
+      .flatten({ background: GREY }).resize({ width: 512 }).png().toBuffer();
+  };
+  const a = await askSparkJson<{ why?: unknown; better?: unknown }>(memo, {
+    label: `uv-face:${key}`, images: [await head(undefined), await head('views'), fs.readFileSync(path.join(modelDir, 'front.png'))],
+    prompt: 'Pictures 1 and 2 are the same 3D game character\'s head, rendered two ways; picture 3 is the painting of that character. Which render has the better face: '
+      + 'two clear, separate eyes in the right place, one nose, one mouth, closest to the painting? A face with no eyes, a dark band or smudge over the eyes, '
+      + 'or eyes doubled, shifted or cut by a seam is worse. Reply with JSON only: {"why": "a few words", "better": 1 or 2}.',
+  });
+  return Number(a.better) === 2;
+}

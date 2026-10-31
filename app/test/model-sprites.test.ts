@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { drawModelCharacter } from '../src/commands/sprites.ts';
 import { renderGuides, paintSheet, cutSheet } from '../src/model/sprites.ts';
 import { WorldFiles } from '../src/world/files.ts';
-vi.mock('../src/model/sprites.ts', async (original) => ({ ...await original<typeof import('../src/model/sprites.ts')>(), renderGuides: vi.fn(), paintSheet: vi.fn(), cutSheet: vi.fn() }));
+vi.mock('../src/model/sprites.ts', async (original) => ({ ...await original<typeof import('../src/model/sprites.ts')>(), renderGuides: vi.fn(), uvFaceLost: vi.fn(async () => false), paintSheet: vi.fn(), cutSheet: vi.fn() }));
 const plan = { key: 'hero', walk: ['right'] as ['right'], talk: { right: ['listen', 'explain'] }, lines: { Hello: 'explain' } };
 let root: string, files: WorldFiles;
 beforeEach(() => { vi.clearAllMocks(); root = fs.mkdtempSync(path.join(os.tmpdir(), 'model-sprites-')); files = new WorldFiles('w', root); });

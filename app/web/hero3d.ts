@@ -23,6 +23,8 @@ export type ModelInfo = {
   texture?: 'model' | 'views';
   /** Disable the long-coat weight correction for trousers. Omitted preserves legacy models. */
   coatCorrection?: boolean;
+  /** With the UV texture: 'views' when TRELLIS baked the face blank, so the front painting goes on the face (src/model/sprites.ts uvFaceLost). */
+  face?: 'views';
   /** Not a person on two legs (a round eye, a frog): the model has no skeleton and moves as a whole body (src/play/creature.ts). */
   creature?: boolean;
   /** bands: the across fit per slice of the height (src/model/fit.ts BANDS), feet first; without them, u everywhere. */
@@ -45,6 +47,21 @@ export type FigureLight = {
  * a third darker than the four painted sides, and so did the sprite guides Muse painted over.
  */
 export const PAINTED_LIGHT: FigureLight = { sky: 0xffffff, ground: 0xe5e5e5, ambient: 1.12 * Math.PI };
+
+/** Mean colour (linear) of a texture's used texels: the black or transparent spare atlas space is left out. */
+function meanColour(image: CanvasImageSource): [number, number, number] | undefined {
+  const R = 128;
+  const c = Object.assign(document.createElement('canvas'), { width: R, height: R }).getContext('2d', { willReadFrequently: true })!;
+  c.drawImage(image, 0, 0, R, R);
+  const px = c.getImageData(0, 0, R, R).data;
+  const sum = [0, 0, 0, 0];
+  for (let at = 0; at < px.length; at += 4) {
+    if (px[at + 3] < 128 || px[at] + px[at + 1] + px[at + 2] < 6) continue;
+    for (let ch = 0; ch < 3; ch++) sum[ch] += (px[at + ch] / 255) ** 2.2;
+    sum[3]++;
+  }
+  return sum[3] ? [sum[0] / sum[3], sum[1] / sum[3], sum[2] / sum[3]] : undefined;
+}
 
 function footAt(p: number, step: number) {
   p = ((p % 1) + 1) % 1;
@@ -328,6 +345,10 @@ export class Figure3D {
       if (!(body.material as THREE.MeshStandardMaterial).map || !body.geometry.attributes.uv) {
         throw new Error(`${info.glb}: model texture requires a base colour map and UV coordinates`);
       }
+      // TRELLIS bakes its texture from a blurred reconstruction: the face comes out as a blank smudge and dark
+      // cloth darker still (a navy coat goes black). The body keeps the UV texture (one colour per surface, no
+      // seams between views), lifted to the painted views' brightness; the face wears the front painting, so it is the one Muse painted.
+      await this.paintViews(body, info, url, true);
     } else {
       await this.paintViews(body, info, url);
     }
@@ -353,7 +374,7 @@ export class Figure3D {
   }
 
   /** Muse's views, projected in the bind pose, so the paint rides on the surface while it moves. */
-  private async paintViews(skinned: THREE.Mesh, info: ModelInfo, url: (file: string) => string) {
+  private async paintViews(skinned: THREE.Mesh, info: ModelInfo, url: (file: string) => string, headOnly = false) {
     const g = skinned.geometry;
     const pos = g.attributes.position;
     const nrm = g.attributes.normal;
@@ -376,6 +397,7 @@ export class Figure3D {
     g.setAttribute('restNrm', new THREE.BufferAttribute(restN, 3));
     g.setAttribute('restVis', new THREE.BufferAttribute(visibility(rest, g.index ? Array.from(g.index.array) : [...Array(pos.count).keys()]), 4));
     const uniforms: Record<string, THREE.IUniform> = {};
+    const painted = [0, 0, 0, 0];
     await Promise.all(VIEWS.map(async ([name]) => {
       const img = new Image();
       img.src = url(info.views[name].image);
@@ -389,6 +411,13 @@ export class Figure3D {
       const border = [...Array(R).keys()].flatMap((i) => [[i, 0], [i, R - 1], [0, i], [R - 1, i]]).map(([x, y]) => (y * R + x) * 4);
       const median = (ch: number) => border.map((at) => px[at + ch]).sort((a, b) => a - b)[border.length >> 1];
       uniforms[`bg_${name}`] = { value: new THREE.Vector3(...[0, 1, 2].map((ch) => (median(ch) / 255) ** 2.2)) };
+      // The figure's mean colour in this painting (linear), away from its background: the UV texture is matched to it.
+      const bg = [0, 1, 2].map(median);
+      for (let at = 0; at < px.length; at += 4) {
+        if (Math.abs(px[at] - bg[0]) + Math.abs(px[at + 1] - bg[1]) + Math.abs(px[at + 2] - bg[2]) < 60) continue;
+        for (let ch = 0; ch < 3; ch++) painted[ch] += (px[at + ch] / 255) ** 2.2;
+        painted[3]++;
+      }
       const tex = new THREE.Texture(img);
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.needsUpdate = true;
@@ -399,6 +428,14 @@ export class Figure3D {
       uniforms[`b_${name}`] = { value: (f.bands?.length === BANDS ? f.bands : Array(BANDS).fill(f.u)).map(([a, b]) => new THREE.Vector2(a, b)) };
     }));
     uniforms.camDir = this.camDir;
+    uniforms.headOnly = { value: headOnly ? 1 : 0 };
+    uniforms.faceFromViews = { value: info.face === 'views' ? 1 : 0 };
+    uniforms.uvGain = { value: new THREE.Vector3(1, 1, 1) };
+    const map = (skinned.material as THREE.MeshStandardMaterial).map;
+    if (headOnly && map?.image && painted[3]) {
+      const uv = meanColour(map.image as CanvasImageSource);
+      if (uv) (uniforms.uvGain.value as THREE.Vector3).set(...[0, 1, 2].map((ch) => Math.min(2.5, Math.max(0.8, painted[ch] / painted[3] / uv[ch]))) as [number, number, number]);
+    }
     const decl = VIEWS.map(([k]) => `uniform sampler2D p_${k}; uniform vec4 f_${k}; uniform vec2 b_${k}[${BANDS}]; uniform vec3 bg_${k};`).join('\n');
     // Which painted view a surface wears: the one nearest the camera, wherever that view sees the surface at
     // all (it faces the view, nothing nearer covers it, the painting shows figure there, not background); the
@@ -418,7 +455,7 @@ export class Figure3D {
       sh.vertexShader = 'attribute vec3 restPos; attribute vec3 restNrm; attribute vec4 restVis; varying vec3 vRest; varying vec3 vRestN; varying vec4 vVis;\n'
         + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vRest = restPos; vRestN = restNrm; vVis = restVis;');
       sh.fragmentShader = `${decl}
-uniform vec3 camDir; varying vec3 vRest; varying vec3 vRestN; varying vec4 vVis;
+uniform vec3 camDir; uniform float headOnly; uniform float faceFromViews; uniform vec3 uvGain; varying vec3 vRest; varying vec3 vRestN; varying vec4 vVis;
 // Two views blend only in a narrow band where they claim a surface about equally.
 #define SHARP 28.
 float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + abs(c.g - bg.g) + abs(c.b - bg.b)); }
@@ -438,7 +475,10 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
   // much it faces it.
   if (best <= -1.) { acc = vec3(0.); wsum = 0.;
     for (int i = 0; i < 4; i++) { float w = pow(max(0., facing[i]), 4.) * paint[i] + 1e-6 * paint[i]; acc += c[i] * w; wsum += w; } }
-  if (wsum > 0.) diffuseColor.rgb = acc / wsum;`);
+  // Over the UV texture only the front painting goes on the face, and only where the face looks forward:
+  // two views meeting on a head leave a second eye at the seam, the UV texture round the side never does.
+  if (headOnly > 0.5) diffuseColor.rgb = mix(diffuseColor.rgb * uvGain, c[0], faceFromViews * head * paint[0] * smoothstep(0.4, 0.7, facing[0]));
+  else if (wsum > 0.) diffuseColor.rgb = acc / wsum;`);
     };
     m.needsUpdate = true;
   }

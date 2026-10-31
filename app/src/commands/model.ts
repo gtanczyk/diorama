@@ -45,9 +45,18 @@ defineCommand({
     for (const key of keys) if (Object.keys(options).length) saveAnimationSettings(files, key, animationSettings(files, key, options));
     await buildModels(files, keys, take, given, !!keyArg);
     console.log(`calls sent: muse ${files.memo.sent.muse}, space ${files.memo.sent.space}`);
-    if (withSprites) {
+    // UV sprites are renders of the model itself (no Muse): a new model without them leaves the game walking
+    // the old body's sheets (a pole the new sides left out, an old face), so they are always rendered again.
+    const uvSprites = (key: string) => {
+      try {
+        return animationSettings(files, key).texture === 'model' && fs.existsSync(files.path('cast', key, 'model', 'model.json'));
+      } catch {
+        return false;
+      }
+    };
+    if (withSprites || keys.some(uvSprites)) {
       const plans = await planSprites(files, story);
-      for (const key of keys) if (plans.some((p) => p.key === key && !p.creature)) await registry.get('sprites')!.run([slug, key]);
+      for (const key of keys) if ((withSprites || uvSprites(key)) && plans.some((p) => p.key === key && !p.creature)) await registry.get('sprites')!.run([slug, key]);
     }
   },
 });

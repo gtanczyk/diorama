@@ -17,7 +17,7 @@ import { scene } from './fixtures/scene.ts';
 vi.mock('../src/model/build.ts', () => ({ reconstruct: vi.fn(), autoRig: vi.fn() }));
 vi.mock('../src/model/views.ts', () => ({ paintViews: vi.fn() }));
 vi.mock('../src/model/fit.ts', () => ({ fitViews: vi.fn(), refitIfOld: vi.fn() }));
-vi.mock('../src/model/sprites.ts', async (original) => ({ ...await original<typeof import('../src/model/sprites.ts')>(), renderGuides: vi.fn(), paintSheet: vi.fn() }));
+vi.mock('../src/model/sprites.ts', async (original) => ({ ...await original<typeof import('../src/model/sprites.ts')>(), renderGuides: vi.fn(), uvFaceLost: vi.fn(async () => false), paintSheet: vi.fn() }));
 let root: string, files: WorldFiles;
 const valid = boxGlb([1.2, 1, 0.4]), flat = boxGlb([1, 0.043, 1]);
 beforeEach(async () => {

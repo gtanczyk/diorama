@@ -1,10 +1,11 @@
 // diorama sprites <slug> [key]: walk and talk sprite sheets drawn by Muse over the rigged model's poses,
 // only those the world and its story use (src/model/plan.ts).
 import fs from 'node:fs';
+import path from 'node:path';
 import { gestureIndex } from '../play/gestures.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { planSprites, type CharacterPlan } from '../model/plan.ts';
-import { cutSheet, FACINGS, flatGuide, onGrey, paintSheet, POSE_OK, renderGuides, modelSheet, SHEET, TRACED, type Facing } from '../model/sprites.ts';
+import { cutSheet, FACINGS, flatGuide, onGrey, paintSheet, POSE_OK, renderGuides, modelSheet, SHEET, TRACED, uvFaceLost, type Facing } from '../model/sprites.ts';
 import { animationSettings, animationOptions, saveAnimationSettings, type AnimationSettings } from '../model/animation.ts';
 import { Story } from '../story/schema.ts';
 import { fixedLooks, readCastFixes } from '../scene/cast-fixes.ts';
@@ -187,6 +188,19 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
 export async function drawModelCharacter(files: WorldFiles, plan: CharacterPlan, settings: AnimationSettings) {
   const modelDir = files.path('cast', plan.key, 'model');
   const grid = modelSheet(settings.frames);
+  // TRELLIS often bakes a blank face: then the front painting goes on it (Spark compares the two heads once).
+  const modelFile = path.join(modelDir, 'model.json');
+  if (fs.existsSync(modelFile) && fs.existsSync(path.join(modelDir, 'front.png'))) {
+    const fromViews = await uvFaceLost(files.memo, plan.key, modelDir, settings).catch((error) => {
+      console.log(`${plan.key}: face check failed (${error instanceof Error ? error.message : String(error)}); the model texture's face stays`);
+      return false;
+    });
+    const info = files.readJson(modelFile) as Record<string, unknown>;
+    if (fromViews) info.face = 'views';
+    else delete info.face;
+    files.write(modelFile, info);
+    console.log(`${plan.key}: face ${fromViews ? 'from the front painting (the UV face came out blank)' : 'from the model texture'}`);
+  }
   const facings: Record<string, { sheet: string; yaw: number; stand: number; off: number[] }> = {};
   const talk: Record<string, { sheet: string; yaw: number; gestures: string[] }> = {};
   const images: Record<string, Buffer> = {};
