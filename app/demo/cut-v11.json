@@ -1,0 +1,460 @@
+{
+  "fps": 30,
+  "shots": [
+    {
+      "name": "1 Cold open: lighthouse in the fog",
+      "src": "footage/mac/alive/foggy-ferry-cat--lighthouse-base.mp4",
+      "from": 0.5,
+      "dur": 2.2,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ]
+    },
+    {
+      "name": "1 Cold open: the lantern market",
+      "src": "footage/mac/alive/dark-lantern-2--market-lane.mp4",
+      "from": 1,
+      "dur": 2,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "1 Cold open: lanterns on the river",
+      "src": "footage/mac/alive/dark-lantern-2--river-dock.mp4",
+      "from": 1,
+      "dur": 2,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "1 Cold open: a crayon castle",
+      "src": "footage/mac/alive/smiling-cat-castle--striped-hill-top.mp4",
+      "from": 1,
+      "dur": 2,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "1 Cold open: the lighthouse at night",
+      "src": "footage/mac/alive/foggy-ferry--lighthouse-landing.mp4",
+      "from": 1,
+      "dur": 2.6,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3,
+      "caption": "Diorama: your idea, a playable painted world"
+    },
+    {
+      "name": "2 Camera: who I am, what Diorama does",
+      "dur": 8,
+      "src": "footage/camera-intro.mp4",
+      "fade": 0.5
+    },
+    {
+      "name": "3 Studio: an idea and two photos",
+      "dur": 4,
+      "src": "footage/walk-review/take.mp4",
+      "from": 1.5,
+      "fade": 0.4,
+      "caption": "An idea, photos or a video"
+    },
+    {
+      "name": "3 Diorama reads them",
+      "dur": 3,
+      "src": "footage/walk-review/take.mp4",
+      "from": 6.3,
+      "speed": 5,
+      "caption": "Diorama reads the idea and the photos",
+      "by": "Muse Spark",
+      "speedup": "5x"
+    },
+    {
+      "name": "3 Who do you play?",
+      "dur": 3.5,
+      "src": "footage/walk-review/take.mp4",
+      "from": 23.8,
+      "caption": "and asks only what it cannot guess, in pictures",
+      "by": "Muse Spark"
+    },
+    {
+      "name": "3 Diorama sketches the next question",
+      "dur": 3,
+      "src": "footage/walk-review/take.mp4",
+      "from": 27.5,
+      "speed": 8.3,
+      "speedup": "8x"
+    },
+    {
+      "name": "3 Which thing stirs first? Build",
+      "dur": 4.5,
+      "src": "footage/walk-review/take.mp4",
+      "from": 60.6,
+      "caption": "Two clicks, then build",
+      "by": "Muse Image"
+    },
+    {
+      "name": "4 Build: the story",
+      "dur": 3.5,
+      "src": "footage/walkthrough/take.mp4",
+      "from": 82,
+      "speed": 10,
+      "fade": 0.4,
+      "caption": "Writes the places, the hero and the story",
+      "by": "Muse Spark",
+      "speedup": "10x"
+    },
+    {
+      "name": "4 Build: painting",
+      "dur": 3.5,
+      "src": "footage/walkthrough/take.mp4",
+      "from": 425,
+      "speed": 4,
+      "caption": "Paints every place",
+      "by": "Muse Image",
+      "speedup": "4x"
+    },
+    {
+      "name": "4 Build: cut out",
+      "dur": 3.5,
+      "src": "footage/walkthrough/take.mp4",
+      "from": 470,
+      "speed": 13,
+      "caption": "Cuts out everything you can touch",
+      "by": "SAM 3.1",
+      "speedup": "13x"
+    },
+    {
+      "name": "4 Build: depth and walk",
+      "dur": 3,
+      "src": "footage/walkthrough/take.mp4",
+      "from": 700,
+      "speed": 20,
+      "caption": "Depth: the floor, scale, shadows and parallax",
+      "by": "Depth Anything",
+      "speedup": "20x"
+    },
+    {
+      "name": "4 Build: voices and sound",
+      "dur": 3,
+      "src": "footage/walkthrough/take.mp4",
+      "from": 1062,
+      "speed": 25,
+      "caption": "Voices and sound",
+      "by": "ElevenLabs",
+      "speedup": "25x"
+    },
+    {
+      "name": "4 Build: the cast in 3D",
+      "dur": 3.5,
+      "src": "footage/walkthrough/take.mp4",
+      "from": 1162,
+      "speed": 33,
+      "caption": "The cast, painted from four sides and built in 3D",
+      "by": "Muse Image · 3D",
+      "speedup": "33x"
+    },
+    {
+      "name": "5 How: the plan",
+      "image": "footage/method-harbour/1-plan.png",
+      "dur": 3,
+      "fade": 0.5,
+      "caption": "Plans where every thing stands",
+      "by": "Muse Spark"
+    },
+    {
+      "name": "5 How: the painting",
+      "image": "footage/method-harbour/2-painting.png",
+      "dur": 3,
+      "fade": 0.8,
+      "caption": "Paints over the plan",
+      "by": "Muse Image"
+    },
+    {
+      "name": "5 How: the cut-outs",
+      "image": "footage/method-harbour/3-masks.png",
+      "dur": 3,
+      "fade": 0.6,
+      "caption": "Cuts out every thing you can touch",
+      "by": "SAM 3.1"
+    },
+    {
+      "name": "5 How: depth",
+      "image": "footage/method-harbour/4-depth.png",
+      "dur": 3,
+      "fade": 0.6,
+      "caption": "Depth: what is near, what is far",
+      "by": "Depth Anything"
+    },
+    {
+      "name": "5 How: floor and scale",
+      "image": "footage/method-harbour/6-walk.png",
+      "dur": 3,
+      "fade": 0.6,
+      "caption": "The floor you walk on, the hero's size at every step"
+    },
+    {
+      "name": "5 How: parallax",
+      "src": "footage/method-harbour/parallax.mp4",
+      "from": 0.5,
+      "dur": 5,
+      "fade": 0.6,
+      "caption": "Cut-outs float over the painting, like a real diorama"
+    },
+    {
+      "name": "5 How: walk sheets",
+      "src": "footage/cast/take.mp4",
+      "from": 12.3,
+      "dur": 4,
+      "crop": [
+        545,
+        300,
+        1375,
+        773
+      ],
+      "fade": 0.4,
+      "caption": "Paints the hero walking, from every side",
+      "by": "Muse Image"
+    },
+    {
+      "name": "5 How: 3D body",
+      "src": "footage/cast/take.mp4",
+      "from": 18,
+      "dur": 5,
+      "crop": [
+        545,
+        300,
+        1375,
+        773
+      ],
+      "fade": 0.3,
+      "caption": "Builds a 3D body with a skeleton",
+      "by": "TRELLIS"
+    },
+    {
+      "name": "5 How: talking",
+      "src": "footage/cast/take.mp4",
+      "from": 26.3,
+      "dur": 3,
+      "crop": [
+        545,
+        300,
+        1375,
+        773
+      ],
+      "caption": "Walks, stands and talks with its hands"
+    },
+    {
+      "name": "6 Play: lanterns on the river",
+      "src": "footage/mac/walk/dark-lantern-2--river-dock.mp4",
+      "from": 2.5,
+      "dur": 4.5,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.4
+    },
+    {
+      "name": "6 Play: the last tram",
+      "src": "footage/mac/walk/last-tram--przystanek.mp4",
+      "from": 1,
+      "dur": 4,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ]
+    },
+    {
+      "name": "6 Play: the foghorn on the cliff",
+      "src": "footage/mac/walk/ootb-test2--foghorn-point.mp4",
+      "from": 1,
+      "dur": 4,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "6 Play: the farm",
+      "src": "footage/mac/walk/podwo-rko-gospodarstwa-obora--farm-yard.mp4",
+      "from": 0.5,
+      "dur": 4,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "6 Play: the bridge in the mist",
+      "src": "footage/mac/walk/last-tram-2--river-bank.mp4",
+      "from": 1,
+      "dur": 4,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "6 Play: the ferry pier",
+      "src": "footage/mac/alive/foggy-ferry--ferry-pier.mp4",
+      "from": 1,
+      "dur": 4,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "7 Change: click, screenshot, ask",
+      "dur": 7,
+      "src": "footage/walk-change/take.mp4",
+      "from": 3,
+      "fade": 0.4,
+      "caption": "Click a thing, paste a screenshot, say what you want"
+    },
+    {
+      "name": "7 Change: the agent works",
+      "dur": 4,
+      "src": "footage/walk-change/take.mp4",
+      "from": 13.4,
+      "speed": 32.2,
+      "caption": "Muse Code changes the world with the Studio's tools",
+      "by": "Muse Code",
+      "speedup": "32x"
+    },
+    {
+      "name": "7 Change: the change, Undo, Redo",
+      "dur": 11,
+      "src": "footage/walk-change/take.mp4",
+      "from": 173.5
+    },
+    {
+      "name": "9 More worlds: the garden at dusk",
+      "src": "footage/mac/alive/grandmas-kitchen--garden.mp4",
+      "from": 1,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.4,
+      "caption": "Export: one zip or a GitHub Pages link, plays in any browser"
+    },
+    {
+      "name": "9 More worlds: the striped lighthouse",
+      "src": "footage/mac/alive/ootb-test2--lighthouse-yard.mp4",
+      "from": 1,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3,
+      "caption": "Every world here was made with Diorama"
+    },
+    {
+      "name": "9 More worlds: the tram stop",
+      "src": "footage/mac/alive/last-tram-2--tram-stop.mp4",
+      "from": 1,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "9 More worlds: the lantern market",
+      "src": "footage/mac/walk/dark-lantern-2--market-lane.mp4",
+      "from": 1,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "10 Thanks",
+      "dur": 7,
+      "card": "Diorama  ·  github.com/gtanczyk/diorama",
+      "fade": 0.6
+    }
+  ],
+  "music": {
+    "src": "footage/music.mp3",
+    "volume": 0.35
+  },
+  "voice": [
+    {
+      "src": "footage/vo/ask.wav",
+      "at": 26.1
+    },
+    {
+      "src": "footage/vo/build.wav",
+      "at": 37.1
+    },
+    {
+      "src": "footage/vo/how.wav",
+      "at": 57.1
+    },
+    {
+      "src": "footage/vo/change.wav",
+      "at": 113.6
+    },
+    {
+      "src": "footage/vo/export.wav",
+      "at": 135.6
+    },
+    {
+      "src": "footage/vo/end.wav",
+      "at": 147.6
+    }
+  ]
+}
