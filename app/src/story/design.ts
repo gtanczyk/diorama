@@ -6,6 +6,7 @@ import type { World } from '../world/schema.ts';
 import { BREVITY, brevityIssues, checkStory, paintingIssues, questionIssues, type StoryReport } from './check.ts';
 import { fromWire, WireStory, type Story } from './schema.ts';
 import { z } from 'zod';
+import { NPC_STORY_GUIDANCE } from './npc-guidance.ts';
 
 const MIN_STEPS = 6;
 
@@ -23,6 +24,7 @@ const EXAMPLE = `{
     "lines": [{ "key": "kebab-key", "says": "what the npc says", "choices": [{ "text": "what the hero answers", "when": [], "do": [], "next": "<line key or leave out to end>" }] }]
   }],
   "changes": [{ "place": "<place>", "thing": "<thing key>", "when": ["<fact>"], "looks": "how it looks once changed, a few words" }],
+  "patrols": [],
   "endings": [{ "key": "kebab-key", "title": "short", "text": "two sentences" }]
 }`;
 
@@ -40,6 +42,8 @@ Write story.json for it. Rules:
 - 3 to 6 minutes of play: 2 to 4 items, 1 or 2 locked exits, one conversation with real choices, 2 endings.
 - A fact is "flag", "!flag", "has:item", "!has:item" or "at:place". A condition is a list of facts that must all hold.
 - Effects: {"set": flag}, {"clear": flag}, {"give": item}, {"take": item}, {"go": place}, {"ending": ending key}.
+${NPC_STORY_GUIDANCE}
+- For structured wire effects, a move is {"op":"moveNpc","key":"<npc key>","to":"<place key>"}.
 - Clicking picks the first interaction listed for that thing, verb and item whose condition holds, so list special cases before the plain one.
 - Every thing should answer "look". Every item thing has a "take" with "once": true and gives the item keyed like the thing; taking it lifts it out of the painting. Something found in another thing (a fish from a stall) is a new item key; that thing stays.
 - Exits move the hero by themselves when clicked: give an exit only "look" interactions, never use/take/talk or a go effect; stop it with a lock.

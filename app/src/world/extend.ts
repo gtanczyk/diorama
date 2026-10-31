@@ -4,6 +4,7 @@ import type { Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import { checkStory, questionIssues, type StoryReport } from '../story/check.ts';
 import { Story } from '../story/schema.ts';
+import { NPC_STORY_GUIDANCE } from '../story/npc-guidance.ts';
 import { drawnIssues, type Drawn } from './drawings.ts';
 import { checkWorld, Place, Slug, Thing, type World } from './schema.ts';
 
@@ -73,12 +74,16 @@ export function mergeStory(world: World, old: Story, raw: unknown, changed: stri
   for (const i of old.interactions) { scan(i.when); for (const e of i.do) if ('set' in e || 'clear' in e) scan('set' in e ? e.set : e.clear); }
   for (const l of old.locks) scan(l.until);
   for (const c of old.changes) scan(c.when);
+  for (const p of old.patrols ?? []) scan(p.when);
   for (const d of old.dialogues) { scan(d.when); for (const l of d.lines) for (const c of l.choices) { scan(c.when); for (const e of c.do) if ('set' in e || 'clear' in e) scan('set' in e ? e.set : e.clear); } }
   const effects = [...a.interactions.flatMap(i => i.do), ...a.dialogues.flatMap(d => d.lines.flatMap(l => l.choices.flatMap(c => c.do)))];
+  const oldNpcs = new Set(oldWorld.places.flatMap(p => p.things.filter(t => t.role === 'npc').map(t => t.key)));
+  if (effects.some(e => 'moveNpc' in e && oldNpcs.has(e.moveNpc.npc)) || a.patrols?.some(p => oldNpcs.has(p.npc))) issues.push('new motion must not change existing NPCs');
   if (effects.some(e => ('set' in e && oldFlags.has(e.set)) || ('clear' in e && oldFlags.has(e.clear)) || ('take' in e && oldItems.has(e.take)) || ('give' in e && oldItems.has(e.give)))) issues.push('new effects must not change old flags or inventory items');
   if (!a.dialogues.length && !a.interactions.some(i => i.verb !== 'look' && i.do.length)) issues.push('add a conversation or an interactive activity, not only look lines');
   issues.push(...questionIssues(Story.parse({ intro: old.intro, ...a, endings: a.endings.length ? a.endings : old.endings })));
-  const story = Story.parse({ intro: old.intro, items: [...old.items, ...a.items], locks: [...old.locks, ...a.locks], interactions: [...old.interactions, ...a.interactions], dialogues: [...old.dialogues, ...a.dialogues], changes: [...old.changes, ...a.changes], endings: [...old.endings, ...a.endings] });
+  const story = Story.parse({ intro: old.intro, items: [...old.items, ...a.items], locks: [...old.locks, ...a.locks], interactions: [...old.interactions, ...a.interactions], dialogues: [...old.dialogues, ...a.dialogues], changes: [...old.changes, ...a.changes],
+    ...((old.patrols || a.patrols) && { patrols: [...(old.patrols ?? []), ...(a.patrols ?? [])] }), endings: [...old.endings, ...a.endings] });
   const report = checkStory(world, story);
   issues.push(...report.issues);
   const oldPlaceKeys = new Set(oldWorld.places.map(p => p.key));
@@ -106,7 +111,7 @@ export async function designExtension(memo: Memo, oldWorld: World, oldStory: Sto
     prompt = `${base}\nPrevious answer: ${JSON.stringify(answer)}\nFix: ${result.issues.join('; ')}`;
   }
   if (!world) throw new Error('Could not design a valid extension in 4 tries; the existing world was not changed');
-  const scriptBase = `Write ONLY additions to this point-and-click story. Preserve every existing line, ending and puzzle: do not repeat or edit them. Add look interactions for every new thing, take for new items (give their key, once true), dialogue with choices for new NPCs, and a small engaging activity involving the new material. Add a new ending reachable through each new place, triggered by an activity there. New interactions, dialogues, changes and locks may address only new things. Do not set or clear existing flags, or give or take existing items. Exit things may only have look interactions; they already move the player. Every ending must remain reachable from every non-ending state. A line with no choices must not ask a question. Use short friendly lines in ${world.language ?? 'English'}.\nWish: ${wish}\nDrawings: ${JSON.stringify(drawings)}\nExisting world: ${JSON.stringify(oldWorld)}\nExtended world: ${JSON.stringify(world)}\nExisting story: ${JSON.stringify(oldStory)}\nReturn JSON with arrays items, locks, interactions, dialogues, changes, endings. Same shapes and effects as existing story; empty arrays are fine. Do not include intro. Each new item and ending needs a unique key.`;
+  const scriptBase = `Write ONLY additions to this point-and-click story. Preserve every existing line, ending and puzzle: do not repeat or edit them. Add look interactions for every new thing, take for new items (give their key, once true), dialogue with choices for new NPCs, and a small engaging activity involving the new material. Add a new ending reachable through each new place, triggered by an activity there. New interactions, dialogues, changes and locks may address only new things. Do not set or clear existing flags, or give or take existing items. Exit things may only have look interactions; they already move the player. Every ending must remain reachable from every non-ending state. A line with no choices must not ask a question.\n${NPC_STORY_GUIDANCE}\nExtension scope: apply these stages and optional motion only to newly added NPCs. Preserve existing NPC flags, patrol order, locations and script. Use fresh NPC-prefixed flags, including flags used only in negative conditions; new effects must not move old NPCs. Dialogue and interactions for a newly added travelling NPC may refer to its destination even though it is declared only at its original place. Use short friendly lines in ${world.language ?? 'English'}.\nWish: ${wish}\nDrawings: ${JSON.stringify(drawings)}\nExisting world: ${JSON.stringify(oldWorld)}\nExtended world: ${JSON.stringify(world)}\nExisting story: ${JSON.stringify(oldStory)}\nReturn JSON with arrays items, locks, interactions, dialogues, changes, endings and optional patrols (omit or [] when nobody needs a repeated walk). Same shapes and effects as existing story; empty arrays are fine. Do not include intro. Each new item and ending needs a unique key.`;
   prompt = scriptBase;
   for (let i = 1; i <= 4; i++) {
     const answer = await askSparkJson(memo, { label: `extend-story#${i}`, prompt });

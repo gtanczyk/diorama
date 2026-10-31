@@ -36,6 +36,14 @@ The conversation is genaicode's chat with Muse Code (default), Claude Code or Co
 
 **Setup** shows what this machine still needs, which agents it found, and the model calls sent across all worlds, priced once you enter the per-call prices from your billing pages. Keys are only ever typed in the terminal (`diorama setup`).
 
+## NPC progress and movement
+
+NPCs can have simple story stages: waiting for a key, key received, then in the garden. These are ordinary flags with conditional dialogue and interactions. Ask the agent for the event and the changed response; it reads `story_status` and uses `story_redo` for behaviour or `story_text` for wording alone. Walking is optional for each character. Someone can stay in one place throughout their story, repeat a short purposeful walk, or move to a neighbouring place after one event without having a repeating route.
+
+The Story view shows conditional dialogue, optional walks and departure effects. **Move NPC** in the place editor changes the standing position; **Animate in 3D** prepares assets. Story behaviour is authored separately. After story changes, the agent checks required animation and new voice/face assets, waits for jobs, reloads the game and uses `playthrough` to check the event and the conversation in the destination. A still picture does not verify that sequence. See [NPC story stages, walking and travel](npc-motion.md) for the flag/effect format and build follow-up.
+
+`world_extend` preserves existing NPC stages, flags and walks while adding new content. Changing an existing character's progress uses the story workflow. Existing games gain movement when it is added to their story; there is no automatic requirement to make every NPC walk.
+
 ## A game from children's drawings
 
 A world can be made from what children drew and said: `diorama build <slug> --drawings photos/ --told recordings/ --places 3`, with no idea, or an idea of your own instead of the recordings. In the Studio, photograph the drawings on the home screen (📷 Camera keeps taking them; Spark tells drawings from a room or a person) and build, or add them to a world's conversation (**＋ Picture** or **Camera**) and ask the agent; it uses the same workshop actions. Each drawing is kept in `drawings/`, each clip in `told/` with what Muse Voice Transcribe heard. The world keeps every drawing under its key (`drawings.json`): characters are painted from their drawing (`cast`), places and the things drawn in them follow theirs (`paint`), and the style is their crayons come alive. A world with drawings or recordings is for kids (`audience: kids` in world.json): the story is gentle and simple, every line is voiced since the players cannot read, and the text is in the language they spoke (`language`).

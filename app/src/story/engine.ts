@@ -12,6 +12,8 @@ export type State = {
   spent: number[];
   talk?: { dialogue: number; line: string };
   ending?: string;
+  /** Only people relocated by the story: absence preserves their world.json placement. */
+  npcs?: Record<string, string>;
 };
 
 export type Action =
@@ -21,11 +23,13 @@ export type Action =
   | { kind: 'choose'; index: number }
   | { kind: 'leave' };
 
-export type Step = { state: State; say: string[] };
+export type Step = { state: State; say: string[]; issues?: string[] };
 
 /** Who says an interaction's line: a person talked to answers in their own voice; everything else is the hero's remark. */
 export function speakerOf(world: World, it: { place: string; thing: string; verb: string }): string {
-  const npc = it.verb === 'talk' && world.places.find((p) => p.key === it.place)?.things.some((t) => t.key === it.thing && t.role === 'npc');
+  if (it.verb !== 'talk') return world.hero.key;
+  const local = world.places.find((p) => p.key === it.place)?.things.find((t) => t.key === it.thing);
+  const npc = local ? local.role === 'npc' : world.places.some((p) => p.things.some((t) => t.key === it.thing && t.role === 'npc'));
   return npc ? it.thing : world.hero.key;
 }
 
@@ -45,13 +49,21 @@ export function holds(state: State, when: readonly string[]): boolean {
 }
 
 /** The interaction a click would fire right now, if any: the first one listed whose condition holds. */
-export function pickInteraction(story: Story, state: State, a: { thing: string; verb: string; with?: string }): number {
+export function npcHere(world: World, state: State, npc: string): boolean {
+  return state.npcs?.[npc] ? state.npcs[npc] === state.place
+    : !!world.places.find((p) => p.key === state.place)?.things.some((t) => t.key === npc && t.role === 'npc');
+}
+
+export function pickInteraction(story: Story, state: State, a: { thing: string; verb: string; with?: string }, world: World): number {
+  const local = world.places.find((p) => p.key === state.place)?.things.find((t) => t.key === a.thing);
+  if ((!local || local.role === 'npc') && world.places.some((p) => p.things.some((t) => t.key === a.thing && t.role === 'npc')) && !npcHere(world, state, a.thing)) return -1;
   return story.interactions.findIndex((it, i) =>
     it.place === state.place && it.thing === a.thing && it.verb === a.verb && it.with === a.with
     && !state.spent.includes(i) && holds(state, it.when));
 }
 
-export function pickDialogue(story: Story, state: State, npc: string): number {
+export function pickDialogue(story: Story, state: State, npc: string, world: World): number {
+  if (!npcHere(world, state, npc)) return -1;
   return story.dialogues.findIndex((d) => d.place === state.place && d.npc === npc && holds(state, d.when));
 }
 
@@ -76,10 +88,10 @@ export function actions(world: World, story: Story, state: State): Action[] {
     if (it.place !== state.place || seen.has(id)) continue;
     if (it.with && !state.items.includes(it.with)) continue;
     const a = { kind: 'do' as const, thing: it.thing, verb: it.verb, ...(it.with ? { with: it.with } : {}) };
-    if (pickInteraction(story, state, a) >= 0) { seen.add(id); out.push(a); }
+    if (pickInteraction(story, state, a, world) >= 0) { seen.add(id); out.push(a); }
   }
   for (const d of story.dialogues) {
-    if (d.place === state.place && !out.some((a) => a.kind === 'talk' && a.npc === d.npc) && pickDialogue(story, state, d.npc) >= 0) {
+    if (d.place === state.place && !out.some((a) => a.kind === 'talk' && a.npc === d.npc) && pickDialogue(story, state, d.npc, world) >= 0) {
       out.push({ kind: 'talk', npc: d.npc });
     }
   }
@@ -87,8 +99,9 @@ export function actions(world: World, story: Story, state: State): Action[] {
 }
 
 export function apply(world: World, story: Story, state: State, action: Action): Step {
-  const next: State = { ...state, flags: [...state.flags], items: [...state.items], spent: [...state.spent] };
+  const next: State = { ...state, flags: [...state.flags], items: [...state.items], spent: [...state.spent], ...(state.npcs && { npcs: { ...state.npcs } }) };
   const say: string[] = [];
+  const issues: string[] = [];
   switch (action.kind) {
     case 'go': {
       const lock = lockOn(story, state, action.via);
@@ -99,16 +112,16 @@ export function apply(world: World, story: Story, state: State, action: Action):
       break;
     }
     case 'do': {
-      const i = pickInteraction(story, state, action);
+      const i = pickInteraction(story, state, action, world);
       if (i < 0) return { state, say: [] };
       const it = story.interactions[i];
       say.push(it.say);
       if (it.once) next.spent.push(i);
-      run(next, it.do);
+      issues.push(...run(world, next, it.do));
       break;
     }
     case 'talk': {
-      const d = pickDialogue(story, state, action.npc);
+      const d = pickDialogue(story, state, action.npc, world);
       if (d < 0) return { state, say: [] };
       next.talk = { dialogue: d, line: story.dialogues[d].start };
       say.push(lineOf(story, next)!.says);
@@ -118,7 +131,7 @@ export function apply(world: World, story: Story, state: State, action: Action):
       const choice = lineOf(story, state)?.choices[action.index];
       if (!choice || !holds(state, choice.when)) return { state, say: [] };
       say.push(choice.text);
-      run(next, choice.do);
+      issues.push(...run(world, next, choice.do));
       next.talk = choice.next && !next.ending ? { dialogue: state.talk!.dialogue, line: choice.next } : undefined;
       if (next.talk) say.push(lineOf(story, next)!.says);
       break;
@@ -132,7 +145,8 @@ export function apply(world: World, story: Story, state: State, action: Action):
   next.items.sort();
   next.spent.sort((a, b) => a - b);
   if (!next.talk) delete next.talk;
-  return { state: next, say };
+  if (next.npcs) next.npcs = Object.fromEntries(Object.entries(next.npcs).sort(([a], [b]) => a.localeCompare(b)));
+  return { state: next, say, ...(issues.length && { issues }) };
 }
 
 function lineOf(story: Story, state: State) {
@@ -140,7 +154,8 @@ function lineOf(story: Story, state: State) {
   return story.dialogues[state.talk.dialogue].lines.find((l) => l.key === state.talk!.line);
 }
 
-function run(state: State, effects: Effect[]) {
+function run(world: World, state: State, effects: Effect[]) {
+  const issues: string[] = [];
   for (const e of effects) {
     if ('set' in e && !state.flags.includes(e.set)) state.flags.push(e.set);
     if ('clear' in e) state.flags = state.flags.filter((f) => f !== e.clear);
@@ -148,7 +163,16 @@ function run(state: State, effects: Effect[]) {
     if ('take' in e) state.items = state.items.filter((i) => i !== e.take);
     if ('go' in e) state.place = e.go;
     if ('ending' in e) state.ending = e.ending;
+    if ('moveNpc' in e) {
+      const { npc, to } = e.moveNpc;
+      const from = state.npcs?.[npc] ?? world.places.find((p) => p.things.some((t) => t.key === npc && t.role === 'npc'))?.key;
+      // A repeated action is harmless; an NPC cannot teleport across an unrelated place.
+      if (from && from !== to && world.places.find((p) => p.key === from)?.exits.some((exit) => exit.to === to))
+        state.npcs = { ...state.npcs, [npc]: to };
+      else if (from !== to) issues.push(`NPC "${npc}" cannot move from "${from ?? 'unknown'}" to "${to}" without a connecting exit`);
+    }
   }
+  return issues;
 }
 
 export function stateKey(state: State): string {

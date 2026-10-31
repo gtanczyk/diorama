@@ -10,6 +10,10 @@
 
 The page draws the best a character has: sprite sheets, else the 2D walk, else the plain cut-out. The bare 3D model (TRELLIS's textures up close: a smeared face, melted hands) only supplies poses for the sprites; the page walks a person with it only with `?model=1` (a creature keeps its model).
 
+## Story stages and optional walking
+
+A character's progress is authored with story flags and conditional dialogue: waiting for an item, received it, then moved to another place. Walks are optional per character; a single event can move someone between connected places without a repeating walk. Model/sprites plan walking assets from these story behaviours, including for a character with no spoken lines. See [NPC story stages, walking and travel](npc-motion.md) for authoring, extension rules and verification.
+
 ## Speaking faces
 
 `diorama faces <slug> [character...]` prepares reusable mouth shapes and subtle eyelid/brow movement for painted figures, their 2D rigs and visible talk-sprite poses. `build` runs `faces` after cast, sprites and voices. Studio's Cast card has **Prepare speech animation** / **Refresh speech animation**; the same job is `faces_prepare`. `faces_status` reports image/rig/sprite coverage, synchronized recording counts, skipped faces, failed preparation and the model's 3D facial capabilities.

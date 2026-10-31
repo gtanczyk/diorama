@@ -47,7 +47,7 @@ export async function playRoute(page: Page, steps: Step[]): Promise<{ ending: st
       const point = await page.evaluate<{ x: number; y: number } | null>(`(() => {
         const step = ${JSON.stringify(step)};
         const game = window.diorama;
-        const hot = game.place.hots.find(h => h.thing.key === step.use);
+        const hot = game.hots().find(h => h.thing.key === step.use);
         if (!hot) throw new Error(game.place.key + ' has no thing ' + step.use);
         const action = game.actionFor(step.use, hot, step.verb === 'look' ? 'look' : undefined);
         if (step.verb && (action.kind !== 'do' || action.verb !== step.verb || action.with !== step.with))

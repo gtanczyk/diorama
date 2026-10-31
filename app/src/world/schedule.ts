@@ -15,7 +15,8 @@ export const PLACE_STEPS: readonly Step[] = ['layout', 'paint', 'masks', 'plates
  * - icons: an item is cut from the painting of the place it is picked up in, once that place has masks
  *   (the build runs it per place; items picked up nowhere are painted once the story is there).
  * - cast reads the looks in world.json, so the figures are painted alongside the places.
- * - model needs the story (who speaks); sprites the walking routes of every place (geometry).
+ * - model needs the story (who speaks, patrols or travels); sprites need that plan and every place's geometry.
+ *   NPC stage flags/conditions travel with story.json; they need no separate build step.
  * - sound plans from every place's painting brief and floors; voices from the story's lines.
  */
 export const NEEDS: Record<Step, readonly Step[]> = {

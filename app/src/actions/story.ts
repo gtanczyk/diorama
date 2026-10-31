@@ -24,7 +24,7 @@ const readStory = (files: WorldFiles) => (fs.existsSync(files.path('story.json')
 defineAction({
   name: 'story_status',
   reads: true,
-  description: 'The story of a world: places with their exits and things, locks, items, interactions, conversations, changes and endings (story), '
+  description: 'The story of a world: places with their exits and things, locks, items, interactions, conversations, changes, optional NPC patrols and endings (story). NPC stages use flags/when; moveNpc effects relocate them after events. Includes '
     + 'the checker\'s issues and a shortest route to each ending, lines over the word limits (long), the person\'s wish and reworded lines (fixes), '
     + 'spoken lines not voiced yet (unvoiced: run_step voices) and changes whose plate is not painted for the current wording (unpainted: run_step plates). '
     + 'Text paths for story_text are dotted, like "dialogues.0.lines.2.says".',
@@ -84,9 +84,10 @@ defineAction({
 
 defineAction({
   name: 'story_redo',
-  description: 'Have Spark write the story again to a wish ("the ferrywoman should want something in return", "one ending fewer", "a puzzle with the lantern"); '
+  description: 'Have Spark write the story again to a wish ("the ferrywoman should want something in return", "after receiving the key she goes to the garden and thanks me there"); '
+    + 'NPC stages use ordinary flags and conditional dialogue; patrols are optional, and moveNpc effects trigger travel through existing exits. '
     + 'the checker plays every state, so it stays winnable. Reworded lines are dropped, since the lines change. Without a wish, goes back to Spark\'s first story. '
-    + 'Runs as a job; afterwards run_step plates (changes) and voices.',
+    + 'Runs as a job; afterwards inspect story_status/cast_status. New walkers may need model/sprites; new lines need voices/faces and visual changes need plates.',
   input: z.object({ slug: Slug, wish: z.string().trim().min(5).max(600).optional() }),
   job: true,
   async run({ slug, wish }, ctx) {

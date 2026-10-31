@@ -95,6 +95,15 @@ export async function planSprites(files: WorldFiles, story: Story | undefined): 
   };
   const geometries = world.places.map((p) => geometry(p.key)).filter((g): g is Geometry => !!g);
   const plans = new Map<string, CharacterPlan>([[hero, { key: hero, walk: walkFacings(geometries), talk: {}, lines: {} }]]);
+  const walkers = new Set([...(story?.patrols ?? []).map((p) => p.npc),
+    ...[...(story?.interactions ?? []).flatMap((i) => i.do), ...(story?.dialogues ?? []).flatMap((d) => d.lines.flatMap((l) => l.choices.flatMap((c) => c.do)))]
+      .flatMap((e) => 'moveNpc' in e ? [e.moveNpc.npc] : [])]);
+  for (const npc of walkers) {
+    // A patrol repeats in both directions; include their opposite depth facings as well.
+    const walk = new Set(walkFacings(geometries));
+    for (const f of [...walk]) walk.add(f === 'front' ? 'back' : f === 'back' ? 'front' : f === 'front-right' ? 'back-right' : f === 'back-right' ? 'front-right' : f);
+    plans.set(npc, { key: npc, walk: [...walk], talk: {}, lines: {} });
+  }
 
   // Who says what, and facing which way while saying it.
   const spoken: (SpokenLine & { facing: Facing })[] = [];

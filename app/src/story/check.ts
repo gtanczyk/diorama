@@ -17,6 +17,7 @@ export function storyNeeds(raw: unknown, place: string, thing: string): boolean 
   return s.interactions.some((i) => i.place === place && i.thing === thing && (i.verb !== 'look' || i.do.length > 0))
     || s.locks.some((l) => l.place === place && l.via === thing)
     || s.changes.some((c) => c.place === place && c.thing === thing)
+    || s.patrols?.some((p) => p.place === place && p.via.includes(thing)) === true
     || s.dialogues.some((d) => d.place === place && d.npc === thing);
 }
 
@@ -28,12 +29,22 @@ export function storyNameIssues(world: World, story: Story): string[] {
   const setFlags = new Set<string>();
   const given = new Set<string>();
   const allEffects = [...story.interactions.flatMap((i) => i.do), ...story.dialogues.flatMap((d) => d.lines.flatMap((l) => l.choices.flatMap((c) => c.do)))];
+  const moves = allEffects.flatMap((e) => 'moveNpc' in e ? [e.moveNpc] : []);
+  const isNpc = (key: string) => world.places.some((p) => p.things.some((t) => t.key === key && t.role === 'npc'));
+  const canVisit = (npc: string, placeKey: string) => isNpc(npc) && moves.some((m) => m.npc === npc && m.to === placeKey);
   for (const e of allEffects) {
     if ('set' in e) setFlags.add(e.set);
     if ('give' in e) given.add(e.give);
     if ('give' in e || 'take' in e) { const k = 'give' in e ? e.give : (e as { take: string }).take; if (!items.has(k)) issues.push(`effect uses unknown item "${k}"`); }
     if ('go' in e && !place(e.go)) issues.push(`effect goes to unknown place "${e.go}"`);
     if ('ending' in e && !endings.has(e.ending)) issues.push(`effect ends with unknown ending "${e.ending}"`);
+    if ('moveNpc' in e) {
+      const { npc, to } = e.moveNpc;
+      const homes = world.places.filter((p) => p.things.some((t) => t.key === npc && t.role === 'npc'));
+      if (homes.length !== 1) issues.push(`moveNpc: "${npc}" must be an NPC declared in exactly one place`);
+      if (!place(to)) issues.push(`moveNpc: unknown place "${to}"`);
+      if (world.places.some((p) => p.things.some((t) => t.key === npc && t.role !== 'npc'))) issues.push(`moveNpc: "${npc}" also names an object`);
+    }
   }
   const checkWhen = (where: string, when: string[]) => {
     for (const fact of when) {
@@ -47,6 +58,7 @@ export function storyNameIssues(world: World, story: Story): string[] {
     const p = place(placeKey);
     if (!p) return issues.push(`${where}: unknown place "${placeKey}"`);
     const t = p.things.find((x) => x.key === thing);
+    if (!t && role !== 'exit' && canVisit(thing, placeKey)) return;
     if (!t) issues.push(`${where}: "${thing}" is not a thing in ${placeKey}`);
     else if (role && t.role !== role) issues.push(`${where}: "${thing}" must have role "${role}"`);
   };
@@ -81,6 +93,16 @@ export function storyNameIssues(world: World, story: Story): string[] {
     }
   }
   for (const item of items) if (!given.has(item)) issues.push(`item "${item}" is never given`);
+  for (const patrol of story.patrols ?? []) {
+    const where = `patrol of ${patrol.npc} in ${patrol.place}`;
+    thingIn(where, patrol.place, patrol.npc, 'npc');
+    checkWhen(where, patrol.when);
+    if (new Set(patrol.via).size < 2) issues.push(`${where}: needs at least two different stops`);
+    for (const key of patrol.via) {
+      thingIn(where, patrol.place, key);
+      if (isNpc(key)) issues.push(`${where}: stop "${key}" must be a fixed object, not a person`);
+    }
+  }
   return issues;
 }
 
@@ -97,20 +119,22 @@ export function checkStory(world: World, raw: unknown): StoryReport & { story?: 
   const edges = new Map<string, string[]>();
   const queue = [stateKey(start)];
   const fired = new Set<number>();
+  const movementIssues = new Set<string>();
   while (queue.length && seen.size < MAX_STATES) {
     const key = queue.shift()!;
     const { state } = seen.get(key)!;
     const out: string[] = [];
     for (const action of actions(world, story, state)) {
       const step = apply(world, story, state, action);
-      if (action.kind === 'do') fired.add(pickInteraction(story, state, action));
+      for (const issue of step.issues ?? []) movementIssues.add(issue);
+      if (action.kind === 'do') fired.add(pickInteraction(story, state, action, world));
       const nextKey = stateKey(step.state);
       out.push(nextKey);
       if (!seen.has(nextKey)) { seen.set(nextKey, { state: step.state, from: key, via: action }); queue.push(nextKey); }
     }
     edges.set(key, out);
   }
-  const issues: string[] = [];
+  const issues: string[] = [...movementIssues];
   if (seen.size >= MAX_STATES) issues.push(`more than ${MAX_STATES} states; the story is too loose to check`);
 
   const actionsTo = (key: string) => {

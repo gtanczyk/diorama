@@ -31,3 +31,17 @@ test('only new lines are sent for planning, without replacing known assignments'
   const prompt = vi.mocked(askSparkJson).mock.calls[0][1].prompt;
   expect(prompt).toContain('New line'); expect(prompt).not.toContain('hero: "Hi"');
 });
+test('walking NPCs get walk sheets even without spoken lines, while stationary NPCs keep talk only', async () => {
+  const quiet = story();
+  const stationary = await planSprites(files, quiet);
+  expect(stationary.find((p) => p.key === 'guard')?.walk).toEqual([]);
+  quiet.dialogues = [];
+  quiet.patrols = [{ npc: 'guard', place: 'room', via: ['token', 'door'], when: [], pause: 2 }];
+  const patrol = await planSprites(files, quiet);
+  expect(patrol.find((p) => p.key === 'guard')?.walk.length).toBeGreaterThan(0);
+  expect(patrol.find((p) => p.key === 'guard')?.talk).toEqual({});
+  quiet.patrols = undefined;
+  quiet.interactions = Story.parse({ ...quiet, interactions: [{ place: 'room', thing: 'token', verb: 'use', say: 'Go.', do: [{ moveNpc: { npc: 'guard', to: 'garden' } }] }] }).interactions;
+  expect((await planSprites(files, quiet)).find((p) => p.key === 'guard')?.walk.length).toBeGreaterThan(0);
+  expect(askSparkJson).not.toHaveBeenCalled();
+});

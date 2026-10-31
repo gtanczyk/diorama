@@ -150,3 +150,38 @@ test('a new character drawing in a built world stays an NPC instead of replacing
     expect(JSON.parse(fs.readFileSync(path.join(dir, 'drawings.json'), 'utf8'))[0].kind).toBe('npc');
   } finally { read.mockRestore(); }
 });
+
+
+test('extension retains NPC stages and patrol priority and protects flags used only by old motion', () => {
+  const oldWorld = World.parse({ ...base, places: [{ ...base.places[0], things: [
+    ...base.places[0].things, { key: 'watcher', role: 'npc', looks: 'a quiet dock watcher' },
+  ] }] });
+  const old = Story.parse({ ...story,
+    patrols: [{ npc: 'watcher', place: 'dock', via: ['lamp', 'boat'], when: ['!watcher-resting'], pause: 2 }],
+    dialogues: [{ npc: 'watcher', place: 'dock', start: 'hello', lines: [{ key: 'hello', says: 'I saw you arrive.',
+      choices: [{ text: 'Hello.', do: [{ set: 'watcher-met' }] }] }] }],
+  });
+  const expandedPlan = { ...plan, places: [{ ...plan.places[0], things: [
+    ...plan.places[0].things, { key: 'oak', role: 'prop', looks: 'a broad green oak' },
+  ] }] };
+  const grown = mergeWorld(oldWorld, expandedPlan, [drawing]);
+  expect(grown.issues).toEqual([]);
+  const extra = { ...additions,
+    patrols: [{ npc: 'fox', place: 'hill', via: ['dock-path', 'oak'], when: ['!fox-met'], pause: 3 }],
+    interactions: [...additions.interactions, { place: 'hill', thing: 'oak', verb: 'look', say: 'A tall oak.' }],
+    dialogues: [{ ...additions.dialogues[0], lines: [{ key: 'hi', says: 'Hello, sailor!',
+      choices: [{ text: 'Hello!', do: [{ set: 'fox-met' }, { ending: 'hill-end' }] }] }] }],
+  };
+  const result = mergeStory(grown.world!, old, extra, grown.changed, oldWorld);
+  expect(result.issues).toEqual([]);
+  expect(result.story!.patrols?.[0]).toEqual(old.patrols![0]);
+  expect(result.story!.patrols?.[1].npc).toBe('fox');
+  expect(result.story!.dialogues[0]).toEqual(old.dialogues[0]);
+  expect(old.patrols).toHaveLength(1);
+  const clobber = { ...extra, dialogues: [{ ...extra.dialogues[0], lines: [{ key: 'hi', says: 'Hello.',
+    choices: [{ text: 'Hello.', do: [{ set: 'watcher-resting' }, { ending: 'hill-end' }] }] }] }] };
+  expect(mergeStory(grown.world!, old, clobber, grown.changed, oldWorld).issues)
+    .toContain('new effects must not change old flags or inventory items');
+  expect(mergeStory(grown.world!, old, { ...extra, patrols: [...extra.patrols, old.patrols![0]] }, grown.changed, oldWorld).issues)
+    .toContain('new motion must not change existing NPCs');
+});

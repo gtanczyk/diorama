@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { askAgent, call } from './api.ts';
 
-type Effect = Record<string, string>;
+type Effect = { set?: string; clear?: string; give?: string; take?: string; go?: string; ending?: string; moveNpc?: { npc: string; to: string } };
 type Interaction = { place: string; thing: string; verb: string; with?: string; when: string[]; say: string; do: Effect[]; once: boolean };
 type Choice = { text: string; when: string[]; do: Effect[]; next?: string };
 type Dialogue = { npc: string; place: string; when: string[]; start: string; lines: { key: string; says: string; choices: Choice[] }[] };
@@ -15,6 +15,7 @@ type Story = {
   interactions: Interaction[];
   dialogues: Dialogue[];
   changes: { place: string; thing: string; when: string[]; looks: string }[];
+  patrols?: { npc: string; place: string; via: string[]; when: string[]; pause: number }[];
   endings: { key: string; title: string; text: string }[];
 };
 type Place = { key: string; shows: string; exits: { to: string; via: string }[]; things: { key: string; role: string }[] };
@@ -30,7 +31,8 @@ const LIMIT = { intro: 30, say: 14, says: 20, choice: 8, ending: 25 } as const;
 const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
 
 const fact = (f: string) => f.replace(/^!has:(.*)/, 'without $1').replace(/^has:(.*)/, 'has $1').replace(/^at:(.*)/, 'at $1').replace(/^!(.*)/, 'not $1');
-const effect = (e: Effect) => Object.entries(e).map(([k, v]) => (k === 'go' ? `go to ${v}` : k === 'ending' ? `ends: ${v}` : `${k} ${v}`)).join(' ');
+const effect = (e: Effect) => e.moveNpc ? `${e.moveNpc.npc} walks to ${e.moveNpc.to}`
+  : Object.entries(e).map(([k, v]) => (k === 'go' ? `go to ${v}` : k === 'ending' ? `ends: ${v}` : `${k} ${v}`)).join(' ');
 
 /** One thing the story step did while writing: a draft from the model, or what the checker found in it. */
 export type StoryProgress = { at: number; text: string; kind: 'call' | 'check'; by?: string };
@@ -314,6 +316,9 @@ function PlaceStory({ place, story, hero, unpainted, onSave }: { place: Place; s
     <section class="inspect story-place">
       <h2>{place.key}</h2>
       <p class="detail">{place.shows}</p>
+      {(story.patrols ?? []).filter((p) => p.place === place.key).map((p) => (
+        <div class="beat"><strong>{p.npc} walks</strong> <span>{p.via.join(' → ')} → repeat</span> <Facts when={p.when} /> <span class="detail">pauses {p.pause}s at each stop</span></div>
+      ))}
       {locks.map((l) => (
         <div class="beat">
           <div class="row"><strong>{l.via}</strong><span class="badge">locked</span><Facts when={l.until} lead="opens when" /></div>

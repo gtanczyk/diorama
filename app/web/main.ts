@@ -5,7 +5,7 @@ import { WalkGrid, type Point } from '../src/play/path.ts';
 import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, RIM_ALPHA, RIM_COLOUR, RIM_WIDTH, SEPARATE_ALPHA, SEPARATE_BLUR, SEPARATE_SHIFT } from '../src/play/focus.ts';
 import { catchers, decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
 import { CYCLE, pose, sheetCell, type PartName, type Rig } from '../src/play/rig.ts';
-import { actions, activeChanges, apply, hiddenThings, pickDialogue, pickInteraction, speakerOf, startState, type Action, type State } from '../src/story/engine.ts';
+import { actions, activeChanges, apply, hiddenThings, holds, pickDialogue, pickInteraction, speakerOf, startState, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 import { Mixer, type Listened } from './audio.ts';
@@ -43,14 +43,14 @@ type Data = {
 
 type Bits = { bits: Uint8Array; area: number };
 type Who = { npc?: Hot; body?: Body; y: number };
-type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement; outline?: HTMLCanvasElement };
+type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement; outline?: HTMLCanvasElement; npc?: Npc };
 type Rect = [number, number, number, number];
 /** sprites.json, written by `diorama sprites`: one walk cycle per facing, a cols x rows grid of frames per sheet. */
 export type SpriteInfo = {
   cols: number; rows: number; frames: number; width: number; height: number;
   /** Feet at (cell width / 2, cell height * feetAt); the figure is about `px` tall. */
   feetAt: number; px: number;
-  /** Walk facings the story's routes use (none for an NPC). */
+  /** Walk facings the story's routes use (also patrols and travelling NPCs). */
   facings: Record<string, { sheet: string; yaw: number; iou?: number[]; stand?: number; off?: number[] }>;
   /** Talking sheets, same grid, usually one: cell i shows gestures[i] (cell 0 listens). */
   talk?: Record<string, { sheet: string; yaw: number; gestures?: string[] }>;
@@ -160,7 +160,7 @@ function ownerMap(depth: Depth, cuts: Cut[]): Uint8Array {
   return owner;
 }
 
-type Events = 'enter' | 'arrive' | 'say' | 'silent' | 'use' | 'exit' | 'ending';
+type Events = 'enter' | 'arrive' | 'say' | 'silent' | 'use' | 'exit' | 'ending' | 'npc-enter';
 type Verb = 'look' | 'use' | 'take' | 'talk';
 
 function lineChoice(story: Story, state: State, index: number): string {
@@ -264,19 +264,24 @@ async function loadBits(src: string, w: number, h: number): Promise<Bits> {
   return { bits, area };
 }
 
-/** A walking person the player steers: where they are, the path ahead, and how they are drawn. */
+/** A walking person: where they are, the path ahead, and how they are drawn. */
 /** run: hurrying (a double click, Shift held) until the walk ends. */
 type Body = { x: number; y: number; path: Point[]; facing: number; phase: number; yaw: number; figure: Figure | undefined; foot: number | undefined; along: number | undefined; colour?: string; run?: boolean };
 /** Walking and hurrying pace, in person heights a second (a brisk walk, about 1.7 m/s; a run). */
 const WALK = 1.05;
 const RUN = 2.1;
 const newBody = (): Body => ({ x: 0, y: 0, path: [], facing: 1, phase: 0, yaw: Math.PI / 2, figure: undefined, foot: undefined, along: undefined });
+type Npc = { key: string; home: string; place: string; body: Body; hot: Hot; stop: number; wait: number;
+  patrol?: NonNullable<Story['patrols']>[number]; target?: Place; journey?: Place[]; leaving?: Place; arriving?: boolean; blocked?: boolean };
 
 class Game {
   data!: Data;
   place!: Place;
   private cache = new Map<string, Place>();
   private figures = new Map<string, Figure>();
+  /** Bodies keep their positions when the hero leaves a place. Off-screen patrols pause. */
+  private npcs = new Map<string, Npc>();
+  private meeting?: Npc;
   /** phase counts walk cycles; it only advances with distance walked, so feet keep pace with the floor. */
   hero: Body = newBody();
   /**
@@ -473,6 +478,17 @@ class Game {
     const focus = focusScale > 0 || separateScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
     const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
     this.cache.set(key, place);
+    for (const hot of hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc')) {
+      const id = `${key}/${hot.thing.key}`;
+      if (this.npcs.has(id)) continue;
+      const body = newBody();
+      [body.x, body.y] = [(hot.thing.box[0] + hot.thing.box[2]) / 2, hot.thing.box[3]];
+      body.figure = this.figures.get(hot.thing.key);
+      const copy: Hot = { ...hot, thing: { ...hot.thing } };
+      const npc: Npc = { key: hot.thing.key, home: key, place: key, body, hot: copy, stop: 0, wait: 2 };
+      copy.npc = npc;
+      this.npcs.set(id, npc);
+    }
     return place;
   }
 
@@ -509,6 +525,9 @@ class Game {
   async enter(key: string, from?: string) {
     const place = await this.load(key);
     this.place = place;
+    this.drawn = [];
+    this.hover = undefined;
+    await this.syncNpcs();
     place.reactions?.reset();
     const back = from ? place.spec.exits.find((e) => e.to === from) : undefined;
     const arrive = back ? place.g.things.find((t) => t.key === back.via)?.stand : undefined;
@@ -632,18 +651,25 @@ class Game {
   }
 
   private async useNow(key: string, verb?: Verb) {
-    const hot = this.place.hots.find((h) => h.thing.key === key);
+    const hot = this.hots().find((h) => h.thing.key === key);
     if (!hot) throw new Error(`${this.place.key} has no thing "${key}"`);
-    const placeKey = this.place.key;
-    const [sx, sy] = this.approach(hot);
-    if (!(await this.walkTo(sx, sy)) && Math.hypot(this.hero.x - sx, this.hero.y - sy) > this.place.g.cell * 2) return;
-    if (this.place.key !== placeKey) return;
-    const [x0, , x1] = hot.thing.box;
-    this.hero.facing = (x0 + x1) / 2 >= this.hero.x ? 1 : -1;
-    // Three-quarter towards it, the way a painted figure talks to someone.
-    this.hero.yaw = this.hero.facing * Math.PI / 3;
-    this.emit('use', { thing: key, verb });
-    await this.act(this.actionFor(key, hot, verb));
+    if (hot.npc?.target) return;
+    this.meeting = hot.npc;
+    try {
+      const placeKey = this.place.key;
+      const [sx, sy] = this.approach(hot);
+      if (!(await this.walkTo(sx, sy)) && Math.hypot(this.hero.x - sx, this.hero.y - sy) > this.place.g.cell * 2) return;
+      if (this.place.key !== placeKey) return;
+      const [x0, , x1] = hot.thing.box;
+      this.hero.facing = (hot.npc?.body.x ?? (x0 + x1) / 2) >= this.hero.x ? 1 : -1;
+      // Three-quarter towards it, the way a painted figure talks to someone.
+      this.hero.yaw = this.hero.facing * Math.PI / 3;
+      this.emit('use', { thing: key, verb });
+      await this.act(this.actionFor(key, hot, verb));
+    } finally {
+      if (this.meeting) this.meeting.wait = 2;
+      this.meeting = undefined;
+    }
   }
 
   /** The thing the hero stands near enough to use from the keyboard: the one whose spot is nearest, within reach. */
@@ -651,7 +677,7 @@ class Game {
     const gone = this.gone();
     let best: Hot | undefined;
     let bestD = personPx(this.place.g, who.y) * 1.2;
-    for (const hot of this.place.hots) {
+    for (const hot of this.hots()) {
       if (gone.has(hot.thing.key)) continue;
       const [sx, sy] = this.approach(hot, who);
       const d = Math.hypot(sx - who.x, sy - who.y);
@@ -664,14 +690,15 @@ class Game {
   private approach(hot: Hot, who: Body = this.hero): Point {
     if ((hot.spec?.role ?? hot.thing.role) !== 'npc') return hot.thing.stand;
     const [x0, , x1, y1] = hot.thing.box;
-    const x = (x0 + x1) / 2;
+    const x = hot.npc?.body.x ?? (x0 + x1) / 2;
+    const y = hot.npc?.body.y ?? y1;
     const side = who.x < x ? -1 : 1;
-    const gap = personPx(this.place.g, y1) * 0.42;
+    const gap = personPx(this.place.g, y) * 0.42;
     for (const s of [side, -side]) {
-      const spot = this.place.grid.snap(x + s * gap, y1);
+      const spot = this.place.grid.snap(x + s * gap, y);
       if (spot && Math.abs(spot[0] - x) > gap * 0.6) return spot;
     }
-    return hot.thing.stand;
+    return this.place.grid.snap(x, y) ?? hot.thing.stand;
   }
 
   /** What a click on a thing means: the exit, the talk, the held item, or the first verb the story answers. */
@@ -681,10 +708,10 @@ class Game {
     const role = hot.spec?.role ?? hot.thing.role;
     // A person talks: in a conversation when the story has one for them now, else in their own talk lines.
     const story = this.data.story;
-    if (role === 'npc' && !this.holding && (!story || pickDialogue(story, this.state, key) >= 0)) return { kind: 'talk', npc: key };
+    if (role === 'npc' && !this.holding && (!story || pickDialogue(story, this.state, key, this.data.world) >= 0)) return { kind: 'talk', npc: key };
     if (this.holding) return { kind: 'do', thing: key, verb: 'use', with: this.holding };
     if (verb) return { kind: 'do', thing: key, verb };
-    const offered = story ? (['take', 'use', 'talk'] as const).find((v) => pickInteraction(story, this.state, { thing: key, verb: v }) >= 0) : undefined;
+    const offered = story ? (['take', 'use', 'talk'] as const).find((v) => pickInteraction(story, this.state, { thing: key, verb: v }, this.data.world) >= 0) : undefined;
     return { kind: 'do', thing: key, verb: offered ?? 'look' };
   }
 
@@ -699,10 +726,10 @@ class Game {
     this.emit('silent', {});
     let say: string[];
     if (story) {
-      const matched = action.kind === 'do' ? pickInteraction(story, this.state, action) : -1;
+      const matched = action.kind === 'do' ? pickInteraction(story, this.state, action, this.data.world) : -1;
       const step = apply(this.data.world, story, this.state, action);
       if (matched >= 0 && action.kind === 'do' && !this.gone().has(action.thing)) {
-        const target = this.place.hots.find((h) => h.thing.key === action.thing);
+        const target = this.hots().find((h) => h.thing.key === action.thing);
         // act() is also exposed to scripts; physical effects require the hero to be in reach.
         if (target) {
           const [x, y] = this.approach(target);
@@ -720,7 +747,7 @@ class Game {
       const exit = action.kind === 'go' ? this.place.spec.exits.find((e) => e.via === action.via) : undefined;
       if (exit) this.state = { ...this.state, place: exit.to };
       const key = action.kind === 'do' ? action.thing : action.kind === 'talk' ? action.npc : '';
-      say = exit || !key ? [] : [this.place.spec.things.find((t) => t.key === key)?.looks ?? key];
+      say = exit || !key ? [] : [this.hots().find((h) => h.thing.key === key)?.spec?.looks ?? key];
     }
     if (action.kind === 'do' && action.with) this.holding = undefined;
     if (!say.length && action.kind === 'do') say = [action.with ? this.nopeLine(action.with) : this.lookLine(action.thing, action.verb)];
@@ -742,6 +769,7 @@ class Game {
         await this.fadeOut();
         await this.enter(after.place, from);
       }
+      await this.syncNpcs();
       if (after.ending) this.emit('ending', { ending: after.ending });
       this.ui();
     });
@@ -760,7 +788,7 @@ class Game {
   }
 
   private lookLine(thing: string, verb: string): string {
-    const looks = this.place.spec.things.find((t) => t.key === thing)?.looks ?? thing.replace(/-/g, ' ');
+    const looks = this.hots().find((h) => h.thing.key === thing)?.spec?.looks ?? thing.replace(/-/g, ' ');
     return verb === 'look' ? looks : `Nothing happens. ${looks[0].toUpperCase()}${looks.slice(1)}.`;
   }
 
@@ -779,7 +807,7 @@ class Game {
   /** Where a thing (or a person in this place) is on the page, for an item to fly from. */
   pageRect(key: string): DOMRect | undefined {
     const figure = this.drawn.find((d) => d.hot.thing.key === key)?.rect;
-    const box = figure ?? this.place.hots.find((h) => h.thing.key === key)?.thing.box;
+    const box = figure ?? this.hots().find((h) => h.thing.key === key)?.thing.box;
     if (!box) return undefined;
     const z = this.zoom();
     const { width: W, height: H } = this.place.g.frame;
@@ -880,6 +908,112 @@ class Game {
   /** Where each NPC was drawn last frame, nearest last, so a click lands on the figure people see. */
   private drawn: Array<{ hot: Hot; rect: Rect }> = [];
 
+  /** Original NPC hotspots are replaced by the bodies actually in this place. */
+  private hots(): Hot[] {
+    return [...this.place.hots.filter((h) => (h.spec?.role ?? h.thing.role) !== 'npc'),
+      ...[...this.npcs.values()].filter((n) => n.place === this.place.key).map((n) => n.hot)];
+  }
+
+  /** Reconcile the deterministic story location after the action's lines have been heard. */
+  private async syncNpcs() {
+    for (const [key, to] of Object.entries(this.state.npcs ?? {})) {
+      const home = this.data.world.places.find((p) => p.things.some((t) => t.key === key && t.role === 'npc'))?.key;
+      if (!home) continue;
+      await this.load(home);
+      const npc = this.npcs.get(`${home}/${key}`);
+      if (!npc) continue;
+      if (npc.place === to) {
+        if (npc.target) { npc.body.path = []; npc.leaving = undefined; }
+        npc.target = undefined; npc.journey = undefined;
+        continue;
+      }
+      npc.target = await this.load(to);
+      npc.blocked = false;
+      // Several events may fire before a departure finishes. Keep walking through real exits.
+      const paths = [[npc.place]];
+      const seen = new Set([npc.place]);
+      let journey: string[] | undefined;
+      for (let i = 0; i < paths.length; i++) {
+        const path = paths[i];
+        if (path.at(-1) === to) { journey = path.slice(1); break; }
+        for (const e of this.data.world.places.find((p) => p.key === path.at(-1))?.exits ?? [])
+          if (!seen.has(e.to)) { seen.add(e.to); paths.push([...path, e.to]); }
+      }
+      npc.journey = journey ? await Promise.all(journey.map((p) => this.load(p))) : undefined;
+      // If the player has already left, finish the departure off screen.
+      if (npc.place !== this.place.key) this.arriveNpc(npc, npc.target);
+    }
+  }
+
+  private arriveNpc(npc: Npc, target: Place) {
+    const from = npc.place;
+    const destination = npc.target;
+    npc.journey = npc.journey?.slice(1);
+    npc.place = target.key;
+    npc.target = target.key === destination?.key ? undefined : destination;
+    npc.leaving = undefined;
+    npc.blocked = false;
+    npc.patrol = undefined;
+    npc.stop = 0;
+    npc.body.path = [];
+    npc.body.foot = undefined;
+    npc.body.along = undefined;
+    const back = target.spec.exits.find((e) => e.to === from);
+    const entry = target.g.things.find((t) => t.key === back?.via)?.stand ?? target.g.start;
+    [npc.body.x, npc.body.y] = target.grid.snap(...entry) ?? entry;
+    npc.arriving = true;
+    npc.wait = 0;
+    // On return to a former home, use the original standing place rather than a second copy.
+    this.emit('npc-enter', { npc: npc.key, from, to: target.key });
+    if (npc.target && npc.place !== this.place.key) this.arriveNpc(npc, npc.target);
+  }
+
+  private updateNpcs(dt: number) {
+    if (this.state.ending || this.state.place !== this.place.key) return;
+    for (const npc of this.npcs.values()) {
+      if (npc.place !== this.place.key) continue;
+      const body = npc.body;
+      const speaking = this.speech?.who === npc.key;
+      const talking = this.state.talk && this.data.story?.dialogues[this.state.talk.dialogue]?.npc === npc.key;
+      if (npc === this.meeting || speaking || talking) { npc.wait = 2; continue; }
+      const patrol = this.data.story?.patrols?.find((p) => p.npc === npc.key && p.place === npc.place && holds(this.state, p.when));
+      if (patrol !== npc.patrol && !npc.target) { npc.patrol = patrol; npc.stop = 0; body.path = []; npc.wait = 0; }
+      const nextPlace = npc.journey?.[0] ?? npc.target;
+      if (nextPlace && npc.leaving !== nextPlace) {
+        if (npc.blocked) continue;
+        const exit = this.place.spec.exits.find((e) => e.to === nextPlace.key);
+        const spot = this.place.g.things.find((t) => t.key === exit?.via)?.stand;
+        if (!spot || !this.route(body, ...spot).length) {
+          if (!npc.blocked) console.warn(`NPC ${npc.key} cannot walk from ${npc.place} to ${nextPlace.key}`);
+          npc.blocked = true;
+          continue;
+        }
+        npc.leaving = nextPlace;
+        npc.blocked = false;
+      }
+      if (body.path.length) {
+        this.move(body, dt);
+        if (body.path.length) continue;
+        npc.wait = patrol?.pause ?? 2;
+      }
+      if (npc.leaving) { this.arriveNpc(npc, npc.leaving); continue; }
+      npc.wait -= dt;
+      if (npc.wait > 0) continue;
+      let spot: Point | undefined;
+      if (npc.arriving) {
+        const own = this.place.g.things.find((t) => t.key === npc.key);
+        spot = patrol ? this.place.g.things.find((t) => t.key === patrol.via[0])?.stand
+          : own ? [(own.box[0] + own.box[2]) / 2, own.box[3]] : this.place.g.start;
+        npc.arriving = false;
+      } else if (patrol) {
+        const key = patrol.via[npc.stop++ % patrol.via.length];
+        spot = this.place.g.things.find((t) => t.key === key)?.stand;
+      }
+      if (spot) this.route(body, ...spot);
+      npc.wait = patrol?.pause ?? 2;
+    }
+  }
+
   thingAt(x: number, y: number): Hot | undefined {
     const g = this.place.g;
     const gone = this.gone();
@@ -890,7 +1024,7 @@ class Game {
       if (x >= x0 + inset && x <= x1 - inset && y >= y0 && y <= y1 - 4) return this.drawn[i].hot;
     }
     const [sx0, sy0] = [x, y];
-    for (const hot of this.place.hots) {
+    for (const hot of this.hots()) {
       if (this.drawn.some((d) => d.hot === hot)) continue;
       if (gone.has(hot.thing.key)) continue;
       // Each thing is tested where it is drawn: moved by its own parallax shift.
@@ -916,6 +1050,7 @@ class Game {
     this.place.weather?.update(dt);
     this.place.glows?.step(dt);
     this.place.reactions?.update(dt);
+    this.updateNpcs(dt);
     for (const b of this.party) this.move(b, dt);
     this.move(hero, dt);
   }
@@ -979,7 +1114,7 @@ class Game {
   /** The floor row a thing stands on: its card's, or its box's bottom. */
   private thingY(key: string): number {
     const cut = this.place.cuts.find((c) => (c.occ.thing ?? c.occ.key) === key);
-    return cut ? cut.y : (this.place.hots.find((h) => h.thing.key === key)?.thing.box[3] ?? this.place.g.frame.height);
+    return cut ? cut.y : (this.hots().find((h) => h.thing.key === key)?.thing.box[3] ?? this.place.g.frame.height);
   }
 
   /** The zoom that keeps the frame's edges covered while the cards sway (and leaves room to pan when tracking); 1 when flat. */
@@ -1275,8 +1410,8 @@ class Game {
     ctx.fillRect(0, 0, W, H);
     ctx.setTransform(z, 0, 0, z, W / 2 - z * (this.viewX || W / 2), H / 2 - z * (this.viewY || H / 2));
     const gone = this.gone();
-    const npcs = this.place.hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc' && !h.mask);
-    const people: Who[] = [...npcs.map((h) => ({ npc: h, y: h.thing.box[3] })), ...[this.hero, ...this.party].map((body) => ({ body, y: body.y }))].sort((a, b) => a.y - b.y);
+    const npcs = this.hots().filter((h) => (h.spec?.role ?? h.thing.role) === 'npc' && !h.mask);
+    const people: Who[] = [...npcs.map((h) => ({ npc: h, y: h.npc?.body.y ?? h.thing.box[3] })), ...[this.hero, ...this.party].map((body) => ({ body, y: body.y }))].sort((a, b) => a.y - b.y);
     const fire = this.fireOf(gone);
     this.climbs.length = 0;
     if (p && backdrop) {
@@ -1318,7 +1453,7 @@ class Game {
       this.drawMist(p);
       this.place.weather?.drawGround(ctx, (y) => this.shift(y));
       const carded = new Set(this.place.cuts.map((c) => c.occ.thing ?? c.occ.key));
-      for (const hot of this.place.hots) {
+      for (const hot of this.hots()) {
         // A carried-off card is simply not drawn; a flat thing gets its clean plate, on the floor it lies on.
         if (!hot.plate || !gone.has(hot.thing.key) || carded.has(hot.thing.key)) continue;
         const [x0, y0, x1, y1] = hot.thing.box.map((v, i) => (i < 2 ? Math.max(0, v - 16) : v + 16));
@@ -1339,7 +1474,7 @@ class Game {
       // What the story has changed here (a beacon lit): each change is the thing as it looks after, transparent elsewhere.
       for (const { img } of this.changed()) ctx.drawImage(img, 0, 0, W, H);
       this.place.weather?.drawGround(ctx, () => [0, 0]);
-      for (const hot of this.place.hots) {
+      for (const hot of this.hots()) {
         if (!hot.plate || !gone.has(hot.thing.key)) continue;
         // The plate differs from the painting only near the thing, so its grown box is enough.
         const [x0, y0, x1, y1] = hot.thing.box.map((v, i) => (i < 2 ? Math.max(0, v - 16) : v + 16));
@@ -1586,6 +1721,16 @@ class Game {
   /** Draws one person of the scene, an NPC or the hero: their shadow on the floor, or their body. */
   private drawWho(who: Who, lit: Hot | undefined, layer: 'shadow' | 'body'): Rect {
     if (who.npc) {
+      const npc = who.npc.npc;
+      if (npc) {
+        const b = npc.body;
+        const inConversation = this.state.talk && this.data.story?.dialogues[this.state.talk.dialogue]?.npc === npc.key;
+        const talk = this.speech?.who === npc.key ? 'speak' : inConversation || this.meeting === npc ? 'listen' : undefined;
+        const faceHero = talk || (!npc.patrol && !npc.target && !b.path.length);
+        const facing = faceHero ? (b.x < this.hero.x ? 1 : -1) : b.facing;
+        return this.drawPerson(b.x, b.y, facing, b.phase, b.path.length > 0 && !talk, b.figure, '#4b3b2a', lit === who.npc,
+          this.shift(b.y), faceHero ? facing * Math.PI / 3 : b.yaw, talk, b.foot, layer);
+      }
       const [x0, , x1, y1] = who.npc.thing.box;
       const x = (x0 + x1) / 2;
       return this.drawPerson(x, y1, x < this.hero.x ? 1 : -1, 0, false, this.figures.get(who.npc.thing.key), '#4b3b2a', lit === who.npc, this.shift(y1), undefined, this.talking(who.npc.thing.key), undefined, layer);
@@ -1670,7 +1815,8 @@ class Game {
     y = foot ?? stepFootY(g, x, y);
     const articulation = talk === 'speak' ? mixer?.mouth(this.speech) ?? mouthAt(undefined, undefined) : mouthAt(undefined, undefined);
     const faceTime = performance.now() / 1000;
-    const sprites = figure?.sprites;
+    // Older NPCs may have only a talking sheet. While walking, use their rig/model/cut-out instead.
+    const sprites = figure?.sprites && (!walking || figure.sprites.sheets.length) ? figure.sprites : undefined;
     // A walk sheet warped from the painting looks like the painting; the bare 3D model (TRELLIS's textures up
     // close) does not, so it walks a person only with ?model=1. A creature has no sheet and keeps its model.
     let model = sprites || (figure?.rig?.rig.sheet && params.get('model') !== '1') ? undefined : figure?.model;

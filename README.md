@@ -57,7 +57,7 @@ Also used: Depth Anything V2 (ONNX, on the CPU) for shadows and parallax, Eleven
 
 <p align="center"><img src="docs/images/how-a-place-is-made.gif" width="720" alt="One place being made: Muse Spark's block-in, Muse Image's painting, SAM 3.1's cut-outs, the depth map, the measured walk grid, and the hero walking in it"></p>
 
-1. **world, story**: Spark turns the sentence into places, a cast, items, locks and endings, and checks every ending can be reached.
+1. **world, story**: Spark turns the sentence into places, a cast, items, locks and endings, and checks every ending can be reached. NPC progress uses simple story flags and conditional dialogue; optional walks and event-triggered travel follow that progress.
 2. **layout, paint**: Spark lays out each place and names each thing's silhouette; the layout becomes a shaded sketch (`blockin.png`, what Muse sees) and a named plan (`plan.png`, what Studio shows); Muse paints over the sketch; a Spark critic marks what is wrong and Muse repaints only those regions.
 3. **masks, plates**: SAM 3.1 cuts out every thing and floor; Muse paints the place without the things the hero can take.
 4. **derive, backdrop, weather, reactions**: code measures floor, scale, occlusion, stairs and light from the masks and the depth map; the place becomes a little stage with cards, far flats, moving water, rain and drips. The planner chooses subtle material-specific reactions, triggered by footsteps, entering floor regions and physical object interactions.
@@ -91,6 +91,7 @@ Model answers are memoised by a hash of their inputs, so running a step again wi
 - [Studio](docs/studio.md)
 - [Places: depth, weather and the play page](docs/scenes.md)
 - [Characters, style and icons](docs/characters.md)
+- [NPC story stages, optional walks and travel](docs/npc-motion.md)
 - [Sound and voices](docs/sound.md)
 
 ## Built at the Meta AI Global Hackathon

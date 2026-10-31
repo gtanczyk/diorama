@@ -13,6 +13,8 @@ export const Effect = z.union([
   z.object({ take: Slug }),
   z.object({ go: Slug }),
   z.object({ ending: Slug }),
+  /** Send a person through an exit to a neighbouring place after this story action. */
+  z.object({ moveNpc: z.object({ npc: Slug, to: Slug }) }),
 ]);
 
 /** Clicking a thing in a place, optionally with an item from the inventory. */
@@ -56,6 +58,9 @@ export const Story = z.object({
   dialogues: z.array(Dialogue).default([]),
   /** A thing that looks different once its condition holds (a beacon burning, a gate open): a plate painted over it. */
   changes: z.array(z.object({ place: Slug, thing: Slug, when: z.array(Fact).min(1), looks: z.string().min(3) })).default([]),
+  /** Repeat a walk between the approach spots of these things; first matching patrol wins. */
+  patrols: z.array(z.object({ npc: Slug, place: Slug, via: z.array(Slug).min(2).max(8), when: When,
+    pause: z.number().min(0.5).max(60).default(2) })).optional(),
   endings: z.array(z.object({ key: Slug, title: z.string().min(1), text: z.string().min(1) })).min(1),
 });
 
@@ -69,8 +74,8 @@ export type Dialogue = z.infer<typeof Dialogue>;
  * six one-key objects of Effect, twice over, make a grammar Anthropic refuses to compile ("too large").
  * fromWire turns the answer back; an answer already in Story's own shape passes through.
  */
-const OPS = ['set', 'clear', 'give', 'take', 'go', 'ending'] as const;
-const WireEffect = z.object({ op: z.enum(OPS), key: Slug });
+const OPS = ['set', 'clear', 'give', 'take', 'go', 'ending', 'moveNpc'] as const;
+const WireEffect = z.object({ op: z.enum(OPS), key: Slug, to: Slug.optional() });
 export const WireStory = Story.extend({
   interactions: z.array(Interaction.extend({ do: z.array(WireEffect).default([]) })),
   dialogues: z.array(Dialogue.extend({ lines: z.array(Line.extend({ choices: z.array(Choice.extend({ do: z.array(WireEffect).default([]) })).max(4).default([]) })).min(1) })).default([]),
@@ -81,6 +86,7 @@ export function fromWire(answer: unknown): unknown {
   if (!answer || typeof answer !== 'object') return answer;
   const o = answer as Record<string, unknown>;
   const keys = Object.keys(o);
+  if (o.op === 'moveNpc' && typeof o.key === 'string') return { moveNpc: { npc: o.key, to: o.to } };
   if (keys.length === 2 && typeof o.op === 'string' && (OPS as readonly string[]).includes(o.op) && 'key' in o) return { [o.op]: o.key };
   return Object.fromEntries(keys.map((k) => [k, fromWire(o[k])]));
 }
