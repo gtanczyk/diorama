@@ -363,7 +363,7 @@ defineCommand({
         repairs.push({ place, by: 'auto', fixes: fixes.map((f) => f.what), ok: r.ok });
         emit('repair.end', { place, by: 'auto', ok: r.ok });
       }
-      return paintMissing(place, await paintWays(place, await newTake(place, r)));
+      return recutCards(place, await paintMissing(place, await paintWays(place, await newTake(place, r))));
     }
 
     /**
@@ -414,6 +414,45 @@ defineCommand({
       console.log(`\n# repair ${place}: ${what.join('; ')}`);
       emit('repair.start', { place, by: 'auto', fixes: what });
       for (const step of PLACE_STEPS.slice(PLACE_STEPS.indexOf('paint'))) {
+        if (!broken.has(place)) await runPlace(step, place);
+      }
+      const next = reportOf(place) ?? r;
+      repairs.push({ place, by: 'auto', fixes: what, ok: next.ok });
+      emit('repair.end', { place, by: 'auto', ok: next.ok });
+      return next;
+    }
+
+    /**
+     * A card whose mask leaves out a painted part of its thing (CARD_CUT: the boat's bow, a lamp on its post) leaves
+     * that part smeared on the backdrop when the card slides. The flag's box says where; the thing's box is widened
+     * to take it in, so masks asks SAM again by the whole box (one SAM call), as mask_fix box does. Once per thing:
+     * a box already set, by the build or the person, is left as it is.
+     */
+    async function recutCards(place: string, r: Report | null): Promise<Report | null> {
+      if (!r || r.from || repair === 'off') return r;
+      const file = files.place(place, 'verify.json');
+      if (!fs.existsSync(file)) return r;
+      const cuts = (files.readJson(file) as Verdict).flags.filter((f) => f.code === 'CARD_CUT' && f.key && f.box);
+      if (!cuts.length) return r;
+      const dir = files.place(place);
+      const before = readCorrections(dir);
+      const after = Corrections.parse(JSON.parse(JSON.stringify(before)));
+      const masksFile = files.place(place, 'masks.json');
+      const boxes = fs.existsSync(masksFile) ? (files.readJson(masksFile) as { things?: Record<string, { box?: number[] }> }).things ?? {} : {};
+      const what: string[] = [];
+      for (const f of cuts) {
+        const had = boxes[f.key!]?.box;
+        if (!had || after.things[f.key!]?.box) continue;
+        const [a, b] = [had, f.box!];
+        const box: [number, number, number, number] = [Math.max(0, Math.min(a[0], b[0]) - 12), Math.max(0, Math.min(a[1], b[1]) - 12), Math.min(1200, Math.max(a[2], b[2]) + 12), Math.min(896, Math.max(a[3], b[3]) + 12)];
+        (after.things[f.key!] ??= { strokes: [] }).box = box;
+        what.push(`masked ${f.key} again by a box around the whole of it [${box.join(', ')}] (one SAM call)`);
+      }
+      if (!what.length) return r;
+      writeCorrections(dir, after);
+      console.log(`\n# repair ${place}: ${what.join('; ')}`);
+      emit('repair.start', { place, by: 'auto', fixes: what });
+      for (const step of PLACE_STEPS.slice(PLACE_STEPS.indexOf('masks'))) {
         if (!broken.has(place)) await runPlace(step, place);
       }
       const next = reportOf(place) ?? r;
