@@ -358,7 +358,56 @@ defineCommand({
         repairs.push({ place, by: 'auto', fixes: fixes.map((f) => f.what), ok: r.ok });
         emit('repair.end', { place, by: 'auto', ok: r.ok });
       }
-      return r;
+      return paintMissing(place, r);
+    }
+
+    /**
+     * A thing the story needs that Spark finds nowhere in the painting: no mask fix can find what was never painted,
+     * so it gets one Muse edit at its layout box (the one repaint_region per place the agent may make unasked), and
+     * the place is rebuilt from paint. Once per thing: a repaint already asked for it is not asked again.
+     */
+    async function paintMissing(place: string, r: Report | null): Promise<Report | null> {
+      if (!r || r.ok || r.from) return r;
+      const keys = [...new Set(r.issues.filter((i) => i.code === 'THING_NOT_PAINTED' && i.key).map((i) => i.key!))];
+      if (!keys.length) return r;
+      const dir = files.place(place);
+      const before = readCorrections(dir);
+      const after = Corrections.parse(JSON.parse(JSON.stringify(before)));
+      const asked: string[] = [];
+      try {
+        const layout = Layout.parse(files.readJson(files.place(place, 'layout.json')));
+        const listed = files.world().places.find((p) => p.key === place)?.things ?? [];
+        for (const key of keys) {
+          const t = layout.things.find((x) => x.key === key);
+          if (!t) continue;
+          const looks = (listed.find((x) => x.key === key)?.looks ?? key.replace(/-/g, ' ')).replace(/^(a|an|the)\s+/i, '');
+          const fix = `Paint the ${looks} here, clearly visible and whole, standing where it meets the floor, in the painting's own style and light; keep everything around it`;
+          if (after.repaint.some((x) => x.fix === fix)) continue;
+          // The layout box with room round it, so Muse can fit the thing in, at least 120 px each way.
+          const w = Math.max(120, t.width * 1.4), h = Math.max(120, t.height * 1.3);
+          const region: [number, number, number, number] = [
+            Math.max(0, Math.round(t.x - w / 2)), Math.max(0, Math.round(t.footY - h + 12)),
+            Math.min(1200, Math.round(t.x + w / 2)), Math.min(896, Math.round(t.footY + 24)),
+          ];
+          after.repaint.push({ region, fix });
+          asked.push(key);
+        }
+      } catch (error) {
+        console.log(`${place}: could not ask for a repaint: ${error instanceof Error ? error.message : error}`);
+        return r;
+      }
+      if (!asked.length) return r;
+      writeCorrections(dir, after);
+      const what = asked.map((k) => `repainted ${k} at its layout box (one Muse edit)`);
+      console.log(`\n# repair ${place}: ${what.join('; ')}`);
+      emit('repair.start', { place, by: 'auto', fixes: what });
+      for (const step of PLACE_STEPS.slice(PLACE_STEPS.indexOf('paint'))) {
+        if (!broken.has(place)) await runPlace(step, place);
+      }
+      const next = reportOf(place) ?? r;
+      repairs.push({ place, by: 'auto', fixes: what, ok: next.ok });
+      emit('repair.end', { place, by: 'auto', ok: next.ok });
+      return next;
     }
     console.log(`\nbuild ${slug}: ${range.join(' > ')} done · ${files.path('build.json')}`);
   },

@@ -4,6 +4,7 @@ import { museEdit } from '../meta/muse.ts';
 import type { Memo } from '../meta/memo.ts';
 import type { ViewName } from './fit.ts';
 import { askSparkJson } from '../meta/spark.ts';
+import { refusedByFilter } from '../scene/words.ts';
 
 const SIZE = '1024x1024';
 /** Each view as it lands, so Studio shows them one by one while the rest are painted. */
@@ -83,22 +84,34 @@ const CARRIED_ROUNDS = 2;
  * What they carry (a satchel, a lantern) is read off the front and placed by name in every other view, then all four
  * are checked together and a view that put it on the wrong side, or put something down at the feet, is painted again.
  * A creature (not a person on two legs: a round eye, a frog, a living teapot) is painted as it is, with no A-pose and no hands. */
+// The image safety filter refuses a prompt on single words (a long list of things to leave out reads as a list of
+// weapons): the view is asked once more in calm words, with the looks left to the picture and the hands said plainly.
+const HANDS_CALM = 'Both hands open and empty, well apart from the body, nothing held and nothing else in the picture.';
+type EditReq = Parameters<typeof museEdit>[1];
+const viewEdit = (memo: Memo, looks: string) => (req: EditReq) => museEdit(memo, req).catch((error: unknown) => {
+  if (!refusedByFilter(error)) throw error;
+  console.log(`  ${req.label}: the image safety filter refused the view; asking in calm words`);
+  const prompt = req.prompt.split(HANDS).join(HANDS_CALM).split(` (${looks})`).join('');
+  return museEdit(memo, { ...req, label: `${req.label}-calm`, prompt });
+});
+
 export async function paintViews(memo: Memo, key: string, looks: string, painting: Buffer, take = 0, creature = false, onView?: Landed, again = true): Promise<Record<ViewName, Buffer>> {
   if (creature) return paintCreatureViews(memo, key, looks, painting, take, onView);
-  const front = await museEdit(memo, {
+  const edit = viewEdit(memo, looks);
+  const front = await edit({
     label: `${key}-view-front`, size: SIZE, take, images: [painting],
     prompt: `The same character as in the picture (${looks}), same clothes, colours and painted style, now seen straight from the front, ${STAND}, face looking at the viewer. Anything they carry (a bag, a satchel) stays where it is on their body in the picture. ${HANDS} ${PLAIN}`,
   });
   onView?.('front', front);
   const items = await readCarried(memo, key, front);
   if (items.length) console.log(`  ${key}: carries ${items.map((i) => `${i.name} (${i.at})`).join(', ')}`);
-  const paintBack = (t: number) => museEdit(memo, {
+  const paintBack = (t: number) => edit({
     label: `${key}-view-back`, size: SIZE, take: t, images: [front],
     prompt: `The same character as in the picture (${looks}), same clothes, colours, patches and painted style, in exactly the same pose, seen straight from behind: we see the back of the head, the back of the clothes and the heels; the face is not visible. Left and right swap when seen from behind. ${carriedLine('back', items)} ${HANDS} ${SAME_HEAD} Same size and position in the frame as the picture. ${PLAIN}`,
   });
   const views: Record<ViewName, Buffer> = { front, back: await paintBack(take), left: front, right: front };
   onView?.('back', views.back);
-  const side = (facing: 'left' | 'right', t: number) => museEdit(memo, {
+  const side = (facing: 'left' | 'right', t: number) => edit({
     label: `${key}-view-${facing}`, size: SIZE, take: t, images: [front, views.back],
     prompt: `The same character as in both pictures (front and back views), same clothes, colours, patches and painted style, now seen exactly from the side in profile, facing to the ${facing} of the picture, so we see their ${facing} side (${looks}). ${carriedLine(facing, items)} ${SAME_HEAD} Keep exactly the same rigging A-pose as the front and back: straight arms angled out sideways 35 degrees from vertical, hands clear of the thighs, legs straight and shoulder-width apart. Do not lower the arms against the hips for this profile. ${HANDS} Same size and position in the frame as the pictures. ${PLAIN}`,
   });
@@ -126,17 +139,18 @@ export async function paintViews(memo: Memo, key: string, looks: string, paintin
 const REST = 'resting in its natural pose, exactly the body shape, proportions, feet, eyes and markings of the picture, nothing added (no arms, no legs, no clothes it does not have)';
 
 async function paintCreatureViews(memo: Memo, key: string, looks: string, painting: Buffer, take: number, onView?: Landed): Promise<Record<ViewName, Buffer>> {
-  const front = await museEdit(memo, {
+  const edit = viewEdit(memo, looks);
+  const front = await edit({
     label: `${key}-view-front`, size: SIZE, take, images: [painting],
     prompt: `The same creature as in the picture (${looks}), same colours and painted style, now seen straight from the front, ${REST}, its face (or its front) to the viewer. The whole creature, centred, filling about two thirds of the frame. ${PLAIN}`,
   });
   onView?.('front', front);
-  const back = await museEdit(memo, {
+  const back = await edit({
     label: `${key}-view-back`, size: SIZE, take, images: [front],
     prompt: `The same creature as in the picture (${looks}), same colours and painted style, in exactly the same pose, seen straight from behind: we see its back, its face is not visible. Same size and position in the frame as the picture. ${PLAIN}`,
   });
   onView?.('back', back);
-  const side = (facing: 'left' | 'right') => museEdit(memo, {
+  const side = (facing: 'left' | 'right') => edit({
     label: `${key}-view-${facing}`, size: SIZE, take, images: [front, back],
     prompt: `The same creature as in both pictures (front and back views), same colours and painted style, now seen exactly from the side in profile, facing to the ${facing} of the picture (${looks}), ${REST}. Same size and position in the frame as the pictures. ${PLAIN}`,
   }).then((png) => (onView?.(facing, png), png));

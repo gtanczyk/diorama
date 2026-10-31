@@ -1,6 +1,7 @@
 // diorama model <slug> [key]: a character as a rigged 3D model, painted by Muse from four sides. Without a
 // key, everyone the sprites plan needs (the hero, NPCs who speak): the model is where their poses come from.
 import fs from 'node:fs';
+import { refusedByFilter } from '../scene/words.ts';
 import { defineCommand, registry, takeOption } from '../registry.ts';
 import { autoRig, reconstruct } from '../model/build.ts';
 import { fitViews, refitIfOld } from '../model/fit.ts';
@@ -116,7 +117,19 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
   const creature = readBodies(files, fs.existsSync)[key]?.upright === false;
   // Each stage says its name ("<key>: ..."), and each side is written as it lands: Studio follows both live.
   console.log(`${key}: painting 4 sides`);
-  const views = await paintViews(files.memo, key, who.looks ?? '', painting, take, creature, (name, png) => files.write(out(`${name}.png`), png));
+  let views: Awaited<ReturnType<typeof paintViews>>;
+  try {
+    views = await paintViews(files.memo, key, who.looks ?? '', painting, take, creature, (name, png) => files.write(out(`${name}.png`), png));
+  } catch (error) {
+    // Refused even in calm words: the model made before stays (a changed prompt reran it), else the 2D rig walks.
+    if (!refusedByFilter(error)) throw error;
+    if (fs.existsSync(out('model.json')) && fs.existsSync(out('model.glb'))) {
+      console.log(`${key}: the image safety filter refused its 4 sides; the 3D model made before stays`);
+      return null;
+    }
+    console.log(`${key}: no 3D model: the image safety filter refused its 4 sides; ${creature ? 'the painted figure hops as it is' : 'the game walks the 2D rig'}`);
+    return 'the image safety filter refused its 4 sides';
+  }
   // TRELLIS sometimes makes a flat card of a flat drawing: other seeds, then the front alone (depth guessed),
   // and with none of them a body, no model: the character walks with its 2D rig.
   const all = [views.front, views.back, views.left, views.right];
