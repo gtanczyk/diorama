@@ -13,6 +13,7 @@ The 3-minute demo film is rendered from data, so every improvement to the tool f
   - `npx tsx app/demo/walkthrough.ts --idea "..." --photo a.jpg --change "..."`: the whole Studio in one take (idea, questions, build, play, change with a screenshot, play, zip, the zip in a browser); `--review-only` stops after the questions.
   - `npx tsx app/demo/places-take.ts <slug>...`: the game itself, a walk with the tracking camera and parallax in every place.
   - `npx tsx app/demo/method-take.ts <slug> <place>`: "how it's made" stills (plan, painting, SAM cut-outs, depth, floor) and the place live with strong parallax.
+  - `npx tsx app/demo/explode-take.ts <slug> <place>`: the place's painting turns in 3D and comes apart into its backdrop, far flats and cut-out cards at their depths, then closes again.
   - `npx tsx app/demo/cast-take.ts <slug> <who>`: a character in Studio: walk sheets, the 3D model walking and talking, the 2D walk.
   - `npx tsx app/demo/studio-take.ts`: Studio takes from the atelier, a world made from an idea (`--new`) or changed by the agent; writes take.mp4 + take.json beats.
   - `npx tsx app/demo/term.ts <log.txt> "<command>" footage/term.mp4`: the terminal shot, typed and scrolled from a real build log.
