@@ -56,6 +56,9 @@ for (const o of cards) {
   const pad = 6;
   const [bx0, by0, bx1, by1] = [Math.max(0, o.box[0] - pad), Math.max(0, o.box[1] - pad), Math.min(W, o.box[2] + pad), Math.min(H, o.box[3] + pad)];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x < bx0 || x >= bx1 || y < by0 || y >= by1) alpha[y * W + x] = 0;
+  // A slot cut through the card by a thin thing standing in front of it (a post before a boat's stern) is closed:
+  // a 10 px closing (grow, then shrink) inside the box.
+  closeIn(alpha, W, bx0, by0, bx1, by1, 10);
   // Holes: the empty pixels of the box that the box's edge cannot reach through other empty pixels.
   const bw = bx1 - bx0, bh = by1 - by0;
   const outside = new Uint8Array(bw * bh);
@@ -85,7 +88,7 @@ for (const o of cards) {
   const name = `card-${o.key}.png`;
   await sharp(rgba, { raw: { width: W, height: H, channels: 4 } }).png().toFile(path.join(work, name));
   const on = host(o);
-  layers.push({ file: name, z: on ? depth(on) + 10 : depth(o), label: o.key.replace(/[-_]+/g, ' ') });
+  layers.push({ file: name, z: on ? depth(on) + 2 : depth(o), label: o.key.replace(/[-_]+/g, ' ') });
 }
 // Stacked far to near, so a thing riding in front of its host is drawn after it.
 layers.sort((a, b) => a.z - b.z);
@@ -104,9 +107,9 @@ const T=${seconds};const ease=x=>x<0?0:x>1?1:x*x*(3-2*x);
 function frame(now){const t=now/1000;
  // 0..15% flat, then open, hold with a slow orbit, close in the last 20%.
  const open=ease((t-T*0.12)/(T*0.28))-ease((t-T*0.78)/(T*0.2));
- const yaw=-34*open+6*Math.sin(t*0.5)*open;const pitch=12*open;const scale=0.82+0.1*(1-open);
+ const yaw=-28*open+5*Math.sin(t*0.5)*open;const pitch=12*open;const scale=0.82+0.1*(1-open);
  stage.style.transform='scale('+scale+') rotateX('+pitch+'deg) rotateY('+yaw+'deg)';
- imgs.forEach(im=>{im.style.transform='translateZ('+(Number(im.dataset.z)*2.2*open)+'px)'});
+ imgs.forEach(im=>{im.style.transform='translateZ('+(Number(im.dataset.z)*1.5*open)+'px)'});
  requestAnimationFrame(frame)}
 requestAnimationFrame(frame);
 </script>`;
@@ -122,3 +125,25 @@ await smoothTake(page, seconds, path.join(out, `${slug}--${place}.mp4`));
 await browser.close();
 fs.rmSync(work, { recursive: true, force: true });
 console.log(path.join(out, `${slug}--${place}.mp4`));
+
+/** Morphological closing of a 0..255 mask inside [x0,y0,x1,y1): square max then square min, r pixels. */
+function closeIn(a: Buffer, W: number, x0: number, y0: number, x1: number, y1: number, r: number) {
+  const bw = x1 - x0, bh = y1 - y0;
+  let m = new Uint8Array(bw * bh);
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) m[y * bw + x] = a[(y + y0) * W + x + x0] >= 128 ? 1 : 0;
+  const pass = (src: Uint8Array, grow: boolean, horizontal: boolean) => {
+    const out = new Uint8Array(bw * bh);
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+      let v = grow ? 0 : 1;
+      for (let k = -r; k <= r; k++) {
+        const [xx, yy] = horizontal ? [x + k, y] : [x, y + k];
+        const s = xx < 0 || yy < 0 || xx >= bw || yy >= bh ? (grow ? 0 : 1) : src[yy * bw + xx];
+        if (grow ? s : !s) { v = grow ? 1 : 0; break; }
+      }
+      out[y * bw + x] = v;
+    }
+    return out;
+  };
+  m = pass(pass(pass(pass(m, true, true), true, false), false, true), false, false);
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) if (m[y * bw + x]) a[(y + y0) * W + x + x0] = 255;
+}

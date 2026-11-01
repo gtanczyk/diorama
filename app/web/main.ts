@@ -1997,11 +1997,11 @@ class Game {
       if (!idle) return paintRaw(c);
       const t = this.time + (Math.abs(x * 0.37 + y * 0.11) % 7);
       const k = talk === 'speak' ? 1.5 : 1;
-      const sway = k * (0.016 * Math.sin(t * ((2 * Math.PI) / 5.3)) + 0.006 * Math.sin(t * ((2 * Math.PI) / 2.3) + 1.1));
+      const sway = k * (0.024 * Math.sin(t * ((2 * Math.PI) / 5.3)) + 0.009 * Math.sin(t * ((2 * Math.PI) / 2.3) + 1.1));
       const breath = 0.5 + 0.5 * Math.sin(t * ((2 * Math.PI) / 3.6));
       const m = c.getTransform();
       const density = Math.max(1, Math.min(1.5, Math.hypot(m.a, m.b)));
-      return idleWarp(c, paintRaw, token, h, density, sway, k * 0.014 * breath, 0.006 * k * Math.sin(t * ((2 * Math.PI) / 4.1) + 0.7));
+      return idleWarp(c, paintRaw, token, h, density, sway, k * 0.02 * breath, 0.009 * k * Math.sin(t * ((2 * Math.PI) / 4.1) + 0.7));
     };
     // How much of the floor under the feet lies in a painted shadow: the person stands in it too.
     const shaded = Math.max(this.shadeAt(x, y, h), this.fireShadeAt(x, y, h));

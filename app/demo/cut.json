@@ -1,284 +1,284 @@
 {
- "fps": 30,
- "shots": [
-  {
-   "name": "Hook: harbour",
-   "src": "footage/lantern4/alive/lantern-harbour--harbour-pier.mp4",
-   "from": 0.5,
-   "dur": 2.4,
-   "crop": [
-    0,
-    135,
-    1440,
-    810
-   ]
-  },
-  {
-   "name": "Hook: market",
-   "src": "footage/lantern4/alive/lantern-harbour--lantern-market.mp4",
-   "from": 1,
-   "dur": 1.8,
-   "crop": [
-    0,
-    135,
-    1440,
-    810
-   ],
-   "fade": 0.25
-  },
-  {
-   "name": "Hook: candle boats",
-   "src": "footage/lantern4/alive/lantern-harbour--river-dock.mp4",
-   "from": 1,
-   "dur": 1.8,
-   "crop": [
-    0,
-    135,
-    1440,
-    810
-   ],
-   "fade": 0.25
-  },
-  {
-   "name": "Hook: lighthouse",
-   "src": "footage/lantern4/alive/lantern-harbour--lighthouse-point.mp4",
-   "from": 1,
-   "dur": 2.2,
-   "crop": [
-    0,
-    0,
-    1440,
-    810
-   ],
-   "fade": 0.25,
-   "caption": "One sentence. A whole game."
-  },
-  {
-   "name": "Hook: you play it",
-   "src": "footage/lantern4/walk/lantern-harbour--harbour-pier.mp4",
-   "from": 0.5,
-   "dur": 3.2,
-   "crop": [
-    0,
-    135,
-    1440,
-    810
-   ],
-   "fade": 0.3,
-   "caption": "Painted, alive, and you can walk in it"
-  },
-  {
-   "name": "Studio: the idea",
-   "src": "footage/mock/studio.mp4",
-   "from": 0.4,
-   "dur": 3.4,
-   "speed": 1.5,
-   "fade": 0.5,
-   "caption": "It starts with an idea"
-  },
-  {
-   "name": "Studio: reads",
-   "src": "footage/mock/studio.mp4",
-   "from": 5.6,
-   "dur": 1.4,
-   "caption": "Diorama reads it",
-   "by": "Muse Spark"
-  },
-  {
-   "name": "Studio: who",
-   "src": "footage/mock/studio.mp4",
-   "from": 7.6,
-   "dur": 3.4,
-   "caption": "and asks only what it cannot guess, in pictures",
-   "by": "Muse Spark"
-  },
-  {
-   "name": "Studio: what",
-   "src": "footage/mock/studio.mp4",
-   "from": 11.8,
-   "dur": 3.0
-  },
-  {
-   "name": "Studio: build",
-   "src": "footage/mock/studio.mp4",
-   "from": 15.6,
-   "dur": 8,
-   "speed": 2,
-   "caption": "Then it builds the world",
-   "by": "Muse Image",
-   "speedup": "2x"
-  },
-  {
-   "name": "4 How: the plan",
-   "image": "footage/lantern/method/1-plan.png",
-   "dur": 3,
-   "fade": 0.5,
-   "caption": "Plans where every thing stands",
-   "by": "Muse Spark"
-  },
-  {
-   "name": "4 How: the painting",
-   "image": "footage/lantern/method/2-painting.png",
-   "dur": 3,
-   "fade": 0.8,
-   "caption": "Paints over the plan",
-   "by": "Muse Image"
-  },
-  {
-   "name": "4 How: the cut-outs",
-   "image": "footage/lantern/method/3-masks.png",
-   "dur": 3,
-   "fade": 0.6,
-   "caption": "Cuts out every thing you can touch",
-   "by": "SAM 3.1"
-  },
-  {
-   "name": "4 How: depth",
-   "image": "footage/lantern/method/4-depth.png",
-   "dur": 2.5,
-   "fade": 0.6,
-   "caption": "Depth: what is near, what is far",
-   "by": "Depth Anything"
-  },
-  {
-   "name": "4 How: floor and scale",
-   "image": "footage/lantern/method/6-walk.png",
-   "dur": 2.5,
-   "fade": 0.6,
-   "caption": "The floor you walk on, the hero's size at every step"
-  },
-  {
-   "name": "4 How: taken apart",
-   "src": "footage/lantern4/explode/lantern-harbour--harbour-pier.mp4",
-   "from": 2,
-   "dur": 4,
-   "fade": 0.4,
-   "caption": "Every cut-out at its own depth"
-  },
-  {
-   "name": "5 Cast: the keeper",
-   "src": "footage/lantern2/character/lantern-harbour--lighthouse-keeper.mp4",
-   "from": 1,
-   "dur": 6,
-   "fade": 0.5,
-   "caption": "Each character painted from four sides",
-   "by": "Muse Image"
-  },
-  {
-   "name": "5 Cast: the candle child",
-   "src": "footage/lantern2/character/lantern-harbour--candle-child.mp4",
-   "from": 3.5,
-   "dur": 3.5,
-   "fade": 0.4,
-   "caption": "from the front, the side, the back",
-   "by": "Muse Image"
-  },
-  {
-   "name": "5 Cast: the 3D model",
-   "src": "footage/lantern4/studio-model.mp4",
-   "from": 1,
-   "dur": 5,
-   "crop": [
-    570,
-    326,
-    1340,
-    754
-   ],
-   "fade": 0.4,
-   "caption": "then built in 3D and rigged",
-   "by": "TRELLIS"
-  },
-  {
-   "name": "6 Play: the pier",
-   "src": "footage/lantern4/walk/lantern-harbour--harbour-pier.mp4",
-   "from": 0.5,
-   "dur": 6,
-   "crop": [
-    0,
-    135,
-    1440,
-    810
-   ],
-   "fade": 0.4,
-   "caption": "Then you play it"
-  },
-  {
-   "name": "6 Play: the lantern seller",
-   "src": "footage/lantern4/walk/lantern-harbour--lantern-market.mp4",
-   "from": 0.5,
-   "dur": 6,
-   "crop": [
-    0,
-    135,
-    1440,
-    810
-   ],
-   "fade": 0.3,
-   "by": "ElevenLabs"
-  },
-  {
-   "name": "6 Play: the candle child",
-   "src": "footage/lantern4/walk/lantern-harbour--river-dock.mp4",
-   "from": 0.5,
-   "dur": 5.5,
-   "crop": [
-    0,
-    135,
-    1440,
-    810
-   ],
-   "fade": 0.3
-  },
-  {
-   "name": "9 More worlds: the garden at dusk",
-   "src": "footage/mac/alive/grandmas-kitchen--garden.mp4",
-   "from": 1,
-   "dur": 3,
-   "crop": [
-    0,
-    135,
-    1440,
-    810
-   ],
-   "fade": 0.4,
-   "caption": "Export: one zip or a GitHub Pages link, plays in any browser"
-  },
-  {
-   "name": "9 More worlds: the striped lighthouse",
-   "src": "footage/mac/alive/ootb-test2--lighthouse-yard.mp4",
-   "from": 1,
-   "dur": 3,
-   "crop": [
-    0,
-    135,
-    1440,
-    810
-   ],
-   "fade": 0.3,
-   "caption": "Every world here was made with Diorama"
-  },
-  {
-   "name": "9 More worlds: the tram stop",
-   "src": "footage/mac/alive/last-tram-2--tram-stop.mp4",
-   "from": 1,
-   "dur": 3,
-   "crop": [
-    0,
-    135,
-    1440,
-    810
-   ],
-   "fade": 0.3
-  },
-  {
-   "name": "10 Thanks",
-   "dur": 7,
-   "card": "Diorama  \u00b7  github.com/gtanczyk/diorama",
-   "fade": 0.6
+  "fps": 30,
+  "shots": [
+    {
+      "name": "Hook: harbour",
+      "src": "footage/lantern4/alive/lantern-harbour--harbour-pier.mp4",
+      "from": 0.5,
+      "dur": 2.4,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ]
+    },
+    {
+      "name": "Hook: market",
+      "src": "footage/lantern4/alive/lantern-harbour--lantern-market.mp4",
+      "from": 1,
+      "dur": 1.8,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.25
+    },
+    {
+      "name": "Hook: candle boats",
+      "src": "footage/lantern4/alive/lantern-harbour--river-dock.mp4",
+      "from": 1,
+      "dur": 1.8,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.25
+    },
+    {
+      "name": "Hook: lighthouse",
+      "src": "footage/lantern4/alive/lantern-harbour--lighthouse-point.mp4",
+      "from": 1,
+      "dur": 2.2,
+      "crop": [
+        0,
+        0,
+        1440,
+        810
+      ],
+      "fade": 0.25,
+      "caption": "One sentence. A whole game."
+    },
+    {
+      "name": "Hook: you play it",
+      "src": "footage/lantern4/walk/lantern-harbour--harbour-pier.mp4",
+      "from": 0.5,
+      "dur": 3.2,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3,
+      "caption": "Painted, alive, and you can walk in it"
+    },
+    {
+      "name": "Studio: the idea",
+      "src": "footage/mock/studio.mp4",
+      "from": 0.4,
+      "dur": 3.4,
+      "speed": 1.5,
+      "fade": 0.5,
+      "caption": "It starts with an idea"
+    },
+    {
+      "name": "Studio: reads",
+      "src": "footage/mock/studio.mp4",
+      "from": 5.6,
+      "dur": 1.4,
+      "caption": "Diorama reads it",
+      "by": "Muse Spark"
+    },
+    {
+      "name": "Studio: who",
+      "src": "footage/mock/studio.mp4",
+      "from": 7.6,
+      "dur": 3.4,
+      "caption": "and asks only what it cannot guess, in pictures",
+      "by": "Muse Spark"
+    },
+    {
+      "name": "Studio: what",
+      "src": "footage/mock/studio.mp4",
+      "from": 11.8,
+      "dur": 3.0
+    },
+    {
+      "name": "Studio: build",
+      "src": "footage/mock/studio.mp4",
+      "from": 15.6,
+      "dur": 8,
+      "speed": 2,
+      "caption": "Then it builds the world",
+      "by": "Muse Image",
+      "speedup": "2x"
+    },
+    {
+      "name": "4 How: the plan",
+      "image": "footage/lantern/method/1-plan.png",
+      "dur": 3,
+      "fade": 0.5,
+      "caption": "Plans where every thing stands",
+      "by": "Muse Spark"
+    },
+    {
+      "name": "4 How: the painting",
+      "image": "footage/lantern/method/2-painting.png",
+      "dur": 3,
+      "fade": 0.8,
+      "caption": "Paints over the plan",
+      "by": "Muse Image"
+    },
+    {
+      "name": "4 How: the cut-outs",
+      "image": "footage/lantern/method/3-masks.png",
+      "dur": 3,
+      "fade": 0.6,
+      "caption": "Cuts out every thing you can touch",
+      "by": "SAM 3.1"
+    },
+    {
+      "name": "4 How: depth",
+      "image": "footage/lantern/method/4-depth.png",
+      "dur": 2.5,
+      "fade": 0.6,
+      "caption": "Depth: what is near, what is far",
+      "by": "Depth Anything"
+    },
+    {
+      "name": "4 How: floor and scale",
+      "image": "footage/lantern/method/6-walk.png",
+      "dur": 2.5,
+      "fade": 0.6,
+      "caption": "The floor you walk on, the hero's size at every step"
+    },
+    {
+      "name": "4 How: taken apart",
+      "src": "footage/lantern4/explode/lantern-harbour--harbour-pier.mp4",
+      "from": 2,
+      "dur": 4,
+      "fade": 0.4,
+      "caption": "Every cut-out at its own depth"
+    },
+    {
+      "name": "5 Cast: the keeper",
+      "src": "footage/lantern2/character/lantern-harbour--lighthouse-keeper.mp4",
+      "from": 1,
+      "dur": 6,
+      "fade": 0.5,
+      "caption": "Each character painted from four sides",
+      "by": "Muse Image"
+    },
+    {
+      "name": "5 Cast: the candle child",
+      "src": "footage/lantern2/character/lantern-harbour--candle-child.mp4",
+      "from": 3.5,
+      "dur": 3.5,
+      "fade": 0.4,
+      "caption": "from the front, the side, the back",
+      "by": "Muse Image"
+    },
+    {
+      "name": "5 Cast: the 3D model",
+      "src": "footage/lantern5/studio-model-lighthouse-keeper-smooth.mp4",
+      "dur": 2.6,
+      "crop": [
+        570,
+        60,
+        1340,
+        754
+      ],
+      "fade": 0.4,
+      "caption": "and built in 3D",
+      "by": "TRELLIS",
+      "from": 1.0
+    },
+    {
+      "name": "6 Play: the pier",
+      "src": "footage/lantern4/walk/lantern-harbour--harbour-pier.mp4",
+      "from": 0.5,
+      "dur": 6,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.4,
+      "caption": "Then you play it"
+    },
+    {
+      "name": "6 Play: the lantern seller",
+      "src": "footage/lantern4/walk/lantern-harbour--lantern-market.mp4",
+      "from": 0.5,
+      "dur": 6,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3,
+      "by": "ElevenLabs"
+    },
+    {
+      "name": "6 Play: the candle child",
+      "src": "footage/lantern4/walk/lantern-harbour--river-dock.mp4",
+      "from": 0.5,
+      "dur": 5.5,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "9 More worlds: the garden at dusk",
+      "src": "footage/more/grandmas-kitchen--garden.mp4",
+      "from": 1,
+      "dur": 3,
+      "crop": [
+        120,
+        60,
+        1200,
+        675
+      ],
+      "fade": 0.4,
+      "caption": "Export: one zip or a GitHub Pages link, plays in any browser"
+    },
+    {
+      "name": "9 More worlds: the striped lighthouse",
+      "src": "footage/more/ootb-test2--lighthouse-yard.mp4",
+      "from": 1,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3,
+      "caption": "Every world here was made with Diorama"
+    },
+    {
+      "name": "9 More worlds: the tram stop",
+      "src": "footage/more/last-tram-2--tram-stop.mp4",
+      "from": 1,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.3
+    },
+    {
+      "name": "10 Thanks",
+      "dur": 7,
+      "card": "Diorama  \u00b7  github.com/gtanczyk/diorama",
+      "fade": 0.6
+    }
+  ],
+  "music": {
+    "src": "footage/music.mp3",
+    "volume": 0.35
   }
- ],
- "music": {
-  "src": "footage/music.mp3",
-  "volume": 0.35
- }
 }
