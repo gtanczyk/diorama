@@ -1173,8 +1173,9 @@ class Game {
       const [w, hgt] = [cut.canvas.width, cut.canvas.height];
       const [px, py] = [cut.x0 + w / 2, cut.y0 + hgt * 0.85];
       ctx.save();
-      ctx.translate(px, py + Math.sin(t * 1.3) * hgt * 0.012);
-      ctx.rotate(0.018 * Math.sin(t * 0.9 + 1.1));
+      // Big enough to read at a glance: a few pixels of rise and fall and a visible roll, never a jitter.
+      ctx.translate(px + Math.sin(t * 0.55) * Math.min(3, hgt * 0.01), py + Math.sin(t * 1.3) * Math.max(2, Math.min(6, hgt * 0.025)));
+      ctx.rotate(0.035 * Math.sin(t * 0.9 + 1.1));
       ctx.translate(-px, -py);
       this.drawStrips(cut, xa, xb, ya, yb);
       ctx.restore();
@@ -1417,8 +1418,11 @@ class Game {
       const t = this.time + k * 1.7;
       const [px, py] = [(x0 + x1) / 2 + sx, y1 - (y1 - y0) * 0.2 + sy];
       ctx.save();
-      ctx.translate(px, py + Math.sin(t * 1.25) * Math.max(0.6, (y1 - y0) * 0.02));
-      ctx.rotate(0.02 * Math.sin(t * 0.85 + 0.7));
+      // A far boat is a few dozen pixels tall: a share of its height would be under a pixel, so it gets a floor of
+      // ~2 px of bob, a clear roll and a slow drift, enough for the eye to catch across the harbour.
+      const hh = y1 - y0;
+      ctx.translate(px + Math.sin(t * 0.5 + 0.3) * Math.min(2, Math.max(0.8, hh * 0.03)), py + Math.sin(t * 1.25) * Math.max(1.8, Math.min(4, hh * 0.07)));
+      ctx.rotate(0.05 * Math.sin(t * 0.85 + 0.7));
       ctx.drawImage(img, x0 + sx - px, y0 + sy - py);
       ctx.restore();
     }
@@ -1942,16 +1946,7 @@ class Game {
         1, 1, articulation, faceTime, 0, mapped) : rig.canvas;
     }
     /** Draws the figure into c with its feet at c's origin; returns its half width. */
-    const paint = (c: CanvasRenderingContext2D): number => {
-      // Standing is never a still picture: a slow breath (the chest rises, a hair taller and narrower) and a
-      // gentle weight shift from foot to foot, each person on their own phase; a little livelier while talking.
-      if (!walking && !creature) {
-        const t = this.time + (Math.abs(x * 0.37 + y * 0.11) % 7);
-        const breath = Math.sin(t * ((2 * Math.PI) / 3.4));
-        const k = talk === 'speak' ? 1.6 : 1;
-        c.rotate(0.012 * k * Math.sin(t * ((2 * Math.PI) / 5.3)));
-        c.scale(1 - 0.004 * k * breath, 1 + 0.011 * k * breath);
-      }
+    const paintRaw = (c: CanvasRenderingContext2D): number => {
       if (sprites) {
         // The nearest painted facing; the left-facing ones are the right ones mirrored.
         const a = Math.atan2(Math.sin(yaw), Math.cos(yaw));
@@ -1992,6 +1987,22 @@ class Game {
       else drawFigure(c, h, colour);
       return w / 2;
     };
+    // Standing is never a still picture: the body bends a little from the planted feet, the head swaying most (a slow
+    // weight shift plus a shorter drift), and the chest and shoulders rise with each breath. Each person keeps their
+    // own phase; talking makes it livelier. ?idle=0 turns it off.
+    const idle = !walking && !creature && params.get('idle') !== '0';
+    // The body and its rim share one bent picture: it is painted once per person per frame.
+    const token = {};
+    const paint = (c: CanvasRenderingContext2D): number => {
+      if (!idle) return paintRaw(c);
+      const t = this.time + (Math.abs(x * 0.37 + y * 0.11) % 7);
+      const k = talk === 'speak' ? 1.5 : 1;
+      const sway = k * (0.016 * Math.sin(t * ((2 * Math.PI) / 5.3)) + 0.006 * Math.sin(t * ((2 * Math.PI) / 2.3) + 1.1));
+      const breath = 0.5 + 0.5 * Math.sin(t * ((2 * Math.PI) / 3.6));
+      const m = c.getTransform();
+      const density = Math.max(1, Math.min(1.5, Math.hypot(m.a, m.b)));
+      return idleWarp(c, paintRaw, token, h, density, sway, k * 0.014 * breath, 0.006 * k * Math.sin(t * ((2 * Math.PI) / 4.1) + 0.7));
+    };
     // How much of the floor under the feet lies in a painted shadow: the person stands in it too.
     const shaded = Math.max(this.shadeAt(x, y, h), this.fireShadeAt(x, y, h));
     const strength = g.light?.strength ?? 0.35;
@@ -2020,7 +2031,7 @@ class Game {
         ctx.ellipse(x, y, h * 0.07, Math.max(1.5, h * 0.014), 0, 0, Math.PI * 2);
         ctx.fill();
       }
-      const rect = cast > 0 ? this.castShadow(x, y, h, unit / 1.62, light!, cast * light!.strength, paint, [sx, sy]) : undefined;
+      const rect = cast > 0 ? this.castShadow(x, y, h, unit / 1.62, light!, cast * light!.strength, paintRaw, [sx, sy]) : undefined;
       ctx.restore();
       return rect ?? [x + sx, y + sy, x + sx, y + sy];
     }
@@ -2029,7 +2040,7 @@ class Game {
     const bright = this.lightAt(x, y - h * 0.5) * (1 - shaded * strength) * breath;
     // A party member is edged in its player's colour (twice, so the edge reads at a glance on a busy painting).
     const edge = glow ? ` drop-shadow(0 0 ${Math.max(2, h * 0.008).toFixed(1)}px ${glow}) drop-shadow(0 0 ${Math.max(2, h * 0.008).toFixed(1)}px ${glow})` : '';
-    this.separate(x, y, h, paint);
+    this.separate(x, y, h, paintRaw);
     ctx.filter = `brightness(${bright.toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}${edge}`;
     ctx.translate(x, y - bob);
     ctx.rotate(rock);
@@ -2994,4 +3005,54 @@ function turnToward(a: number, b: number, step: number): number {
 
 function union(a: Rect, b?: Rect): Rect {
   return b ? [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])] : a;
+}
+
+/** One reusable scratch canvas for the idle bend: every standing person is drawn into it, then laid out in slices. */
+let idleScratch: HTMLCanvasElement | undefined;
+let idleBent: HTMLCanvasElement | undefined;
+/** Who painted the scratch last (and its half width), so a second draw of the same person this frame reuses it. */
+let idleOwner: { token: object; density: number; half: number } | undefined;
+
+/**
+ * Draws a standing figure (paint, feet at the origin) bent from its feet: each horizontal slice shifts sideways by
+ * sway x height x u^1.7 (u = height above the feet as a share of the figure), so the feet stay planted and the head
+ * moves most; the slices above the hips lift by up to `lift` x height (the breath), and the head nods by `nod`.
+ */
+function idleWarp(c: CanvasRenderingContext2D, paint: (c: CanvasRenderingContext2D) => number, token: object, h: number, density: number, sway: number, lift: number, nod: number): number {
+  const W = Math.ceil(h * 1.6 * density), H = Math.ceil(h * 1.35 * density);
+  const foot = Math.ceil(h * 0.15 * density);
+  if (!(W >= 8 && H >= 8 && W <= 4096 && H <= 4096)) return paint(c);
+  const scratch = (idleScratch ??= document.createElement('canvas'));
+  const bent = (idleBent ??= document.createElement('canvas'));
+  let half: number;
+  if (idleOwner?.token === token && idleOwner.density === density) half = idleOwner.half;
+  else {
+    for (const cv of [scratch, bent]) if (cv.width < W || cv.height < H) Object.assign(cv, { width: Math.max(cv.width, W), height: Math.max(cv.height, H) });
+    const s = scratch.getContext('2d')!;
+    s.setTransform(1, 0, 0, 1, 0, 0);
+    s.clearRect(0, 0, W, H);
+    s.setTransform(density, 0, 0, density, W / 2, H - foot);
+    half = paint(s);
+    s.setTransform(1, 0, 0, 1, 0, 0);
+    // The slices go into a second canvas, so the person's light and edge filters run once, on the whole figure.
+    const b = bent.getContext('2d')!;
+    b.setTransform(1, 0, 0, 1, 0, 0);
+    b.clearRect(0, 0, W, H);
+    const slices = 28;
+    const band = H / slices;
+    const smooth = (a: number, z: number, v: number) => { const q = Math.max(0, Math.min(1, (v - a) / (z - a))); return q * q * (3 - 2 * q); };
+    for (let i = 0; i < slices; i++) {
+      const top = i * band;
+      const mid = top + band / 2;
+      const u = Math.max(0, (H - foot - mid) / density / h);
+      const dx = (sway * Math.pow(u, 1.7) + nod * smooth(0.82, 1, u)) * h * density;
+      const dy = -lift * h * density * smooth(0.45, 0.78, u);
+      // A breath stretches the torso: a slice that lifts more than the one under it reaches down to it, so no gap opens.
+      const stretch = lift * h * density * (smooth(0.45, 0.78, u) - smooth(0.45, 0.78, u - band / density / h));
+      b.drawImage(scratch, 0, top, W, band + 1, dx, top + dy, W, band + 1 + stretch);
+    }
+    idleOwner = { token, density, half };
+  }
+  c.drawImage(bent, 0, 0, W, H, -W / 2 / density, -(H - foot) / density, W / density, H / density);
+  return half + Math.abs(sway) * h;
 }

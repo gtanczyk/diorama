@@ -13,6 +13,9 @@ import { Depth, farFlats, floatSheet, mistSheet, smokeSheet, waterSheet } from '
 import { maskFromPng as waterMaskOf } from '../image/mask.ts';
 import { WorldFiles } from '../world/files.ts';
 
+/** A thing that is water itself: its mask is where the swell is, not dry land. */
+const WET_THING = /\b(water|river|sea|lake|pond|pool|stream|canal|creek|brook|waves?|fountain|puddle)s?\b/i;
+
 defineCommand({
   name: 'backdrop',
   usage: 'backdrop <slug> [place...]  paint each place without its standing things, for parallax [--smear: no Muse, smear the gaps]',
@@ -86,11 +89,15 @@ defineCommand({
       const floorDir = at('masks', 'floors');
       const floors = fs.existsSync(floorDir) ? await Promise.all(fs.readdirSync(floorDir).filter((f) => f.endsWith('.png')).map(async (f) => ({ key: f.replace(/\.png$/, ''), mask: await maskFromPng(fs.readFileSync(`${floorDir}/${f}`)) }))) : [];
       const depth = Depth.parse(fs.existsSync(at('depth.json')) ? files.readJson(at('depth.json')) : {});
+      // Every painted thing stays dry, not only the cards: a mooring post or a jetty that is no card would
+      // otherwise get the swell drawn over it. Only a thing that is the water itself (a pond, the river) flows.
+      const dryThings = await Promise.all(Object.keys(notes).filter((k) => !WET_THING.test(`${k} ${notes[k].phrase}`) && !keys.includes(k) && fs.existsSync(at('masks', `${k}.png`)))
+        .map(async (k) => maskFromPng(fs.readFileSync(at('masks', `${k}.png`)))));
       // Painted fog to set drifting (layers/mist.jpg and its mask), found by SAM on the backdrop too.
       const things = dilate(unionAll(FRAME.width, FRAME.height, cards.map((c) => c.mask)), 4);
       const [far, water, mist, smoke] = await Promise.all([
         farAsked,
-        waterSheet(files.memo, place, paintingFor(moved || undefined, png, lastWater ?? []), unionAll(FRAME.width, FRAME.height, cards.map((c) => c.mask)), floors, depth).catch((error) => {
+        waterSheet(files.memo, place, paintingFor(moved || undefined, png, lastWater ?? []), unionAll(FRAME.width, FRAME.height, [...cards.map((c) => c.mask), ...dryThings]), floors, depth).catch((error) => {
           console.log(`  ${place.key}: no flowing water (${error instanceof Error ? error.message.slice(0, 120) : error})`);
           return undefined;
         }),

@@ -40,10 +40,41 @@ for (const [i, f] of flats.entries()) {
   layers.push({ file: `flat-${i}.png`, z: 30 + 20 * i });
 }
 // Each card: the painting's own pixels under its SAM mask, stood at its floor row's depth (nearer = lower = closer).
-const cards = [...geometry.occluders].filter((o) => fs.existsSync(path.join(dir, o.mask))).sort((a, b) => a.baseY - b.baseY);
+// Clean for the film: the mask is kept inside the thing's own box (a stray SAM bit of a far wall never flies off with
+// the boat), holes the mask leaves inside itself are filled from the painting (an oil can standing in a boat would
+// otherwise leave a can-shaped hole in it), and a thing that sits inside a nearer thing's box rides with it, just in
+// front, instead of hanging far behind it.
+type Card = Occ & { box: [number, number, number, number] };
+const cards = ([...geometry.occluders] as Card[]).filter((o) => fs.existsSync(path.join(dir, o.mask))).sort((a, b) => a.baseY - b.baseY);
+const depth = (o: Card) => 90 + 340 * Math.max(0, Math.min(1, o.baseY / H)) ** 1.5;
+const area = (b: number[]) => Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
+const inside = (a: number[], b: number[]) => area([Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.min(a[2], b[2]), Math.min(a[3], b[3])]) / Math.max(1, area(a));
+const host = (o: Card) => cards.filter((b) => b !== o && b.baseY > o.baseY && area(b.box) > 2 * area(o.box) && inside(o.box, b.box) > 0.6).sort((a, b) => area(a.box) - area(b.box))[0];
+const rgb = await sharp(painting).resize(W, H).removeAlpha().raw().toBuffer();
 for (const o of cards) {
   const alpha = await sharp(path.join(dir, o.mask)).resize(W, H).greyscale().raw().toBuffer();
-  const rgb = await sharp(painting).resize(W, H).removeAlpha().raw().toBuffer();
+  const pad = 6;
+  const [bx0, by0, bx1, by1] = [Math.max(0, o.box[0] - pad), Math.max(0, o.box[1] - pad), Math.min(W, o.box[2] + pad), Math.min(H, o.box[3] + pad)];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x < bx0 || x >= bx1 || y < by0 || y >= by1) alpha[y * W + x] = 0;
+  // Holes: the empty pixels of the box that the box's edge cannot reach through other empty pixels.
+  const bw = bx1 - bx0, bh = by1 - by0;
+  const outside = new Uint8Array(bw * bh);
+  const stack: number[] = [];
+  const push = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= bw || y >= bh) return;
+    const k = y * bw + x;
+    if (outside[k] || alpha[(y + by0) * W + x + bx0] >= 128) return;
+    outside[k] = 1;
+    stack.push(k);
+  };
+  for (let x = 0; x < bw; x++) push(x, 0), push(x, bh - 1);
+  for (let y = 0; y < bh; y++) push(0, y), push(bw - 1, y);
+  while (stack.length) {
+    const k = stack.pop()!;
+    const x = k % bw, y = (k - x) / bw;
+    push(x + 1, y), push(x - 1, y), push(x, y + 1), push(x, y - 1);
+  }
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) if (!outside[y * bw + x]) alpha[(y + by0) * W + x + bx0] = 255;
   const rgba = Buffer.alloc(W * H * 4);
   for (let i = 0; i < W * H; i++) {
     rgba[i * 4] = rgb[i * 3];
@@ -53,8 +84,11 @@ for (const o of cards) {
   }
   const name = `card-${o.key}.png`;
   await sharp(rgba, { raw: { width: W, height: H, channels: 4 } }).png().toFile(path.join(work, name));
-  layers.push({ file: name, z: 90 + 340 * Math.max(0, Math.min(1, o.baseY / H)) ** 1.5, label: o.key.replace(/[-_]+/g, ' ') });
+  const on = host(o);
+  layers.push({ file: name, z: on ? depth(on) + 10 : depth(o), label: o.key.replace(/[-_]+/g, ' ') });
 }
+// Stacked far to near, so a thing riding in front of its host is drawn after it.
+layers.sort((a, b) => a.z - b.z);
 
 // One page: the layers stacked in CSS 3D; the clock comes from requestAnimationFrame, which smooth.ts steps.
 const html = `<!doctype html><meta charset="utf-8"><style>

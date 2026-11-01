@@ -30,12 +30,24 @@ async function cardPng(title: string, note: string): Promise<Buffer> {
 
 /** The lower third of a shot: a dark band with the model's badge and what happens, plus a speed mark. */
 async function captionPng(shot: Shot): Promise<Buffer> {
-  const badge = shot.by ? Math.round(shot.by.length * 15 + 48) : 0;
+  // Centred and lifted clear of the bottom ~14%, where a video player draws its controls and timecode: a solid dark
+  // pill under every caption, bold white type, the model badge inside the pill, so it reads at first glance on a phone.
   const text = shot.caption ?? '';
-  const band = text || shot.by ? `<rect x="64" y="${H - 150}" width="${badge + (badge ? 24 : 0) + text.length * 17 + 56}" height="86" rx="18" fill="#0b0b10" fill-opacity="0.78"/>
-${shot.by ? `<rect x="88" y="${H - 129}" width="${badge}" height="44" rx="22" fill="#2f5bea"/><text x="${88 + badge / 2}" y="${H - 99}" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="23" font-weight="bold" fill="#fff">${esc(shot.by)}</text>` : ''}
-<text x="${88 + badge + (badge ? 24 : 0)}" y="${H - 97}" font-family="DejaVu Sans, sans-serif" font-size="30" fill="#f2f0ea">${esc(text)}</text>` : '';
-  const speed = shot.speedup ? `<rect x="${W - 194}" y="${H - 138}" width="130" height="62" rx="31" fill="#0b0b10" fill-opacity="0.78"/><text x="${W - 129}" y="${H - 96}" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="32" font-weight="bold" fill="#ffb347">${esc(shot.speedup)} ▸▸</text>` : '';
+  const font = 'Inter, DejaVu Sans, sans-serif';
+  const size = 50;
+  const badge = shot.by ? Math.round(shot.by.length * 21 + 60) : 0;
+  const gap = badge ? 26 : 0;
+  const textW = Math.round(text.length * size * 0.56);
+  const pillW = 64 + badge + gap + textW;
+  const pillH = 112;
+  const x0 = Math.round((W - pillW) / 2);
+  const y0 = Math.round(H * 0.86) - pillH;
+  const mid = y0 + pillH / 2;
+  const shade = `<defs><linearGradient id="sh" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.55"/></linearGradient></defs><rect x="0" y="${y0 - 120}" width="${W}" height="${H - y0 + 120}" fill="url(#sh)"/>`;
+  const band = text || shot.by ? `${shade}<rect x="${x0}" y="${y0}" width="${pillW}" height="${pillH}" rx="${pillH / 2}" fill="#0b0b10" fill-opacity="0.95"/>
+${shot.by ? `<rect x="${x0 + 32}" y="${mid - 30}" width="${badge}" height="60" rx="30" fill="#2f5bea"/><text x="${x0 + 32 + badge / 2}" y="${mid + 11}" text-anchor="middle" font-family="${font}" font-size="32" font-weight="bold" fill="#fff">${esc(shot.by)}</text>` : ''}
+<text x="${x0 + 32 + badge + gap}" y="${mid + 17}" font-family="${font}" font-size="${size}" font-weight="bold" fill="#ffffff">${esc(text)}</text>` : '';
+  const speed = shot.speedup ? `<rect x="${W - 230}" y="64" width="166" height="76" rx="38" fill="#0b0b10" fill-opacity="0.95"/><text x="${W - 147}" y="116" text-anchor="middle" font-family="${font}" font-size="38" font-weight="bold" fill="#ffb347">${esc(shot.speedup)} ▸▸</text>` : '';
   return sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${band}${speed}</svg>`)).png().toBuffer();
 }
 

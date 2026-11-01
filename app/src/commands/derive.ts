@@ -29,8 +29,23 @@ async function walkPicture(painting: Buffer, g: Geometry, footprint: ThingIn['ma
   for (const o of g.occluders) {
     svg.push(`<polyline points="${(o.floor ?? []).map((p) => p.join(',')).join(' ')}" fill="none" stroke="#ffe600" stroke-width="3"/>`);
   }
+  // Each painted thing is named on itself (over the top of its box), and the spot the hero walks to for it is a
+  // small dot joined to it by a thin line: names piled up where the hero stands read as things in the wrong place.
   for (const t of g.things) {
-    svg.push(`<circle cx="${t.stand[0]}" cy="${t.stand[1]}" r="6" fill="#fff" stroke="#000" stroke-width="2"/>`, svgLabel(t.stand[0] + 9, t.stand[1] + 5, t.role === 'npc' ? `${t.key} stands here (not painted)` : t.key));
+    if (t.role === 'npc' || !t.box) {
+      svg.push(`<circle cx="${t.stand[0]}" cy="${t.stand[1]}" r="6" fill="#fff" stroke="#000" stroke-width="2"/>`, svgLabel(t.stand[0] + 9, t.stand[1] + 5, t.role === 'npc' ? `${t.key} stands here (not painted)` : t.key));
+      continue;
+    }
+    const [x0, y0, x1, y1] = t.box;
+    const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2];
+    const lx = Math.max(4, Math.min(FRAME.width - 8 * t.key.length - 12, cx - 4 * t.key.length));
+    const ly = y0 > 30 ? y0 - 8 : Math.min(FRAME.height - 8, y0 + 22);
+    svg.push(
+      `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="2" stroke-dasharray="6 5"/>`,
+      `<line x1="${t.stand[0]}" y1="${t.stand[1]}" x2="${cx}" y2="${cy}" stroke="#fff" stroke-opacity="0.7" stroke-width="1.5"/>`,
+      `<circle cx="${t.stand[0]}" cy="${t.stand[1]}" r="4" fill="#fff" stroke="#000" stroke-width="1.5"/>`,
+      svgLabel(lx, ly, t.key),
+    );
   }
   // The hero's size at three depths, as little figures spread over the floor (far left, middle, near right):
   // stacked boxes in one column read as a path, not as a person.
