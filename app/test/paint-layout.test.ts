@@ -145,3 +145,11 @@ test('photo places retain the photo flow without a synthetic-layout comparison',
   expect(askSparkJson).not.toHaveBeenCalled();
   expect(fs.existsSync(at('painting-layout.json'))).toBe(false);
 });
+
+test('drift alone (camera, a moved or resized thing) is kept without a repaint; a broken route is not', async () => {
+  const s = passing(); s.horizon = 250; s.things[1] = { ...s.things[1], box: [420, 560, 470, 614] };
+  vi.mocked(askSparkJson).mockResolvedValue(s);
+  const result = await alignPainting(new Memo(dir), place, layout, plan, original, brief, 0);
+  expect(result.painting).toEqual(original); expect(museEdit).not.toHaveBeenCalled();
+  expect(result.attempts[0].issues.length).toBeGreaterThan(0);
+});

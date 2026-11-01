@@ -82,6 +82,14 @@ Return JSON {"horizon":300,"people":false,"things":[{"key":"...","box":[0,0,100,
 }
 
 const REPAIRS = 1;
+/**
+ * Drift the game copes with: masks, depth and walk are measured from the painting itself, so a camera a little
+ * higher, a thing a little off its box or a size off its block-in is no reason to repaint (Muse does it on almost
+ * every painting; failing on it left new worlds with no painting at all). What breaks play still repaints: a
+ * floor gone, cut off or not reaching its exit, a story thing missing or out of reach, people painted in.
+ */
+export const softIssue = (issue: string) => /^camera horizon moved|: moved from its planned box|: painted size differs too much/.test(issue);
+
 export type LayoutAttempt = { seen: PaintedLayout; issues: string[] };
 export class PaintingLayoutError extends Error {
   constructor(readonly attempts: LayoutAttempt[]) {
@@ -98,7 +106,10 @@ export async function alignPainting(memo: Memo, place: Place, layout: Layout, bl
     const seen = await inspectPaintedLayout(memo, place, layout, blockin, painting, brief);
     const issues = paintedLayoutIssues(place, layout, seen);
     attempts.push({ seen, issues });
-    if (!issues.length) return { painting, attempts };
+    if (!issues.some((i) => !softIssue(i))) {
+      if (issues.length) console.log(`  ${place.key}: composition drift kept (the game measures the painting itself): ${issues.join('; ')}`);
+      return { painting, attempts };
+    }
     if (n === REPAIRS) throw new PaintingLayoutError(attempts);
     console.log(`  ${place.key}: composition repair ${n + 1}/${REPAIRS}: ${issues.join('; ')}`);
     const prompt = `Restore this game background to its planned composition. Image 1 is the authoritative spatial plan. Image 2 supplies ONLY the finished appearance, materials, palette and lighting. Repaint the whole composition where necessary, not a small patch. Preserve object identities and art style from image 2, but restore the camera, sizes, walking surfaces, joins and positions from image 1.
