@@ -1,4 +1,5 @@
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
+import { hashSeed } from '../src/play/weather.ts';
 import { FLAME_GLOW, FLAME_SWAY_M, flameAt, depthStretch, flicker, floorYAt, hiddenRuns, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
@@ -62,6 +63,9 @@ type Sheet = { file: string; yaw: number; stand: number; img: HTMLImageElement; 
 /** height: metres standing (a grown-up 1.62, a cat 0.3), so each is drawn at its own size; upright false: an animal, drawn as painted. */
 type Figure = { img: HTMLImageElement; face?: PaintedFace; faceInfo?: FaceDefinition; height?: number; upright?: boolean; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; sheet?: HTMLImageElement; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
 /** y: the floor row the cut stands on, which sets how far it slides with parallax. */
+/** Things that float and ride the swell, by their names. */
+const FLOATS = /\b(boat|rowboat|dinghy|skiff|canoe|kayak|raft|ship|barge|punt|gondola|sampan|junk|ferry|trawler|yacht|sailboat)s?\b/i;
+
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number; y: number };
 
 type Place = {
@@ -81,6 +85,8 @@ type Place = {
   water?: { tex: HTMLImageElement; mask: HTMLImageElement; box: [number, number, number, number]; flow: [number, number]; canvas: HTMLCanvasElement };
   /** Painted fog set drifting: its veil over box (reaching past its edges), where it may show, which way (-1, 1; 0 with the wind) and how fast. */
   mist?: { tex: HTMLImageElement; mask: HTMLImageElement; box: [number, number, number, number]; drift: number; speed: number; canvas: HTMLCanvasElement };
+  /** Painted smoke curling: each plume's feathered copy of the painting and where it sits. */
+  smoke?: Array<{ img: HTMLImageElement; box: [number, number, number, number] }>;
   far?: { sky?: HTMLImageElement; flats: Array<{ img: HTMLImageElement; box: [number, number, number, number]; d: number }> };
   hots: Hot[];
   cuts: Cut[];
@@ -436,6 +442,9 @@ class Game {
       const [tex, mask] = await Promise.all([loadImage(files(w.tex)), loadImage(files(w.mask))].map((p) => p.catch(() => undefined)));
       if (tex && mask) water = { tex, mask, box: w.box, flow: w.flow ?? [1, 0], canvas: Object.assign(document.createElement('canvas'), { width: w.box[2] - w.box[0], height: w.box[3] - w.box[1] }) };
     }
+    const smoke = backdrop && entry.layers?.smoke?.length && !params.has('still')
+      ? (await Promise.all(entry.layers.smoke.map(async (sm) => ({ img: await loadImage(files(sm.file)).catch(() => undefined), box: sm.box })))).filter((sm): sm is { img: HTMLImageElement; box: [number, number, number, number] } => !!sm.img)
+      : undefined;
     let mist: Place['mist'];
     const m = entry.layers?.mist;
     if (backdrop && m && !params.has('still')) {
@@ -476,7 +485,7 @@ class Game {
     // ?glow=0 (or ?still; capture unless ?glow=1) keeps the painted lights as painted, for pixel checks.
     const glows = entry.glows?.length && !params.has('still') && (params.get('glow') ?? (capture ? '0' : '1')) !== '0' ? new GlowFx(entry.glows, g.frame.height, bg) : undefined;
     const focus = focusScale > 0 || separateScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, smoke, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
     this.cache.set(key, place);
     for (const hot of hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc')) {
       const id = `${key}/${hot.thing.key}`;
@@ -1153,6 +1162,39 @@ class Game {
 
   /** Draws the card's columns [xa, xb) (frame x) in strips, each slid by the floor under it. */
   private drawCard(cut: Cut, xa = cut.x0, xb = cut.x0 + cut.canvas.width, ya = cut.y0, yb = cut.y0 + cut.canvas.height) {
+    // A boat on the water rides the swell: rises and sinks a little and rolls about its keel, slowly, each on its own phase.
+    if (this.afloat(cut) && !params.has('still')) {
+      const t = this.time + (hashSeed(cut.occ.key) % 1000) / 160;
+      const [w, hgt] = [cut.canvas.width, cut.canvas.height];
+      const [px, py] = [cut.x0 + w / 2, cut.y0 + hgt * 0.85];
+      ctx.save();
+      ctx.translate(px, py + Math.sin(t * 1.3) * hgt * 0.012);
+      ctx.rotate(0.018 * Math.sin(t * 0.9 + 1.1));
+      ctx.translate(-px, -py);
+      this.drawStrips(cut, xa, xb, ya, yb);
+      ctx.restore();
+      return;
+    }
+    this.drawStrips(cut, xa, xb, ya, yb);
+  }
+
+  private readonly floating = new WeakMap<Cut, boolean>();
+
+  /** A boat whose hull meets water (beside it and under it), not one up on a stand on the quay. */
+  private afloat(cut: Cut): boolean {
+    let known = this.floating.get(cut);
+    if (known !== undefined) return known;
+    const wet = this.place.wet;
+    const { width: W, height: H } = this.place.g.frame;
+    const [x0, y0, x1, y1] = cut.occ.box;
+    const at = (x: number, y: number) => (wet ? wet[Math.max(0, Math.min(H - 1, Math.round(y))) * W + Math.max(0, Math.min(W - 1, Math.round(x)))] > 100 : false);
+    const hy = y1 - 0.15 * (y1 - y0);
+    known = FLOATS.test(cut.occ.thing ?? cut.occ.key) && [at(x0 - 6, hy), at(x1 + 6, hy), at((x0 + x1) / 2, y1 + 6)].filter(Boolean).length >= 2;
+    this.floating.set(cut, known);
+    return known;
+  }
+
+  private drawStrips(cut: Cut, xa: number, xb: number, ya: number, yb: number) {
     const STRIP = 6;
     const right = cut.x0 + cut.canvas.width;
     let [sx, sy] = this.cardShift(cut, xa + Math.min(STRIP, xb - xa) / 2);
@@ -1363,6 +1405,29 @@ class Game {
   }
 
   /**
+   * Painted smoke curls: each plume's rows are bent sideways by a wave that rises through it, wider the higher
+   * it gets, so the smoke billows and leans with the wind while its foot (the chimney) stays where it was painted.
+   */
+  private drawSmoke(p: Parallax) {
+    const smoke = this.place.smoke;
+    if (!smoke?.length) return;
+    const wind = this.place.weather?.w.wind ?? 0;
+    const STRIP = 2;
+    for (const [k, { img, box }] of smoke.entries()) {
+      const [x0, y0, , y1] = box;
+      const h = y1 - y0;
+      const [sx, sy] = shiftAt(this.place.g, p, y1);
+      for (let y = 0; y < h; y += STRIP) {
+        // 0 at the foot of the plume, 1 at its top.
+        const up = 1 - y / Math.max(1, h);
+        const amp = 1.5 + 7 * up * up;
+        const dx = amp * (0.65 * Math.sin(y * 0.045 + this.time * 1.4 + k * 2.1) + 0.35 * Math.sin(y * 0.11 - this.time * 0.9 + k)) + wind * 30 * up * up;
+        ctx.drawImage(img, 0, y, img.width, STRIP, x0 + sx + dx, y0 + y + sy, img.width, STRIP);
+      }
+    }
+  }
+
+  /**
    * The painted fog drifts. Like running water: two copies of its veil (its colour, shaped like its denser and
    * lighter patches) slide sideways half a cycle apart, each fading in and out, so their sum weighs one and none
    * is seen jumping back; with the wind (or the way the author set with fog_drift). Cut to where the fog may
@@ -1456,6 +1521,7 @@ class Game {
         ctx.drawImage(backdrop, x0, top, w, e - top + 1, x0 + sx, top + sy, w, e - top + 1);
       }
       this.drawWater(p);
+      this.drawSmoke(p);
       this.drawMist(p);
       this.place.weather?.drawGround(ctx, (y) => this.shift(y));
       const carded = new Set(this.place.cuts.map((c) => c.occ.thing ?? c.occ.key));
@@ -1856,6 +1922,15 @@ class Game {
     }
     /** Draws the figure into c with its feet at c's origin; returns its half width. */
     const paint = (c: CanvasRenderingContext2D): number => {
+      // Standing is never a still picture: a slow breath (the chest rises, a hair taller and narrower) and a
+      // gentle weight shift from foot to foot, each person on their own phase; a little livelier while talking.
+      if (!walking && !creature) {
+        const t = this.time + (Math.abs(x * 0.37 + y * 0.11) % 7);
+        const breath = Math.sin(t * ((2 * Math.PI) / 3.4));
+        const k = talk === 'speak' ? 1.6 : 1;
+        c.rotate(0.012 * k * Math.sin(t * ((2 * Math.PI) / 5.3)));
+        c.scale(1 - 0.004 * k * breath, 1 + 0.011 * k * breath);
+      }
       if (sprites) {
         // The nearest painted facing; the left-facing ones are the right ones mirrored.
         const a = Math.atan2(Math.sin(yaw), Math.cos(yaw));

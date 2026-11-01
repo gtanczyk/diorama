@@ -6,7 +6,7 @@
 import sharp from 'sharp';
 import { z } from 'zod';
 import { maskArea, maskToPng, emptyMask, type Mask } from '../image/mask.ts';
-import { dilate, intersect, subtract, union, unionAll } from '../image/raster.ts';
+import { components, dilate, intersect, subtract, union, unionAll } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import { samFind } from '../meta/sam.ts';
 import { askSparkJson } from '../meta/spark.ts';
@@ -420,4 +420,36 @@ Answer with JSON only: {"bands": [{"box": [x0, y0, x1, y1], "what": "low fog ove
   const soft = await sharp({ create: { width: region.width, height: region.height, channels: 3, background: '#ffffff' } }).joinChannel(reach, { raw: { width: region.width, height: region.height, channels: 1 } }).png().toBuffer();
   const drift = depth.fog === 'left' ? -1 : depth.fog === 'right' ? 1 : null;
   return { tex, mask: soft, box, phrase, drift, speed: depth.fogSpeed ?? 1 };
+}
+
+/** A plume bigger than this share of the frame is a cloud or a fog bank, not a chimney's smoke. */
+const SMOKE_MAX_SHARE = 0.06;
+
+export type Smoke = { png: Buffer; box: [number, number, number, number] };
+
+/**
+ * Painted smoke (from chimneys, a fire, a ship's funnel) to set curling: SAM finds it on the backdrop, and each
+ * plume becomes a copy of the painting round it with a feathered edge. The page bends its rows sideways in a
+ * wave that rises through it, more the higher it gets, so the smoke curls and drifts while its foot stays put.
+ * Free when the place has none: one SAM call.
+ */
+export async function smokeSheet(memo: Memo, place: Place, backdrop: Buffer, notSmoke: Mask): Promise<Smoke[]> {
+  const [W, H]: [number, number] = [FRAME.width, FRAME.height];
+  const hits = await samFind(memo, { label: `smoke:${place.key}`, image: backdrop, prompt: 'smoke' });
+  const all = subtract(unionAll(W, H, hits.map((f) => f.mask)), notSmoke);
+  const rgba = await sharp(backdrop).resize(W, H, { fit: 'fill' }).ensureAlpha().raw().toBuffer();
+  const out: Smoke[] = [];
+  for (const plume of components(all)) {
+    const px = maskArea(plume);
+    if (px < 300 || px > SMOKE_MAX_SHARE * W * H) continue;
+    // The wave moves rows up to ~10 px: the copy reaches past the plume by that, and fades out at its rim.
+    const reach = dilate(plume, 14);
+    const [x0, y0, x1, y1] = boxOf(reach);
+    const region = { left: x0, top: y0, width: x1 - x0, height: y1 - y0 };
+    const alpha = await sharp(Buffer.from(reach.bits.map((b) => b * 255)), { raw: { width: W, height: H, channels: 1 } }).blur(6).extract(region).extractChannel(0).raw().toBuffer();
+    const cut = await sharp(rgba, { raw: { width: W, height: H, channels: 4 } }).extract(region).removeAlpha().joinChannel(alpha, { raw: { width: region.width, height: region.height, channels: 1 } }).png().toBuffer();
+    out.push({ png: cut, box: [x0, y0, x1, y1] });
+    if (out.length >= 8) break;
+  }
+  return out;
 }

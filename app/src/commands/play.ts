@@ -101,10 +101,16 @@ export function worldData(files: WorldFiles) {
       const sprites = modelOk && fs.existsSync(files.path('cast', key, 'sprites', 'sprites.json')) ? { dir: `cast/${key}/sprites`, info: files.readJson(files.path('cast', key, 'sprites', 'sprites.json')) as SpriteInfo } : undefined;
       const face = registeredFace(files, key);
       const body = bodies[key];
+      // Sheets rendered straight from the model's UV texture (model-*.png, no Muse paint) are a blurry stand-in
+      // with the rig's A-pose arms: a 2D walk bent from the character's own painting, when it passed its check,
+      // looks like the place it walks in and wins over them. Sheets Muse painted still win over the 2D walk.
+      const rendered = sprites && Object.values(sprites.info.facings ?? {}).every((f) => f.sheet.startsWith('model-'));
+      const ownWalk = rig?.sheet && rig.check?.ok !== false;
+      const sheets = rendered && ownWalk && process.env.DIORAMA_UV_SPRITES !== '1' ? undefined : sprites;
       const walks = body?.upright !== false;
       // A creature has no legs for a 2D rig, but its own 3D model (no skeleton, model.json creature) hops and squashes.
       const creatureModel = model?.info.creature ? model : undefined;
-      return [key, { image: `cast/${f}`, ...(face && { face }), ...(body && { height: body.height }), ...(!walks && { upright: false }), ...(walks && rig && rig.check?.ok !== false ? { rig, parts: `cast/${key}` } : {}), ...(walks ? model && { model } : creatureModel && { model: creatureModel }), ...(walks && sprites && { sprites }) }];
+      return [key, { image: `cast/${f}`, ...(face && { face }), ...(body && { height: body.height }), ...(!walks && { upright: false }), ...(walks && rig && rig.check?.ok !== false ? { rig, parts: `cast/${key}` } : {}), ...(walks ? model && { model } : creatureModel && { model: creatureModel }), ...(walks && sheets && { sprites: sheets }) }];
     }));
   const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
   // changes/<i>.png per place: how story.changes[i] looks once it holds.

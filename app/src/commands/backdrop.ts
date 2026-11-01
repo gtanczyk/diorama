@@ -8,7 +8,7 @@ import { Geometry } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
 import { BACKDROP_GROW, backdropFor, smearedBackdrop, type Card } from '../scene/backdrop.ts';
 import { carryBetween, carryFrom, paintingFor, ran, remakes, tilesLine, withChange } from '../scene/carry.ts';
-import { Depth, farFlats, mistSheet, waterSheet } from '../scene/layers.ts';
+import { Depth, farFlats, mistSheet, smokeSheet, waterSheet } from '../scene/layers.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
@@ -81,7 +81,7 @@ defineCommand({
       const depth = Depth.parse(fs.existsSync(at('depth.json')) ? files.readJson(at('depth.json')) : {});
       // Painted fog to set drifting (layers/mist.jpg and its mask), found by SAM on the backdrop too.
       const things = dilate(unionAll(FRAME.width, FRAME.height, cards.map((c) => c.mask)), 4);
-      const [far, water, mist] = await Promise.all([
+      const [far, water, mist, smoke] = await Promise.all([
         farAsked,
         waterSheet(files.memo, place, paintingFor(moved || undefined, png, lastWater ?? []), unionAll(FRAME.width, FRAME.height, cards.map((c) => c.mask)), floors, depth).catch((error) => {
           console.log(`  ${place.key}: no flowing water (${error instanceof Error ? error.message.slice(0, 120) : error})`);
@@ -91,7 +91,14 @@ defineCommand({
           console.log(`  ${place.key}: no drifting fog (${error instanceof Error ? error.message.slice(0, 120) : error})`);
           return undefined;
         }),
+        // Painted smoke to set curling (layers/smoke-<i>.png), found by SAM on the backdrop.
+        smokeSheet(files.memo, place, png, things).catch((error) => {
+          console.log(`  ${place.key}: no curling smoke (${error instanceof Error ? error.message.slice(0, 120) : error})`);
+          return [];
+        }),
       ]);
+      smoke.forEach((s, i) => files.write(at('layers', `smoke-${i}.png`), s.png));
+      if (smoke.length) console.log(`  ${place.key}: ${smoke.length} plume(s) of smoke curling`);
       if (water) {
         files.write(at('layers', 'water.jpg'), water.tex);
         files.write(at('layers', 'water-mask.png'), water.mask);
@@ -102,7 +109,7 @@ defineCommand({
         files.write(at('layers', 'mist-mask.png'), mist.mask);
         console.log(`  ${place.key}: painted ${mist.phrase} drifting ${mist.drift === null ? 'with the wind' : mist.drift < 0 ? 'left' : 'right'}${mist.speed !== 1 ? ` x${mist.speed}` : ''}`);
       }
-      if (far || water || mist) {
+      if (far || water || mist || smoke.length) {
         if (far) {
           files.write(at('layers', 'sky.png'), far.sky);
           far.flats.forEach((f, i) => files.write(at('layers', `${i}.png`), f.png));
@@ -113,6 +120,7 @@ defineCommand({
           flats: (far?.flats ?? []).map((f, i) => ({ phrase: f.phrase, file: `layers/${i}.png`, box: f.box, px: f.px })),
           ...(water && { water: { tex: 'layers/water.jpg', mask: 'layers/water-mask.png', box: water.box, flow: water.flow } }),
           ...(mist && { mist: { tex: 'layers/mist.png', mask: 'layers/mist-mask.png', box: mist.box, drift: mist.drift, speed: mist.speed } }),
+          ...(smoke.length && { smoke: smoke.map((s, i) => ({ file: `layers/smoke-${i}.png`, box: s.box })) }),
         });
       }
       ran(at(), 'backdrop', carry?.old ?? painting);
