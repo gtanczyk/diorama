@@ -184,12 +184,24 @@ async function mouthPatches(files: WorldFiles, character: string, view: string, 
       // Locate each mouth in its full head. A lower-face crop inferred from a grid can cut a lip off.
       const cells = await Promise.all(MOUTHS.map((_,i)=>sharp(atlas).extract(cropRect([(i%3)*width/3,Math.floor(i/3)*height/3,width/3,height/3],width,height)).png().toBuffer()));
       const schema=z.object({box:Rect,confidence:z.number().min(0).max(1)}), lips:Box[]=[];
+      // Every mouth still unlocated in one ask (one call where nine went), each head its own image. An answer that
+      // does not hold together is asked mouth by mouth as before; an unsure mouth goes to the close-up below.
+      const unlocated = MOUTHS.map((m, at) => ({ m, at })).filter(({ m }) => !work.lips[m]);
+      const heads = await Promise.all(MOUTHS.map((_, at) => sharp(cells[at]).resize(512, 512, { fit: 'fill' }).png().toBuffer()));
+      const together = new Map<Mouth, z.infer<typeof schema>>();
+      if (unlocated.length > 1) {
+        const many = z.object({ lips: z.array(schema) });
+        const answer = await askSparkJson(files.memo, { schema: many, label: `face-atlas-lips:${key}:${unlocated.map(({ m }) => m).join('')}`, images: unlocated.map(({ at }) => heads[at]), personal: true,
+          prompt: `These ${unlocated.length} images each contain ONE painted character head, each with its own coordinates. In each, locate the actual lips and mouth opening only, from corner to corner, including the upper/lower lip rim. Exclude moustache, beard, nose and chin. For a closed mouth locate its thin lip line. Return, in image order, exactly ${unlocated.length} entries: normalized [x,y,width,height] relative to that ONE full image, and confidence. JSON only: {"lips":[{"box":[0.3,0.6,0.25,0.08],"confidence":0.95}, ...]}.` }).catch(() => undefined);
+        const parsed = many.safeParse(answer);
+        if (parsed.success && parsed.data.lips.length === unlocated.length) unlocated.forEach(({ m }, n) => together.set(m, parsed.data.lips[n]));
+      }
       for(let i=0;i<MOUTHS.length;i+=3) {
         const batch = await Promise.allSettled(MOUTHS.slice(i,i+3).map(async(m,n)=>{
         const at=i+n;
         if (work.lips[m]) { lips[at] = work.lips[m]!; return; }
-        const image=await sharp(cells[at]).resize(512,512,{fit:'fill'}).png().toBuffer();
-        let result=schema.parse(await askSparkJson(files.memo,{schema,label:`face-atlas-lip:${key}:${m}`,images:[image],personal:true,
+        const image=heads[at];
+        let result=together.get(m) ?? schema.parse(await askSparkJson(files.memo,{schema,label:`face-atlas-lip:${key}:${m}`,images:[image],personal:true,
           prompt:'This image contains ONE painted character head. Locate the actual lips and mouth opening only, from corner to corner, including the upper/lower lip rim. Exclude moustache, beard, nose and chin. For a closed mouth locate its thin lip line. Return normalized [x,y,width,height] relative to this ONE full image, and confidence. JSON only: {"box":[0.3,0.6,0.25,0.08],"confidence":0.95}.'}));
         if (result.confidence < 0.7 || !LipBox.safeParse(result.box).success) {
           // A tiny closed lip under a moustache can be lost in a whole-head inspection.

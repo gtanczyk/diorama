@@ -18,7 +18,7 @@ const draw = (colour = '#6495ed') => sharp(Buffer.from(`<svg width="128" height=
 beforeEach(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'diorama-faces-')); files = new WorldFiles('w', root);
   mocks.vision.mockReset(); mocks.paint.mockReset();
-  mocks.vision.mockImplementation(async (_memo, ask) => (ask.label.startsWith('face-frame:') || ask.label.startsWith('face-source:') || ask.label.startsWith('face-atlas-lip:')) ? {box:[0.2,0.4,0.5,0.12],confidence:0.95} : ask.label.startsWith('face-lips:') ? { lips: ask.images.map(() => ({box:[0.2,0.4,0.5,0.12],confidence:0.95})) } : ({ poses: Array.from({ length: ask.images.length > 1 ? 9 : 1 }, () => face), matches: true, articulation: true, reason: 'Visible face' }));
+  mocks.vision.mockImplementation(async (_memo, ask) => ask.label.startsWith('face-atlas-lips:') ? atlasLips(_memo, ask) : (ask.label.startsWith('face-frame:') || ask.label.startsWith('face-source:') || ask.label.startsWith('face-atlas-lip:')) ? {box:[0.2,0.4,0.5,0.12],confidence:0.95} : ask.label.startsWith('face-lips:') ? { lips: ask.images.map(() => ({box:[0.2,0.4,0.5,0.12],confidence:0.95})) } : ({ poses: Array.from({ length: ask.images.length > 1 ? 9 : 1 }, () => face), matches: true, articulation: true, reason: 'Visible face' }));
   const layers = await Promise.all(Array.from({length:9}, async (_,i) => ({input: await sharp({create:{width:64,height:64,channels:4,background:{r:30+i*20,g:50+i*15,b:70+i*10,alpha:1}}}).png().toBuffer(),left:i%3*64,top:Math.floor(i/3)*64})));
   mocks.paint.mockResolvedValue(await sharp({ create: { width: 192, height: 192, channels: 4, background: '#aabbcc' } }).composite(layers).png().toBuffer());
   const image = await draw();
@@ -27,6 +27,12 @@ beforeEach(async () => {
   files.write(files.path('cast/hero/sprites/sprites.json'), { cols: 1, rows: 1, talk: { front: { sheet: 'talk.png', gestures: ['listen'] } } });
 });
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+/** The one ask for every mouth answers as the per-mouth asks a test sets up would, mouth by mouth. */
+async function atlasLips(memo: unknown, ask: { label: string; images: Buffer[] }) {
+  const parts = ask.label.split(':'), mouths = [...parts.pop()!], key = parts.slice(1).join(':');
+  const each = mocks.vision.getMockImplementation()!;
+  return { lips: await Promise.all(mouths.map((m, i) => each(memo, { ...ask, label: `face-atlas-lip:${key}:${m}`, images: [ask.images[i]] }))) };
+}
 
 test('face preparation reuses unchanged art and only rebuilds a repainted source', async () => {
   await prepareFace(files, 'hero');
@@ -48,10 +54,18 @@ test('face preparation reuses unchanged art and only rebuilds a repainted source
   expect(registeredFace(files, 'hero')!.info.sheets['talk.png']).toEqual(original.sheets['talk.png']);
 });
 
+test('every generated mouth is located in one ask, not one ask per mouth', async () => {
+  await prepareFace(files, 'hero', { imageOnly: true });
+  const labels = mocks.vision.mock.calls.map(([, ask]) => ask.label as string);
+  expect(labels.filter((l) => l.startsWith('face-atlas-lips:'))).toHaveLength(1);
+  expect(labels.filter((l) => l.startsWith('face-atlas-lip:'))).toHaveLength(0);
+  expect(registeredFace(files, 'hero')?.info.imagePose).toBeDefined();
+});
+
 test('a rejected generated atlas never replaces an existing face', async () => {
   await prepareFace(files, 'hero');
   const before = fs.readFileSync(files.path('cast/hero/face.json'));
-  mocks.vision.mockImplementation(async (_memo, ask) => (ask.label.startsWith('face-frame:') || ask.label.startsWith('face-source:') || ask.label.startsWith('face-atlas-lip:')) ? {box:[0.2,0.4,0.5,0.12],confidence:0.95} : ask.label.startsWith('face-lips:') ? { lips: ask.images.map(() => ({box:[0.2,0.4,0.5,0.12],confidence:0.95})) } : ({ poses: Array.from({ length: ask.images.length > 1 ? 9 : 1 }, () => face), matches: true, articulation: ask.images.length === 1, reason: 'Mouth shapes identical' }));
+  mocks.vision.mockImplementation(async (_memo, ask) => ask.label.startsWith('face-atlas-lips:') ? atlasLips(_memo, ask) : (ask.label.startsWith('face-frame:') || ask.label.startsWith('face-source:') || ask.label.startsWith('face-atlas-lip:')) ? {box:[0.2,0.4,0.5,0.12],confidence:0.95} : ask.label.startsWith('face-lips:') ? { lips: ask.images.map(() => ({box:[0.2,0.4,0.5,0.12],confidence:0.95})) } : ({ poses: Array.from({ length: ask.images.length > 1 ? 9 : 1 }, () => face), matches: true, articulation: ask.images.length === 1, reason: 'Mouth shapes identical' }));
   await expect(prepareFace(files, 'hero', { force: true, take: 1 })).rejects.toThrow(/atlas rejected/);
   expect(fs.readFileSync(files.path('cast/hero/face.json')).equals(before)).toBe(true);
   expect(mocks.paint.mock.calls.at(-1)![1].prompt).toContain('Mouth shapes identical');
