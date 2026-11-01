@@ -57,6 +57,15 @@ export class Jobs {
     return this.all.find((j) => j.world === world && (j.state === 'running' || j.state === 'queued'));
   }
 
+  /**
+   * Polish that must never hold up the game: speaking faces. They run only when nothing else for the world is
+   * waiting, and any other job stops a running one (face work is saved as it goes; it resumes on the next run).
+   */
+  static polish(args: readonly string[]): boolean {
+    const at = (flag: string) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined);
+    return args[0] === 'faces' || (args[0] === 'build' && at('--from') === 'faces' && at('--to') === 'faces');
+  }
+
   start(world: string, args: string[], label: string, by: string, prepare?: () => void, addedThing?: Job['addedThing']): Job {
     // The same job already waiting or running (a button pressed again, the agent asking twice) is that job:
     // a second run would only pay for the same model calls again. A pending edit is its own job.
@@ -67,6 +76,11 @@ export class Jobs {
     this.diagnostics.set(job.id, { lastActivityAt: job.queuedAt, recent: [], failures: [], active: new Map(), progress: {}, operations: {} });
     if (prepare) this.prepare.set(job.id, prepare);
     this.events.publish('job.queued', { world, job: { ...job } });
+    if (!Jobs.polish(args)) for (const running of this.all.filter((j) => j.world === world && j.state === 'running' && Jobs.polish(j.args))) {
+      running.error = `stopped so "${label}" can run first (speaking faces resume later)`;
+      this.cancel(running.id);
+      this.start(world, running.args, running.label, running.by);
+    }
     this.next(world);
     return job;
   }
@@ -157,7 +171,8 @@ export class Jobs {
 
   private next(world: string) {
     if (this.all.some((j) => j.world === world && j.state === 'running')) return;
-    const job = this.all.find((j) => j.world === world && j.state === 'queued');
+    const queued = this.all.filter((j) => j.world === world && j.state === 'queued');
+    const job = queued.find((j) => !Jobs.polish(j.args)) ?? queued[0];
     if (!job) return;
     try {
       this.opts.beforeStart?.(job);

@@ -229,7 +229,9 @@ defineCommand({
       tasks.push(task);
     };
     if (run('world')) go('world', [slug, ...(idea ? [idea] : []), '--places', places, ...worldArgs, ...(photo ? ['--photo', photo] : []), ...(heroPhoto ? ['--hero-photo', heroPhoto] : [])]);
-    for (const s of worldSteps.filter((s) => s !== 'world')) go(s, [slug]);
+    // Speaking faces in a build: the portrait (what a conversation shows) and the 2D rig only. Talk sheets and 3D
+    // surfaces cost a Muse atlas and many vision checks each, about 20 minutes a character, for lips nobody watches.
+    for (const s of worldSteps.filter((s) => s !== 'world')) go(s, s === 'faces' ? [slug, '--image-only'] : [slug]);
 
     // The places start once world.json says which there are; each goes through its steps on its own.
     const reports: Report[] = [];

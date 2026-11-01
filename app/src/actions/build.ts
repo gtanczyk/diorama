@@ -89,7 +89,9 @@ defineAction({
   input: z.object({ id: z.string().min(1), timeoutSeconds: z.number().int().min(1).max(600).optional() }),
   async run({ id, timeoutSeconds }, ctx) {
     const job = await ctx.jobs.wait(id, (timeoutSeconds ?? 120) * 1000);
-    return { ...job, telemetry: ctx.jobs.inspect(id, 12) };
+    // Still queued: say what it waits behind, so a wait never hangs on a job that has not started.
+    const ahead = job.state === 'queued' ? ctx.jobs.list(job.world).find((j) => j.state === 'running') : undefined;
+    return { ...job, ...(job.state === 'queued' && { waitingBehind: ahead ? `${ahead.label} (${ahead.id}), running since ${ahead.startedAt}` : 'nothing; it starts next', hint: ahead ? 'Not started yet. If what runs ahead is not more important, job_cancel it; otherwise do something else and wait again.' : undefined }), telemetry: ctx.jobs.inspect(id, 12) };
   },
 });
 

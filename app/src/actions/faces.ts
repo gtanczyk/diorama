@@ -102,7 +102,7 @@ for(const kind of ['repair','calibrate'] as const)defineAction({
     if(!faceCharacters(files).includes(key))throw new ActionError(404,`No character ${key}`);
     const work=readFaceWork(files,key,id,revision);
     if(kind==='calibrate'&&!work.accepted)throw new ActionError(409,'Repair articulation before calibrating the lips');
-    return ctx.jobs.start(slug,['faces',slug,key,'--take',String(work.take),kind==='repair'?'--repair-frame':'--calibrate-frame',id,'--revision',revision,'--mouth',mouth,...(kind==='repair'?['--hint',hint!]:['--box',JSON.stringify(box)])],`${kind==='repair'?'repair mouth':'calibrate lips'} ${key} ${mouth}`,ctx.by);
+    return ctx.jobs.start(slug,['faces',slug,key,'--image-only','--take',String(work.take),kind==='repair'?'--repair-frame':'--calibrate-frame',id,'--revision',revision,'--mouth',mouth,...(kind==='repair'?['--hint',hint!]:['--box',JSON.stringify(box)])],`${kind==='repair'?'repair mouth':'calibrate lips'} ${key} ${mouth}`,ctx.by);
   },
 });
 
@@ -124,7 +124,7 @@ defineAction({
       if (fs.existsSync(previous)) take = Number((files.readJson(previous) as { take?: number }).take ?? 0);
       if (anotherTake) take++;
     }
-    return ctx.jobs.start(slug, ['faces', slug, ...(key ? [key] : []), ...(audioOnly ? ['--audio-only'] : []), '--take', String(take), ...(anotherTake ? ['--force'] : [])], `prepare speaking faces${key ? ` ${key}` : ''}`, ctx.by);
+    return ctx.jobs.start(slug, ['faces', slug, '--image-only', ...(key ? [key] : []), ...(audioOnly ? ['--audio-only'] : []), '--take', String(take), ...(anotherTake ? ['--force'] : [])], `prepare speaking faces${key ? ` ${key}` : ''}`, ctx.by);
   },
 });
 
@@ -153,6 +153,6 @@ defineAction({
     if(current.revision!==revision||current.imageHash!==imageHash)throw new ActionError(409,'Face changed; inspect it again');
     const attempt=files.path('cast',key,'face-attempt.json');
     const take=fs.existsSync(attempt)?Number((files.readJson(attempt) as {take?:number}).take??0):0;
-    return ctx.jobs.start(slug,['faces',slug,key,'--take',String(take),'--calibration',JSON.stringify(target),'--revision',revision,'--image-hash',imageHash,'--box',JSON.stringify(box),'--open',String(open)],`calibrate speaking face ${key}`,ctx.by);
+    return ctx.jobs.start(slug,['faces',slug,key,'--image-only','--take',String(take),'--calibration',JSON.stringify(target),'--revision',revision,'--image-hash',imageHash,'--box',JSON.stringify(box),'--open',String(open)],`calibrate speaking face ${key}`,ctx.by);
   },
 });
