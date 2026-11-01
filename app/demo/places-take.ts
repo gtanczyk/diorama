@@ -36,7 +36,18 @@ for (const slug of slugs) {
     // Loaded: the first frames draw once the place's pictures are in.
     await page.waitForTimeout(2500);
     await page.evaluate(() => (window as unknown as { __step: (n: number) => void }).__step(30));
-    const clicks = walking ? steps.map(([x, y], i) => [(i * seconds) / steps.length, () => page.mouse.click(1440 * x, 1080 * y)] as [number, () => Promise<void>]) : [];
+    // A click on an exit would leave the place: steps near an exit's box are moved towards the middle until clear.
+    const exits = (JSON.parse(fs.readFileSync(files.path('places', place, 'geometry.json'), 'utf8')) as { things: Array<{ role?: string; box: number[] }> })
+      .things.filter((t) => t.role === 'exit').map((t) => t.box);
+    const clear = ([x, y]: number[]) => {
+      for (let k = 0; k < 8; k++) {
+        const [px, py] = [x * 1200, y * 896];
+        if (!exits.some((b) => px > b[0] - 90 && px < b[2] + 90 && py > b[1] - 90 && py < b[3] + 90)) break;
+        [x, y] = [x + (0.5 - x) * 0.3, y + (0.8 - y) * 0.3];
+      }
+      return [x, y];
+    };
+    const clicks = walking ? steps.map(clear).map(([x, y], i) => [(i * seconds) / steps.length, () => page.mouse.click(1440 * x, 1080 * y)] as [number, () => Promise<void>]) : [];
     await smoothTake(page, seconds, path.join(out, `${slug}--${place}.mp4`), clicks);
     await page.close();
     console.log(`${slug}--${place}.mp4`);
