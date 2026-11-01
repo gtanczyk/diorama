@@ -17,7 +17,7 @@ import { StoryView, type StoryProgress } from './story.tsx';
 import { StyleView } from './style-menu.tsx';
 import { askSure, Sure } from './sure.tsx';
 import { PlaceEditor } from './place.tsx';
-import { callBy, extensionDetail, MODEL_NAME, named, Pipeline, standIn, viaName, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
+import { BuildPlaces, callBy, extensionDetail, type PlaceRuns, MODEL_NAME, named, Pipeline, standIn, viaName, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
 import type { ExtensionProgress } from '../src/world/extension-progress.ts';
 import { Bell, Logo, Rail, forgetWorld, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
 import { CAST_STEPS, castFile, castLine, CastWorkStage, type CastWork } from './cast-work.tsx';
@@ -629,6 +629,8 @@ function Workshop({ slug }: { slug: string }) {
   /** The characters the running job paints or models, picture by picture (the live cast view). */
   const [castWork, setCastWork] = useState<CastWork>({});
   const [livePlace, setLivePlace] = useState<{ key: string; at: number } | null>(null);
+  /** Per place, this job's own progress: its step now (or the last one, done), and its verdict once told. */
+  const [placeRun, setPlaceRun] = useState<PlaceRuns>({});
   const [spin, setSpin] = useState(0);
   const [tick, setTick] = useState(0);
   /** Right after an undo the person can take it back. */
@@ -702,7 +704,7 @@ function Workshop({ slug }: { slug: string }) {
         }
         case 'feedback.changed': return soon();
         case 'job.start': case 'job.end': case 'job.queued': {
-          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setStoryLog([]), setAside({}), setExtension(null), setCut({}), setCastWork({}));
+          if (e.type === 'job.start') (setCanRedo(false), setJobDone({}), setJobTail(''), setJobPlan(null), setRunning({}), setUndone(null), setNoAgent(null), setSince({}), setJobCalls({}), setLastCall(null), setStoryLog([]), setAside({}), setPlaceRun({}), setExtension(null), setCut({}), setCastWork({}));
           const job = e.job as Job;
           soon();
           // What the agent changed shows in an open game at once; after the person's own builds the banner offers it.
@@ -720,11 +722,12 @@ function Workshop({ slug }: { slug: string }) {
           return add(e, `${e.by === 'agent' ? 'agent' : 'you'}: ${e.redo ? 'redo' : `undo to ${e.id}`} · ${(e.restored as string[]).length} restored, ${(e.removed as string[]).length} removed`, e.by === 'agent' ? 'agent' : 'act');
         }
         // The build mending itself: free fixes first, then the agent is asked.
-        case 'place.fail': setAside((a) => ({ ...a, [String(e.place)]: String(e.step) })); return add(e, `✕ ${e.place}: ${e.step} failed, set aside · ${e.error}`, 'err');
+        case 'place.step': setPlaceRun((r) => ({ ...r, [String(e.place)]: { ...r[String(e.place)], step: String(e.step), done: !!e.done, at: Date.parse(e.at) || Date.now() } })); return;
+        case 'place.fail': setPlaceRun((r) => ({ ...r, [String(e.place)]: { ...r[String(e.place)], step: String(e.step), done: true, at: Date.parse(e.at) || Date.now(), ok: false } })); setAside((a) => ({ ...a, [String(e.place)]: String(e.step) })); return add(e, `✕ ${e.place}: ${e.step} failed, set aside · ${e.error}`, 'err');
         // A place is told playable as soon as it is done, while the build goes on with the rest: show it now.
-        case 'place.verdict': soon(); if (e.ok) { const n = (e.flagged as string[] | undefined)?.length ?? 0; return add(e, `✓ ${e.place}: playable${n ? ` · ${n} note${n === 1 ? '' : 's'}, nothing to do (open the place to read them)` : ''}`, 'step'); } return add(e, `✕ ${e.place}: not playable · ${(e.errors as string[] | undefined)?.join('; ') || 'see verify'}`, 'err');
+        case 'place.verdict': setPlaceRun((r) => ({ ...r, [String(e.place)]: { ...(r[String(e.place)] ?? { step: 'verify', at: Date.parse(e.at) || Date.now() }), done: true, ok: !!e.ok } })); soon(); if (e.ok) { const n = (e.flagged as string[] | undefined)?.length ?? 0; return add(e, `✓ ${e.place}: playable${n ? ` · ${n} note${n === 1 ? '' : 's'}, nothing to do (open the place to read them)` : ''}`, 'step'); } return add(e, `✕ ${e.place}: not playable · ${(e.errors as string[] | undefined)?.join('; ') || 'see verify'}`, 'err');
         case 'repair.start': setRepairing((r) => ({ ...r, [String(e.place)]: `repairing: ${(e.fixes as string[]).join('; ')}` })); return add(e, `↻ ${e.place}: repairing · ${(e.fixes as string[]).join('; ')}`, 'step');
-        case 'repair.end': if (e.ok) setAside((a) => { const n = { ...a }; delete n[String(e.place)]; return n; }); setRepairing((r) => { const n = { ...r }; delete n[String(e.place)]; return n; }); soon(); return add(e, `${e.ok ? '✓' : '✕'} ${e.place}: ${e.ok ? 'repaired, playable' : 'still not playable, left for the agent'}`, e.ok ? 'step' : 'err');
+        case 'repair.end': setPlaceRun((r) => ({ ...r, [String(e.place)]: { ...(r[String(e.place)] ?? { step: 'verify', at: Date.parse(e.at) || Date.now() }), done: true, ok: !!e.ok } })); if (e.ok) setAside((a) => { const n = { ...a }; delete n[String(e.place)]; return n; }); setRepairing((r) => { const n = { ...r }; delete n[String(e.place)]; return n; }); soon(); return add(e, `${e.ok ? '✓' : '✕'} ${e.place}: ${e.ok ? 'repaired, playable' : 'still not playable, left for the agent'}`, e.ok ? 'step' : 'err');
         case 'repair.agent': {
           // Places left unplayable, or (no places) the build that broke, at its step.
           const what = (e.places as string[]).length ? (e.places as string[]).join(', ') : `the failed build${e.step ? ` (${e.step})` : ''}`;
@@ -792,7 +795,8 @@ function Workshop({ slug }: { slug: string }) {
     extension: job && extension?.job === job.id ? { ...extension.progress, newPlaces: extension.progress.newPlaces ?? job.extension?.newPlaces } : job?.extension,
   };
   // On stage: the place picked; else a new picture as it lands; else, in turn, the places a step is working on.
-  const busy = building ? (status?.placeDetail ?? []).filter((p) => working(p, liveBuild)).map((p) => p.key) : [];
+  const stepping = building ? (status?.placeDetail ?? []).filter((p) => placeRun[p.key] && !placeRun[p.key].done).map((p) => p.key) : [];
+  const busy = stepping.length ? stepping : building ? (status?.placeDetail ?? []).filter((p) => working(p, liveBuild)).map((p) => p.key) : [];
   useEffect(() => {
     if (!building) return;
     const timer = setInterval(() => setSpin((n) => n + 1), 4500);
@@ -1010,10 +1014,7 @@ function Workshop({ slug }: { slug: string }) {
             {shownView.kind === 'build' && status && (
               <div class="build-on-stage">
                 <Pipeline job={pipelineJob} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
-                {places.length > 1 && <nav class="build-places" aria-label="Build places">
-                  <div class="build-place-list">{places.map(p => <button type="button" class="ghost small" aria-pressed={stagePlace?.key === p.key} title={`Keep watching ${nice(p.key)}`} onClick={() => onStage({ kind: 'build', place: p.key })}>{p.image && <img src={fileUrl(slug, p.image.file, p.image.v)} alt="" />}{nice(p.key)}</button>)}</div>
-                  {building && <button type="button" class="ghost small build-follow" aria-pressed={!watchedPlace} title="Automatically follow the places being built" onClick={() => onStage({ kind: 'build' })}>Follow build</button>}
-                </nav>}
+                {places.length > 1 && <BuildPlaces slug={slug} places={places} runs={placeRun} repairing={repairing} building={!!building} watched={watchedPlace} shown={stagePlace?.key} onWatch={(place) => onStage({ kind: 'build', place })} />}
                 {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} hold={hold} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? named('Muse Spark is dreaming up the places…')}</span></div></div></figure>}
               </div>
             )}

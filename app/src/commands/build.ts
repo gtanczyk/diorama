@@ -269,6 +269,8 @@ defineCommand({
             const since = begin(step);
             emit('place.step', { place, step });
             await runPlace(step, place);
+            // Said per place, so Studio can tell a place between steps (waiting on another one) from one being worked on.
+            emit('place.step', { place, step, done: true });
             finish(step, since);
           } else finish(step);
           if (step === 'masks' && run('icons')) icons(itemsFrom(place));

@@ -545,3 +545,85 @@ function Finds({ slug, place, cut }: { slug: string; place: string; cut: string[
     </svg>
   );
 }
+
+/** Per place, what this job did to it: the step now (done: the place waits for the next one), and its verdict once told. */
+export type PlaceRuns = Record<string, { step: string; done: boolean; at: number; ok?: boolean }>;
+type ChipState = { kind: 'queued' | 'working' | 'waiting' | 'repairing' | 'done' | 'failed' | 'idle'; say: string };
+
+/** What one place is at, in a few words: from this job's own events while building, else from its last verdict. */
+export function placeState(p: StagePlace, run: PlaceRuns[string] | undefined, repairing: string | undefined, building: boolean): ChipState {
+  if (repairing) return { kind: 'repairing', say: 'repairing' };
+  if (run?.ok === true) return { kind: 'done', say: 'done' };
+  if (run?.ok === false) return { kind: 'failed', say: `stopped at ${(STEP_TITLE[run.step] ?? run.step).toLowerCase()}` };
+  if (building && run && !run.done) return { kind: 'working', say: (STEP_TITLE[run.step] ?? run.step).toLowerCase() };
+  if (building && run) return { kind: 'waiting', say: `${(STEP_TITLE[run.step] ?? run.step).toLowerCase()} done, waits` };
+  if (building) return { kind: 'queued', say: 'in the queue' };
+  if (p.verdict?.ok && !p.trouble) return { kind: 'done', say: 'playable' };
+  if (p.verdict && !p.verdict.ok || p.trouble) return { kind: 'failed', say: 'not playable' };
+  return { kind: 'idle', say: 'not built' };
+}
+
+/**
+ * Every place as a chip: its picture, its name and where the build is with it (queued, painting now, done, stopped),
+ * with a count of each above. The row scrolls sideways with the wheel, the arrows or a drag, never the page,
+ * and keeps the place on stage in view.
+ */
+export function BuildPlaces({ slug, places, runs, repairing, building, watched, shown, onWatch }: {
+  slug: string; places: StagePlace[]; runs: PlaceRuns; repairing: Record<string, string>; building: boolean;
+  watched?: string; shown?: string; onWatch: (place?: string) => void;
+}) {
+  const list = useRef<HTMLDivElement>(null);
+  const [edge, setEdge] = useState({ left: false, right: false });
+  const states = places.map((p) => ({ p, s: placeState(p, runs[p.key], repairing[p.key], building) }));
+  const measure = () => {
+    const el = list.current;
+    if (el) setEdge({ left: el.scrollLeft > 2, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 2 });
+  };
+  useEffect(() => {
+    const el = list.current;
+    if (!el) return;
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    // A mouse wheel scrolls the row sideways: a vertical wheel over a sideways list otherwise does nothing.
+    const wheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX) || el.scrollWidth <= el.clientWidth) return;
+      e.preventDefault();
+      el.scrollBy({ left: e.deltaY, behavior: 'auto' });
+    };
+    el.addEventListener('wheel', wheel, { passive: false });
+    return () => (ro.disconnect(), el.removeEventListener('wheel', wheel));
+  }, [places.length]);
+  // The place on stage stays in view as the build moves from place to place.
+  useEffect(() => {
+    const chip = shown ? list.current?.querySelector<HTMLElement>(`[data-place="${CSS.escape(shown)}"]`) : null;
+    chip?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  }, [shown]);
+  const page = (dir: number) => list.current?.scrollBy({ left: dir * list.current.clientWidth * 0.8, behavior: 'smooth' });
+  const count = (k: ChipState['kind']) => states.filter((x) => x.s.kind === k).length;
+  const sums = building
+    ? [['working', count('working') + count('repairing'), 'working now'], ['waiting', count('waiting'), 'between steps'], ['queued', count('queued'), 'queued'], ['done', count('done'), 'done'], ['failed', count('failed'), 'stopped']] as const
+    : [['done', count('done'), 'playable'], ['failed', count('failed'), 'not playable']] as const;
+  return (
+    <nav class={`build-places${building ? ' live' : ''}`} aria-label="Build places">
+      <div class="build-places-head">
+        <span class="sums">{sums.filter(([, n]) => n > 0).map(([k, n, say]) => <span class={`sum ${k}`}><i />{n} {say}</span>)}</span>
+        {building && <button type="button" class="ghost small build-follow" aria-pressed={!watched} title="Automatically follow the places being built" onClick={() => onWatch()}>Follow build</button>}
+      </div>
+      <div class={`build-place-row${edge.left ? ' more-left' : ''}${edge.right ? ' more-right' : ''}`}>
+        {edge.left && <button type="button" class="ghost scroll-arrow left" aria-label="Earlier places" onClick={() => page(-1)}>‹</button>}
+        <div class="build-place-list" ref={list} onScroll={measure}>
+          {states.map(({ p, s }) => (
+            <button type="button" class={`place-chip st-${s.kind}`} data-place={p.key} aria-pressed={shown === p.key && (!!watched || !building)} title={`${nice(p.key)}: ${s.say}. Click to keep watching it`} onClick={() => onWatch(p.key)}>
+              <span class="thumb">{p.image ? <img src={fileUrl(slug, p.image.file, p.image.v)} alt="" /> : <span class="none" />}<i class="state" /></span>
+              <span class="words"><b>{nice(p.key)}</b><small>{s.kind === 'working' ? <><span class="dot" />{s.say}</> : s.say}</small></span>
+            </button>
+          ))}
+        </div>
+        {edge.right && <button type="button" class="ghost scroll-arrow right" aria-label="More places" onClick={() => page(1)}>›</button>}
+      </div>
+    </nav>
+  );
+}
+
+const nice = (key: string) => key.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
