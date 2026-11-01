@@ -5,6 +5,7 @@ import { defineCommand, takeOption } from '../registry.ts';
 import { WorldFiles } from '../world/files.ts';
 import { players } from '../world/drawings.ts';
 import { prepareFace, repairFaceFrame, calibrateFaceFrame } from '../scene/faces.ts';
+import { registeredFace } from '../scene/faces-data.ts';
 import { FacePreparationError, LipBox, MouthName } from '../scene/face-work.ts';
 import { prepareLipSync } from '../sound/lipsync-make.ts';
 
@@ -46,7 +47,7 @@ defineCommand({
       const attempt=files.path('cast',key,'face-attempt.json');
       if(fs.existsSync(attempt)) {
         const previous=files.readJson(attempt) as {state?:string;reason?:string};
-        status[key]=previous.state==='failed'?{face:previous.reason??'Face preparation failed'}:previous.state==='ready'?{face:null}:{};
+        status[key]=previous.state==='failed'&&!registeredFace(files,key)?.info.imagePose?.lips?{face:previous.reason??'Face preparation failed'}:previous.state?{face:null}:{};
       }
     }
     const failures: string[] = [];
@@ -57,6 +58,9 @@ defineCommand({
         const reason = e instanceof Error ? e.message : String(e);
         files.write(files.path('cast', key, 'face-attempt.json'), { at: new Date().toISOString(), state: 'failed', take, reason });
         console.log(`${key}: face preparation failed; existing face retained: ${reason}`);
+        // A retry (new talk sheets, a new take) that fails leaves the working face in place: the character
+        // still speaks with moving lips, so the build is not short of faces. Asked for by name, it is reported.
+        if (registeredFace(files, key)?.info.imagePose?.lips && !only.length) { (status[key] ??= {}).face = null; return; }
         failures.push(`${key}: ${reason}`);
         (status[key] ??= {}).face = reason;
       }

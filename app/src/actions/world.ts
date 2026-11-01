@@ -129,7 +129,9 @@ defineAction({
     const animation = readJson<Record<string, { face?: string | null; audio?: string[] }>>(path.join(dir, 'face-preparation.json'));
     const buildSteps = { ...build?.steps };
     if (animation) {
-      const warnings = Object.entries(animation).flatMap(([key, state]) => [state.face, ...(state.audio ?? [])].filter(Boolean).map(reason => `${key}: ${reason}`));
+      // A face whose retry failed still speaks with the face it had (face.json): not a missing face.
+      const speaks = (key: string) => /^[a-z0-9][\w-]*$/.test(key) && fs.existsSync(path.join(dir, 'cast', key, 'face.json'));
+      const warnings = Object.entries(animation).flatMap(([key, state]) => [speaks(key) ? null : state.face, ...(state.audio ?? [])].filter(Boolean).map(reason => `${key}: ${reason}`));
       if (buildSteps.faces || warnings.length) buildSteps.faces = { ...(buildSteps.faces as object ?? {}), status: warnings.length ? 'incomplete' : 'complete', warnings };
     }
     const places = (parsed.success ? parsed.data.places : []).map((p) => {
