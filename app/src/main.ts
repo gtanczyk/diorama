@@ -5,6 +5,7 @@ import { loadSecrets, redact } from './secrets.ts';
 function help() {
   console.log('diorama: a story prompt becomes painted scenes you can walk in\n\nusage: diorama <command> [args]\n');
   for (const cmd of registry.values()) console.log(`  ${cmd.usage}`);
+  console.log('\nfirst time: diorama setup (keys, what is missing), then diorama studio. Worlds are written to ./worlds here.');
 }
 
 const [name, ...args] = process.argv.slice(2);

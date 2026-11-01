@@ -4,9 +4,21 @@
 
 Node 22 or newer and a Meta Model API key:
 
+Without a checkout, from npm. Run it in an empty folder: worlds are written to `./worlds` there.
+
 ```sh
-npx -y github:gtanczyk/diorama setup    # what this machine still needs; asks for keys, hidden
-npx -y github:gtanczyk/diorama doctor   # one live call to each model
+mkdir my-worlds && cd my-worlds
+npx -y @gtanczyk/diorama setup     # what this machine still needs; asks for keys, hidden
+npx -y @gtanczyk/diorama doctor    # one live call to each model
+npx -y @gtanczyk/diorama studio    # the GUI
+```
+
+Or install it once, and the command is just `diorama`:
+
+```sh
+npm install -g @gtanczyk/diorama
+diorama setup && diorama studio
+diorama browsers                   # Playwright's Chromium, for explore, playthrough and sprites (once)
 ```
 
 `diorama setup` keeps keys encrypted (AES-256-GCM) under `~/.config/diorama/`, with the encryption key in the macOS Keychain or the Linux Secret Service. Environment variables (`META_API_KEY`, `ELEVENLABS_API_KEY`, `HF_TOKEN`) still work and win.

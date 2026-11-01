@@ -77,7 +77,7 @@ export async function runChecks(opts: { live?: boolean } = {}): Promise<Check[]>
   } catch {}
   checks.push(chromium && fs.existsSync(chromium)
     ? { id: 'chromium', label: 'Chromium for Explore and Playthrough', state: 'ok', detail: 'installed' }
-    : { id: 'chromium', label: 'Chromium for Explore and Playthrough', state: 'missing', detail: 'Explore and the playthrough bot drive a browser.', fix: ['npx playwright install chromium'] });
+    : { id: 'chromium', label: 'Chromium for Explore and Playthrough', state: 'missing', detail: 'Explore and the playthrough bot drive a browser.', fix: ['diorama browsers'] });
 
   checks.push(await keyCheck('ELEVENLABS_API_KEY', 'ElevenLabs key', false, 'Optional: sound effects, music and voices. Without it the world plays silent.', sources.ELEVENLABS_API_KEY));
   checks.push(await keyCheck('HF_TOKEN', 'Hugging Face token', false, 'Optional: 3D hero figures (TRELLIS, auto-rig) on ZeroGPU Spaces.', sources.HF_TOKEN));

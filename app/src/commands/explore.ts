@@ -18,7 +18,7 @@ export type Page = {
   on(event: 'pageerror' | 'console', fn: (e: { message?: string; text?: () => string; type?: () => string }) => void): void;
 };
 
-/** Playwright is a dev dependency; its Chromium is a separate download (npx playwright install chromium). */
+/** Playwright ships with diorama; its Chromium is a separate download (diorama browsers). */
 export async function chromium(): Promise<{ launch(o?: object): Promise<Browser> }> {
   try {
     return ((await import('playwright' as string)) as { chromium: never }).chromium;
@@ -26,7 +26,7 @@ export async function chromium(): Promise<{ launch(o?: object): Promise<Browser>
     try {
       return (createRequire(import.meta.url)('playwright') as { chromium: never }).chromium;
     } catch {
-      throw new Error('this command needs Playwright with Chromium: npm install && npx playwright install chromium');
+      throw new Error('this command needs Playwright with Chromium: diorama browsers');
     }
   }
 }

@@ -10,7 +10,14 @@ Diorama is a local tool that turns a story idea into a small point-and-click adv
 
 ## Quick start
 
-Node 22+, `ffmpeg`, and a Meta Model API key:
+Node 22+, `ffmpeg`, and a Meta Model API key. Without a checkout, in an empty folder:
+
+```sh
+npx -y @gtanczyk/diorama setup                  # or: npm install -g @gtanczyk/diorama, then just `diorama setup`
+npx -y @gtanczyk/diorama studio
+```
+
+From a checkout:
 
 ```sh
 git clone https://github.com/gtanczyk/diorama && cd diorama && npm install

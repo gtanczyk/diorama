@@ -29,6 +29,7 @@ import './export.ts';
 import './publish.ts';
 import './reel.ts';
 import './setup.ts';
+import './browsers.ts';
 import './action.ts';
 import './studio.ts';
 import './mcp.ts';
