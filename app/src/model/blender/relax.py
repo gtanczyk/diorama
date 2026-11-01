@@ -223,7 +223,18 @@ report['legTurn'] = legs
 bpy.ops.object.mode_set(mode='OBJECT')
 orig = [v.co.copy() for v in mesh.data.vertices]
 armmod = next(m for m in mesh.modifiers if m.type == 'ARMATURE')
+# Corrective Smooth only where the pose moved the surface: elsewhere (the head, its hair strands) it still
+# shifts thin pieces a little, which drags hair across the face once the paintings are projected on it.
+bpy.context.view_layer.objects.active = mesh
+dg = bpy.context.evaluated_depsgraph_get()
+posed = [v.co.copy() for v in mesh.evaluated_get(dg).data.vertices]
+moved = mesh.vertex_groups.new(name='relax_moved')
+for i, (a, b) in enumerate(zip(posed, orig)):
+    w = min(1.0, (a - b).length / (0.03 * height))
+    if w > 0.02:
+        moved.add([i], w, 'REPLACE')
 cs = mesh.modifiers.new('relax', 'CORRECTIVE_SMOOTH')
+cs.vertex_group = moved.name
 cs.rest_source = 'ORCO'
 cs.smooth_type = 'LENGTH_WEIGHTED'
 cs.iterations = 8
@@ -236,6 +247,7 @@ baked = [v.co.copy() for v in ev.data.vertices]
 if len(baked) != len(orig):
     raise SystemExit('modifier changed vertex count')
 mesh.modifiers.remove(cs)
+mesh.vertex_groups.remove(moved)
 for v, p in zip(mesh.data.vertices, baked):
     v.co = p
 bpy.context.view_layer.objects.active = arm
@@ -253,8 +265,16 @@ for o in list(bpy.data.objects):
     if o.type == 'MESH' and o is not mesh:
         bpy.data.objects.remove(o)
 
+# Smooth shading, or the exporter splits every triangle corner into its own vertex (6.9k -> 27.7k): the game
+# then works out faceted normals and per-corner visibility, and the painted face breaks up into blotches.
+for poly in mesh.data.polygons:
+    poly.use_smooth = True
 move = max((a - b).length for a, b in zip(baked, orig)) / height
 report['maxMove'] = move
+# The head must not move at all: a shifted strand of hair or cheek shows as a torn face in every sprite.
+head_groups = {g.index for g in mesh.vertex_groups if g.name.split(':')[-1] in ('Head', 'Neck', 'HeadTop_End')}
+on_head = [any(vg.group in head_groups and vg.weight > 0.5 for vg in v.groups) for v in mesh.data.vertices]
+report['headMove'] = max(((a - b).length for a, b, h in zip(baked, orig, on_head) if h), default=0) / height
 bpy.ops.export_scene.gltf(filepath=dst, export_format='GLB', export_attributes=True, export_skins=True,
                           export_animations=False, export_yup=True, export_apply=False)
 report['ok'] = True

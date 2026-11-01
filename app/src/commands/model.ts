@@ -8,7 +8,7 @@ import { defineCommand, registry, takeOption } from '../registry.ts';
 import { autoRig, reconstruct } from '../model/build.ts';
 import { fitViews, refitIfOld } from '../model/fit.ts';
 import { badModel, lean, readShape, rigProblem, standUp } from '../model/glb.ts';
-import { findBlender, relaxPose } from '../model/blender.ts';
+import { findBlender, relaxPose, type RelaxReport } from '../model/blender.ts';
 import { paintViews } from '../model/views.ts';
 import { planSprites } from '../model/plan.ts';
 import { animationSettings, animationOptions, saveAnimationSettings } from '../model/animation.ts';
@@ -247,6 +247,18 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
 }
 
 /**
+ * What the Blender round trip broke, or null. The face is painted onto the surface from the views, so a head
+ * that moved, or a mesh whose corners came apart (flat shading splits every triangle on export: faceted
+ * normals, a blotchy torn face on the talk sprites), must not replace the rig that worked.
+ */
+export function relaxDamage(source: Buffer, relaxed: Buffer, report: RelaxReport): string | null {
+  if ((report.headMove ?? 0) > 0.002) return `the head moved ${(report.headMove! * 100).toFixed(2)}% of the height`;
+  const before = readShape(source).positions.length / 3, after = readShape(relaxed).positions.length / 3;
+  if (after > before * 1.3) return `the mesh came apart on export (${before} -> ${after} corners)`;
+  return null;
+}
+
+/**
  * With a local Blender, the model's rest pose becomes calm (arms down, feet under the hips): the game's walk
  * then turns bones a little from rest instead of 100 degrees from TRELLIS's raised arms, which pinched the
  * shoulders, glued sleeves to the chest and splayed the hands. model.source.glb keeps the rig as it came, so
@@ -262,7 +274,7 @@ export async function relaxModel(files: WorldFiles, key: string, again = false):
   const source = fs.existsSync(out('model.source.glb')) ? fs.readFileSync(out('model.source.glb')) : fs.readFileSync(out(info.glb));
   const done = await relaxPose(source, (line) => console.log(`${key}: ${line}`));
   if (!done) return 'rest pose as TRELLIS built it (Blender could not relax it)';
-  const problem = rigProblem(done.glb) ?? badModel(readShape(done.glb));
+  const problem = rigProblem(done.glb) ?? badModel(readShape(done.glb)) ?? relaxDamage(source, done.glb, done.report);
   if (problem) return `rest pose as TRELLIS built it (relaxed body rejected: ${problem})`;
   if (!fs.existsSync(out('model.source.glb'))) files.write(out('model.source.glb'), source);
   files.write(out('model.glb'), done.glb);

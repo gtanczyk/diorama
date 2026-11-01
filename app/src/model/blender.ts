@@ -87,7 +87,8 @@ export async function blenderState() {
     active: !!(await findBlender()) };
 }
 
-export type RelaxReport = { ok: boolean; height?: number; armTurn?: Record<string, number>; legTurn?: Record<string, number>; maxMove?: number };
+export type RelaxReport = { ok: boolean; height?: number; armTurn?: Record<string, number>; legTurn?: Record<string, number>;
+  palmTurn?: Record<string, number>; maxMove?: number; headMove?: number };
 
 /**
  * The rigged glb in a calm rest pose, or null when there is no Blender or it failed (the caller keeps the
