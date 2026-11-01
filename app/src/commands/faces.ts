@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { castLanes, mapLimit } from '../world/pool.ts';
 import { CalibrationTarget, setFaceCalibration } from '../scene/face-calibration.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { WorldFiles } from '../world/files.ts';
@@ -49,7 +50,8 @@ defineCommand({
       }
     }
     const failures: string[] = [];
-    if (!audioOnly) for (const key of keys.filter(k => !only.length || only.includes(k))) {
+    // Each character's face is its own work (its own files under cast/<key>): a few side by side.
+    if (!audioOnly) await mapLimit(keys.filter(k => !only.length || only.includes(k)), castLanes(), async (key) => {
       try { await prepareFace(files, key, { take, force, imageOnly, repairWorkId }); (status[key] ??= {}).face = null; }
       catch (e) {
         const reason = e instanceof Error ? e.message : String(e);
@@ -58,7 +60,7 @@ defineCommand({
         failures.push(`${key}: ${reason}`);
         (status[key] ??= {}).face = reason;
       }
-    }
+    });
     files.write(statusFile, status);
     if (fs.existsSync(files.path('voices.json'))) {
       const audio = await prepareLipSync(files, only, executable || undefined);

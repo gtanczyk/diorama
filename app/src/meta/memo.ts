@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { trackOperation } from '../studio/operation.ts';
+import { currentStep } from './step.ts';
 
 /** sound: ElevenLabs effects and music; music: MusicGen run locally; voice: speech and its Muse Voice transcript. */
 /** space: a Hugging Face Space (TRELLIS, auto-rig), not a Meta model; its answers are kept the same way. */
@@ -64,6 +65,7 @@ export class Memo {
 
   private log(entry: { model: ModelName; label: string; hash: string; ms: number; hit: boolean; usd?: number; via?: string }) {
     fs.mkdirSync(this.dir, { recursive: true });
-    fs.appendFileSync(path.join(this.dir, 'calls.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`);
+    const step = currentStep();
+    fs.appendFileSync(path.join(this.dir, 'calls.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), ...entry, ...(step && { step }) })}\n`);
   }
 }

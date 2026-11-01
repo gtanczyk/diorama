@@ -1,5 +1,6 @@
 // diorama build <slug> ["<idea>"]: runs the steps, each as soon as what it needs is made (src/world/schedule.ts):
 // every place on its own, the cast, voices and sound alongside. Keeps a build.json of what happened.
+import { inStep } from '../meta/step.ts';
 import fs from 'node:fs';
 import { defineCommand, emit, registry, takeOption } from '../registry.ts';
 import { Geometry, personPx } from '../play/geometry.ts';
@@ -45,17 +46,24 @@ type Report = { place: string; ok: boolean; errors: string[]; flagged: string[];
 type Repair = { place: string; by: 'auto'; fixes: string[]; ok: boolean };
 const line = (f: Finding) => `${f.code}${f.key ? ` ${f.key}` : ''}: ${f.detail}`;
 
-/** Model calls sent (not answered from the memo) since `since`, read from the memo's call log. */
-function callsSince(files: WorldFiles, since: string): Record<string, number> {
+/**
+ * Model calls `step` sent (not answered from the memo) since `since`, and what they cost, read from the memo's call
+ * log. Only calls tagged with this step count: steps run side by side, and counting every call since the step
+ * began gave each step the others' calls too (the 3D step showed 137 Spark calls where it made about 25).
+ */
+export function stepCalls(files: WorldFiles, step: string, since: string): { sent: Record<string, number>; usd: number } {
   const log = files.path('memo', 'calls.jsonl');
-  const counts: Record<string, number> = { spark: 0, muse: 0, sam: 0, sound: 0, music: 0, voice: 0 };
-  if (!fs.existsSync(log)) return counts;
+  const sent: Record<string, number> = { spark: 0, muse: 0, sam: 0, sound: 0, music: 0, voice: 0, space: 0 };
+  let usd = 0;
+  if (!fs.existsSync(log)) return { sent, usd };
   for (const line of fs.readFileSync(log, 'utf8').split('\n')) {
     if (!line) continue;
-    const call = JSON.parse(line) as { at: string; model: string; hit: boolean };
-    if (call.at >= since && !call.hit) counts[call.model]++;
+    const call = JSON.parse(line) as { at: string; model: string; hit: boolean; step?: string; usd?: number };
+    if (call.at < since || call.hit || call.step !== step) continue;
+    sent[call.model] = (sent[call.model] ?? 0) + 1;
+    usd += call.usd ?? 0;
   }
-  return counts;
+  return { sent, usd: Math.round(usd * 1000) / 1000 };
 }
 
 defineCommand({
@@ -96,7 +104,7 @@ defineCommand({
       // again after a pause, twice, before the place is set aside: an outage of a few minutes costs time, not a place.
       for (let again = 0; ; again++) {
         try {
-          await registry.get(step)!.run([slug, place]);
+          await inStep(step, () => registry.get(step)!.run([slug, place]));
           return;
         } catch (reason) {
           const error = reason instanceof Error ? reason.message : String(reason);
@@ -183,7 +191,7 @@ defineCommand({
       r.end();
       if (!r.started) return;
       // A step's time is what one place (or the world) took with it, so it adds up along the web, not the clock.
-      const done = { at: r.at, seconds: Math.round(r.longest / 100) / 10, sent: callsSince(files, r.at), ...(optionalWarnings.has(step) && { status: 'incomplete', warnings: optionalWarnings.get(step) }) };
+      const done = { at: r.at, seconds: Math.round(r.longest / 100) / 10, ...stepCalls(files, step, r.at), ...(optionalWarnings.has(step) && { status: 'incomplete', warnings: optionalWarnings.get(step) }) };
       // A one-place rerun does not stand for the whole step.
       if (!only) {
         log.steps[step] = done;
@@ -197,7 +205,7 @@ defineCommand({
       await Promise.all(needs(step).map(ready));
       const since = begin(step);
       try {
-        await registry.get(step)!.run(args);
+        await inStep(step, () => registry.get(step)!.run(args));
       } catch (error) {
         if (step === 'faces' && error instanceof FacePreparationError) {
           optionalWarnings.set(step,error.failures);
@@ -243,7 +251,7 @@ defineCommand({
           if (keys && keys.length === 0) return finish('icons');
           const since = begin('icons');
           try {
-            await registry.get('icons')!.run([slug, ...(keys ?? [])]);
+            await inStep('icons', () => registry.get('icons')!.run([slug, ...(keys ?? [])]));
           } catch (error) {
             emit('step.fail', { step: 'icons', error: error instanceof Error ? error.message : String(error) });
             abort(error);

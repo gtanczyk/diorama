@@ -3,6 +3,10 @@
 // public Hugging Face Spaces (MIT); their answers are kept in the world's memo like model calls.
 import { inputHash, type Memo } from '../meta/memo.ts';
 import { filesNamed, Space } from './space.ts';
+import { inLane } from '../world/pool.ts';
+
+/** Requests open at once on each Space: its GPU queue serves one at a time anyway, a second keeps it busy. */
+const SPACE_LANES = Math.max(1, Number(process.env.DIORAMA_SPACE_LANES) || 2);
 
 export const TRELLIS = 'trellis-community/TRELLIS';
 export const AUTORIG = 'jasongzy/Make-It-Animatable';
@@ -10,7 +14,7 @@ export const AUTORIG = 'jasongzy/Make-It-Animatable';
 /** Muse's views (PNG, front first) to a textured GLB, about 30 s of GPU. With the profiles too, TRELLIS
  * builds the body as deep as it is painted instead of guessing the depth from the front. */
 export async function reconstruct(memo: Memo, key: string, views: Buffer[], seed = 1): Promise<Buffer> {
-  return memo.remember('space', `${key}-trellis`, inputHash(TRELLIS, String(seed), ...views), 'glb', async () => {
+  return memo.remember('space', `${key}-trellis`, inputHash(TRELLIS, String(seed), ...views), 'glb', () => inLane('trellis', SPACE_LANES, async () => {
     const space = new Space(TRELLIS);
     // The app keeps each session's files in its own folder, made when the page loads.
     await space.call('start_session', []);
@@ -25,12 +29,12 @@ export async function reconstruct(memo: Memo, key: string, views: Buffer[], seed
     const [glb] = filesNamed(events, '.glb');
     if (!glb) throw new Error('TRELLIS answered without a model');
     return space.download(glb);
-  });
+  }));
 }
 
 /** Textured GLB to a skinned GLB in its own pose (no reset to a T-pose, no animation), about 15 s of GPU. */
 export async function autoRig(memo: Memo, key: string, model: Buffer): Promise<Buffer> {
-  return memo.remember('space', `${key}-rig`, inputHash(AUTORIG, 'keep-pose', model), 'glb', async () => {
+  return memo.remember('space', `${key}-rig`, inputHash(AUTORIG, 'keep-pose', model), 'glb', () => inLane('autorig', SPACE_LANES, async () => {
     const space = new Space(AUTORIG);
     const input = await space.upload(`${key}.glb`, model);
     // input, no fingers, rest pose, rest parts, gaussian, opacity, input normals, weight fix, bone shown,
@@ -42,5 +46,5 @@ export async function autoRig(memo: Memo, key: string, model: Buffer): Promise<B
     const rigged = filesNamed(events, `${key}.glb`)[0] ?? filesNamed(events, '.glb').find((f) => !/joints|normed|sample|bw|rest/.test(f.path));
     if (!rigged) throw new Error('auto-rig answered without a rigged model');
     return space.download(rigged);
-  });
+  }));
 }

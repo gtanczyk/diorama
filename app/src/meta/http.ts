@@ -27,7 +27,10 @@ const OFFLINE_TRIES = 9;
  * SAM answers in 1-6 s, Spark thinks for up to ~100 s.
  */
 function patience(route: string, body: unknown): number {
-  if (route.startsWith('/images/')) return 90_000;
+  // An edit from several pictures (a place painted from its sketch, concept and style) takes longer, more so with
+  // a few painting at once: 90 s cut every one of 8 such paints off three times, 270-300 s each where one patient
+  // try takes 40-120 s (lantern-stranger, lost-friends-maze). A dropped try is asked again from the back of the queue.
+  if (route.startsWith('/images/')) return ((body as { images?: unknown[] } | null)?.images?.length ?? 0) > 1 ? 180_000 : 90_000;
   const model = (body as { model?: string } | null)?.model ?? '';
   return model.startsWith('sam') ? 60_000 : 240_000;
 }
@@ -35,9 +38,10 @@ function patience(route: string, body: unknown): number {
 /**
  * How many requests each model may have open at once. The build runs places, cast and sound side by side
  * (src/world/schedule.ts), so without a cap a four-place world can ask SAM for dozens of cut-outs at the same
- * moment. A request over the cap waits its turn; DIORAMA_LANES="muse=8,spark=12,sam=16" sets them.
+ * moment. A request over the cap waits its turn; DIORAMA_LANES="muse=6,spark=12,sam=16" sets them.
  */
-const LANES: Record<string, number> = { muse: 8, spark: 12, sam: 16 };
+// Muse at 6: eight multi-picture paints at once queued past every timeout on the Meta side.
+const LANES: Record<string, number> = { muse: 6, spark: 12, sam: 16 };
 for (const pair of (process.env.DIORAMA_LANES ?? '').split(',')) {
   const [lane, n] = pair.split('=');
   if (lane in LANES && Number(n) >= 1) LANES[lane] = Math.floor(Number(n));

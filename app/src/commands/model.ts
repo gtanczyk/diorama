@@ -1,5 +1,6 @@
 // diorama model <slug> [key]: a character as a rigged 3D model, painted by Muse from four sides. Without a
 // key, everyone the sprites plan needs (the hero, NPCs who speak): the model is where their poses come from.
+import { castLanes, mapLimit } from '../world/pool.ts';
 import fs from 'node:fs';
 import { bindExistingAnimation, bindAnimation } from '../scene/animation-source.ts';
 import { refusedByFilter } from '../scene/words.ts';
@@ -85,7 +86,9 @@ const lasting = (message: string) => /quota|\b40[13]\b|unauthori[sz]ed|forbidden
 /** An unavailable service for one character must not prevent the rest of the cast being attempted. */
 export async function buildModels(files: WorldFiles, keys: string[], take: number, given: string, requireModel = false) {
   const failures: string[] = [];
-  for (const key of keys) {
+  // Characters side by side (a few at once): each waits on Muse, Claude and the Spaces, never on another character.
+  // The Spaces keep their own small lanes (model/build.ts), so a busy GPU queue is not asked twice as hard.
+  await mapLimit(keys, castLanes(), async (key) => {
     try {
       const made = await buildModel(files, key, take, given);
       if (!made && requireModel) failures.push(`${key}: no usable 3D model (${attemptReason(files, key)}); see cast status`);
@@ -94,7 +97,7 @@ export async function buildModels(files: WorldFiles, keys: string[], take: numbe
       console.error(reason);
       failures.push(reason);
     }
-  }
+  });
   if (failures.length) throw new Error(`3D models failed: ${failures.join('; ')}`);
 }
 

@@ -1,0 +1,40 @@
+import { describe, expect, it } from 'vitest';
+import { inLane, mapLimit } from '../src/world/pool.ts';
+import { inStep, currentStep } from '../src/meta/step.ts';
+
+const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+describe('cast pool', () => {
+  it('runs at most the limit at once, keeps order and per-item errors', async () => {
+    let open = 0, most = 0;
+    const out = await mapLimit([1, 2, 3, 4, 5, 6, 7], 3, async (n) => {
+      most = Math.max(most, ++open);
+      await tick(5);
+      open--;
+      if (n === 4) throw new Error('four');
+      return n * 10;
+    });
+    expect(most).toBe(3);
+    expect(out.map((r) => (r.status === 'fulfilled' ? r.value : 'x'))).toEqual([10, 20, 30, 'x', 50, 60, 70]);
+  });
+
+  it('a lane holds work to its limit across callers', async () => {
+    let open = 0, most = 0;
+    await Promise.all(Array.from({ length: 6 }, () => inLane('test-space', 2, async () => {
+      most = Math.max(most, ++open);
+      await tick(5);
+      open--;
+    })));
+    expect(most).toBe(2);
+  });
+
+  it('model calls know the step they were asked in, also side by side', async () => {
+    const seen: Array<string | undefined> = [];
+    await Promise.all([
+      inStep('paint', async () => { await tick(3); seen.push(currentStep()); }),
+      inStep('model', async () => { await tick(1); seen.push(currentStep()); }),
+    ]);
+    expect(seen.sort()).toEqual(['model', 'paint']);
+    expect(currentStep()).toBeUndefined();
+  });
+});
