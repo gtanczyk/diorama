@@ -1235,6 +1235,12 @@ button > .icon, .detail > .icon { margin-right: 2px; }
 .idea-card[hidden] { display: none; }
 .idea-card-caption { display: grid; gap: 7px; }
 .idea-card.selected { border-color: var(--amber); }
+.idea-card-zoom { position: absolute; right: 8px; bottom: 8px; z-index: 1; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; background: #fff9e9e6; color: #66543b; box-shadow: 0 1px 4px #59442830; cursor: zoom-in; opacity: .82; transition: opacity .15s, transform .15s, background .15s; }
+.idea-card:hover .idea-card-zoom, .idea-card-zoom:focus-visible { opacity: 1; }
+.idea-card-zoom:hover { background: #fff; color: var(--ink); transform: scale(1.1); }
+.idea-card-zoom:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+.review-exchange.is-collapsed .idea-card-zoom { right: 4px; bottom: 4px; width: 24px; height: 24px; }
+.review-exchange.is-collapsed .idea-card-zoom .icon { width: 14px; height: 14px; }
 .idea-card-mark { position: absolute; right: 8px; top: 8px; width: 23px; height: 23px; display: grid; place-items: center; border-radius: 50%; background: var(--amber); color: #fff; font: 14px var(--body); box-shadow: 0 1px 4px #59442825; }
 .review-decision-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .review-decision-heading .review-says { margin: 0; }

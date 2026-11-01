@@ -541,3 +541,39 @@ test.each([false, true])('a custom style is previewed, explicitly selected and p
     expect(await page.evaluate(() => (window as any).builds[0])).toMatchObject({ choices: plans[0].choices, sketch: { id: sketchId, selections: { 'character:owl': 0 } } });
   } finally { await page.close(); }
 });
+
+test('every look card has a magnifier that opens its picture big without choosing it', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  try {
+    await page.route('**/api/actions/idea_review', r => r.fulfill({ json: { result } }));
+    await open(page);
+    await page.route('**/api/actions/idea_preview', r => {
+      const fill = r.request().postDataJSON().style?.startsWith('Czarna') ? '#ddd' : '#f3c';
+      return r.fulfill({ json: { result: { image: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="480" height="360"><rect width="480" height="360" fill="${fill}"/></svg>`) } } });
+    });
+    await page.getByRole('button', { name: 'Show me some looks' }).click();
+    const zoom = page.getByRole('button', { name: 'Enlarge Papierowa wycinanka' });
+    await zoom.waitFor();
+    expect(await page.getByRole('button', { name: /^Enlarge / }).count()).toBe(2);
+    await zoom.click();
+    const box = page.getByRole('dialog', { name: 'Picture' });
+    await box.waitFor();
+    expect(await box.getByText('2 / 2').count()).toBe(1);
+    const img = await box.locator('img').boundingBox();
+    expect(img!.y >= 0 && img!.y + img!.height <= 800 && img!.x + img!.width <= 1280).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(true);
+    await page.keyboard.press('ArrowLeft');
+    expect(await box.getByText('1 / 2').count()).toBe(1);
+    await page.keyboard.press('Escape');
+    expect(await page.getByRole('dialog').count()).toBe(0);
+    // Looking is not choosing: the look picker is still open and nothing is marked.
+    expect(await page.locator('.idea-card.selected').count()).toBe(0);
+    await page.getByText('Which look?').waitFor();
+    // Keyboard: focus the magnifier and press Enter.
+    await page.getByRole('button', { name: 'Enlarge Ołówek' }).focus();
+    await page.keyboard.press('Enter');
+    expect(await page.getByRole('dialog', { name: 'Picture' }).getByText('1 / 2').count()).toBe(1);
+    await page.keyboard.press('Escape');
+    expect(await page.locator('.idea-card.selected').count()).toBe(0);
+  } finally { await page.close(); }
+});

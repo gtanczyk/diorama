@@ -5,7 +5,8 @@ import { ReviewSketch } from './review-sketch.tsx';
 
 const previews = new Map<string, { task: Promise<string>; image?: string }>();
 
-/** Reference drawings are immediate. New concepts paint in the background and never block a choice. */
+/** Reference drawings are immediate. New concepts paint in the background and never block a choice.
+ * The magnifier opens the picture in the shared Lightbox (its click is caught before the card's pick). */
 export function IdeaCard({ label, image, idea, scene, style, styleReference, references, disabled, selected, hidden, onPick }: {
   label: string; image?: string; idea: string; scene: string; style?: string; styleReference?: string; references: string[];
   disabled: boolean; selected?: boolean; hidden?: boolean; onPick: () => void;
@@ -32,6 +33,8 @@ export function IdeaCard({ label, image, idea, scene, style, styleReference, ref
   return <button type="button" class={`idea-card${selected ? ' selected' : ''}`} aria-label={label} aria-pressed={selected} hidden={hidden} disabled={disabled} onClick={onPick}>
     <span class={`idea-card-picture${!preview && !failed ? ' painting' : ''}`}>
       {preview ? <img src={preview} alt="" /> : <span class="idea-card-placeholder">{failed ? <Icon name="brush" size={25} /> : <ReviewSketch compact />}<small>{failed ? 'Preview unavailable' : 'Sketching…'}</small></span>}
+      {preview && <span class="idea-card-zoom" role="button" tabIndex={0} data-lightbox={preview} aria-label={`Enlarge ${label}`} title="See it big. Free"
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); e.currentTarget.click(); } }}><Icon name="zoom" size={18} /></span>}
       {selected && <span class="idea-card-mark" aria-hidden="true">✓</span>}
     </span>
     <span class="idea-card-caption"><strong>{label}</strong><small>{selected ? 'Your choice' : image ? 'Your picture' : 'Concept sketch'}</small></span>

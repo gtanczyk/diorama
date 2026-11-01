@@ -29,7 +29,7 @@ function AnsweredChoice({ decision, input, editing, busy, onEdit, onCancel, onCh
   useLayoutEffect(() => { setDraft(decision.answer); setWriting(!q.options.includes(decision.answer)); }, [editing, decision.answer]);
   return <section class={`review-exchange${editing ? ' is-editing' : ' is-collapsed'}`} aria-label={`Decision: ${q.question}`}>
     <div class="review-decision-heading"><p class="review-says">{q.question}</p><button type="button" class="ghost small" disabled={busy} aria-label={`${editing ? 'Cancel change' : 'Change answer'}: ${q.question}`} onClick={editing ? onCancel : onEdit}>{editing ? 'Cancel' : 'Change'}</button></div>
-    <div class={q.presentation === 'text' ? 'review-text-options' : 'review-cards'}>{q.options.map((option, i) => {
+    <div class={q.presentation === 'text' ? 'review-text-options' : 'review-cards'} data-lightbox-group>{q.options.map((option, i) => {
       const visual = q.visuals?.[i];
       return <ReviewOption key={i} textOnly={q.presentation === 'text'} label={option} image={visual?.photo !== undefined ? input.photos[visual.photo]?.data : undefined} idea={input.idea} scene={visual?.scene ?? `${q.question} — ${option}`} style={decision.style || undefined} styleReference={decision.styleReference} references={input.photos.slice(0, 4).map(p => p.data)} selected={option === decision.answer} hidden={!editing && option !== decision.answer} disabled={busy} onPick={() => editing ? onChoose(option) : onEdit()} />;
     })}</div>
@@ -131,12 +131,12 @@ export function IdeaReview({ input, busy, error, onBuild, onBack }: {
       {decisions.map((decision, i) => <AnsweredChoice key={i} decision={decision} input={input} editing={editing === i} busy={busy} onEdit={() => edit(i)} onCancel={() => setEditing(null)} onChoose={answer => reply(answer, i)} />)}
       {style && styleChoice && <section class="review-exchange is-collapsed" aria-label="Chosen look">
         <div class="review-decision-heading"><p class="review-says">The look of your world</p><button type="button" class="ghost small" disabled={busy} onClick={() => { setEditing(null); setShowStyles(true); }}>Change look</button></div>
-        <div class="review-cards"><IdeaCard label={styleChoice.title} idea={input.idea} scene={styleChoice.scene} style={style} styleReference={styleChoice.reference} references={references} selected disabled={busy} onPick={() => { setEditing(null); setShowStyles(true); }} /></div>
+        <div class="review-cards" data-lightbox-group><IdeaCard label={styleChoice.title} idea={input.idea} scene={styleChoice.scene} style={style} styleReference={styleChoice.reference} references={references} selected disabled={busy} onPick={() => { setEditing(null); setShowStyles(true); }} /></div>
       </section>}
       {(showStyles || offerLooks) && <section ref={looks} class="review-current" aria-label="Looks for your world">
         <p class="review-says">{offerLooks ? 'Let’s picture your world.' : 'Which look?'}</p>
         {customLook ? <CustomLook input={input} scene={styleScene} busy={busy} onChoose={chooseLook} onClose={() => setCustomLook(false)} /> : <>
-        <div class="review-cards">{styleOptions.map(s => <IdeaCard key={s.description} label={s.title} idea={input.idea} scene={styleScene} style={s.description} styleReference={s.reference} references={references} selected={s.description === style} disabled={busy} onPick={() => chooseLook(s)} />)}</div>
+        <div class="review-cards" data-lightbox-group>{styleOptions.map(s => <IdeaCard key={s.description} label={s.title} idea={input.idea} scene={styleScene} style={s.description} styleReference={s.reference} references={references} selected={s.description === style} disabled={busy} onPick={() => chooseLook(s)} />)}</div>
         <button type="button" class="ghost small" disabled={busy} onClick={openCustomLook}><Icon name="pencil" /> My own style…</button>
         </>}
         {!customLook && <><p class="detail">Or let Diorama choose a style from your idea and pictures.</p>
@@ -154,7 +154,7 @@ export function IdeaReview({ input, busy, error, onBuild, onBack }: {
         {question?.photo !== undefined && input.photos[question.photo] && <img class="review-reference" src={input.photos[question.photo].data} alt={input.photos[question.photo].name} />}
         {question?.video && <p class="detail">Video {input.videos.indexOf(question.video.id) + 1} · {Math.floor(question.video.seconds / 60)}:{String(Math.floor(question.video.seconds % 60)).padStart(2, '0')}</p>}
         {question && <>
-          <div class={question.presentation === 'text' ? 'review-text-options' : 'review-cards'}>{question.options.map((option, i) => {
+          <div class={question.presentation === 'text' ? 'review-text-options' : 'review-cards'} data-lightbox-group>{question.options.map((option, i) => {
             const visual = question.visuals?.[i];
             return <ReviewOption key={`${question.question}:${i}`} textOnly={question.presentation === 'text'} label={option} image={visual?.photo !== undefined ? input.photos[visual.photo]?.data : undefined} idea={input.idea} scene={visual?.scene ?? `${question.question} — ${option}`} style={style || undefined} styleReference={styleChoice?.reference} references={references} disabled={busy} onPick={() => reply(option)} />;
           })}</div>
