@@ -1374,28 +1374,36 @@ class Game {
         c.drawImage(water.tex, 0, sy, w, STRIP, ux * travel, y - y0, w, STRIP);
       }
     }
-    // Glints: short light dashes on the swell, each fading in and out on its own beat and drifting with the
-    // water, so even a dark, smooth painted sea is seen to move. Seeded by index, the same every run.
+    // Glints: a few soft glimmers on the swell, each fading in and out on its own beat and drifting with the
+    // water, so even a dark, smooth painted sea is seen to move. Few and soft: hard white dashes read as rain or
+    // a broken picture. Seeded by index, the same every run.
     c.globalCompositeOperation = 'lighter';
     const hh = y1 - y0;
-    const count = Math.round((w * hh) / 1400);
+    const count = Math.round((w * hh) / 9000);
     for (let i = 0; i < count; i++) {
       const r1 = fract(Math.sin(i * 12.9898) * 43758.5453);
       const r2 = fract(Math.sin(i * 78.233) * 12543.123);
       const r3 = fract(Math.sin(i * 39.425) * 24634.632);
-      const life = 1.6 + 2.4 * r3;
+      const life = 2.4 + 3 * r3;
       const beat = (this.time + r1 * life * 7) / life;
-      const a = Math.sin(fract(beat) * Math.PI);
-      if (a < 0.15) continue;
-      // A glint lands somewhere new each beat; near ones (low in the box) are longer and brighter.
+      const a = Math.sin(fract(beat) * Math.PI) ** 2;
+      if (a < 0.05) continue;
       const k = Math.floor(beat);
       const gy = fract(r2 + k * 0.618) * hh;
       const near = gy / hh;
-      const gx = fract(r1 + k * 0.381) * w + (ux * FLOW + 6) * fract(beat) * (0.4 + near);
-      const len = (8 + 30 * r3) * (0.4 + near);
-      c.globalAlpha = a * (0.2 + 0.4 * near);
-      c.fillStyle = 'rgb(220,232,255)';
-      c.fillRect(gx - len / 2, gy, len, 1.5 + near * 2);
+      const gx = fract(r1 + k * 0.381) * w + (ux * FLOW + 4) * fract(beat) * (0.4 + near);
+      const len = (6 + 16 * r3) * (0.4 + near);
+      const glow = c.createRadialGradient(gx, gy, 0, gx, gy, len);
+      glow.addColorStop(0, 'rgba(225,232,250,0.5)');
+      glow.addColorStop(1, 'rgba(225,232,250,0)');
+      c.globalAlpha = a * (0.25 + 0.35 * near);
+      c.fillStyle = glow;
+      c.save();
+      c.translate(gx, gy);
+      c.scale(1, 0.18);
+      c.translate(-gx, -gy);
+      c.fillRect(gx - len, gy - len, 2 * len, 2 * len);
+      c.restore();
     }
     c.globalAlpha = 1;
     c.globalCompositeOperation = 'destination-in';
