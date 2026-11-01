@@ -401,9 +401,9 @@ section.agent .gc-fold > summary { display: block; cursor: pointer; }
 .stage-live .wanted { max-width: 70%; padding: 6px 10px; border-radius: 8px; background: rgba(20, 16, 10, 0.72); color: #fff; font-size: 13px; }
 .stage-live .wanted.trouble { background: rgba(120, 40, 20, 0.85); }
 .pipeline .fill.warn { background: repeating-linear-gradient(135deg, var(--ok) 0 6px, var(--accent) 6px 12px); }
-.pipeline li.warn .name, .speech-warning { color: var(--accent); }
-.speech-warning { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 13px; }
-.speech-warning details { flex-basis: 100%; color: var(--muted); overflow-wrap: anywhere; }
+.pipeline li.warn .name { color: var(--accent); }
+.speech-chip { display: inline-block; margin-right: 10px; padding: 1px 8px; border: 1px solid var(--accent); border-radius: 999px; background: none; color: var(--accent); font: inherit; font-size: 12px; line-height: 18px; cursor: pointer; vertical-align: baseline; }
+.speech-chip:disabled { cursor: default; }
 .pipeline .fill.fail, .extension-pipeline li.fail .fill { background: var(--bad); }
 .pipeline li.skip { opacity: 0.45; }
 .pipeline li.todo .name, .pipeline li.skip .name { color: var(--faint); }
