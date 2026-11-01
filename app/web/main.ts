@@ -483,7 +483,7 @@ class Game {
     const weather = wx && new WeatherFx(wx, g, ripples?.bits, key);
     const reactions = entry.reactions && params.get('reactions') !== '0' ? new ReactionFx(entry.reactions, g, key, matchMedia('(prefers-reduced-motion: reduce)').matches) : undefined;
     // ?glow=0 (or ?still; capture unless ?glow=1) keeps the painted lights as painted, for pixel checks.
-    const glows = entry.glows?.length && !params.has('still') && (params.get('glow') ?? (capture ? '0' : '1')) !== '0' ? new GlowFx(entry.glows, g.frame.height, bg) : undefined;
+    const glows = (entry.glows?.length || bg) && !params.has('still') && (params.get('glow') ?? (capture ? '0' : '1')) !== '0' ? new GlowFx(entry.glows ?? [], g.frame.height, bg, wet) : undefined;
     const focus = focusScale > 0 || separateScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
     const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, smoke, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
     this.cache.set(key, place);

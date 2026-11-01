@@ -21,7 +21,13 @@ export class GlowFx {
    * in time with the light, so the painted lamp itself flickers and flares, not only a halo laid over it. */
   private readonly lit: Array<{ canvas: HTMLCanvasElement; x: number; y: number } | undefined>;
 
-  constructor(private readonly glows: Glow[], private readonly H: number, painting?: CanvasImageSource & { width: number; height: number }) {
+  private readonly glows: Glow[];
+
+  constructor(planned: Glow[], private readonly H: number, painting?: CanvasImageSource & { width: number; height: number }, wet?: Uint8Array) {
+    // The planned lights, then every other light Muse painted (a market's strings of lanterns, candle boats, lit
+    // windows), found in the painting itself: each flickers on its own phase too.
+    this.glows = painting ? [...planned, ...paintedLights(painting, planned, wet)] : planned;
+    const glows = this.glows;
     this.lit = glows.map((g) => (painting && g.kind !== 'twinkle' && g.kind !== 'beam' ? brightPaint(painting, g, H) : undefined));
     this.sparks = glows.map((g) => {
       let h = hashSeed(g.key);
@@ -82,17 +88,18 @@ export class GlowFx {
       const r = g.kind === 'window' ? 16 + 34 * near : g.kind === 'flame' ? 26 + 44 * near : 22 + 40 * near;
       const a = g.kind === 'flame' ? 0.42 : g.kind === 'window' ? 0.34 : 0.3;
       // The light thrown round: a wide faint spill on the walls and the ground, rising and falling with the light.
-      halo(ctx, x, y, r * (2.6 + 0.5 * level), c, (g.kind === 'window' ? 0.07 : 0.11) * (0.3 + level));
+      const found = g.key.startsWith('painted-');
+      if (!found) halo(ctx, x, y, r * (2.6 + 0.5 * level), c, (g.kind === 'window' ? 0.07 : 0.11) * (0.3 + level));
       const lit = this.lit[i];
       if (lit) {
         // The lamp's own paint over itself: brighter on a flare, gone back to the painting on a dip. A flame's
         // tongue leans a little with its flicker.
         const lean = g.kind === 'flame' ? (level - 0.5) * 3 * (0.5 + near) : 0;
-        ctx.globalAlpha = Math.max(0, Math.min(1, (g.kind === 'window' ? 0.55 : 0.9) * (level - 0.25)));
+        ctx.globalAlpha = Math.max(0, Math.min(1, (g.kind === 'window' ? 0.45 : found ? 0.5 : 0.7) * (level - 0.25)));
         ctx.drawImage(lit.canvas, lit.x + sx + lean, lit.y + sy);
         ctx.globalAlpha = 1;
       }
-      halo(ctx, x, y, r * (0.85 + 0.3 * level), c, a * (0.4 + level));
+      halo(ctx, x, y, r * (found ? 0.45 : 1) * (0.85 + 0.3 * level), c, a * (found ? 0.6 : 1) * (0.4 + level));
     });
     ctx.restore();
   }
@@ -104,7 +111,7 @@ export class GlowFx {
  */
 function brightPaint(painting: CanvasImageSource & { width: number; height: number }, g: Glow, H: number) {
   const near = Math.max(0, Math.min(1, g.y / H));
-  const R = Math.round(g.kind === 'window' ? 22 + 40 * near : 30 + 50 * near);
+  const R = Math.round(g.key.startsWith('painted-') ? 12 + 22 * near : g.kind === 'window' ? 22 + 40 * near : 30 + 50 * near);
   const x0 = Math.max(0, Math.round(g.x - R));
   const y0 = Math.max(0, Math.round(g.y - R));
   const w = Math.min(painting.width, Math.round(g.x + R)) - x0;
@@ -120,8 +127,8 @@ function brightPaint(painting: CanvasImageSource & { width: number; height: numb
     const [r, gr, b] = [px[at], px[at + 1], px[at + 2]];
     const luma = 0.3 * r + 0.59 * gr + 0.11 * b;
     const warm = r - b;
-    // Soft in and out: from luma 120 to 200, and only where red outweighs blue (lamplight, not a pale sky).
-    const k = Math.max(0, Math.min(1, (luma - 120) / 80)) * Math.max(0, Math.min(1, warm / 40));
+    // Soft in and out: from luma 160 to 220, and only where red outweighs blue (lamplight, not a pale sky).
+    const k = Math.max(0, Math.min(1, (luma - 160) / 60)) * Math.max(0, Math.min(1, (warm - 20) / 40));
     // And fading towards the patch's rim, so no square edge shows.
     const dx = (at / 4) % w + x0 - g.x;
     const dy = Math.floor(at / 4 / w) + y0 - g.y;
@@ -132,6 +139,72 @@ function brightPaint(painting: CanvasImageSource & { width: number; height: numb
   if (any < 6) return undefined;
   c.putImageData(img, 0, 0);
   return { canvas, x: x0, y: y0 };
+}
+
+/** At most this many lights found in the painting come alive, the brightest first. */
+const MAX_PAINTED = 48;
+
+/**
+ * The lights painted in the picture beyond the planned ones: warm, bright blobs (a lantern's paper, a candle, a
+ * lit pane), found on a quarter-size copy. Each becomes a flame, or on water (a reflection) a flame too but drawn
+ * over the shimmer; far from any planned light, so none is lit twice. No model call.
+ */
+function paintedLights(painting: CanvasImageSource & { width: number; height: number }, planned: Glow[], wet?: Uint8Array): Glow[] {
+  const S = 4;
+  const [w, h] = [Math.floor(painting.width / S), Math.floor(painting.height / S)];
+  if (w < 8 || h < 8) return [];
+  const c = Object.assign(document.createElement('canvas'), { width: w, height: h }).getContext('2d', { willReadFrequently: true })!;
+  c.drawImage(painting, 0, 0, w, h);
+  const px = c.getImageData(0, 0, w, h).data;
+  const hot = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const [r, g, b] = [px[i * 4], px[i * 4 + 1], px[i * 4 + 2]];
+    if (0.3 * r + 0.59 * g + 0.11 * b > 190 && r - b > 70 && r > 230) hot[i] = 1;
+  }
+  const seen = new Uint8Array(w * h);
+  const found: Array<Glow & { n: number }> = [];
+  for (let start = 0; start < w * h; start++) {
+    if (!hot[start] || seen[start]) continue;
+    const stack = [start];
+    seen[start] = 1;
+    let [n, sx, sy, sr, sg, sb] = [0, 0, 0, 0, 0, 0];
+    while (stack.length) {
+      const i = stack.pop()!;
+      const [x, y] = [i % w, Math.floor(i / w)];
+      n++; sx += x; sy += y; sr += px[i * 4]; sg += px[i * 4 + 1]; sb += px[i * 4 + 2];
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
+        if (j >= 0 && hot[j] && !seen[j]) { seen[j] = 1; stack.push(j); }
+      }
+    }
+    // A lantern or a pane, not a speck and not a whole sunset.
+    if (n < 2 || n > 150) continue;
+    const [x, y] = [(sx / n + 0.5) * S, (sy / n + 0.5) * S];
+    // A light shines out of darker paint round it; a sunlit yellow wall does not.
+    const r0 = Math.ceil(Math.sqrt(n)) + 3;
+    let [ring, rn] = [0, 0];
+    for (let a = 0; a < 16; a++) {
+      const [qx, qy] = [Math.round(sx / n + r0 * Math.cos((a * Math.PI) / 8)), Math.round(sy / n + r0 * Math.sin((a * Math.PI) / 8))];
+      if (qx < 0 || qy < 0 || qx >= w || qy >= h) continue;
+      const q = (qy * w + qx) * 4;
+      ring += 0.3 * px[q] + 0.59 * px[q + 1] + 0.11 * px[q + 2];
+      rn++;
+    }
+    const inner = (0.3 * sr + 0.59 * sg + 0.11 * sb) / n;
+    if (!rn || inner - ring / rn < 70) continue;
+    if (planned.some((g) => Math.hypot(g.x - x, g.y - y) < 40)) continue;
+    const hex = (v: number) => Math.round(Math.min(255, v / n)).toString(16).padStart(2, '0');
+    const onWater = !!wet && wet[Math.round(y) * painting.width + Math.round(x)] > 100;
+    found.push({ key: `painted-${onWater ? 'reflection' : 'lantern'}-${Math.round(x)}-${Math.round(y)}`, x, y, colour: `#${hex(sr)}${hex(sg)}${hex(sb)}`, kind: 'flame', n });
+  }
+  // Brightest (biggest) first, and not two on top of each other.
+  found.sort((a, b) => b.n - a.n);
+  const out: Glow[] = [];
+  for (const f of found) {
+    if (out.length >= MAX_PAINTED) break;
+    if (out.some((o) => Math.hypot(o.x - f.x, o.y - f.y) < 18)) continue;
+    out.push({ key: f.key, x: f.x, y: f.y, colour: f.colour, kind: f.kind });
+  }
+  return out;
 }
 
 /** A soft round glow: bright at its heart, fading to nothing at r. */
