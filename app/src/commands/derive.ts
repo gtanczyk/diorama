@@ -6,11 +6,12 @@ import { Geometry, personPx } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
 import { placeNpcs, readCorrections } from '../scene/corrections.ts';
 import { derive, type ThingIn } from '../scene/derive.ts';
-import { depthMap } from '../scene/depthmap.ts';
+import { depthMap, uprightTest } from '../scene/depthmap.ts';
 import { paintedGlows } from '../scene/glows.ts';
 import { carryFrom, ran, tilesLine } from '../scene/carry.ts';
 import { Layout, FRAME } from '../scene/layout.ts';
 import { CELL } from '../scene/walk.ts';
+import { unionAll } from '../image/raster.ts';
 import { WorldFiles } from '../world/files.ts';
 
 type MasksJson = { things: Record<string, Omit<ThingIn, 'key' | 'mask'>> };
@@ -98,7 +99,12 @@ defineCommand({
       const glows = await paintedGlows(painting, layout.lights, holders);
       if (glows.line) console.log(`  ${place.key}: ${glows.line}`);
       const asPainted = { ...layout, lights: glows.glows.map((g) => ({ ...layout.lights.find((l) => l.key === g.key)!, x: g.x, y: g.y })) };
-      const out = await derive(files.memo, { place, layout: asPainted, things, floors, painting, plates, carry, lastScale, previousScale, ...(start && { start }) }, (line) => console.log(`  ${place.key}: ${line}`));
+      // Upright surfaces from the depth model: no path joining the floors climbs a wall. Without the model, none.
+      const upright = await uprightTest(painting, unionAll(FRAME.width, FRAME.height, floors)).catch((e: Error) => {
+        console.log(`  ${place.key}: no depth model for walls (${e.message})`);
+        return undefined;
+      });
+      const out = await derive(files.memo, { place, layout: asPainted, things, floors, painting, plates, carry, lastScale, previousScale, ...(start && { start }), ...(upright && { upright }) }, (line) => console.log(`  ${place.key}: ${line}`));
       // Shadows only with a light: without one the runtime has nothing to darken by.
       const lit = out.shadows.light && maskArea(out.shadows.mask) > 0;
       if (lit) files.write(at('masks', 'shadows.png'), await maskToPng(out.shadows.mask));

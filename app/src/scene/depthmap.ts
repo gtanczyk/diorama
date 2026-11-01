@@ -33,8 +33,16 @@ async function modelPath(): Promise<string> {
   return MODEL_FILE;
 }
 
-/** Relative inverse depth (bigger = nearer) at the model's resolution. */
-async function disparity(painting: Buffer): Promise<Float32Array> {
+const disparities = new WeakMap<Buffer, Promise<Float32Array>>();
+
+/** Relative inverse depth (bigger = nearer) at the model's resolution; once per painting buffer. */
+function disparity(painting: Buffer): Promise<Float32Array> {
+  let d = disparities.get(painting);
+  if (!d) disparities.set(painting, (d = runModel(painting)));
+  return d;
+}
+
+async function runModel(painting: Buffer): Promise<Float32Array> {
   // The WASM build runs in Node with nothing to install natively (no CUDA download on Linux).
   const ort = await import('onnxruntime-web');
   const raw = await sharp(painting).resize(IN_W, IN_H, { fit: 'fill' }).removeAlpha().raw().toBuffer();
@@ -88,6 +96,32 @@ export function fitFloor(samples: Array<[number, number]>, seed = 1): { a: numbe
   const a = (n * sxy - sx * sy) / (n * sxx - sx * sx);
   const b = (sy - a * sx) / n;
   return a > 0 ? { a, b, inliers: n / samples.length } : undefined;
+}
+
+/** Below this share of the floor's own depth gradient (per screen row), a surface stands upright: a wall, a bridge's side. */
+export const UPRIGHT_SHARE = 0.2;
+
+/**
+ * Where the painting stands upright rather than lies flat, from the depth model alone (before the scale is known):
+ * on a floor the depth changes steadily down the screen, on a wall it hardly does. The floor's own gradient is
+ * read off the floor masks. Derive never lays a walking path across an upright surface (the side of a bridge,
+ * the wall down into an underpass): from above it is thin air.
+ */
+export async function uprightTest(painting: Buffer, floor: { bits: Uint8Array; width: number; height: number }): Promise<(x: number, y: number) => boolean> {
+  const d = await disparity(painting);
+  const S = 24;
+  const grad = (x: number, y: number) => (sampleAt(d, x, y + S / 2) - sampleAt(d, x, y - S / 2)) / S;
+  const at = (x: number, y: number) => floor.bits[Math.min(floor.height - 1, Math.max(0, Math.round(y))) * floor.width + Math.min(floor.width - 1, Math.max(0, Math.round(x)))];
+  const samples: number[] = [];
+  for (let y = S; y < FRAME.height - S; y += 16) for (let x = 8; x < FRAME.width; x += 16) if (at(x, y - S / 2) && at(x, y + S / 2)) samples.push(grad(x, y));
+  if (samples.length < 20) return () => false;
+  samples.sort((a, b) => a - b);
+  const floorGrad = samples[Math.floor(samples.length / 2)];
+  if (!(floorGrad > 0)) return () => false;
+  return (x, y) => {
+    const g = [grad(x - 4, y), grad(x, y), grad(x + 4, y)].sort((a, b) => a - b)[1];
+    return g < UPRIGHT_SHARE * floorGrad;
+  };
 }
 
 /** depth.png for a derived place, or undefined (with the reason) when the model's depth doesn't fit its floor. */

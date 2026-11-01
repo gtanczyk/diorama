@@ -26,7 +26,9 @@ export type ThingIn = { key: string; kind: Kind; phrase?: string; source: MaskSo
  */
 export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors: Mask[]; painting: Buffer; plates?: string[]; carry?: Carry; lastScale?: Scale; previousScale?: Scale;
   /** Where the person wants the hero to begin (hero_start_set): the nearest roomy cell of the main floor. */
-  start?: [number, number] };
+  start?: [number, number];
+  /** Where the painting stands upright (depthmap.ts uprightTest): no joining path is laid across it. */
+  upright?: (x: number, y: number) => boolean };
 export type Derived = { geometry: Geometry; grid: Grid; blobs: Blob[]; footprint: Mask; probes: Sample[]; shadows: Shadows };
 
 const { width: W, height: H } = FRAME;
@@ -150,6 +152,7 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   let water: Mask | undefined;
   // Cells the gates below shut stay shut: joining the floor up again must not reopen them.
   const shut = new Uint8Array(grid.open.length);
+  let wallCost = Infinity;
   const cost = (i: number) => {
     if (shut[i]) return Infinity;
     const [x, y] = grid.centre(i).map(Math.floor);
@@ -157,9 +160,12 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     if (blocked.bits[p] && !behind.bits[p]) return Infinity;
     // Nobody walks on painted water, wherever the layout planned a floor.
     if (water?.bits[p]) return Infinity;
+    // A path across the side of a bridge or the wall down to an underpass is thin air: first no path climbs a wall;
+    // only a floor no other way reaches is joined up one, at a price, and flagged (verify: WALK_ON_FACE).
+    const wall = wallCost && input.upright?.(x, y) ? wallCost : 0;
     // Muse moves floors away from the layout, so the ground between them is fair game too, at a price.
     // A corridor between floors stays near them: no paths cut across a lawn or open water.
-    return ground.bits[p] ? 1 : planned.bits[p] ? 3 : y >= groundTop && nearFloor.bits[p] ? 6 : Infinity;
+    return wall + (ground.bits[p] ? 1 : planned.bits[p] ? 3 : y >= groundTop && nearFloor.bits[p] ? 6 : Infinity);
   };
   // The start is clear of every thing (by about a hero's width), so nobody begins standing in a lamp.
   // Walk-on and flat things (a jetty, a rug) are floor: near them is fine.
@@ -183,6 +189,7 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   };
   let startCell = startOf();
   if (startCell === undefined) throw new Error(`${place.key}: no walkable floor at all`);
+  const walls = input.upright && { open: grid.open.slice(), zone: grid.zone.slice() };
   let joined = connect(grid, startCell, cost);
   // Joining floors may have laid a path across the water between them: SAM finds the water (only then),
   // and the floor is joined again around it.
@@ -203,6 +210,24 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
       startCell = startOf()!;
       joined = connect(grid, startCell, cost);
       log(`water between the floors: joined again around it`);
+    }
+  }
+  if (joined.stranded.length && input.upright && walls) {
+    // A floor no path reaches but up a wall (a plaza above an underpass, a bridge's far bank): joined as it was before
+    // walls counted, and flagged, when that reaches more. Verify then names the cells over the wall (WALK_ON_FACE).
+    const kept = { open: grid.open.slice(), zone: grid.zone.slice(), joined };
+    grid.open.set(walls.open);
+    grid.zone.set(walls.zone);
+    wallCost = 0;
+    const climbed = connect(grid, startCell, cost);
+    wallCost = Infinity;
+    if (climbed.stranded.length < joined.stranded.length) {
+      const over = [...grid.open.keys()].filter((i) => grid.open[i] && !walls.open[i] && input.upright!(...grid.centre(i))).length;
+      flag(`no floor joins ${joined.stranded.length - climbed.stranded.length} part(s) of the floor but up a wall: the path opened ${over} cells on it (the hero walks over the wall there); a stair or a floor between them is better`);
+      joined = climbed;
+    } else {
+      grid.open.set(kept.open);
+      grid.zone.set(kept.zone);
     }
   }
   if (joined.reopened) flag(`opened ${joined.reopened} cells to join the floor up`);

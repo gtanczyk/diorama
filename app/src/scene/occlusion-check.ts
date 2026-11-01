@@ -4,7 +4,8 @@
 // covers nearly all of a person means they vanish there.
 import type { Geometry } from '../play/geometry.ts';
 import { personPx } from '../play/geometry.ts';
-import { contactRows, depthAt, FLOOR_SLOPE, floorSlope, frontMask, frontRow, hiddenShare, MAX_HIDDEN, PERSON_WIDTH } from '../play/depth-occlusion.ts';
+import { contactRows, depthAt, frontMask, hiddenShare, MAX_HIDDEN, PERSON_WIDTH } from '../play/depth-occlusion.ts';
+import { UPRIGHT_SHARE } from './depthmap.ts';
 import type { Depth } from '../play/shadow.ts';
 import type { Finding } from './verify.ts';
 import { gridOf } from './verify.ts';
@@ -13,7 +14,7 @@ import { gridOf } from './verify.ts';
 const STRIDE = 2;
 
 export type OcclusionCheck = {
-  /** Walk cells checked, cells on an upright face (people drawn behind it), cells where the depth map would hide most of a person and so hides nothing. */
+  /** Walk cells checked, cells on an upright face (feet over a wall or thin air), cells where the depth map would hide most of a person and so hides nothing. */
   checked: number;
   onFace: Array<[number, number]>;
   unsure: Array<[number, number]>;
@@ -36,16 +37,17 @@ export function checkOcclusion(g: Geometry, d: Depth, owned?: Uint8Array): Occlu
     out.checked++;
     const h = personPx(g, y);
     const w = Math.max(4, Math.round(h * PERSON_WIDTH));
-    // Upright face: under most of the feet's width the ground is nearer than the screen row and does not run away,
-    // and it meets the floor just below them (a bridge's side a floor mask took in). A post or a can in front of
-    // one foot is not that, nor a shelter whose foot is far in front (people walk behind it).
+    // Upright face: under most of the feet's width the depth hardly changes down the screen (a floor's changes a row
+    // per row): the side of a bridge, the wall down to an underpass, a floor mask or a joining path laid on them.
+    // A card's thing in front of the feet is left out, and a post or a can in front of one foot is not most of it.
     let face = 0;
     let feet = 0;
+    const span = Math.max(16, 0.25 * h);
     for (let fx = x - w / 2; fx <= x + w / 2; fx += 2) {
       const k = Math.min(d.w - 1, Math.max(0, Math.floor(fx / 2))) + Math.min(d.h - 1, Math.floor((y - 1) / 2)) * d.w;
       if (owned?.[k]) continue;
       feet++;
-      if (depthAt(d, fx, y - 1) > frontRow(y - g.scale.horizonY) && floorSlope(g, d, fx, y) < FLOOR_SLOPE && contact[k] - y < 0.5 * h) face++;
+      if ((depthAt(d, fx, y + span / 2) - depthAt(d, fx, y - span / 2)) / span < UPRIGHT_SHARE) face++;
     }
     if (feet && face > 0.6 * feet) out.onFace.push([x, y]);
     if (hiddenShare(g, d, x, y, owned) > MAX_HIDDEN) {
@@ -64,7 +66,7 @@ export function occlusionFindings(g: Geometry, check: OcclusionCheck | null): Fi
   const out: Finding[] = [];
   // A few cells on a face are the edge of a kerb or a step; many are a floor mask laid on a wall or a bridge's side.
   if (check.onFace.length >= Math.max(10, 0.02 * check.checked)) {
-    out.push({ code: 'WALK_ON_FACE', detail: `${check.onFace.length} of ${check.checked} checked floor cells lie on an upright face (a bridge's side, a wall a floor mask took in): people there are drawn behind it, only their top showing`, box: boxOf(check.onFace) });
+    out.push({ code: 'WALK_ON_FACE', detail: `${check.onFace.length} of ${check.checked} checked floor cells lie on an upright face (a bridge's side, a wall down to a lower floor): feet there are over a wall or thin air. Look at walk.png; floor_cells closes them`, box: boxOf(check.onFace) });
   }
   if (check.unsure.length >= Math.max(10, 0.05 * check.checked)) {
     out.push({ code: 'DEPTH_UNSURE', detail: `${check.unsure.length} of ${check.checked} checked floor cells have over ${Math.round(MAX_HIDDEN * 100)}% of a person in front of them by the depth map (stairs, a slope, or floor where there is none): nothing unmasked hides anyone there`, box: boxOf(check.unsure) });

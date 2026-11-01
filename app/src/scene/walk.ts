@@ -241,11 +241,26 @@ export type Connected = {
 export function connect(g: Grid, start: number, cost: (i: number) => number, minIsland = 20): Connected {
   const result: Connected = { reopened: 0, dropped: 0, stranded: [] };
   const given = new Set<number>();
+  // A path along open cells too narrow to walk (a one-cell fringe) can't always be widened: when opening it reached
+  // nothing new, the same island is joined again by a path that opens every cell it takes.
+  let last = { island: -1, reached: -1 };
+  let strict = false;
   for (let round = 0; round < 32; round++) {
     const cells = roomy(g);
     const reached = reach(g, start, cells);
     const away = islands(g, cells).filter((island) => !reached[island[0]] && island.length >= minIsland && !given.has(island[0]));
     if (away.length === 0) break;
+    const count = reached.reduce((a, b) => a + b, 0);
+    if (away[0][0] === last.island && count === last.reached) {
+      if (strict) {
+        result.stranded.push(away[0]);
+        given.add(away[0][0]);
+        strict = false;
+        continue;
+      }
+      strict = true;
+    } else strict = false;
+    last = { island: away[0][0], reached: count };
     const target = new Uint8Array(g.open.length);
     away[0].forEach((i) => (target[i] = 1));
 
@@ -267,7 +282,7 @@ export function connect(g: Grid, start: number, cost: (i: number) => number, min
         break;
       }
       for (const n of g.neighbours(i)) {
-        const step = g.open[n] ? 0.01 : cost(n);
+        const step = g.open[n] && (!strict || cells[n]) ? 0.01 : g.open[n] ? Math.max(0.01, cost(n)) : cost(n);
         if (!Number.isFinite(step) || d + step >= dist[n]) continue;
         dist[n] = d + step;
         prev[n] = i;
