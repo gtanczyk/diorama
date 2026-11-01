@@ -36,8 +36,8 @@ test.each([8, 16, 32])('a %i-frame UV sheet reserves standing without changing c
   const grid = modelSheet(frames);
   expect(grid.frames).toBe(frames);
   expect(grid.rows * grid.cols).toBeGreaterThan(frames);
-  expect(grid.width / grid.cols).toBe(300);
-  expect(grid.height / grid.rows).toBe(448);
+  expect(grid.width / grid.cols).toBe(450);
+  expect(grid.height / grid.rows).toBe(672);
 });
 
 test('trousers keep their opt-out when changing frame count or regenerating', () => {

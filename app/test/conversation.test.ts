@@ -59,6 +59,8 @@ test('the visible conversation survives a server restart and continues without l
   const browser = await chromium.launch();
   const page = await browser.newPage();
   let studio = await startStudio({ root, muse });
+  // The page sends what was on screen as a hidden "[On screen: …]" prefix; the chat shows the text without it.
+  const shown = (prompt: string) => prompt.replace(/^\[(?:On screen|Looking at): [^\]]+\]\n?/, '');
   const open = async () => {
     await page.goto(`${studio.url}w/w#${studio.token}`);
     await page.locator('section.agent textarea').waitFor();
@@ -69,13 +71,13 @@ test('the visible conversation survives a server restart and continues without l
     await expect.poll(async () => {
       const res = await fetch(`${studio.url}api/agent/w`, { headers: { authorization: `Bearer ${studio.token}` } });
       const turn = (await res.json())?.turns.at(-1);
-      return turn?.prompt === text ? turn.result?.status : undefined;
+      return turn && shown(turn.prompt) === text ? turn.result?.status : undefined;
     }, { timeout: 10_000 }).toBe('completed');
   };
   try {
     await open(); await send('Remember cobalt blue.');
     // No throttle sleep: an answered turn must already be durable.
-    expect(pastTurns(dir).map((t) => t.prompt)).toEqual(['Remember cobalt blue.']);
+    expect(pastTurns(dir).map((t) => shown(t.prompt))).toEqual(['Remember cobalt blue.']);
     await page.goto('about:blank'); await studio.close();
     studio = await startStudio({ root, muse });
     await open();
@@ -87,7 +89,7 @@ test('the visible conversation survives a server restart and continues without l
     await open();
     await expect.poll(() => page.locator('section.agent').innerText()).toContain('heard:Continue with that colour.');
     const state = await (await fetch(`${studio.url}api/agent/w`, { headers: { authorization: `Bearer ${studio.token}` } })).json();
-    expect(state.turns.map((t: { prompt: string }) => t.prompt)).toEqual(['Remember cobalt blue.', 'Continue with that colour.']);
+    expect(state.turns.map((t: { prompt: string }) => shown(t.prompt))).toEqual(['Remember cobalt blue.', 'Continue with that colour.']);
     expect(new Set(state.turns.map((t: { id: number }) => t.id)).size).toBe(2);
   } finally { await browser.close(); await studio.close(); fs.rmSync(root, { recursive: true, force: true }); }
 }, 60_000);

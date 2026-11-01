@@ -176,7 +176,8 @@ test('changing a figure or its model does not play stale sprite sheets', async (
   files.write(files.path('cast','figures.json'), {hero:{height:1.6,upright:true}});
   files.write(files.path('cast','hero','model','model.glb'),valid);
   files.write(files.path('cast','hero','model','model.json'),{glb:'model.glb',views:{}});
-  files.write(files.path('cast','hero','sprites','sprites.json'),{facings:{}});
+  // Muse-painted sheets: UV-rendered ones (model-*.png) give way to the 2D walk, so they would not show here.
+  files.write(files.path('cast','hero','sprites','sprites.json'),{facings:{right:{sheet:'walk-right.png'}}});
   files.write(files.path('cast','hero','rig.json'),{size:[10,10],ground:9,height:9,hip:[5,5],shoulder:{near:[4,2],far:[6,2]},leg:{near:{knee:[4,6],ankle:[4,9]},far:{knee:[6,6],ankle:[6,9]}},parts:[],sheet:{file:'walk.png',cols:4,rows:3,frames:8,cell:[10,10],scale:1}});
   files.write(files.path('cast','hero','walk.png'),Buffer.from('old walk'));
   bindExistingAnimation(files,'hero');
