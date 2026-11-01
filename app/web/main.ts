@@ -474,7 +474,7 @@ class Game {
     const weather = wx && new WeatherFx(wx, g, ripples?.bits, key);
     const reactions = entry.reactions && params.get('reactions') !== '0' ? new ReactionFx(entry.reactions, g, key, matchMedia('(prefers-reduced-motion: reduce)').matches) : undefined;
     // ?glow=0 (or ?still; capture unless ?glow=1) keeps the painted lights as painted, for pixel checks.
-    const glows = entry.glows?.length && !params.has('still') && (params.get('glow') ?? (capture ? '0' : '1')) !== '0' ? new GlowFx(entry.glows, g.frame.height) : undefined;
+    const glows = entry.glows?.length && !params.has('still') && (params.get('glow') ?? (capture ? '0' : '1')) !== '0' ? new GlowFx(entry.glows, g.frame.height, bg) : undefined;
     const focus = focusScale > 0 || separateScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
     const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
     this.cache.set(key, place);
@@ -1154,11 +1154,17 @@ class Game {
   /** Draws the card's columns [xa, xb) (frame x) in strips, each slid by the floor under it. */
   private drawCard(cut: Cut, xa = cut.x0, xb = cut.x0 + cut.canvas.width, ya = cut.y0, yb = cut.y0 + cut.canvas.height) {
     const STRIP = 6;
+    const right = cut.x0 + cut.canvas.width;
+    let [sx, sy] = this.cardShift(cut, xa + Math.min(STRIP, xb - xa) / 2);
     for (let x = xa; x < xb; x += STRIP) {
       const w = Math.min(STRIP, xb - x);
-      const [sx, sy] = this.cardShift(cut, x + w / 2);
-      // A hair wider than the strip, so neighbours that slid apart by a fraction of a px leave no seam.
-      ctx.drawImage(cut.canvas, x - cut.x0, ya - cut.y0, Math.min(w + 1, cut.x0 + cut.canvas.width - x), yb - ya, x + sx, ya + sy, Math.min(w + 1, cut.x0 + cut.canvas.width - x), yb - ya);
+      const next = x + STRIP < xb ? this.cardShift(cut, x + STRIP + Math.min(STRIP, xb - x - STRIP) / 2) : undefined;
+      // Wider than the strip by however far the next one slid right, and 2px more: under the zoom a strip's
+      // edges land on fractions of a pixel and come out half see-through, and the backdrop showed through the
+      // seams as thin vertical lines. The next strip is drawn over the overlap.
+      const reach = Math.min(w + 2 + Math.ceil(Math.max(0, (next?.[0] ?? sx) - sx)), right - x);
+      ctx.drawImage(cut.canvas, x - cut.x0, ya - cut.y0, reach, yb - ya, x + sx, ya + sy, reach, yb - ya);
+      if (next) [sx, sy] = next;
     }
   }
 
@@ -1259,7 +1265,7 @@ class Game {
       ctx.save();
       ctx.translate(sx, sy);
       ctx.beginPath();
-      ctx.rect(x, -1e4, STRIP + 0.5, 2e4);
+      ctx.rect(x - 1, -1e4, STRIP + 2, 2e4);
       ctx.clip();
       this.drawOutline(hot);
       ctx.restore();

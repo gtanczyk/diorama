@@ -2,7 +2,7 @@
 // steps with the tracking camera and parallax on, one clip per place, stepped frame by frame so it plays smooth
 // at 30 fps whatever the machine (smooth.ts). --walk 0 hides everyone (?people=0): the place alone, alive.
 // Free: it only plays what the builds made.
-//   npx tsx app/demo/places-take.ts <slug> [<slug>...] [--places a,b] [--seconds 9] [--walk 1] [--out app/demo/footage/places]
+//   npx tsx app/demo/places-take.ts <slug> [<slug>...] [--places a,b] [--seconds 9] [--walk 1] [--query k=v&k=v] [--out app/demo/footage/places]
 // Writes <slug>--<place>.mp4 (1440x1080, the game's 4:3) per place.
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -17,6 +17,8 @@ const out = path.resolve(takeOption(args, 'out', 'app/demo/footage/places'));
 const seconds = Number(takeOption(args, 'seconds', '9'));
 const only = takeOption(args, 'places', '').split(',').filter(Boolean);
 const walking = takeOption(args, 'walk', '1') !== '0';
+// Extra page params over the film's own (e.g. --query glow=0&rim=0), to find which layer draws a glitch.
+const extra = new URLSearchParams(takeOption(args, 'query', ''));
 const slugs = args;
 if (!slugs.length) throw new Error('usage: places-take.ts <slug> [<slug>...] [--seconds 9]');
 fs.mkdirSync(out, { recursive: true });
@@ -32,7 +34,9 @@ for (const slug of slugs) {
   for (const place of places) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1080 } });
     await page.addInitScript(HOLD_FRAMES);
-    await page.goto(`http://127.0.0.1:${port}/?place=${encodeURIComponent(place)}&capture=1&parallax=1.5&track=1&sway=1&glow=1&separate=1&rim=1${walking ? '' : '&people=0'}`);
+    const q = new URLSearchParams(`place=${encodeURIComponent(place)}&capture=1&parallax=1.5&track=1&sway=1&glow=1&separate=1&rim=1${walking ? '' : '&people=0'}`);
+    for (const [k, v] of extra) q.set(k, v);
+    await page.goto(`http://127.0.0.1:${port}/?${q}`);
     // Loaded: the first frames draw once the place's pictures are in.
     await page.waitForTimeout(2500);
     await page.evaluate(() => (window as unknown as { __step: (n: number) => void }).__step(30));
