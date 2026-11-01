@@ -453,3 +453,29 @@ export async function smokeSheet(memo: Memo, place: Place, backdrop: Buffer, not
   }
   return out;
 }
+
+/**
+ * Painted boats on the water that are not cards (moored far off, candle boats on a river): SAM finds them on the
+ * backdrop, each one touching the water becomes a feathered copy of the painting round it, and the page rocks
+ * it on the swell a pixel or two, so a harbour's boats ride as one. Free beyond one SAM call.
+ */
+export async function floatSheet(memo: Memo, place: Place, backdrop: Buffer, notFloat: Mask, water?: Mask): Promise<Smoke[]> {
+  if (!water) return [];
+  const [W, H]: [number, number] = [FRAME.width, FRAME.height];
+  const hits = await samFind(memo, { label: `floats:${place.key}`, image: backdrop, prompt: 'boat' });
+  const all = subtract(unionAll(W, H, hits.map((f) => f.mask)), notFloat);
+  const rgba = await sharp(backdrop).resize(W, H, { fit: 'fill' }).ensureAlpha().raw().toBuffer();
+  const wetAround = dilate(water, 6);
+  const out: Smoke[] = [];
+  for (const boat of components(all)) {
+    const px = maskArea(boat);
+    if (px < 150 || px > 0.04 * W * H || maskArea(intersect(boat, wetAround)) < 0.15 * px) continue;
+    const reach = dilate(boat, 5);
+    const [x0, y0, x1, y1] = boxOf(reach);
+    const region = { left: x0, top: y0, width: x1 - x0, height: y1 - y0 };
+    const alpha = await sharp(Buffer.from(reach.bits.map((b) => b * 255)), { raw: { width: W, height: H, channels: 1 } }).blur(2).extract(region).extractChannel(0).raw().toBuffer();
+    out.push({ png: await sharp(rgba, { raw: { width: W, height: H, channels: 4 } }).extract(region).removeAlpha().joinChannel(alpha, { raw: { width: region.width, height: region.height, channels: 1 } }).png().toBuffer(), box: [x0, y0, x1, y1] });
+    if (out.length >= 24) break;
+  }
+  return out;
+}

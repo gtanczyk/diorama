@@ -87,6 +87,8 @@ type Place = {
   mist?: { tex: HTMLImageElement; mask: HTMLImageElement; box: [number, number, number, number]; drift: number; speed: number; canvas: HTMLCanvasElement };
   /** Painted smoke curling: each plume's feathered copy of the painting and where it sits. */
   smoke?: Array<{ img: HTMLImageElement; box: [number, number, number, number] }>;
+  /** Painted boats rocking on the water. */
+  floats?: Array<{ img: HTMLImageElement; box: [number, number, number, number] }>;
   far?: { sky?: HTMLImageElement; flats: Array<{ img: HTMLImageElement; box: [number, number, number, number]; d: number }> };
   hots: Hot[];
   cuts: Cut[];
@@ -445,6 +447,9 @@ class Game {
     const smoke = backdrop && entry.layers?.smoke?.length && !params.has('still')
       ? (await Promise.all(entry.layers.smoke.map(async (sm) => ({ img: await loadImage(files(sm.file)).catch(() => undefined), box: sm.box })))).filter((sm): sm is { img: HTMLImageElement; box: [number, number, number, number] } => !!sm.img)
       : undefined;
+    const floats = backdrop && entry.layers?.floats?.length && !params.has('still')
+      ? (await Promise.all(entry.layers.floats.map(async (f) => ({ img: await loadImage(files(f.file)).catch(() => undefined), box: f.box })))).filter((f): f is { img: HTMLImageElement; box: [number, number, number, number] } => !!f.img)
+      : undefined;
     let mist: Place['mist'];
     const m = entry.layers?.mist;
     if (backdrop && m && !params.has('still')) {
@@ -485,7 +490,7 @@ class Game {
     // ?glow=0 (or ?still; capture unless ?glow=1) keeps the painted lights as painted, for pixel checks.
     const glows = (entry.glows?.length || bg) && !params.has('still') && (params.get('glow') ?? (capture ? '0' : '1')) !== '0' ? new GlowFx(entry.glows ?? [], g.frame.height, bg, wet) : undefined;
     const focus = focusScale > 0 || separateScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, smoke, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, smoke, floats, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
     this.cache.set(key, place);
     for (const hot of hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc')) {
       const id = `${key}/${hot.thing.key}`;
@@ -1404,6 +1409,21 @@ class Game {
     ctx.restore();
   }
 
+  /** Painted boats (not cards) rock on the swell: rise and sink a pixel or two and roll about the waterline. */
+  private drawFloats(p: Parallax) {
+    for (const [k, { img, box }] of (this.place.floats ?? []).entries()) {
+      const [x0, y0, x1, y1] = box;
+      const [sx, sy] = shiftAt(this.place.g, p, y1);
+      const t = this.time + k * 1.7;
+      const [px, py] = [(x0 + x1) / 2 + sx, y1 - (y1 - y0) * 0.2 + sy];
+      ctx.save();
+      ctx.translate(px, py + Math.sin(t * 1.25) * Math.max(0.6, (y1 - y0) * 0.02));
+      ctx.rotate(0.02 * Math.sin(t * 0.85 + 0.7));
+      ctx.drawImage(img, x0 + sx - px, y0 + sy - py);
+      ctx.restore();
+    }
+  }
+
   /**
    * Painted smoke curls: each plume's rows are bent sideways by a wave that rises through it, wider the higher
    * it gets, so the smoke billows and leans with the wind while its foot (the chimney) stays where it was painted.
@@ -1521,6 +1541,7 @@ class Game {
         ctx.drawImage(backdrop, x0, top, w, e - top + 1, x0 + sx, top + sy, w, e - top + 1);
       }
       this.drawWater(p);
+      this.drawFloats(p);
       this.drawSmoke(p);
       this.drawMist(p);
       this.place.weather?.drawGround(ctx, (y) => this.shift(y));

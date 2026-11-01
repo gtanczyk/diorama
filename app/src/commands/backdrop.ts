@@ -1,3 +1,4 @@
+import sharp from 'sharp';
 // diorama backdrop <slug> [place...]: backdrop.png per place, the painting without its cards, so the runtime can
 // slide the cards against it (parallax). Cards are the sharp occluders of geometry.json, so run it after derive.
 import fs from 'node:fs';
@@ -8,7 +9,8 @@ import { Geometry } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
 import { BACKDROP_GROW, backdropFor, smearedBackdrop, type Card } from '../scene/backdrop.ts';
 import { carryBetween, carryFrom, paintingFor, ran, remakes, tilesLine, withChange } from '../scene/carry.ts';
-import { Depth, farFlats, mistSheet, smokeSheet, waterSheet } from '../scene/layers.ts';
+import { Depth, farFlats, floatSheet, mistSheet, smokeSheet, waterSheet } from '../scene/layers.ts';
+import { maskFromPng as waterMaskOf } from '../image/mask.ts';
 import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
@@ -97,6 +99,13 @@ defineCommand({
           return [];
         }),
       ]);
+      // Boats painted on the water (not cards) to rock on the swell: layers/float-<i>.png, inside the water found above.
+      const floats = water ? await floatSheet(files.memo, place, png, things, await waterMaskOf(await sharp({ create: { width: FRAME.width, height: FRAME.height, channels: 3, background: '#000' } }).composite([{ input: water.mask, left: water.box[0], top: water.box[1] }]).png().toBuffer())).catch((error) => {
+        console.log(`  ${place.key}: no rocking boats (${error instanceof Error ? error.message.slice(0, 120) : error})`);
+        return [];
+      }) : [];
+      floats.forEach((s, i) => files.write(at('layers', `float-${i}.png`), s.png));
+      if (floats.length) console.log(`  ${place.key}: ${floats.length} painted boat(s) rocking on the water`);
       smoke.forEach((s, i) => files.write(at('layers', `smoke-${i}.png`), s.png));
       if (smoke.length) console.log(`  ${place.key}: ${smoke.length} plume(s) of smoke curling`);
       if (water) {
@@ -121,6 +130,7 @@ defineCommand({
           ...(water && { water: { tex: 'layers/water.jpg', mask: 'layers/water-mask.png', box: water.box, flow: water.flow } }),
           ...(mist && { mist: { tex: 'layers/mist.png', mask: 'layers/mist-mask.png', box: mist.box, drift: mist.drift, speed: mist.speed } }),
           ...(smoke.length && { smoke: smoke.map((s, i) => ({ file: `layers/smoke-${i}.png`, box: s.box })) }),
+          ...(floats.length && { floats: floats.map((s, i) => ({ file: `layers/float-${i}.png`, box: s.box })) }),
         });
       }
       ran(at(), 'backdrop', carry?.old ?? painting);

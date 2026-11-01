@@ -142,6 +142,8 @@ export type Layers = {
   mist?: { tex: string; mask: string; box: [number, number, number, number]; drift?: -1 | 0 | 1 | null; speed?: number };
   /** Painted smoke to set curling: each plume a feathered copy of the painting over `box`. */
   smoke?: Array<{ file: string; box: [number, number, number, number] }>;
+  /** Boats painted on the water (not cards), each a feathered copy of the painting over `box`, to rock on the swell. */
+  floats?: Array<{ file: string; box: [number, number, number, number] }>;
 };
 
 /**
