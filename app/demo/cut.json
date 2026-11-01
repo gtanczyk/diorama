@@ -133,19 +133,12 @@
       "caption": "The floor you walk on, the hero's size at every step"
     },
     {
-      "name": "4 How: taken apart",
-      "src": "footage/lantern/explode/lantern-harbour--harbour-pier.mp4",
-      "from": 0.6,
-      "dur": 8,
-      "fade": 0.5,
-      "caption": "Every cut-out at its own depth, like a real diorama"
-    },
-    {
       "name": "4 How: parallax",
       "src": "footage/lantern/method/parallax.mp4",
       "from": 0.5,
-      "dur": 4,
-      "fade": 0.5
+      "dur": 5,
+      "fade": 0.5,
+      "caption": "Cut-outs float over the painting, like a real diorama"
     },
     {
       "name": "5 Cast: the keeper",
@@ -157,8 +150,8 @@
       "by": "Muse Image"
     },
     {
-      "name": "5 Cast: the lamplighter",
-      "src": "footage/lantern2/character/lantern-harbour--lamplighter.mp4",
+      "name": "5 Cast: the candle child",
+      "src": "footage/lantern2/character/lantern-harbour--candle-child.mp4",
       "from": 3.5,
       "dur": 3.5,
       "fade": 0.4,
@@ -167,9 +160,9 @@
     },
     {
       "name": "6 Play: the pier",
-      "src": "footage/lantern/walk/lantern-harbour--harbour-pier.mp4",
+      "src": "footage/lantern3/walk/lantern-harbour--harbour-pier.mp4",
       "from": 0.5,
-      "dur": 5,
+      "dur": 6,
       "crop": [
         0,
         135,
@@ -181,9 +174,9 @@
     },
     {
       "name": "6 Play: the lantern seller",
-      "src": "footage/lantern/walk/lantern-harbour--lantern-market.mp4",
+      "src": "footage/lantern3/walk/lantern-harbour--lantern-market.mp4",
       "from": 0.5,
-      "dur": 5,
+      "dur": 6,
       "crop": [
         0,
         135,
@@ -195,9 +188,9 @@
     },
     {
       "name": "6 Play: the candle child",
-      "src": "footage/lantern/walk/lantern-harbour--river-dock.mp4",
+      "src": "footage/lantern3/walk/lantern-harbour--river-dock.mp4",
       "from": 0.5,
-      "dur": 4.5,
+      "dur": 5.5,
       "crop": [
         0,
         135,
@@ -293,15 +286,15 @@
     },
     {
       "src": "footage/vo/change.wav",
-      "at": 83.4
+      "at": 79.4
     },
     {
       "src": "footage/vo/export.wav",
-      "at": 105.4
+      "at": 101.4
     },
     {
       "src": "footage/vo/end.wav",
-      "at": 114.4
+      "at": 110.4
     }
   ]
 }
