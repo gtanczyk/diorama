@@ -7,16 +7,10 @@ import { nice } from './world.tsx';
 import { named, nowBy } from './build.tsx';
 import { Icon } from './icons.tsx';
 
-<<<<<<< Updated upstream
-/** Per character: the files the running job wrote (world path → when) and what the build last said about them. */
-export type CastWork = Record<string, { files: Record<string, number>; said: string; at: number; first: number }>;
-export const CAST_STEPS = ['cast', 'model', 'sprites', 'faces'];
-=======
 /** Per character: the files the running job wrote (world path → when), what the build last said about them, and
  * when each cast step first touched them (a build paints the whole cast long before it models the last one). */
 export type CastWork = Record<string, { files: Record<string, number>; said: string; at: number; began: Record<string, number> }>;
-export const CAST_STEPS = ['cast', 'model', 'sprites'];
->>>>>>> Stashed changes
+export const CAST_STEPS = ['cast', 'model', 'sprites', 'faces'];
 
 const FILE = /^cast\/([a-z0-9][\w-]*)(-painting\.png|\.png|\/model\/[\w-]+\.(?:png|json)|\/sprites\/[\w-]+\.(?:png|json)|\/face-[\w-]+\.(?:png|json)|\/face-work\/[\w-]+\.png)$/;
 /** A file the cast steps write, as [character, step]. */
@@ -33,7 +27,7 @@ export function castLine(line: string): [string, string] | null {
 
 /** The cast step a build line belongs to ("<key>: TRELLIS builds the body" is the model step). */
 export function lineStep(words: string): string {
-  return /4 sides|TRELLIS|rigging|3D model|auto-rig/.test(words) ? 'model' : /^(?:walk|talk) |sprite/.test(words) ? 'sprites' : 'cast';
+  return /4 sides|TRELLIS|rigging|3D model|auto-rig/.test(words) ? 'model' : /face (?:prepared|unchanged)|mouth|facial|lips/.test(words) ? 'faces' : /^(?:walk|talk) |sprite/.test(words) ? 'sprites' : 'cast';
 }
 
 /** One character's work with a build line or a landed file added, the step's start kept from the first touch. */
