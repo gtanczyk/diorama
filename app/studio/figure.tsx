@@ -219,7 +219,8 @@ function SpritesView({ slug, dir, v }: { slug: string; dir: string; v: number | 
   const [sheets, setSheets] = useState<Array<{ name: string; talk: boolean; f: Facing; img: HTMLImageElement }> | null>(null);
   const [info, setInfo] = useState<SpriteInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [walking, setWalking] = useState(true);
+  // Walk, stand or talk: each shows only its own sheets (an NPC who only speaks has talk sheets and no walk).
+  const [picked, setMode] = useState<Mode | null>(null);
   useEffect(() => {
     let gone = false;
     (async () => {
@@ -232,9 +233,13 @@ function SpritesView({ slug, dir, v }: { slug: string; dir: string; v: number | 
   }, [slug, dir, v]);
   const canvases = useRef<Array<HTMLCanvasElement | null>>([]);
   const labels = useRef<Array<HTMLSpanElement | null>>([]);
+  const modes: Mode[] = sheets ? [...(sheets.some((s) => !s.talk) ? ['walk', 'stand'] as Mode[] : []), ...(sheets.some((s) => s.talk) ? ['talk'] as Mode[] : [])] : [];
+  const mode: Mode | undefined = picked && modes.includes(picked) ? picked : modes[0];
+  const walking = mode === 'walk';
+  const shown = (sheets ?? []).filter((s) => s.talk === (mode === 'talk'));
   useFrames((t) => {
     if (!info || !sheets) return;
-    sheets.forEach((s, k) => {
+    shown.forEach((s, k) => {
       const c = canvases.current[k]?.getContext('2d');
       if (!c) return;
       const [cw, ch] = [s.img.width / info.cols, s.img.height / info.rows];
@@ -250,14 +255,15 @@ function SpritesView({ slug, dir, v }: { slug: string; dir: string; v: number | 
       }
       c.drawImage(s.img, (cell % info.cols) * cw, Math.floor(cell / info.cols) * ch, cw, ch, 0, 0, cw, ch);
     });
-  }, [info, sheets, walking]);
+  }, [info, sheets, mode]);
   if (!sheets) return <span class="detail">{error ?? 'Loading the sheets…'}</span>;
   return (
     <div class="moves">
-      <Modes modes={['walk', 'stand']} mode={walking ? 'walk' : 'stand'} set={(m) => setWalking(m === 'walk')} />
-      {info && sheets.some((s) => !s.talk) && <p class="detail">{info.frames} frames per walking direction</p>}
+      {mode && <Modes modes={modes} mode={mode} set={setMode} />}
+      {info && mode !== 'talk' && sheets.some((s) => !s.talk) && <p class="detail">{info.frames} frames per walking direction</p>}
+      {!sheets.some((s) => !s.talk) && <p class="detail">No walk sheets: this character only talks in the game, so only talking was drawn.</p>}
       <ul class="sheets">
-        {sheets.map((s, k) => (
+        {shown.map((s, k) => (
           <li key={s.name}>
             <canvas ref={(el) => void (canvases.current[k] = el)} data-lightbox={fileUrl(slug, `${dir}/${s.f.sheet}`, v)} title="Click: the whole sheet, large" />
             <span class="detail">{s.name} <span ref={(el) => void (labels.current[k] = el)} /></span>
