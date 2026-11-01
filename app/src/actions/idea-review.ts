@@ -53,7 +53,7 @@ Be an imaginative co-creator. There is NO fixed character/place/style questionna
 You may propose surprising but coherent alternatives even when the brief is clear. Present them as possibilities the creator can choose, never as facts about their story. Prefer meaningful contrasts that lead to different play or story outcomes, not cosmetic paraphrases. Respect explicit constraints and the audience. Do not invent ambiguity or add a twist merely to fill a quota. Keep questions concrete, usually 3–12 words, with ONE decision per question. A short question about motivation or a relationship is welcome; an abstract double-barrelled essay question is not.
 This is a visual creative experience with occasional text questions. Choose the subject freely, but do not turn the conversation into only verbal choices when tangible alternatives are available. A plot question can still be visual: choosing a mysterious ticket, a sealed letter or a numbered key should show those objects, even though they change the story.
 Each question has question (short wording), why (how this changes the adventure), presentation, options, and visuals only for picture choices. Choose presentation separately for EACH question:
-- "pictures" is the default for concrete, depictable alternatives, including story clues and obstacles: appearance, a recognizable object, a location, a visual mood. Offer 2–3 options with 1–4 word captions and exactly one matching visuals entry per option. Each entry is {"scene":"A concrete picture illustrating only this option in the story's context", "photo":optional input index}. Use photo only when the option IS the character/object/place in that input picture; otherwise omit photo and we generate a concept sketch. Do not use a merely related drawing.
+- "pictures" is the default for concrete, depictable alternatives, including story clues and obstacles: appearance, a recognizable object, a location, a visual mood. Offer 2–3 options with 1–4 word captions and exactly one matching visuals entry per option. Each entry is {"scene":"A concrete picture illustrating only this option in the story's context", "photo":optional input index}. Use photo only when the option IS the character/object/place in that input picture; otherwise omit photo and we generate a concept sketch. Never give two options of one question the same photo: options that are different things in one picture would look identical, so omit photo for all of them and let each scene show its own thing up close. Do not use a merely related drawing.
 - "text" when the difference is an abstract meaning best expressed in words, such as a motive, relationship, rule, consequence or dialogue. Do not choose text just because a question affects the plot; concrete objects, characters and scenes belong in pictures. Offer 2–3 short natural replies, usually 2–8 words, with no visuals field. Do not generate decorative pictures for abstract choices. Text is a first-class choice, not a failure or fallback. Use [] options only when an open reply is genuinely better.
 Ask 0–1 questions. The UI always lets the creator answer in their own words. Empty questions are welcome when nothing worthwhile remains. The UI hides why and the understanding summary; the question itself must feel like a conversational response to the creator's idea or latest reply.
 Use optional photo (zero-based index) or video {id,seconds} ONLY when the supplied evidence supports the reference. Do not claim to have seen gestures between sampled frames. For a movie refer to the actual name and timestamp in the question.
@@ -78,7 +78,7 @@ Do not build anything, rewrite the brief, decide for the creator or add unanswer
     for (let attempt = 0; attempt < 2; attempt++) {
       const answer = await askSparkJson(memo, { label: `idea-review#${attempt + 1}`, prompt: request, images, personal: true, schema: IdeaReview });
       const parsed = schema.safeParse(answer);
-      if (parsed.success) return parsed.data;
+      if (parsed.success) return distinctPictures(parsed.data);
       request = `${base}\nCorrect your invalid response ${JSON.stringify(answer)}: ${parsed.error.message}`;
     }
     fs.mkdirSync(path.dirname(retryFile), { recursive: true });
@@ -86,3 +86,17 @@ Do not build anything, rewrite the brief, decide for the creator or add unanswer
     throw new ActionError(502, 'The idea review could not finish. You can retry or skip and build from your original idea.');
   },
 });
+
+/**
+ * Options of one question that point at the same input photo would show the very same picture side by side (three
+ * cards of one room for "laptop, mug or bookshelf?"). Those options lose the photo, so each paints its own scene,
+ * with the photos still passed as references.
+ */
+export function distinctPictures<T extends { questions: Array<{ visuals?: Array<{ scene: string; photo?: number }> }> }>(review: T): T {
+  for (const q of review.questions) {
+    const counts = new Map<number, number>();
+    for (const v of q.visuals ?? []) if (v.photo !== undefined) counts.set(v.photo, (counts.get(v.photo) ?? 0) + 1);
+    for (const v of q.visuals ?? []) if (v.photo !== undefined && counts.get(v.photo)! > 1) delete v.photo;
+  }
+  return review;
+}
