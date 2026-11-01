@@ -1385,3 +1385,6 @@ button > .icon, .detail > .icon { margin-right: 2px; }
 .mouths .sheets { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0; margin: 4px 0 0; }
 .mouths .sheets li { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .mouths canvas { border-radius: 6px; background: var(--paper, #fff); max-width: 120px; }
+
+.pipeline .head .calls-kicker { font-size: 12px; cursor: help; }
+.pipeline .head .count .of { color: var(--faint, var(--muted)); font-size: 0.85em; }

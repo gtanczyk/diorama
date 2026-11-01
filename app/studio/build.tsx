@@ -161,7 +161,9 @@ const STEP_OPENS: Record<string, string> = {
 
 export const STEP_SHOWS: Record<string, LayerName> = { layout: 'blockin', paint: 'painting', masks: 'masks', plates: 'masks', derive: 'walk', backdrop: 'depth', weather: 'painting', reactions: 'painting' };
 
-export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: JobLike; all: string[]; live: Live; build: Record<string, { seconds: number; status?: string; warnings?: string[] }>; typical: Record<string, number>; onOpen?: (phase: string, step?: string) => void }) {
+export function Pipeline({ job, all, live, build, typical, total, onOpen }: { job?: JobLike; all: string[]; live: Live; build: Record<string, { seconds: number; status?: string; warnings?: string[] }>; typical: Record<string, number>;
+  /** The world's calls per model so far, every job together: the counts in the head are this job's. */
+  total?: Record<string, number>; onOpen?: (phase: string, step?: string) => void }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!job) return;
@@ -216,7 +218,9 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
     <section class={`pipeline${job ? ' on' : ''}`} aria-live="polite">
       <div class="row head">
         <strong>{job ? `${job.by === 'agent' ? 'Agent: ' : ''}${job.label}` : 'Build'}</strong>
-        {job && calls.map(([by, n]) => <span class={`count ${tone(by)}${fresh && live.lastCall?.by === by ? ' hot' : ''}`}><ModelTag by={by} /> {n}</span>)}
+        {/* This job's calls, each with the world's total beside it: a new job starts at 0, the world keeps counting. */}
+        {job && calls.length > 0 && <span class="detail calls-kicker" title="Model calls this job made. The number after 'of' is the whole world so far, every build and agent job together">this job</span>}
+        {job && calls.map(([by, n]) => <span class={`count ${tone(by)}${fresh && live.lastCall?.by === by ? ' hot' : ''}`} title={`${nowBy(by)}: ${n} call${n === 1 ? '' : 's'} in this job${total?.[by] ? `, ${Math.max(n, total[by])} for this world so far` : ''}`}><ModelTag by={by} /> {n}{total?.[by] ? <span class="of"> of {Math.max(n, total[by])}</span> : null}</span>)}
         {/* A step's raw line is cut to what it is doing ("barn-interior layout try 1"); the whole line is on hover. */}
         <span class="detail tail" title={job ? live.tail : undefined}>{job ? (fresh && live.lastCall ? `${nowBy(live.lastCall.by)}: ${live.lastCall.label}` : live.tail.split(/: |[.!?]\s/)[0].slice(0, 60)) : ''}</span>
         {when && <span class="detail when">{when}</span>}

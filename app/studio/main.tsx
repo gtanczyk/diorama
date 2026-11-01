@@ -49,7 +49,7 @@ type Job = { id: string; label: string; args: string[]; unplayable?: Array<{ pla
 type Note = { id: string; at: string; by: string; place?: string; point?: [number, number]; text: string; state: 'open' | 'done'; reply?: string };
 type Spend = { usd: number; priced: boolean; calls: Record<string, number> };
 type Budget = { total: Spend; today: Spend; limitUsd: number | null; creditsLeft: number | null; sparkTier: string; sparkVia: string | null; imageVia: string | null; elsewhere: { calls: number; usd: number }; over: boolean; prices: Record<string, number> };
-type Status = Summary & { world: { start: string } | null; placeDetail: PlaceDetail[]; build: Record<string, { seconds: number }>; typical?: Record<string, number>; calls: Record<string, number>; jobs: Job[]; audioMisses?: { sounds: Array<{ id: string; reason: string }>; lines: Array<{ speaker: string; text: string; reason: string }> } };
+type Status = Summary & { world: { start: string } | null; placeDetail: PlaceDetail[]; build: Record<string, { seconds: number }>; typical?: Record<string, number>; calls: Record<string, number>; callsVia?: Record<string, number>; jobs: Job[]; audioMisses?: { sounds: Array<{ id: string; reason: string }>; lines: Array<{ speaker: string; text: string; reason: string }> } };
 
 let steps: string[] = [];
 let quiet = new Set<string>();
@@ -789,6 +789,13 @@ function Workshop({ slug }: { slug: string }) {
   // its command is the step, running since the job started.
   const lone = job && job.args[0] !== 'build' && steps.includes(job.args[0]) ? job.args[0] : null;
   const loneRuns = !!lone && job!.state === 'running' && jobDone[lone] === undefined && !Object.values(running).includes('run');
+  // The world's calls so far, every job together, named as the live counts are (Claude standing in for Spark).
+  const worldCalls: Record<string, number> = {};
+  for (const [key, n] of Object.entries(status?.callsVia ?? {})) {
+    const [model, via] = key.split('|');
+    const by = callBy(model, via || undefined);
+    worldCalls[by] = (worldCalls[by] ?? 0) + n;
+  }
   const liveBuild: Live = {
     plan: job ? (ownPlan.length ? ownPlan : lone ? [lone] : []) : [],
     done: jobDone,
@@ -1020,14 +1027,14 @@ function Workshop({ slug }: { slug: string }) {
             {shownView.kind === 'play' && <Play slug={slug} place={playing?.place} round={playing?.round ?? 0} full={playing?.full} onRestart={() => setPlaying({ ...playing, round: (playing?.round ?? 0) + 1 })} version={tick} onLine={playLine} onError={setError} />}
             {shownView.kind === 'build' && status && (
               <div class="build-on-stage">
-                <Pipeline job={pipelineJob} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
+                <Pipeline job={pipelineJob} all={steps} live={liveBuild} total={worldCalls} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
                 {places.length > 1 && <BuildPlaces slug={slug} places={places} runs={placeRun} repairing={repairing} building={!!building} watched={watchedPlace} shown={stagePlace?.key} onWatch={(place) => onStage({ kind: 'build', place })} onFollow={() => onStage({ kind: 'build' })} />}
                 {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} hold={hold} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? named('Muse Spark is dreaming up the places…')}</span></div></div></figure>}
               </div>
             )}
             {shownView.kind === 'work' && status && (
               <div class="build-on-stage">
-                <Pipeline job={pipelineJob} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
+                <Pipeline job={pipelineJob} all={steps} live={liveBuild} total={worldCalls} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
                 {WORK_STEPS.includes(shownView.step ?? '')
                   ? <StepWorkStage slug={slug} step={shownView.step!} running={liveBuild.running[shownView.step!] === 'run'}
                       failed={liveBuild.running[shownView.step!] === 'fail' || (!job && failed?.args[0] === shownView.step) ? plainError(failed?.error ?? 'the step failed') : undefined} since={liveBuild.since[shownView.step!]} took={took(shownView.step!)} version={tick} />
@@ -1041,7 +1048,7 @@ function Workshop({ slug }: { slug: string }) {
             {shownView.kind === 'cast' && <CastStage slug={slug} version={tick} onOpen={(key) => setByHand(`#cast:${key}`)} />}
             {shownView.kind === 'place' && stagedPlace?.stages.painting && <button type="button" class="stage-tool" title="This place in detail: its things, floor, stand spots, lights and repaints, to fix by hand. Or just ask the agent" onClick={() => setByHand(stagedPlace.key)}><Icon name="pencil" /> Place details</button>}
             {shownView.kind === 'story' && (shownView.build && status ? <div class="build-on-stage">
-              <Pipeline job={pipelineJob} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
+              <Pipeline job={pipelineJob} all={steps} live={liveBuild} total={worldCalls} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
               <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} writing={liveBuild.running.story === 'run' ? { since: liveBuild.since.story, log: storyLog } : undefined} /></div>
             </div> : <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} writing={liveBuild.running.story === 'run' ? { since: liveBuild.since.story, log: storyLog } : undefined} /></div>)}
           </div>

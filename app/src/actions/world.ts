@@ -50,15 +50,17 @@ function readJson<T>(file: string): T | null {
 }
 
 /** Calls the models answered (sent, not memo hits) per model, from memo/calls.jsonl. */
-export function callCounts(dir: string): Record<string, number> {
+export function callCounts(dir: string, byVia = false): Record<string, number> {
   const counts: Record<string, number> = {};
   const log = path.join(dir, 'memo', 'calls.jsonl');
   if (!fs.existsSync(log)) return counts;
   for (const line of fs.readFileSync(log, 'utf8').split('\n')) {
     if (!line) continue;
     try {
-      const call = JSON.parse(line) as { model: string; hit: boolean };
-      if (!call.hit) counts[call.model] = (counts[call.model] ?? 0) + 1;
+      const call = JSON.parse(line) as { model: string; hit: boolean; via?: string };
+      // byVia: "model|via", so Studio names who answered (Claude standing in for Spark) as the live counts do.
+      const key = byVia ? `${call.model}|${typeof call.via === 'string' ? call.via : ''}` : call.model;
+      if (!call.hit) counts[key] = (counts[key] ?? 0) + 1;
     } catch {}
   }
   return counts;
@@ -160,6 +162,7 @@ defineAction({
       build: buildSteps,
       typical: typicalSeconds(ctx.root),
       calls: callCounts(dir),
+      callsVia: callCounts(dir, true),
       jobs: ctx.jobs.list(slug).slice(-10),
       audioMisses: audioMisses(ctx.root, slug, dir),
     };
