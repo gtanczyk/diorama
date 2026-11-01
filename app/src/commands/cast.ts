@@ -1,6 +1,10 @@
 import { worldStyleReference } from '../world/style-reference.ts';
 // diorama cast <slug>: the hero and every NPC of world.json as cut-out figures the runtime walks around.
 import fs from 'node:fs';
+import { bindExistingAnimation, bindAnimation } from '../scene/animation-source.ts';
+import { museEdit } from '../meta/muse.ts';
+import { askSparkJson } from '../meta/spark.ts';
+import { z } from 'zod';
 import { defineCommand, takeOption } from '../registry.ts';
 import { castBodies, cutHero, paintFigure, readBodies, type Who } from '../scene/cast.ts';
 import { samFind } from '../meta/sam.ts';
@@ -61,6 +65,7 @@ defineCommand({
       });
       if (!made) return;
       const { painting, figure } = made;
+      bindExistingAnimation(files, who.key);
       files.write(files.path('cast', `${who.key}-painting.png`), painting);
       files.write(files.path('cast', `${who.key}.png`), figure);
       markStyled(files, 'cast', who.key, style);
@@ -80,11 +85,29 @@ defineCommand({
  */
 export async function rigCast(files: WorldFiles, key: string, painting: Buffer) {
   try {
-    const { rig, parts, issues } = await rigFigure(files.memo, key, painting);
+    let { rig, parts, issues } = await rigFigure(files.memo, key, painting);
+    rig.check = rig.sheet ? await checkSheet(rig, parts[rig.sheet.file]) : undefined;
+    if (rig.check && !rig.check.ok) {
+      // Try a separate neutral source for the warp; never overwrite the creator's painting.
+      try {
+        const neutral = await museEdit(files.memo, { label: `rig-neutral:${key}`, images: [painting], size: '1024x1024',
+          prompt: 'The same character, identity, face, clothes, colours, proportions and every object they hold. Show the whole character standing still in a relaxed neutral walk-ready pose: both feet on the ground, legs slightly apart and visible, no stepping, no overlapping legs. Keep any carried object firmly in the same hand, complete and not touching the ground. No other objects. Plain flat background, no shadow, no text.' });
+        const schema = z.object({ matches: z.boolean(), neutral: z.boolean(), heldPreserved: z.boolean(), reason: z.string() });
+        const verdict = schema.parse(await askSparkJson(files.memo, { label: `rig-neutral-check:${key}`, schema, images: [painting,neutral], personal: true,
+          prompt: 'Compare the original and proposed neutral standing character. Check identity, clothing, colours and proportions match; legs are visible and not already walking; every object held in the original remains complete and held in the same hand. If none is held, heldPreserved is true. Reply JSON {"matches":true,"neutral":true,"heldPreserved":true,"reason":"short explanation"}.' }));
+        if (!verdict.matches || !verdict.neutral || !verdict.heldPreserved) throw new Error(verdict.reason || 'neutral pose did not preserve the original');
+        const candidate = await rigFigure(files.memo, key, neutral);
+        candidate.rig.check = candidate.rig.sheet ? await checkSheet(candidate.rig, candidate.parts[candidate.rig.sheet.file]) : undefined;
+        if (!candidate.rig.check?.ok) throw new Error(candidate.rig.check?.why ?? 'neutral walk did not pass');
+        rig = candidate.rig; parts = candidate.parts; issues = [...issues, 'walk prepared from a verified neutral pose'];
+      } catch (error) {
+        issues.push(`neutral walk could not be prepared: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     for (const name of PART_NAMES) fs.rmSync(files.path('cast', key, `${name}.png`), { force: true });
     for (const [file, png] of Object.entries(parts)) files.write(files.path('cast', key, file), png);
-    rig.check = rig.sheet ? await checkSheet(rig, parts[rig.sheet.file]) : undefined;
     files.write(files.path('cast', key, 'rig.json'), rig);
+    bindAnimation(files, key, 'rig');
     files.write(rigAttemptFile(files, key), { ok: true, reason: issues.length ? issues.join('; ') : null, at: new Date().toISOString() });
     const verdict = rig.check && !rig.check.ok ? ` · walk torn (${rig.check.why}): slides as one piece` : '';
     console.log(`${key}: ${files.path('cast', `${key}.png`)} · walk sheet ${rig.sheet?.frames ?? 0} frames${verdict}${issues.map((i) => ` · ${i}`).join('')}`);

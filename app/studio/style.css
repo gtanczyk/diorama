@@ -1265,13 +1265,14 @@ button > .icon, .detail > .icon { margin-right: 2px; }
 /* The sketch table stays alive while two brushes work through the queue. */
 .concept-art { animation: concept-art-reveal .85s cubic-bezier(.2,.65,.25,1) both; }
 .concept-previous { pointer-events: none; }
-.concept-placeholder { width: 100%; gap: 8px; }
-.concept-placeholder .review-sketch.compact { width: 70%; max-width: 200px; }
+.concept-placeholder { width: 100%; height: 100%; box-sizing: border-box; padding: 8px; gap: 5px; grid-template-rows: minmax(0, 1fr) auto auto; align-items: center; text-align: center; }
+.concept-placeholder .review-sketch.compact { width: auto; height: 100%; max-width: 70%; max-height: 120px; }
+.concept-placeholder .review-sketch.compact svg { width: 100%; height: 100%; }
 .concept-brush-trail { position: relative; display: block; width: 64px; height: 3px; border-radius: 50%; background: #c18a3e24; overflow: hidden; }
 .concept-brush-trail::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--amber); transform-origin: left; animation: concept-brush-stroke 2s ease-in-out infinite; }
 .is-queued .concept-brush-trail { opacity: .45; }
 .is-queued .concept-brush-trail::after { animation-duration: 3.5s; }
-.concept-paper-stack { position: relative; display: block; width: 80px; height: 82px; margin: 12px 0; }
+.concept-paper-stack { position: relative; display: block; width: 80px; height: min(82px, 100%); margin: 0; }
 .concept-paper-stack i { position: absolute; inset: 8px 12px; border: 1px solid #d0c2a9; border-radius: 2px; background: #faf6ed; box-shadow: 0 5px 8px #5944280b; transform: rotate(-8deg); }
 .concept-paper-stack i:nth-child(2) { transform: translate(5px, -3px) rotate(8deg); }
 .concept-paper-stack i:last-child { transform: translate(0, -6px) rotate(-2deg); animation: concept-paper-breathe 3.5s ease-in-out infinite; }
@@ -1310,3 +1311,8 @@ button > .icon, .detail > .icon { margin-right: 2px; }
 .custom-look-preview { max-width: 480px; margin: 20px auto; text-align: center; }
 .custom-look-preview img { width: 100%; display: block; border-radius: 5px; }
 .custom-look-preview p { color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+.storyboard-expand { margin: 24px 0; }
+.storyboard-expand form { max-width: 600px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.storyboard-expand label { display: grid; gap: 8px; font: italic 20px var(--display); }
+.storyboard-expand textarea { width: 100%; min-height: 76px; box-sizing: border-box; padding: 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: #faf6ee; color: var(--ink); font: 14px/1.5 var(--body); }

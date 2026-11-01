@@ -150,7 +150,8 @@ export function IdeaReview({ input, busy, error, onBuild, onBack }: {
       {waiting && <div class="review-thinking"><ReviewSketch /><div class="review-thinking-copy"><span class="review-kicker">At the drawing table</span><p class="review-says" role="status">{answers.length ? 'Got it. One moment…' : 'Let me look at your idea…'}</p><p class="review-aside">A few sketches before the adventure.</p><span class="review-ink-trail" aria-hidden="true" /></div></div>}
       {failure && <div role="alert"><p class="review-says">Let’s go with your idea. We can work out the details along the way.</p><button type="button" class="ghost small" disabled={busy} onClick={() => setAttempt(a => a + 1)}>Try asking again</button><details class="detail"><summary>Details</summary>{failure}</details></div>}
       {!waiting && !failure && <>
-        <p class="review-says">{question?.question ?? 'Next, choose your cast and places.'}</p>
+        <p class="review-says">{question?.question ?? 'Your story is ready for its first sketches.'}</p>
+        {!question && <p class="review-aside">Select <strong>Choose cast &amp; places</strong> below to see your characters and locations.</p>}
         {question?.photo !== undefined && input.photos[question.photo] && <img class="review-reference" src={input.photos[question.photo].data} alt={input.photos[question.photo].name} />}
         {question?.video && <p class="detail">Video {input.videos.indexOf(question.video.id) + 1} · {Math.floor(question.video.seconds / 60)}:{String(Math.floor(question.video.seconds % 60)).padStart(2, '0')}</p>}
         {question && <>

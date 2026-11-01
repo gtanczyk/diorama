@@ -81,6 +81,10 @@ export function IdeaStoryboard({ input, choices, busy, error, onBuild, onSkip }:
 }) {
   const [sketch, setSketch] = useState<Sketch | null>(null);
   const [failure, setFailure] = useState('');
+  const [expanding, setExpanding] = useState(false);
+  const [expandOpen, setExpandOpen] = useState(false);
+  const [wish, setWish] = useState('');
+  const [expandError, setExpandError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [selections, setSelections] = useState<Record<string, number>>({});
   const [pending, setPending] = useState<Record<string, boolean>>({});
@@ -93,8 +97,15 @@ export function IdeaStoryboard({ input, choices, busy, error, onBuild, onSkip }:
     return () => { current = false; };
   }, [input, choices, attempt]);
   useEffect(() => { if (!busy) submitting.current = false; }, [busy]);
-  const ready = !!sketch && sketch.assets.every(a => Number.isInteger(selections[`${a.kind}:${a.key}`]) && !pending[`${a.kind}:${a.key}`]);
-  const generating = !sketch && !failure || Object.values(working).some(Boolean);
+  const ready = !expanding && !!sketch && sketch.assets.every(a => Number.isInteger(selections[`${a.kind}:${a.key}`]) && !pending[`${a.kind}:${a.key}`]);
+  const generating = expanding || !sketch && !failure || Object.values(working).some(Boolean);
+  const expand = async () => {
+    if (!sketch || !ready || wish.trim().length < 3) return;
+    setExpanding(true); setExpandError('');
+    try { const revised = await call<Sketch>('idea_sketch_expand', { id: sketch.id, wish: wish.trim() }); setSketch(revised); setExpandOpen(false); setWish(''); }
+    catch (error) { setExpandError((error as Error).message); }
+    finally { setExpanding(false); }
+  };
   return <div class="idea-storyboard" data-lightbox-group>
     {!sketch && !failure ? <div class="review-thinking"><ReviewSketch /><div class="review-thinking-copy"><span class="review-kicker">The first sketches</span><p class="review-says" role="status">Finding your characters and places…</p><p class="review-aside">Your cast. Your corners of the world.</p><span class="review-ink-trail" aria-hidden="true" /></div></div> : <p class="review-says">{sketch ? <>Meet <em>your world.</em></> : 'The preview needs another try.'}</p>}
     {sketch && <>
@@ -108,6 +119,14 @@ export function IdeaStoryboard({ input, choices, busy, error, onBuild, onSkip }:
         })}</div>
       </section>)}
     </>}
+    {sketch && <section class="storyboard-expand">
+      {!expandOpen ? <button type="button" class="ghost" disabled={busy || !ready} onClick={() => setExpandOpen(true)}>Add characters or places…</button> : <form onSubmit={e => { e.preventDefault(); void expand(); }}>
+        <label>Who else, or where else?<textarea value={wish} maxLength={600} disabled={expanding} placeholder="For example: two more fans and a place beneath the stands" onInput={e => setWish(e.currentTarget.value)} /></label>
+        <p class="detail">Your current choices stay. New sketches use additional model calls; worlds can have up to eight places.</p>
+        <div class="concept-edit-tools"><button type="button" class="ghost small" disabled={expanding} onClick={() => { setExpandOpen(false); setExpandError(''); }}>Cancel</button><button type="submit" class="primary small" disabled={busy || !ready || wish.trim().length < 3}>{expanding ? 'Adding…' : 'Add to my world'}</button></div>
+        {expandError && <p role="alert" class="error">{expandError}</p>}
+      </form>}
+    </section>}
     {failure && <div role="alert"><button type="button" class="ghost" disabled={busy} onClick={() => setAttempt(n => n + 1)}>Retry preview</button><details class="detail"><summary>Details</summary>{failure}</details></div>}
     {error && <p class="error" role="alert">{error}</p>}
     <footer><button type="button" class="ghost" disabled={busy} onClick={onSkip}>Skip & build</button><button type="button" class="primary" aria-busy={busy || generating} disabled={busy || !ready} onClick={() => { if (ready && sketch && !submitting.current) { submitting.current = true; onBuild({ id: sketch.id, selections }); } }}>{(busy || generating) && <span class="review-spinner" aria-hidden="true" />}{busy ? 'Starting the build…' : 'Build this version'}</button></footer>

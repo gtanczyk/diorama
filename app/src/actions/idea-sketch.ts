@@ -121,3 +121,52 @@ ${reference ? 'The last image is an additional reference supplied for this revis
     });
   },
 });
+
+// Revise a copy of the plan; the accepted concept files and original draft remain intact.
+defineAction({
+  name: 'idea_sketch_expand',
+  description: 'Add characters or places to a copy of a reviewed world plan while preserving its existing subjects and concept images. Does not start the game build.',
+  input: z.object({ id: SketchId, wish: z.string().trim().min(3).max(600) }),
+  async run({ id, wish }, ctx) {
+    const source = sketchFiles(ctx.root, id), record = source.readJson(source.path('sketch.json')) as SketchRecord;
+    if (record.publication) throw new ActionError(409, 'This preview was already built. Start a new preview to change it.');
+    const bytes = fs.readFileSync(source.path('world.json'));
+    if (record.worldHash !== inputHash(bytes)) throw new ActionError(409, 'The preview changed. Open it again.');
+    const original = source.world(), nextId = inputHash('expand-v1', id, record.worldHash, wish), next = sketchFiles(ctx.root, nextId);
+    return once(next.dir, async () => {
+      if (!fs.existsSync(next.path('sketch.json'))) {
+        const { askSparkJson } = await import('../meta/spark.ts');
+        const { World, checkWorld } = await import('../world/schema.ts');
+        const oldAssets = sketchAssets(original);
+        const prompt = `Expand this existing point-and-click world according to the creator's request: ${JSON.stringify(wish)}.\nOriginal world JSON: ${JSON.stringify(original)}\nReturn a complete updated world in the same schema. Keep the title, pitch, style, start, hero, language, audience, all existing names, existing places and all their current things and exits exactly unchanged. Add new NPCs to suitable places and/or add new places as requested, with unique keys, appearances and names in the story language. A new place must connect to the old world with reciprocal exits and exit things. You may add exit things and exits to existing places, but never alter existing elements. At most eight places and ten things per place. Reply with the complete JSON world only.`;
+        const result = await askSparkJson(source.memo, { schema: World, label: 'idea-sketch-expand', prompt, personal: true });
+        const checked = checkWorld(result);
+        if (!checked.world) throw new ActionError(502, `Could not make a connected expanded world: ${checked.issues.join('; ')}`);
+        const world = checked.world;
+        const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+        for (const field of ['title','pitch','style','start','hero','language','audience'] as const) if (!same(original[field],world[field])) throw new ActionError(502, `The expanded plan changed the existing ${field}. Try again.`);
+        for (const [key, name] of Object.entries(original.names ?? {})) if (world.names?.[key] !== name) throw new ActionError(502, 'The expanded plan changed an existing name. Try again.');
+        for (const place of original.places) {
+          const revised = world.places.find(p => p.key === place.key);
+          if (!revised || revised.shows !== place.shows || revised.mood !== place.mood || !same(revised.taken, place.taken) || place.things.some(t => !revised.things.some(v => same(t,v))) || place.exits.some(e => !revised.exits.some(v => same(e,v)))) throw new ActionError(502, 'The expanded plan changed an existing place. Try again.');
+          if (revised.things.some(t => !place.things.some(v => same(t,v)) && t.role !== 'npc' && t.role !== 'exit')) throw new ActionError(502, 'The expanded plan changed existing objects. Try again.');
+        }
+        const assets = sketchAssets(world);
+        if (assets.length <= oldAssets.length) throw new ActionError(502, 'No new characters or places were added. Try a more specific request.');
+        if (oldAssets.some(a => !assets.some(b => same(a,b)))) throw new ActionError(502, 'The expanded plan changed an existing character. Try again.');
+        const current = source.readJson(source.path('sketch.json')) as SketchRecord;
+        if (current.publication || current.worldHash !== record.worldHash || inputHash(fs.readFileSync(source.path('world.json'))) !== record.worldHash) throw new ActionError(409, 'The preview changed while adding to it. Open it again.');
+        const temp = fs.mkdtempSync(path.join(path.dirname(next.dir), '.expand-'));
+        try {
+          fs.cpSync(source.dir, temp, { recursive: true });
+          const worldBytes = Buffer.from(`${JSON.stringify(world, null, 2)}\n`);
+          fs.writeFileSync(path.join(temp, 'world.json'), worldBytes);
+          fs.writeFileSync(path.join(temp, 'sketch.json'), `${JSON.stringify({ ...record, worldHash: inputHash(worldBytes) }, null, 2)}\n`);
+          fs.renameSync(temp, next.dir);
+        } catch (error) { fs.rmSync(temp, { recursive: true, force: true }); throw error; }
+      }
+      const world = next.world();
+      return { id: nextId, title: world.title, pitch: world.pitch, assets: sketchAssets(world) };
+    });
+  },
+});

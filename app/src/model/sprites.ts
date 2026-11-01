@@ -30,7 +30,10 @@ export const SHEET = { cols: 4, rows: 2, width: 1200, height: 896, feetAt: 0.95,
 export function modelSheet(frames: number) {
   if (![8, 16, 32].includes(frames)) throw new Error('Model sprites require 8, 16 or 32 walk frames');
   const rows = Math.ceil((frames + 1) / SHEET.cols);
-  return { ...SHEET, rows, frames, height: rows * (SHEET.height / SHEET.rows) };
+  // Keep painted 8-cell guides unchanged. Direct UV sheets have no provider size limit:
+  // render each cell at 1.5x in both axes to retain finer facial and hand detail.
+  const scale = 1.5;
+  return { ...SHEET, rows, frames, width: SHEET.width * scale, height: rows * (SHEET.height / SHEET.rows) * scale, px: SHEET.px * scale };
 }
 
 const GREY = { r: 217, g: 217, b: 217 };

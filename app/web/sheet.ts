@@ -16,7 +16,8 @@ let figure: Promise<Figure3D> | undefined;
 const CLAY = { sky: 0xffffff, ground: 0x777777, ambient: 1.1, key: { dir: [-1, 2, 3] as [number, number, number], color: 0xffffff, intensity: 2.2 } };
 
 (window as unknown as { renderSheet: (a: SheetAsk) => Promise<string> }).renderSheet = async (a) => {
-  figure ??= Figure3D.load(a.info, (f) => `${a.base}/${f}`, 2);
+  // UV textures already carry their painted detail; the guide's heavy painterly filter blurs faces.
+  figure ??= Figure3D.load(a.info, (f) => `${a.base}/${f}`, a.info.texture === 'model' ? 0 : 2);
   const fig = await figure;
   if (a.plain) fig.plain();
   const out = document.createElement('canvas');

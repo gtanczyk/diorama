@@ -1,5 +1,6 @@
 // diorama play <slug>: serves the world to a browser page where you walk through its places.
 import fs from 'node:fs';
+import { animationCurrent } from '../scene/animation-source.ts';
 import { registeredFace } from '../scene/faces-data.ts';
 import http from 'node:http';
 import path from 'node:path';
@@ -91,14 +92,14 @@ export function worldData(files: WorldFiles) {
     .map((f) => {
       const key = f.slice(0, -4);
       // A walk that measured torn when it was made (rig.json check) is left out: the painted figure slides as one piece.
-      const rig = fs.existsSync(files.path('cast', key, 'rig.json')) ? Rig.parse(files.readJson(files.path('cast', key, 'rig.json'))) : undefined;
+      const rig = animationCurrent(files,key,'rig') && fs.existsSync(files.path('cast', key, 'rig.json')) ? Rig.parse(files.readJson(files.path('cast', key, 'rig.json'))) : undefined;
       // cast/<key>/model/model.json (diorama model): a rigged 3D figure the page draws instead of the 2D rig.
       // A flat one (a card TRELLIS made of a flat drawing, kept before the model step checked) is left out, and so
       // are the sheets painted over its guides: the character walks with its 2D rig.
-      const modelOk = fs.existsSync(files.path('cast', key, 'model', 'model.json')) && !modelProblem(files.path('cast', key, 'model'));
+      const modelOk = animationCurrent(files,key,'model') && fs.existsSync(files.path('cast', key, 'model', 'model.json')) && !modelProblem(files.path('cast', key, 'model'));
       const model = modelOk ? { dir: `cast/${key}/model`, info: files.readJson(files.path('cast', key, 'model', 'model.json')) as ModelInfo } : undefined;
       // cast/<key>/sprites/sprites.json (diorama sprites): painted walk sheets, preferred over the 3D figure.
-      const sprites = modelOk && fs.existsSync(files.path('cast', key, 'sprites', 'sprites.json')) ? { dir: `cast/${key}/sprites`, info: files.readJson(files.path('cast', key, 'sprites', 'sprites.json')) as SpriteInfo } : undefined;
+      const sprites = modelOk && animationCurrent(files,key,'sprites') && fs.existsSync(files.path('cast', key, 'sprites', 'sprites.json')) ? { dir: `cast/${key}/sprites`, info: files.readJson(files.path('cast', key, 'sprites', 'sprites.json')) as SpriteInfo } : undefined;
       const face = registeredFace(files, key);
       const body = bodies[key];
       // Sheets rendered straight from the model's UV texture (model-*.png, no Muse paint) are a blurry stand-in

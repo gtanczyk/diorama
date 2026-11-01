@@ -168,3 +168,37 @@ test('a chosen style reference survives planning and publication and guides prev
   const built = await runAction('world_new', { ...withStyle, sketch: { id: sketch.id, selections } }, ctx) as { slug: string };
   expect(fs.readFileSync(path.join(root, built.slug, 'style-reference.png'))).toEqual(png);
 });
+
+test('expanding a preview preserves the old plan and paid concepts in a new connected draft', async () => {
+  const sketch = await plan();
+  const selections = await paint(sketch);
+  const old = sketchFiles(root, sketch.id);
+  const expanded: World = structuredClone(world);
+  expanded.places[0].things.push({key:'arch',role:'exit',looks:'An old stone arch'}, {key:'fox',role:'npc',looks:'A friendly little fox'});
+  expanded.places[0].exits.push({to:'garden',via:'arch'});
+  expanded.places.push({key:'garden',shows:'A quiet garden filled with flowers',mood:'peaceful',things:[{key:'gate',role:'exit',looks:'A wooden garden gate'}],exits:[{to:'home',via:'gate'}]});
+  expanded.names = {...expanded.names,fox:'Lis',garden:'Ogród'};
+  vi.mocked(askSparkJson).mockResolvedValue(expanded);
+  const revised = await runAction('idea_sketch_expand',{id:sketch.id,wish:'Dodaj lisa i ogród'},ctx) as Sketch;
+  expect(revised.id).not.toBe(sketch.id);
+  expect(revised.assets.map(assetId)).toContain('character:fox');
+  expect(revised.assets.map(assetId)).toContain('place:garden');
+  expect(old.world()).toEqual(world);
+  const next=sketchFiles(root,revised.id);
+  for (const asset of sketch.assets) expect(fs.readFileSync(next.path('concepts',asset.kind,`${asset.key}-${selections[assetId(asset)]}.png`))).toEqual(png);
+  for (const asset of revised.assets.filter(a=>!sketch.assets.some(b=>assetId(a)===assetId(b)))) {
+    await runAction('idea_sketch_image',{id:revised.id,kind:asset.kind,key:asset.key},ctx);
+    selections[assetId(asset)]=0;
+  }
+  await runAction('world_new',{...input,sketch:{id:revised.id,selections}},ctx);
+  expect(new WorldFiles('dragon-post',root).world()).toEqual(expanded);
+  expect((await runAction('idea_sketch_expand',{id:sketch.id,wish:'Dodaj lisa i ogród'},ctx) as Sketch).id).toBe(revised.id);
+});
+
+test('expanding refuses to change previously approved characters', async()=>{
+  const sketch=await plan(),changed=structuredClone(world);
+  changed.hero.looks='A completely different purple dragon';
+  vi.mocked(askSparkJson).mockResolvedValue(changed);
+  await expect(runAction('idea_sketch_expand',{id:sketch.id,wish:'Dodaj kogoś'},ctx)).rejects.toThrow(/changed the existing hero/);
+  expect(sketchFiles(root,sketch.id).world()).toEqual(world);
+});

@@ -14,7 +14,7 @@ test.each([16, 32] as const)('UV generation publishes %i walking poses, separate
   vi.mocked(renderGuides).mockResolvedValue({ right: Buffer.from('rendered') });
   await drawModelCharacter(files, plan, { texture: 'model', frames });
   const info = files.readJson(files.path('cast', 'hero', 'sprites', 'sprites.json')) as any;
-  expect(info).toMatchObject({ frames, cols: 4, rows: frames / 4 + 1, width: 1200, height: (frames / 4 + 1) * 448, facings: { right: { stand: frames, off: [] } }, talk: { right: { gestures: ['listen', 'explain'] } }, lines: plan.lines });
+  expect(info).toMatchObject({ frames, cols: 4, rows: frames / 4 + 1, width: 1800, height: (frames / 4 + 1) * 672, px: 577.5, facings: { right: { stand: frames, off: [] } }, talk: { right: { gestures: ['listen', 'explain'] } }, lines: plan.lines });
   expect(fs.existsSync(files.path('cast', 'hero', 'sprites', info.talk.right.sheet))).toBe(true);
   expect(renderGuides).toHaveBeenNthCalledWith(1, files.path('cast', 'hero', 'model'), ['right'], undefined, false, { texture: 'model', frames });
   expect(renderGuides).toHaveBeenNthCalledWith(2, files.path('cast', 'hero', 'model'), ['right'], [0, 2], false, { texture: 'model', frames });

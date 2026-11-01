@@ -1,3 +1,4 @@
+import { exitOutline } from '../src/play/exit-outline.ts';
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
 import { hashSeed } from '../src/play/weather.ts';
 import { FLAME_GLOW, FLAME_SWAY_M, flameAt, depthStretch, flicker, floorYAt, hiddenRuns, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
@@ -44,7 +45,7 @@ type Data = {
 
 type Bits = { bits: Uint8Array; area: number };
 type Who = { npc?: Hot; body?: Body; y: number };
-type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement; outline?: HTMLCanvasElement; npc?: Npc };
+type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement; outline?: HTMLCanvasElement; outlineBox?: Rect; npc?: Npc };
 type Rect = [number, number, number, number];
 /** sprites.json, written by `diorama sprites`: one walk cycle per facing, a cols x rows grid of frames per sheet. */
 export type SpriteInfo = {
@@ -1806,7 +1807,12 @@ class Game {
 
   /** A glowing line along the edge of the thing's mask (its box, when it has no mask). */
   private drawOutline(hot: Hot) {
-    const [bx0, by0, bx1, by1] = hot.thing.box.map(Math.round);
+    if (hot.mask && !hot.outline) {
+      const coverage = exitOutline(hot.mask, { ...hot.thing, role: hot.spec?.role ?? hot.thing.role }, this.place.g);
+      hot.outlineBox = coverage?.box ?? hot.thing.box;
+      hot.outline = edgeCanvas(coverage?.mask ?? hot.mask, this.place.g.frame.width, hot.outlineBox.map(Math.round) as Rect);
+    }
+    const [bx0, by0, bx1, by1] = (hot.outlineBox ?? hot.thing.box).map(Math.round);
     ctx.save();
     ctx.shadowColor = 'rgba(255,225,150,0.9)';
     ctx.shadowBlur = 8;
@@ -1817,8 +1823,7 @@ class Game {
       ctx.roundRect(bx0, by0, bx1 - bx0, by1 - by0, 8);
       ctx.stroke();
     } else {
-      hot.outline ??= edgeCanvas(hot.mask, this.place.g.frame.width, [bx0, by0, bx1, by1]);
-      ctx.drawImage(hot.outline, bx0 - 2, by0 - 2);
+      ctx.drawImage(hot.outline!, bx0 - 2, by0 - 2);
     }
     ctx.restore();
   }

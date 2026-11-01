@@ -116,7 +116,7 @@ export function loneMatch(found: Rect, box: Rect): boolean {
 }
 
 /** The instances that belong to the thing: the one nearest its box, plus any others mostly inside it. */
-export function pickInstances(found: Found[], prior: Rect): Mask | undefined {
+export function pickInstances(found: Found[], prior: Rect, passage = false): Mask | undefined {
   if (found.length === 0) return undefined;
   const scored = found.map((f) => {
     const box = fromBox(f.box);
@@ -128,7 +128,7 @@ export function pickInstances(found: Found[], prior: Rect): Mask | undefined {
   const keep = scored.filter((s) => s === best || s.inside > 0.6);
   const mask = unionAll(W, H, keep.map((s) => s.f.mask));
   // Stray specks of a lossy mask would each become an occluder later.
-  return withoutSpecks(mask, Math.max(60, maskArea(mask) * 0.03));
+  return withoutSpecks(mask, passage ? 8 : Math.max(60, maskArea(mask) * 0.03));
 }
 
 /**
@@ -183,12 +183,13 @@ export async function maskThings(memo: Memo, place: Place, layout: Layout, spots
     const sparkBox = spot.box && clampRect(spot.box, W, H);
     let prior = sparkBox && rectArea(sparkBox) > 0 ? sparkBox : layoutBox(layout, t.key)!;
     // The phrase, Spark's other name for it, then the head noun: SAM often knows "can" when it misses "brass oil can".
-    const phrases = [...new Set([spot.phrase, spot.also, spot.phrase.trim().split(/\s+/).at(-1)].filter((p): p is string => !!p?.trim()))];
+    const passage = t.role === 'exit' && (spot.kind === 'walk-on' || spot.kind === 'flat');
+    const phrases = [...new Set([...(passage ? [`entire ${spot.phrase}, all visible steps and landings up to the edge of the image`] : []), spot.phrase, spot.also, spot.phrase.trim().split(/\s+/).at(-1)].filter((p): p is string => !!p?.trim()))];
     let mask: Mask | undefined;
     let lone: Found | undefined;
     for (const [i, phrase] of phrases.entries()) {
       const found = await samFind(memo, { label: `mask:${place.key}/${t.key}${i ? `~${phrase}` : ''}`, image: painting, prompt: phrase });
-      mask = pickInstances(found, prior);
+      mask = pickInstances(found, prior, passage);
       if (mask) break;
       if (found.length === 1 && !lone) lone = found[0];
     }

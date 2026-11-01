@@ -170,3 +170,30 @@ test('the Studio model job finishes a new hero with automatic UV sprites, withou
     expect(worldData(files).cast.hero).toHaveProperty('sprites');
   } finally { process.chdir(cwd); }
 });
+
+test('changing a figure or its model does not play stale sprite sheets', async () => {
+  const { bindExistingAnimation, bindAnimation } = await import('../src/scene/animation-source.ts');
+  files.write(files.path('cast','figures.json'), {hero:{height:1.6,upright:true}});
+  files.write(files.path('cast','hero','model','model.glb'),valid);
+  files.write(files.path('cast','hero','model','model.json'),{glb:'model.glb',views:{}});
+  files.write(files.path('cast','hero','sprites','sprites.json'),{facings:{}});
+  files.write(files.path('cast','hero','rig.json'),{size:[10,10],ground:9,height:9,hip:[5,5],shoulder:{near:[4,2],far:[6,2]},leg:{near:{knee:[4,6],ankle:[4,9]},far:{knee:[6,6],ankle:[6,9]}},parts:[],sheet:{file:'walk.png',cols:4,rows:3,frames:8,cell:[10,10],scale:1}});
+  files.write(files.path('cast','hero','walk.png'),Buffer.from('old walk'));
+  bindExistingAnimation(files,'hero');
+  expect(worldData(files).cast.hero).toHaveProperty('sprites');
+  expect(worldData(files).cast.hero).toHaveProperty('rig');
+  files.write(files.path('cast','hero','model','model.glb'),boxGlb([1.1,1,.4]));
+  expect(worldData(files).cast.hero).toHaveProperty('model');
+  expect(worldData(files).cast.hero).not.toHaveProperty('sprites');
+  bindAnimation(files,'hero','sprites');
+  expect(worldData(files).cast.hero).toHaveProperty('sprites');
+  files.write(files.path('cast','hero','model','front.png'),Buffer.from('new projected view'));
+  expect(worldData(files).cast.hero).not.toHaveProperty('sprites');
+  bindAnimation(files,'hero','sprites');
+  files.write(files.path('cast','hero-painting.png'),Buffer.from('new figure'));
+  expect(worldData(files).cast.hero).not.toHaveProperty('model');
+  expect(worldData(files).cast.hero).not.toHaveProperty('sprites');
+  expect(worldData(files).cast.hero).not.toHaveProperty('rig');
+  expect(fs.existsSync(files.path('cast','hero','walk.png'))).toBe(true);
+  expect(fs.existsSync(files.path('cast','hero','sprites','sprites.json'))).toBe(true);
+});

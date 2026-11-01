@@ -1,6 +1,7 @@
 // diorama model <slug> [key]: a character as a rigged 3D model, painted by Muse from four sides. Without a
 // key, everyone the sprites plan needs (the hero, NPCs who speak): the model is where their poses come from.
 import fs from 'node:fs';
+import { bindExistingAnimation, bindAnimation } from '../scene/animation-source.ts';
 import { refusedByFilter } from '../scene/words.ts';
 import { defineCommand, registry, takeOption } from '../registry.ts';
 import { autoRig, reconstruct } from '../model/build.ts';
@@ -94,8 +95,10 @@ function attemptReason(files: WorldFiles, key: string): string {
 
 export async function buildModel(files: WorldFiles, key: string, take: number, given: string): Promise<boolean> {
   const attempt = files.path('cast', key, 'model', 'attempt.json');
+  bindExistingAnimation(files, key);
   try {
     const reason = await makeModel(files, key, take, given);
+    if (!reason) bindAnimation(files, key, 'model');
     files.write(attempt, { state: reason ? 'fallback' : 'ready', reason, at: new Date().toISOString() });
     return !reason;
   } catch (error) {

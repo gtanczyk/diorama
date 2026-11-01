@@ -1,6 +1,7 @@
 // The cast: the hero and every NPC, how each looks, which parts the runtime has for them (cut-out, rig,
 // 3D model, sprite sheets) and which voice speaks their lines. Fixes go to cast/fixes.json.
 import fs from 'node:fs';
+import { animationCurrent } from '../scene/animation-source.ts';
 import path from 'node:path';
 import { z } from 'zod';
 import { CastFixes, castFixesFile, readCastFixes } from '../scene/cast-fixes.ts';
@@ -90,11 +91,11 @@ defineAction({
         figure: pic(`cast/${c.key}.png`),
         face: faceStatus(files, c.key),
         painting: pic(`cast/${c.key}-painting.png`),
-        rig: fs.existsSync(files.path('cast', c.key, 'rig.json')),
+        rig: animationCurrent(files,c.key,'rig') && fs.existsSync(files.path('cast', c.key, 'rig.json')),
         ...(() => {
           const file = files.path('cast', c.key, 'rig-attempt.json');
           const a = fs.existsSync(file) ? RigAttempt.safeParse(files.readJson(file)) : null;
-          return { rigIssue: a?.success && !a.data.ok ? a.data.reason : null };
+          return { rigIssue: !animationCurrent(files,c.key,'rig') ? 'The figure changed; rebuild the 2D walk.' : a?.success && !a.data.ok ? a.data.reason : null };
         })(),
         // Metres tall and whether upright on two legs; not upright (a creature) moves as one body, no 2D rig or sheets.
         body: bodies[c.key] ?? null,
@@ -104,10 +105,10 @@ defineAction({
           const attemptFile = files.path('cast', c.key, 'model', 'attempt.json');
           const parsed = fs.existsSync(attemptFile) ? ModelAttempt.safeParse(files.readJson(attemptFile)) : null;
           const modelAttempt = parsed?.success ? parsed.data : null;
-          const modelIssue = has ? modelProblem(files.path('cast', c.key, 'model')) : modelAttempt?.reason ?? null;
+          const modelIssue = has ? !animationCurrent(files,c.key,'model') ? 'The figure changed; rebuild the 3D model.' : modelProblem(files.path('cast', c.key, 'model')) : modelAttempt?.reason ?? null;
           const pending = pendingModel(ctx, slug, c.key);
-          const sprites = !modelIssue && fs.existsSync(files.path('cast', c.key, 'sprites', 'sprites.json'));
-          const rigged = fs.existsSync(files.path('cast', c.key, 'rig.json'));
+          const sprites = has && !modelIssue && animationCurrent(files,c.key,'sprites') && fs.existsSync(files.path('cast', c.key, 'sprites', 'sprites.json'));
+          const rigged = animationCurrent(files,c.key,'rig') && fs.existsSync(files.path('cast', c.key, 'rig.json'));
           const creature = bodies[c.key]?.upright === false;
           // What the game does with them, in the order it prefers: the person sees the fallback, not a silent gap.
           const moves = !fs.existsSync(files.path('cast', `${c.key}.png`)) ? 'not painted: a stand-in'
@@ -116,7 +117,7 @@ defineAction({
           // Walk sheets whose frames left the pose (Muse turned some frames to another facing): the walk stutters there.
           const sheet = sprites ? z.object({ facings: z.record(z.string(), z.object({ iou: z.array(z.number()).optional() })).optional() }).safeParse(files.readJson(files.path('cast', c.key, 'sprites', 'sprites.json'))) : null;
           const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
-          const spriteIssues = sheet?.success ? Object.entries(sheet.data.facings ?? {}).filter(([, f]) => f.iou?.length && mean(f.iou) < POSE_OK).map(([f, x]) => `walk ${f}: frames left the pose (pose IoU ${mean(x.iou!).toFixed(2)}); sprites_redo paints new takes`) : [];
+          const spriteIssues = !animationCurrent(files,c.key,'sprites') ? ['The figure or model changed; rebuild the sprite sheets.'] : sheet?.success ? Object.entries(sheet.data.facings ?? {}).filter(([, f]) => f.iou?.length && mean(f.iou) < POSE_OK).map(([f, x]) => `walk ${f}: frames left the pose (pose IoU ${mean(x.iou!).toFixed(2)}); sprites_redo paints new takes`) : [];
           return {
             model: has && !modelIssue, sprites, modelIssue, modelAttempt, moves, spriteIssues,
             modelJob: pending ? { id: pending.id, state: pending.state } : null,

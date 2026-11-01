@@ -1,6 +1,7 @@
 // diorama sprites <slug> [key]: walk and talk sprite sheets drawn by Muse over the rigged model's poses,
 // only those the world and its story use (src/model/plan.ts).
 import fs from 'node:fs';
+import { bindExistingAnimation, bindAnimation } from '../scene/animation-source.ts';
 import path from 'node:path';
 import { gestureIndex } from '../play/gestures.ts';
 import { defineCommand, takeOption } from '../registry.ts';
@@ -57,6 +58,7 @@ defineCommand({
         console.log(`${p.key}: model is ${bad}, skipped: walks with the 2D rig (diorama model ${slug} ${p.key} tries again)`);
         continue;
       }
+      bindExistingAnimation(files, p.key);
       const selected = settings.get(p.key)!;
       if (selected.texture === 'model') await drawModelCharacter(files, p, selected);
       else {
@@ -71,6 +73,7 @@ defineCommand({
       else delete model.texture;
       if (selected.coatCorrection !== undefined) model.coatCorrection = selected.coatCorrection;
       files.write(modelFile, model);
+      bindAnimation(files, p.key, 'sprites');
     }
     console.log(`calls sent: muse ${files.memo.sent.muse}, spark ${files.memo.sent.spark}`);
   },

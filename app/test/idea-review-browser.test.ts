@@ -55,7 +55,7 @@ test('one conversational question at a time, optional looks, and explicit choice
     await page.getByRole('region', { name: 'Shape your world' }).screenshot({ path: '/tmp/diorama-idea-review-mobile.png' });
     await page.getByRole('textbox', { name: 'Your reply' }).fill('Sowy, ale smok go pożyczył. Bez walki.');
     await page.getByRole('button', { name: 'Send reply' }).click();
-    await page.getByText('Next, choose your cast and places.').waitFor();
+    await page.getByText('Your story is ready for its first sketches.').waitFor();
     expect(requests[1].choices.answers).toEqual([{ question: 'Czyj to klucz?', answer: 'Sowy, ale smok go pożyczył. Bez walki.' }]);
     await page.getByRole('button', { name: 'Show me some looks' }).click();
     await page.getByRole('button', { name: /^Ołówek/ }).click();
@@ -477,7 +477,7 @@ test.each(['choose', 'dismiss', 'build'])('an all-text conversation offers looks
     } else if (action === 'dismiss') {
       await looks.getByRole('button', { name: 'Not now', exact: true }).click();
       expect(await looks.count()).toBe(0);
-      await page.getByText('Next, choose your cast and places.').waitFor();
+      await page.getByText('Your story is ready for its first sketches.').waitFor();
       expect(images).toHaveLength(2);
     }
     await page.getByRole('button', { name: 'Skip & build now', exact: true }).click();
@@ -576,4 +576,55 @@ test('every look card has a magnifier that opens its picture big without choosin
     await page.keyboard.press('Escape');
     expect(await page.locator('.idea-card.selected').count()).toBe(0);
   } finally { await page.close(); }
+});
+
+test('queued and sketching labels fit in their cards at desktop and mobile sizes', async () => {
+  const page=await browser.newPage({viewport:{width:1100,height:900}});
+  let release!:()=>void;
+  const gate=new Promise<void>(r=>{release=r;});
+  try {
+    await page.route('**/api/actions/idea_review',r=>r.fulfill({json:{result:{...result,questions:[]}}}));
+    await page.route('**/api/actions/idea_sketch',r=>r.fulfill({json:{result:{id:'d'.repeat(32),title:'World',pitch:'A little world',assets:['one','two','three'].map(key=>({kind:'character',key,label:key,role:'npc',looks:'A small animal'}))}}}));
+    await page.route('**/api/actions/idea_sketch_image',async r=>{await gate;await r.abort().catch(()=>{});});
+    await open(page);
+    await page.getByText('Your story is ready for its first sketches.').waitFor();
+    expect(await page.getByText('Select Choose cast & places below to see your characters and locations.').isVisible()).toBe(true);
+    await page.getByRole('button',{name:'Choose cast & places'}).click();
+    await page.getByText('Waiting for a brush…',{exact:true}).first().waitFor();
+    for(const width of [1100,390]) {
+      await page.setViewportSize({width,height:900});
+      for(const text of ['Waiting for a brush…','Sketching…']) {
+        const label=page.locator('.concept-placeholder').getByText(text,{exact:true}).first();
+        const box=await label.boundingBox(), parent=await label.locator('..').locator('..').boundingBox();
+        expect(box!.y).toBeGreaterThanOrEqual(parent!.y);
+        expect(box!.y+box!.height).toBeLessThanOrEqual(parent!.y+parent!.height);
+      }
+    }
+  } finally { release(); await page.close(); }
+});
+
+test('adding a character and a place keeps the chosen versions in the approved expanded world',async()=>{
+  const page=await browser.newPage({viewport:{width:1100,height:1000}});
+  const first='a'.repeat(32),second='b'.repeat(32);
+  const initial=[{kind:'character',key:'owl',label:'Owl',role:'hero',looks:'A round owl'},{kind:'place',key:'house',label:'House',role:'place',looks:'A little house'}];
+  const extra=[{kind:'character',key:'fox',label:'Fox',role:'npc',looks:'A red fox'},{kind:'place',key:'garden',label:'Garden',role:'place',looks:'A quiet garden'}];
+  let sent:unknown;
+  try {
+    await page.route('**/api/actions/idea_review',r=>r.fulfill({json:{result:{...result,questions:[]}}}));
+    await page.route('**/api/actions/idea_sketch',r=>r.fulfill({json:{result:{id:first,title:'World',pitch:'A little world',assets:initial}}}));
+    await page.route('**/api/actions/idea_sketch_expand',r=>{sent=r.request().postDataJSON();return r.fulfill({json:{result:{id:second,title:'World',pitch:'A larger world',assets:[...initial,...extra]}}});});
+    await page.route('**/api/actions/idea_sketch_image',r=>r.fulfill({json:{result:{image:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>')}}}));
+    await open(page);await page.getByRole('button',{name:'Choose cast & places'}).click();
+    const add=page.getByRole('button',{name:'Add characters or places…'});await expect.poll(()=>add.isEnabled()).toBe(true);
+    const owl=page.getByRole('article',{name:'Owl'});await owl.getByRole('button',{name:'Another version'}).click();
+    await owl.getByRole('button',{name:'Owl, version 2'}).waitFor();
+    await expect.poll(()=>add.isEnabled()).toBe(true);
+    await add.click();await page.getByRole('textbox',{name:'Who else, or where else?'}).fill('Add a fox and a garden');
+    await page.getByRole('button',{name:'Add to my world'}).click();
+    await page.getByRole('article',{name:'Fox'}).waitFor();await page.getByRole('article',{name:'Garden'}).waitFor();
+    const build=page.getByRole('button',{name:'Build this version'});await expect.poll(()=>build.isEnabled()).toBe(true);
+    expect(sent).toEqual({id:first,wish:'Add a fox and a garden'});
+    await build.click();
+    expect(await page.evaluate(()=>(window as any).builds[0].sketch)).toEqual({id:second,selections:{'character:owl':1,'place:house':0,'character:fox':0,'place:garden':0}});
+  } finally {await page.close();}
 });

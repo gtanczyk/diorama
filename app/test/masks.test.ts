@@ -64,3 +64,12 @@ test('colour cut: a dark thing on light floor comes out as one solid blob, holes
   expect(loneMatch([900, 300, 1100, 500], [300, 300, 500, 500])).toBe(false);
   expect(loneMatch([300, 300, 320, 320], [300, 300, 500, 500])).toBe(false);
 });
+
+test('walkable exit masks retain small distant treads near the frame edge',()=>{
+  const prior:[number,number,number,number]=[0,0,300,700];
+  const matches=[found([30,400,200,650]),found([0,0,10,3])];
+  const ordinary=pickInstances(matches,prior)!;
+  const passage=pickInstances(matches,prior,true)!;
+  expect(ordinary.bits[1]).toBe(0);
+  expect(passage.bits[1]).toBe(1);
+});
