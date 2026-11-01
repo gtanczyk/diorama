@@ -103,7 +103,12 @@ export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates:
   // or a trail drawn somewhere else, or not drawn as floor), and whatever exit leads off it is only a click at an edge.
   Object.entries(notes.floors).forEach(([key, f], z) => {
     if (!g.zone || f.coarse || f.iouLayout >= 0.05) return;
-    if (![...grid.zone.keys()].some((i) => grid.zone[i] === z && reached[i])) errors.push({ code: 'FLOOR_LOST', key, detail: `painted floor overlaps its layout only ${f.iouLayout.toFixed(2)} and none of it can be walked on` });
+    if ([...grid.zone.keys()].some((i) => grid.zone[i] === z && reached[i])) return;
+    // When every exit, item and person can still be reached, the lost floor costs the game nothing (a boat's deck
+    // the hero never needs to step into): a flag to look at, not a reason the place cannot be played.
+    const needed = g.things.filter((t) => t.role === 'exit' || t.role === 'item' || t.role === 'npc');
+    const spare = needed.length > 0 && needed.every((t) => reached[cell(...t.stand)]);
+    (spare ? flags : errors).push({ code: 'FLOOR_LOST', key, detail: `painted floor overlaps its layout only ${f.iouLayout.toFixed(2)} and none of it can be walked on${spare ? '; every exit, item and person is reached without it' : ''}` });
   });
   for (const [key, f] of Object.entries(notes.floors)) {
     if (f.coarse) flags.push({ code: 'FLOOR_COARSE', key, detail: `floor taken from ${f.source}` });
