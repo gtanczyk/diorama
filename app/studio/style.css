@@ -920,11 +920,11 @@ main.world { display: grid; grid-template-columns: minmax(340px, 30%) minmax(0, 
 .build-places-head .sums { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); }
 .build-places-head .sum { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .build-places-head .sum i, .place-chip .state { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--line); }
-.sum.working i, .place-chip.st-working .state, .place-chip.st-repairing .state { background: var(--amber); box-shadow: 0 0 0 0 rgba(194, 122, 44, 0.6); animation: chip-live 1.4s ease-out infinite; }
-.sum.waiting i, .place-chip.st-waiting .state { background: #e2bf8e; }
-.sum.queued i, .place-chip.st-queued .state { background: transparent; border: 1.5px dashed var(--muted); }
-.sum.done i, .place-chip.st-done .state { background: var(--ok); }
-.sum.failed i, .place-chip.st-failed .state { background: var(--bad); }
+.sum.sum-working i, .place-chip.st-working .state, .place-chip.st-repairing .state { background: var(--amber); box-shadow: 0 0 0 0 rgba(194, 122, 44, 0.6); animation: chip-live 1.4s ease-out infinite; }
+.sum.sum-waiting i, .place-chip.st-waiting .state { background: #e2bf8e; }
+.sum.sum-queued i, .place-chip.st-queued .state { background: transparent; border: 1.5px dashed var(--muted); }
+.sum.sum-done i, .place-chip.st-done .state { background: var(--ok); }
+.sum.sum-failed i, .place-chip.st-failed .state { background: var(--bad); }
 @keyframes chip-live { 70% { box-shadow: 0 0 0 7px rgba(194, 122, 44, 0); } 100% { box-shadow: 0 0 0 0 rgba(194, 122, 44, 0); } }
 .build-follow { flex: none; }
 .build-place-row { position: relative; min-width: 0; }
@@ -1347,3 +1347,7 @@ button > .icon, .detail > .icon { margin-right: 2px; }
 .storyboard-expand form { max-width: 600px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .storyboard-expand label { display: grid; gap: 8px; font: italic 20px var(--display); }
 .storyboard-expand textarea { width: 100%; min-height: 76px; box-sizing: border-box; padding: 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: #faf6ee; color: var(--ink); font: 14px/1.5 var(--body); }
+
+/* The places strip above a place on stage and atop the Places drawer: the same chips as the build room. */
+.theatre > .build-places { margin-bottom: -2px; }
+.drawer.by-hand > .build-places { flex: none; overflow: visible; margin-bottom: 4px; }

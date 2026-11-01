@@ -91,6 +91,8 @@ export type Live = {
   extension?: ExtensionProgress;
   /** Places this job set aside, by the step that failed for them (place.fail): that step is green for the others only. */
   aside?: Record<string, string>;
+  /** Per place, the step this job is on with it (place.step events). */
+  places?: PlaceRuns;
 };
 
 type JobLike = { label: string; by: string; state: string; startedAt?: string; args?: string[]; extension?: ExtensionProgress };
@@ -250,6 +252,9 @@ const SHOWN: Array<{ layer: LayerName; title: string; by: string; enter: string 
 const has = (p: StagePlace, l: LayerName) => !!p.layers?.[l];
 /** The step working on this place right now whose picture is not out yet, if any. */
 export function working(p: StagePlace, live: Live) {
+  // The build says per place which step it is on: trusted over the guess from the running steps below.
+  const own = live.places?.[p.key];
+  if (own) return !own.done && own.ok === undefined && STEP_LAYER[own.step] ? { step: own.step, ...STEP_LAYER[own.step] } : null;
   const step = Object.keys(live.running).find((s) => live.running[s] === 'run' && STEP_LAYER[s]);
   if (!step) return null;
   const { layer } = STEP_LAYER[step];
@@ -560,7 +565,7 @@ export function placeState(p: StagePlace, run: PlaceRuns[string] | undefined, re
   if (building) return { kind: 'queued', say: 'in the queue' };
   if (p.verdict?.ok && !p.trouble) return { kind: 'done', say: 'playable' };
   if (p.verdict && !p.verdict.ok || p.trouble) return { kind: 'failed', say: 'not playable' };
-  return { kind: 'idle', say: 'not built' };
+  return { kind: 'idle', say: p.image ? 'not checked yet' : 'not built' };
 }
 
 /**
@@ -568,9 +573,12 @@ export function placeState(p: StagePlace, run: PlaceRuns[string] | undefined, re
  * with a count of each above. The row scrolls sideways with the wheel, the arrows or a drag, never the page,
  * and keeps the place on stage in view.
  */
-export function BuildPlaces({ slug, places, runs, repairing, building, watched, shown, onWatch }: {
+export function BuildPlaces({ slug, places, runs, repairing, building, watched, shown, onWatch, onFollow, verb = 'keep watching it' }: {
   slug: string; places: StagePlace[]; runs: PlaceRuns; repairing: Record<string, string>; building: boolean;
-  watched?: string; shown?: string; onWatch: (place?: string) => void;
+  watched?: string; shown?: string; onWatch: (place: string) => void;
+  /** Back to following the build (the build room only). */
+  onFollow?: () => void;
+  verb?: string;
 }) {
   const list = useRef<HTMLDivElement>(null);
   const [edge, setEdge] = useState({ left: false, right: false });
@@ -607,14 +615,14 @@ export function BuildPlaces({ slug, places, runs, repairing, building, watched, 
   return (
     <nav class={`build-places${building ? ' live' : ''}`} aria-label="Build places">
       <div class="build-places-head">
-        <span class="sums">{sums.filter(([, n]) => n > 0).map(([k, n, say]) => <span class={`sum ${k}`}><i />{n} {say}</span>)}</span>
-        {building && <button type="button" class="ghost small build-follow" aria-pressed={!watched} title="Automatically follow the places being built" onClick={() => onWatch()}>Follow build</button>}
+        <span class="sums">{sums.filter(([, n]) => n > 0).map(([k, n, say]) => <span class={`sum sum-${k}`}><i />{n} {say}</span>)}</span>
+        {building && onFollow && <button type="button" class="ghost small build-follow" aria-pressed={!watched} title="Automatically follow the places being built" onClick={onFollow}>Follow build</button>}
       </div>
       <div class={`build-place-row${edge.left ? ' more-left' : ''}${edge.right ? ' more-right' : ''}`}>
         {edge.left && <button type="button" class="ghost scroll-arrow left" aria-label="Earlier places" onClick={() => page(-1)}>‹</button>}
         <div class="build-place-list" ref={list} onScroll={measure}>
           {states.map(({ p, s }) => (
-            <button type="button" class={`place-chip st-${s.kind}`} data-place={p.key} aria-pressed={shown === p.key && (!!watched || !building)} title={`${nice(p.key)}: ${s.say}. Click to keep watching it`} onClick={() => onWatch(p.key)}>
+            <button type="button" class={`place-chip st-${s.kind}`} data-place={p.key} aria-pressed={shown === p.key && (!!watched || !onFollow || !building)} title={`${nice(p.key)}: ${s.say}. Click to ${verb}`} onClick={() => onWatch(p.key)}>
               <span class="thumb">{p.image ? <img src={fileUrl(slug, p.image.file, p.image.v)} alt="" /> : <span class="none" />}<i class="state" /></span>
               <span class="words"><b>{nice(p.key)}</b><small>{s.kind === 'working' ? <><span class="dot" />{s.say}</> : s.say}</small></span>
             </button>

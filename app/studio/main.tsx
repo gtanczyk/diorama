@@ -791,7 +791,7 @@ function Workshop({ slug }: { slug: string }) {
     done: jobDone,
     running: loneRuns ? { ...running, [lone!]: 'run' } : running,
     since: loneRuns && job!.startedAt ? { ...since, [lone!]: Date.parse(job!.startedAt) } : since,
-    calls: jobCalls, lastCall, tail: jobTail, cut, aside,
+    calls: jobCalls, lastCall, tail: jobTail, cut, aside, places: placeRun,
     extension: job && extension?.job === job.id ? { ...extension.progress, newPlaces: extension.progress.newPlaces ?? job.extension?.newPlaces } : job?.extension,
   };
   // On stage: the place picked; else a new picture as it lands; else, in turn, the places a step is working on.
@@ -1009,12 +1009,13 @@ function Workshop({ slug }: { slug: string }) {
               }}>Delete this world…</button></>}
             </Menu>
           </div>
+          {shownView.kind === 'place' && places.length > 1 && <BuildPlaces slug={slug} places={places} runs={placeRun} repairing={repairing} building={!!building} shown={stagedPlace?.key} verb="show it" onWatch={(place) => onStage({ kind: 'place', place })} />}
           <div class={`stage-body ${shownView.kind}`}>
             {shownView.kind === 'play' && <Play slug={slug} place={playing?.place} round={playing?.round ?? 0} full={playing?.full} onRestart={() => setPlaying({ ...playing, round: (playing?.round ?? 0) + 1 })} version={tick} onLine={playLine} onError={setError} />}
             {shownView.kind === 'build' && status && (
               <div class="build-on-stage">
                 <Pipeline job={pipelineJob} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
-                {places.length > 1 && <BuildPlaces slug={slug} places={places} runs={placeRun} repairing={repairing} building={!!building} watched={watchedPlace} shown={stagePlace?.key} onWatch={(place) => onStage({ kind: 'build', place })} />}
+                {places.length > 1 && <BuildPlaces slug={slug} places={places} runs={placeRun} repairing={repairing} building={!!building} watched={watchedPlace} shown={stagePlace?.key} onWatch={(place) => onStage({ kind: 'build', place })} onFollow={() => onStage({ kind: 'build' })} />}
                 {stagePlace ? <Stage slug={slug} place={stagePlace} live={liveBuild} building={!!building} hold={hold} /> : <figure class="stage-live"><div class="frame"><div class="empty"><span>{status.pitch ?? named('Muse Spark is dreaming up the places…')}</span></div></div></figure>}
               </div>
             )}
@@ -1029,7 +1030,7 @@ function Workshop({ slug }: { slug: string }) {
             {shownView.kind === 'place' && stagedPlace && <PlaceStage slug={slug} place={stagedPlace} version={tick} onOpen={(thing) => setByHand(`${stagedPlace.key}@${thing}`)} />}
             {shownView.kind === 'place' && !stagedPlace && <div class="mat"><p class="detail">{status?.pitch ?? named('Muse Spark is dreaming up the places…')}</p></div>}
             {shownView.kind === 'cast' && <CastStage slug={slug} version={tick} onOpen={(key) => setByHand(`#cast:${key}`)} />}
-            {shownView.kind === 'place' && stagedPlace?.stages.painting && <button type="button" class="stage-tool" title="Masks, floors, stand spots and repaints for this place, by hand. Or just ask the agent" onClick={() => setByHand(stagedPlace.key)}><Icon name="pencil" /> Fix this place by hand</button>}
+            {shownView.kind === 'place' && stagedPlace?.stages.painting && <button type="button" class="stage-tool" title="This place in detail: its things, floor, stand spots, lights and repaints, to fix by hand. Or just ask the agent" onClick={() => setByHand(stagedPlace.key)}><Icon name="pencil" /> Place details</button>}
             {shownView.kind === 'story' && (shownView.build && status ? <div class="build-on-stage">
               <Pipeline job={pipelineJob} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
               <div class="paper-panel"><StoryView slug={slug} version={tick} onError={setError} writing={liveBuild.running.story === 'run' ? { since: liveBuild.since.story, log: storyLog } : undefined} /></div>
@@ -1040,7 +1041,8 @@ function Workshop({ slug }: { slug: string }) {
       {byHand && (
         <div class="drawer-back" onClick={(e) => e.target === e.currentTarget && setByHand(null)}>
           <section class="drawer by-hand" role="dialog" aria-label="By hand">
-            <div class="row"><h2>{byHand.startsWith('#cast') ? 'Cast' : byHand.includes('@') ? `${nice(byHand.split('@')[1])} · ${nice(byHand.split('@')[0])}` : `${nice(byHand)}, by hand`}</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setByHand(null)}>✕</button></div>
+            <div class="row"><h2>{byHand.startsWith('#cast') ? 'Cast' : 'Places'}</h2><span class="grow" /><button type="button" class="ghost tiny" aria-label="Close" title="Close (Esc)" onClick={() => setByHand(null)}>✕</button></div>
+            {!byHand.startsWith('#cast') && places.length > 1 && <BuildPlaces slug={slug} places={places} runs={placeRun} repairing={repairing} building={!!building} shown={byHand.split('@')[0]} verb="open its details" onWatch={(place) => { setByHand(place); if (shownView.kind === 'place') onStage({ kind: 'place', place }); }} />}
             {byHand.startsWith('#cast') ? <CastView slug={slug} version={tick} onError={setError} focus={byHand.split(':')[1]} /> : <PlaceEditor slug={slug} place={byHand.split('@')[0]} focus={byHand.split('@')[1]} version={tick} onError={setError} />}
           </section>
         </div>
