@@ -97,7 +97,6 @@ export const PLAYBOOK: Record<string, Play> = {
       'layout_fix: when layout failed, save concrete camera, size or floor guidance and rebuild; works before any place files exist',
       'job_retry: when it was a network or model hiccup (it starts at the step where the place broke)',
       'paint_words: when paint was refused by the image safety filter (content_policy_violation) even after Spark reworded it: calm, plain words for the scene and the looks it names',
-      'PAINT_LAYOUT_MISMATCH: inspect painting-layout.json and place_view layers plan/painting; paint already tried two composition repairs. Use layout_fix for a simpler connected plan, or run_step paint with a new take, then rebuild from paint. Do not bridge displaced objects with floor_cells',
       'the fix tool for what the error names, then rebuild the place',
     ],
   },

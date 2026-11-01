@@ -1,13 +1,5 @@
 # Places: depth, weather and the play page
 
-## Plan and painting
-
-Painting includes a numeric composition contract: object boxes, floor polygons and camera horizon. After ordinary region fixes or restyling, the configured vision planner compares the final painting with the block-in. It locates each non-NPC object and checks planned floor coverage, visible connections, frame-edge routes and approaches to items/exits. Code checks completeness and measured displacement/size, rather than accepting an empty list of aesthetic complaints.
-
-A mismatch gets at most two full-frame Muse edits using the original plan and measured problems. Every candidate is checked again. `painting-layout.json` keeps observations and reasons, bound to the exact plan, place and accepted painting. Rejected candidates do not replace the previous `painting.png`; masks refuses a failed or stale report. After two rejected repairs, `PAINT_LAYOUT_MISMATCH` gives the agent the diagnosis and directs it to `layout_fix` or a new paint take. Legacy worlds are checked when rebuilt from paint; photo worlds retain their photo-based composition flow.
-
-Walk geometry still comes from the accepted painting, not the rough plan. The build no longer invents boardwalks to snapped interaction points and immediately brushes them into the floor. Existing small-gap repairs on observed surfaces remain available. These checks depend on vision observations and are not a substitute for looking at the finished scene.
-
 ## Depth: parallax and moving water
 
 `diorama backdrop <slug>` (a build step, after `derive`) turns each place into a little stage, so it moves like a real diorama:

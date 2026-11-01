@@ -8,7 +8,6 @@ import { addsPerson, critique, paintedPeople, repaint } from '../scene/critic.ts
 import { readCorrections, writeCorrections } from '../scene/corrections.ts';
 import { Layout } from '../scene/layout.ts';
 import { paintPlace } from '../scene/paint.ts';
-import { alignPainting, PaintingLayoutError, paintingLayoutHash } from '../scene/paint-layout.ts';
 import { paintPhoto } from '../scene/photo.ts';
 import { restylePlace } from '../scene/restyle.ts';
 import { refusedByFilter, reword, withWords, worded, type Words } from '../scene/words.ts';
@@ -39,7 +38,6 @@ defineCommand({
       const world = { ...base, style };
       const layout = Layout.parse(files.readJson(files.place(place.key, 'layout.json')));
       const blockin = fs.readFileSync(files.place(place.key, 'blockin.png'));
-      const fromPhoto = fs.existsSync(files.place(place.key, 'photo.png'));
       const concept = approvedConcept(files, 'place', place.key);
       const styleReference = worldStyleReference(files, style);
       // The first painting is kept while its block-in, layout and take stay the same, even without the model
@@ -100,6 +98,7 @@ defineCommand({
           files.write(files.place(place.key, 'critique.json'), found);
         }
       } else {
+        const fromPhoto = fs.existsSync(files.place(place.key, 'photo.png'));
         let brief: Awaited<ReturnType<typeof writeBrief>>;
         // When the image safety filter refuses the painting, Spark rewords the place and it is painted again;
         // the wording is kept in corrections.json, so every later paint asks with it and no rebuild repeats the refusal.
@@ -153,24 +152,6 @@ defineCommand({
         if (!refusedByFilter(error) || asked.length) throw error;
         console.log(`  ${place.key}: the image safety filter refused the critic's repaint; the painting is kept without it`);
         painting = from;
-      }
-      // Inspect the FINAL candidate, including region fixes and restyles. Only a passing composition may
-      // become the input to masks/derive. Old paid art stays on disk until a replacement passes.
-      if (!fromPhoto) {
-        const report = files.place(place.key, 'painting-layout.json');
-        const previous = fs.existsSync(report) ? files.readJson(report) as { ok?: boolean; inputs?: string } : undefined;
-        if (!previous?.ok || previous.inputs !== paintingLayoutHash(place, layout, blockin, painting)) {
-          files.write(report, { ok: false, pending: true });
-          try {
-            const brief = files.readJson(files.place(place.key, 'brief.json')) as Awaited<ReturnType<typeof writeBrief>>;
-            const aligned = await alignPainting(files.memo, worded(place, words), layout, blockin, painting, brief, take, fixes.issues.map((i) => i.fix));
-            painting = aligned.painting;
-            files.write(report, { ok: true, inputs: paintingLayoutHash(place, layout, blockin, painting), attempts: aligned.attempts });
-          } catch (error) {
-            files.write(report, { ok: false, attempts: error instanceof PaintingLayoutError ? error.attempts : [], error: String(error) });
-            throw error;
-          }
-        }
       }
       files.write(files.place(place.key, 'painting.png'), painting);
       files.write(kept, { inputs, applied: fixes.issues.map(id) });
