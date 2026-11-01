@@ -85,7 +85,7 @@ async function main() {
       const png = path.join(tmp, `${i}-caption.png`);
       fs.writeFileSync(png, await captionPng(shot));
       input.push('-loop', '1', '-t', String(len), '-i', png);
-      filter = ['-filter_complex', `[0:v]${picture}[v];[1:v]format=rgba,fade=in:st=0.25:d=0.35:alpha=1[c];[v][c]overlay=0:0,format=yuv420p`];
+      filter = ['-filter_complex', `[0:v]${picture}[v];[1:v]format=rgba,fade=in:st=0.25:d=0.35:alpha=1,fade=out:st=${Math.max(0.6, shot.dur - 0.4).toFixed(2)}:d=0.3:alpha=1[c];[v][c]overlay=0:0,format=yuv420p`];
     }
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...input, ...filter, '-an', '-t', String(len), '-c:v', 'libx264', '-crf', '18', '-video_track_timescale', '15360', seg]);
     segments.push(seg);

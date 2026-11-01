@@ -3,7 +3,7 @@
   "shots": [
     {
       "name": "Hook: harbour",
-      "src": "footage/lantern4/alive/lantern-harbour--harbour-pier.mp4",
+      "src": "footage/lantern6/alive/lantern-harbour--harbour-pier.mp4",
       "from": 0.5,
       "dur": 2.4,
       "crop": [
@@ -15,7 +15,7 @@
     },
     {
       "name": "Hook: market",
-      "src": "footage/lantern4/alive/lantern-harbour--lantern-market.mp4",
+      "src": "footage/lantern6/alive/lantern-harbour--lantern-market.mp4",
       "from": 1,
       "dur": 1.8,
       "crop": [
@@ -28,7 +28,7 @@
     },
     {
       "name": "Hook: candle boats",
-      "src": "footage/lantern4/alive/lantern-harbour--river-dock.mp4",
+      "src": "footage/lantern6/alive/lantern-harbour--river-dock.mp4",
       "from": 1,
       "dur": 1.8,
       "crop": [
@@ -41,7 +41,7 @@
     },
     {
       "name": "Hook: lighthouse",
-      "src": "footage/lantern4/alive/lantern-harbour--lighthouse-point.mp4",
+      "src": "footage/lantern6/alive/lantern-harbour--lighthouse-point.mp4",
       "from": 1,
       "dur": 2.2,
       "crop": [
@@ -55,7 +55,7 @@
     },
     {
       "name": "Hook: you play it",
-      "src": "footage/lantern4/walk/lantern-harbour--harbour-pier.mp4",
+      "src": "footage/lantern6/walk/lantern-harbour--harbour-pier.mp4",
       "from": 0.5,
       "dur": 3.2,
       "crop": [
@@ -110,7 +110,7 @@
     },
     {
       "name": "4 How: the plan",
-      "image": "footage/lantern/method/1-plan.png",
+      "image": "footage/lantern5/method/1-plan.png",
       "dur": 3,
       "fade": 0.5,
       "caption": "Plans where every thing stands",
@@ -118,7 +118,7 @@
     },
     {
       "name": "4 How: the painting",
-      "image": "footage/lantern/method/2-painting.png",
+      "image": "footage/lantern5/method/2-painting.png",
       "dur": 3,
       "fade": 0.8,
       "caption": "Paints over the plan",
@@ -126,7 +126,7 @@
     },
     {
       "name": "4 How: the cut-outs",
-      "image": "footage/lantern/method/3-masks.png",
+      "image": "footage/lantern5/method/3-masks.png",
       "dur": 3,
       "fade": 0.6,
       "caption": "Cuts out every thing you can touch",
@@ -134,7 +134,7 @@
     },
     {
       "name": "4 How: depth",
-      "image": "footage/lantern/method/4-depth.png",
+      "image": "footage/lantern5/method/4-depth.png",
       "dur": 2.5,
       "fade": 0.6,
       "caption": "Depth: what is near, what is far",
@@ -142,18 +142,34 @@
     },
     {
       "name": "4 How: floor and scale",
-      "image": "footage/lantern/method/6-walk.png",
+      "image": "footage/lantern5/method/6-walk.png",
       "dur": 2.5,
       "fade": 0.6,
       "caption": "The floor you walk on, the hero's size at every step"
     },
     {
       "name": "4 How: taken apart",
-      "src": "footage/lantern4/explode/lantern-harbour--harbour-pier.mp4",
-      "from": 2,
-      "dur": 4,
+      "src": "footage/lantern6/explode/lantern-harbour--harbour-pier.mp4",
+      "from": 0.6,
+      "dur": 7.5,
       "fade": 0.4,
-      "caption": "Every cut-out at its own depth"
+      "caption": "One painting becomes a 3D stage",
+      "by": "SAM 3.1"
+    },
+    {
+      "name": "4 How: taken apart, the lighthouse",
+      "src": "footage/lantern6/explode/lantern-harbour--lighthouse-point.mp4",
+      "from": 3.0,
+      "dur": 3.5,
+      "fade": 0.4
+    },
+    {
+      "name": "4 How: taken apart, the market",
+      "src": "footage/lantern6/explode/lantern-harbour--lantern-market.mp4",
+      "from": 5.5,
+      "dur": 3.5,
+      "fade": 0.4,
+      "caption": "Then it closes back into the painting, and it's playable"
     },
     {
       "name": "5 Cast: the keeper",
@@ -190,7 +206,7 @@
     },
     {
       "name": "6 Play: the pier",
-      "src": "footage/lantern4/walk/lantern-harbour--harbour-pier.mp4",
+      "src": "footage/lantern6/walk/lantern-harbour--harbour-pier.mp4",
       "from": 0.5,
       "dur": 6,
       "crop": [
@@ -204,7 +220,7 @@
     },
     {
       "name": "6 Play: the lantern seller",
-      "src": "footage/lantern4/walk/lantern-harbour--lantern-market.mp4",
+      "src": "footage/lantern6/walk/lantern-harbour--lantern-market.mp4",
       "from": 0.5,
       "dur": 6,
       "crop": [
@@ -218,7 +234,7 @@
     },
     {
       "name": "6 Play: the candle child",
-      "src": "footage/lantern4/walk/lantern-harbour--river-dock.mp4",
+      "src": "footage/lantern6/walk/lantern-harbour--river-dock.mp4",
       "from": 0.5,
       "dur": 5.5,
       "crop": [
