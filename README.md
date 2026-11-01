@@ -10,21 +10,32 @@ Diorama is a local tool that turns a story idea into a small point-and-click adv
 
 ## Quick start
 
-Node 22+, `ffmpeg`, and a Meta Model API key. Without a checkout, in an empty folder:
+You need Node 22+, `ffmpeg` and a Meta Model API key. Make an empty folder and run Diorama there with `npx`. Nothing to clone; your worlds are saved in `./worlds`.
 
 ```sh
-npx -y @gtanczyk/diorama setup                  # or: npm install -g @gtanczyk/diorama, then just `diorama setup`
-npx -y @gtanczyk/diorama studio
+mkdir my-worlds && cd my-worlds
+npx -y @gtanczyk/diorama setup      # checks this machine, asks for your keys (typed hidden, stored encrypted)
+npx -y @gtanczyk/diorama studio     # opens the GUI on 127.0.0.1: describe a world, watch it build, play it
 ```
 
-From a checkout:
+Prefer a terminal? Install it once and the command is just `diorama`:
+
+```sh
+npm install -g @gtanczyk/diorama
+diorama build lanterns "A girl with a candle lantern looks for her lost cat at a night market by a canal."
+diorama play lanterns               # http://localhost:4173
+diorama browsers                    # once, for playthrough videos and sprites (Chromium)
+```
+
+Update with `npm install -g @gtanczyk/diorama@latest`; `npx` picks up a new version by itself.
+
+From a checkout, for working on Diorama itself:
 
 ```sh
 git clone https://github.com/gtanczyk/diorama && cd diorama && npm install
-npm run setup                                   # what this machine still needs; keys are typed hidden
-npm run studio                                  # the GUI on 127.0.0.1
-npm run build -- lanterns "A girl with a candle lantern looks for her lost cat at a night market by a canal."
-npm run play -- lanterns                        # http://localhost:4173
+npm run setup
+npm run studio
+npm run diorama -- <command>        # any command, e.g. npm run diorama -- play lanterns
 ```
 
 More in [docs/setup.md](docs/setup.md): optional keys (ElevenLabs for sound, Hugging Face for 3D), sharing a world on GitHub Pages or itch.io.
