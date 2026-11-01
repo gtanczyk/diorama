@@ -4,9 +4,10 @@
 export type StudioEvent = { seq: number; at: string; type: string; world?: string; [k: string]: unknown };
 type Listener = (e: StudioEvent) => void;
 
-/** Events a page opened mid-build needs to draw the build's progress: a long build's logs, files and calls push
- * them out of the recent window long before it ends, so they are kept apart (and Studio showed done steps as empty). */
-const LASTING = new Set(['job.queued', 'job.start', 'job.end', 'build.start', 'step.start', 'step.end', 'step.fail']);
+/** Events a page opened mid-build needs to draw the build's progress and its model call counts: a long build's
+ * logs and files push them out of the recent window long before it ends, so they are kept apart (else a refreshed
+ * Studio showed done steps as empty and counted calls from zero). */
+const LASTING = new Set(['job.queued', 'job.start', 'job.end', 'build.start', 'step.start', 'step.end', 'step.fail', 'call']);
 
 export class Events {
   private seq = 0;
@@ -22,7 +23,7 @@ export class Events {
     if (this.recent.length > this.keep) this.recent.splice(0, this.recent.length - this.keep);
     if (LASTING.has(type)) {
       this.lasting.push(event);
-      if (this.lasting.length > this.keep) this.lasting.splice(0, this.lasting.length - this.keep);
+      if (this.lasting.length > this.keep * 5) this.lasting.splice(0, this.lasting.length - this.keep * 5);
     }
     for (const listener of this.listeners) listener(event);
     return event;
