@@ -174,7 +174,8 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
   const state = (s: string): 'ok' | 'existing' | 'run' | 'fail' | 'todo' | 'skip' | 'warn' => {
     if (running[s] === 'fail') return 'fail';
     if (running[s] === 'run') return 'run';
-    if (build[s]?.status === 'incomplete') return 'warn';
+    // Talking faces are optional and come last: a face that is not ready is no build problem (the faces view says who).
+    if (build[s]?.status === 'incomplete' && s !== 'faces') return 'warn';
     // Done for the world, but a place was set aside at this step: not green, since that place has nothing from it.
     if (asideAt(s).length && (done[s] !== undefined || running[s] === undefined)) return 'warn';
     if (done[s] !== undefined) return 'ok';
@@ -246,7 +247,7 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
                   if (!ready) return <span class={`seg later ${states[i]}`} style={{ left: `${(100 * from) / Math.max(1, all)}%`, width: `${(100 * took(s)) / Math.max(1, all)}%` }}
                     title={named(`${STEP_TITLE[s] ?? s}${STEP_BY[s] && STEP_BY[s] !== 'code' ? ` · ${STEP_BY[s]}` : ''}: ${states[i] === 'fail' ? 'failed' : states[i] === 'skip' ? 'not part of this build' : job ? 'not started yet' : 'not built yet'}.\n${STEP_DOES[s] ? `${STEP_DOES[s][0].toUpperCase()}${STEP_DOES[s].slice(1)}.` : ''}${states[i] !== 'skip' && took(s) ? `\nUsually about ${took(s) >= 90 ? `${Math.round(took(s) / 60)} min` : `${Math.max(5, Math.round(took(s) / 5) * 5)} s`}.` : ''}`)} />;
                   return <button type="button" class="seg" style={{ left: `${(100 * from) / Math.max(1, all)}%`, width: `${(100 * took(s)) / Math.max(1, all)}%` }}
-                    title={`${STEP_TITLE[s] ?? s} (${s})${states[i] === 'run' ? ': working now, not finished' : asideAt(s).length ? `: failed for ${asideAt(s).join(', ')}, set aside (later steps skip it); done for the other places` : states[i] === 'existing' ? ': from the earlier build' : done[s] !== undefined ? `: done in ${Math.round(done[s])} s` : ': done'}.\nClick to see ${STEP_OPENS[s] ?? 'what it made'}${states[i] === 'run' ? ' (what it works from, until it is ready)' : ''}`} onClick={() => onOpen!(p.key, s)} />;
+                    title={`${STEP_TITLE[s] ?? s} (${s})${states[i] === 'run' ? ': working now, not finished' : asideAt(s).length ? `: failed for ${asideAt(s).join(', ')}, set aside (later steps skip it); done for the other places` : states[i] === 'existing' ? ': from the earlier build' : done[s] !== undefined ? `: done in ${Math.round(done[s])} s` : ': done'}.\n${s === 'faces' && build.faces?.status === 'incomplete' && states[i] !== 'run' ? `Optional: ${(() => { const who = [...new Set((build.faces.warnings ?? []).map((w) => /^([a-z0-9][\w-]*):/.exec(w)?.[1]).filter(Boolean))]; return who.length ? `${who.join(', ')} talk with gestures, no moving lips yet` : 'some talk with gestures, no moving lips yet'; })()}.\n` : ''}Click to see ${STEP_OPENS[s] ?? 'what it made'}${states[i] === 'run' ? ' (what it works from, until it is ready)' : ''}`} onClick={() => onOpen!(p.key, s)} />;
                 })}
               </span>
               {open
@@ -256,14 +257,8 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
           );
         })}
       </ol>
-      {(job || build.faces?.status === 'incomplete') && <span class="detail">
-        {build.faces?.status === 'incomplete' && (() => {
-        // One small chip, no extra rows: who lacks moving lips is in its tip, the faces view one click away.
-        const who = [...new Set((build.faces.warnings ?? []).map((w) => /^([a-z0-9][\w-]*):/.exec(w)?.[1]).filter(Boolean))];
-        const tip = `${who.length ? `No moving lips yet for ${who.join(', ')}: their mouth shapes did not pass the check. They still talk with gestures.` : 'Some speaking animations are incomplete.'}${onOpen ? '\nClick: the talking faces, who failed and why' : ''}`;
-        return <button type="button" class="speech-chip" disabled={!onOpen} title={tip} onClick={() => onOpen?.('cast', 'faces')}>⚠ lips {who.length ? `· ${who.length} missing` : 'incomplete'}</button>;
-      })()}
-        {job && 'Each bar is split into its steps. Green: done now · faded green: kept from the earlier build · orange: working now. Built steps do not confirm visual quality or a playthrough.'}
+      {job && <span class="detail">
+        Each bar is split into its steps. Green: done now · faded green: kept from the earlier build · orange: working now{phases.some((p) => p.steps.some((x) => state(x) === 'warn')) ? ' · striped: done, but not for every place (hover it for which)' : ''}. Built steps do not confirm visual quality or a playthrough.
       </span>}
     </section>
   );

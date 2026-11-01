@@ -41,21 +41,22 @@ test('progress shows the current extension milestone instead of old build result
   } finally { await browser.close(); }
 }, 30_000);
 
-test('optional face failure is amber and inspectable while other steps remain complete',async()=>{
-  const source=(await build({stdin:{contents:`import {h,render} from 'preact'; import {Pipeline} from './app/studio/build.tsx';
-    render(h(Pipeline,{all:['faces','verify'],live:{plan:[],done:{faces:2,verify:1},running:{},since:{},calls:{},lastCall:null,cut:{},tail:''},build:{faces:{seconds:2,status:'incomplete',warnings:['dozorca: F/V needs review']},verify:{seconds:1}},typical:{},onOpen:(phase,step)=>window.opened=[phase,step]}),document.body);`,resolveDir:process.cwd()},bundle:true,format:'iife',write:false,jsx:'automatic',jsxImportSource:'preact'})).outputFiles[0].text;
-  const browser=await chromium.launch();
+// Grzegorz: no "lips missing" chip on the build screen. Talking faces are optional: a face not ready is no problem
+// colour on the bar; the faces segment says who talks with gestures, and opens the faces view.
+test('an optional face not ready is no build problem: green bar, no chip, the faces segment says who', async () => {
+  const source = (await build({ stdin: { contents: `import {h,render} from 'preact'; import {Pipeline} from './app/studio/build.tsx';
+    render(h(Pipeline,{all:['faces','verify'],live:{plan:[],done:{faces:2,verify:1},running:{},since:{},calls:{},lastCall:null,cut:{},tail:''},build:{faces:{seconds:2,status:'incomplete',warnings:['dozorca: F/V needs review']},verify:{seconds:1}},typical:{},onOpen:(phase,step)=>window.opened=[phase,step]}),document.body);`, resolveDir: process.cwd() }, bundle: true, format: 'iife', write: false, jsx: 'automatic', jsxImportSource: 'preact' })).outputFiles[0].text;
+  const browser = await chromium.launch();
   try {
-    const page=await browser.newPage();await page.goto('about:blank');await page.addScriptTag({content:source});
-    expect(await page.locator('.phases li.warn .name').textContent()).toBe('Cast');
-    expect(await page.locator('.phases li.ok .name').textContent()).toBe('Checks');
-    expect(await page.locator('.phases .fail').count()).toBe(0);
-    await page.getByRole('button',{name:'View characters'}).click();
-    expect(await page.evaluate(()=>(window as unknown as {opened:string[]}).opened)).toEqual(['cast','faces']);
-    await page.getByText('Animation details',{exact:true}).click();
-    expect(await page.getByText('dozorca: F/V needs review',{exact:true}).isVisible()).toBe(true);
-  } finally {await browser.close();}
-},30000);
+    const page = await browser.newPage(); await page.goto('about:blank'); await page.addScriptTag({ content: source });
+    expect(await page.locator('.phases li.ok .name').allTextContents()).toEqual(['Cast', 'Checks']);
+    expect(await page.locator('.fill.warn, .phases .fail, .speech-chip').count()).toBe(0);
+    const faces = page.locator('.seg[title^="Talking faces"]');
+    expect(await faces.getAttribute('title')).toContain('Optional: dozorca talk with gestures');
+    await faces.click();
+    expect(await page.evaluate(() => (window as unknown as { opened: string[] }).opened)).toEqual(['cast', 'faces']);
+  } finally { await browser.close(); }
+}, 30_000);
 
 test('a step that set a place aside is not plain green and says which place', async () => {
   const source = (await build({ stdin: { contents: `import { h, render } from 'preact';
