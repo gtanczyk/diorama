@@ -10,6 +10,7 @@ import { brush, correctCells, correctSpots, readCorrections } from '../src/scene
 import { Events } from '../src/studio/events.ts';
 import { Jobs } from '../src/studio/jobs.ts';
 import { History } from '../src/studio/history.ts';
+import { placeTrouble } from '../src/studio/trouble.ts';
 
 const FAKE = fileURLToPath(new URL('./fixtures/fake-diorama.mjs', import.meta.url));
 const roots: string[] = [];
@@ -228,6 +229,15 @@ test('paint_words keeps the painter\'s wording in corrections.json and repaints 
   expect(cleared.args).toContain('paint');
   await jobs.wait(cleared.id, 5000);
   expect(readCorrections(place).words).toBeUndefined();
+});
+
+test('a place still being cut out is not trouble because the sound and voices beside it finished first', () => {
+  const { dir, place } = world();
+  fs.rmSync(path.join(place, 'masks.json'));
+  fs.writeFileSync(path.join(dir, 'build.json'), JSON.stringify({ steps: { layout: {}, paint: {}, cast: {}, sound: {}, voices: {} } }));
+  expect(placeTrouble(dir, 'dock')).toBeNull();
+  fs.writeFileSync(path.join(dir, 'build.json'), JSON.stringify({ steps: { paint: {}, derive: {} } }));
+  expect(placeTrouble(dir, 'dock')).toMatchObject({ from: 'masks', why: 'masks never finished here (no masks.json)' });
 });
 
 test('Fix it rebuilds a place from the step it never got past, and hands a built but unplayable place to the agent', async () => {

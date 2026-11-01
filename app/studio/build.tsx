@@ -325,6 +325,7 @@ export function Stage({ slug, place, live, building, hold }: { slug: string; pla
   const busy = building ? working(place, live) : null;
   const caption = busy ? { by: busy.by, text: `${busy.doing}…` } : top ? { by: SHOWN.find((s) => s.layer === top)!.by, text: SHOWN.find((s) => s.layer === top)!.title } : null;
   const base = place.layers?.painting ?? place.layers?.blockin;
+  const failed = !!live.aside?.[place.key] || (!building && !!place.trouble);
   return (
     <figure class="stage-live" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <div class="frame">
@@ -346,16 +347,21 @@ export function Stage({ slug, place, live, building, hold }: { slug: string; pla
             <span>{caption.text}</span>
           </figcaption>
         )}
-        {(live.aside?.[place.key] || place.trouble) && <span class="wanted trouble" role="status">{live.aside?.[place.key] ? `${STEP_TITLE[live.aside[place.key]] ?? live.aside[place.key]} failed for this place: set aside, so the steps after it skip it. ` : ''}{place.trouble?.why ?? ''}{place.trouble && !building ? ' · Fix it below the stage' : ''}</span>}
-        {!(live.aside?.[place.key] || place.trouble) && wanted && <span class="wanted" role="status">{wanted.title}: not made yet for this place{top ? `; showing ${SHOWN.find((s) => s.layer === top)!.title.toLowerCase()} until it is` : ''}</span>}
         <span class="where">{place.key}</span>
-        {shown.length > 1 && (
-          <div class="layers" role="tablist" aria-label="Layers">
-            {shown.map((s) => (
-              <button type="button" role="tab" aria-selected={top === s.layer} class={`ghost small${top === s.layer ? ' on' : ''}`} title={named(`${LAYER_TIPS[s.layer] ?? s.title}, by ${s.by}. Click to hold it, again to let the stage cycle`)} onClick={() => ((held.current = null), setWant(null), setPick(pick === s.layer ? null : s.layer))}>{s.title}</button>
-            ))}
-          </div>
-        )}
+        {/* The layer tabs, then what is missing or wrong under them, so neither covers the other. */}
+        <div class="over">
+          {shown.length > 1 && (
+            <div class="layers" role="tablist" aria-label="Layers">
+              {shown.map((s) => (
+                <button type="button" role="tab" aria-selected={top === s.layer} class={`ghost small${top === s.layer ? ' on' : ''}`} title={named(`${LAYER_TIPS[s.layer] ?? s.title}, by ${s.by}. Click to hold it, again to let the stage cycle`)} onClick={() => ((held.current = null), setWant(null), setPick(pick === s.layer ? null : s.layer))}>{s.title}</button>
+              ))}
+            </div>
+          )}
+          {/* Red only for a real failure: a step this build set aside, or trouble once no build runs; a place the
+              running build has not reached yet is just not made yet. */}
+          {failed && <span class="wanted trouble" role="status">{live.aside?.[place.key] ? `${STEP_TITLE[live.aside[place.key]] ?? live.aside[place.key]} failed for this place: set aside, so the steps after it skip it. ` : ''}{!building && place.trouble ? `${place.trouble.why} · Fix it below the stage` : ''}</span>}
+          {!failed && wanted && <span class="wanted" role="status">{wanted.title}: not made yet for this place{top ? `; showing ${SHOWN.find((s) => s.layer === top)!.title.toLowerCase()} until it is` : ''}</span>}
+        </div>
       </div>
     </figure>
   );
@@ -413,7 +419,7 @@ export function Strip({ slug, places, focus, live, building, repairing, onPick }
               <span class="name">
                 <strong>{p.key}</strong>
                 {repairing[p.key] ? <span class="badge run" title={repairing[p.key]}>repairing</span>
-                  : p.trouble && !p.verdict ? <span class="badge fail">failed</span>
+                  : (live.aside?.[p.key] || (p.trouble && !building)) && !p.verdict ? <span class="badge fail">failed</span>
                   : p.verdict ? <span class={`badge ${p.verdict.ok ? 'ok' : 'fail'}`}>{p.verdict.ok ? 'playable' : `${p.verdict.errors.length} error${p.verdict.errors.length === 1 ? '' : 's'}`}</span>
                   : busy ? <span class="badge run">{nowBy(busy.by)}</span>
                   : <span class="dots" aria-label={`${n} of ${SHOWN.length} layers`}>{SHOWN.map((s) => <i class={has(p, s.layer) ? 'on' : ''} />)}</span>}

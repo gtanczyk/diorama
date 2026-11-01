@@ -2,7 +2,7 @@
 // place at (build.json), a step an earlier job never got it past (a missing file), or verify's first error.
 import fs from 'node:fs';
 import path from 'node:path';
-import { placeGap, STEPS } from '../commands/build.ts';
+import { PLACE_STEPS, placeGap, STEPS } from '../commands/build.ts';
 import type { Verdict } from '../scene/verify.ts';
 import { currentVerdict } from '../scene/status.ts';
 import { refusedByFilter } from '../scene/words.ts';
@@ -31,8 +31,9 @@ export function placeTrouble(worldDir: string, place: string): Trouble | null {
   const log = readJson<{ steps?: Record<string, unknown>; places?: Array<{ place: string; from?: string; errors?: string[] }> }>(path.join(worldDir, 'build.json'));
   const report = log?.places?.find((r) => r.place === place);
   // A step an earlier job never got the place past, once the world's build went on beyond it (not while it builds).
+  // Only place steps count: the cast, voices and sound run alongside and finish while a place is still being cut out.
   const gap = fs.existsSync(path.join(dir, 'blockin.png')) ? placeGap(dir, 'verify') : null;
-  const past = gap && [...Object.keys(log?.steps ?? {}), ...(report?.from ? [report.from] : [])].some((s) => STEPS.indexOf(s as Step) > STEPS.indexOf(gap.step));
+  const past = gap && [...Object.keys(log?.steps ?? {}), ...(report?.from ? [report.from] : [])].some((s) => PLACE_STEPS.includes(s as Step) && STEPS.indexOf(s as Step) > STEPS.indexOf(gap.step));
   const gapFirst = gap && past && (!report?.from || STEPS.indexOf(gap.step) < STEPS.indexOf(report.from as Step));
   if (gapFirst) return { why: `${gap.step} never finished here (no ${gap.file})`, from: gap.step, errors: report?.errors ?? [] };
   if (report?.from) return { why: said(report.from, firstError(report.errors)), from: report.from, errors: report.errors ?? [] };
