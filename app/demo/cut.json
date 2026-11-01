@@ -3,7 +3,7 @@
   "shots": [
     {
       "name": "Hook: harbour",
-      "src": "footage/lantern6/alive/lantern-harbour--harbour-pier.mp4",
+      "src": "footage/lantern7/alive/lantern-harbour--harbour-pier.mp4",
       "from": 0.5,
       "dur": 2.4,
       "crop": [
@@ -15,7 +15,7 @@
     },
     {
       "name": "Hook: market",
-      "src": "footage/lantern6/alive/lantern-harbour--lantern-market.mp4",
+      "src": "footage/lantern7/alive/lantern-harbour--lantern-market.mp4",
       "from": 1,
       "dur": 1.8,
       "crop": [
@@ -28,7 +28,7 @@
     },
     {
       "name": "Hook: candle boats",
-      "src": "footage/lantern6/alive/lantern-harbour--river-dock.mp4",
+      "src": "footage/lantern7/alive/lantern-harbour--river-dock.mp4",
       "from": 1,
       "dur": 1.8,
       "crop": [
@@ -41,7 +41,7 @@
     },
     {
       "name": "Hook: lighthouse",
-      "src": "footage/lantern6/alive/lantern-harbour--lighthouse-point.mp4",
+      "src": "footage/lantern7/alive/lantern-harbour--lighthouse-point.mp4",
       "from": 1,
       "dur": 2.2,
       "crop": [
@@ -55,7 +55,7 @@
     },
     {
       "name": "Hook: you play it",
-      "src": "footage/lantern6/walk/lantern-harbour--harbour-pier.mp4",
+      "src": "footage/lantern7/walk/lantern-harbour--harbour-pier.mp4",
       "from": 0.5,
       "dur": 3.2,
       "crop": [
@@ -99,6 +99,21 @@
       "dur": 3.0
     },
     {
+      "name": "Studio: the story",
+      "src": "footage/extras1/story/story-diagram.mp4",
+      "from": 0.5,
+      "dur": 5,
+      "crop": [
+        680,
+        80,
+        1200,
+        675
+      ],
+      "fade": 0.4,
+      "caption": "It writes the story, and a bot plays every ending",
+      "by": "Muse Spark"
+    },
+    {
       "name": "Studio: build",
       "src": "footage/mock/studio.mp4",
       "from": 15.6,
@@ -107,6 +122,13 @@
       "caption": "Then it builds the world",
       "by": "Muse Image",
       "speedup": "2x"
+    },
+    {
+      "name": "3 Architecture",
+      "src": "footage/architecture.mp4",
+      "from": 0,
+      "dur": 13,
+      "fade": 0.5
     },
     {
       "name": "4 How: the plan",
@@ -205,8 +227,78 @@
       "from": 1.0
     },
     {
+      "name": "5b Effects: lamp shadow",
+      "src": "footage/extras1/effects/effect-shadow-lamp.mp4",
+      "from": 0.3,
+      "dur": 4,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.35,
+      "caption": "Every lamp casts your shadow"
+    },
+    {
+      "name": "5b Effects: sun shadow",
+      "src": "footage/extras1/effects/effect-shadow-sun.mp4",
+      "from": 0.5,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.35,
+      "caption": "and so does the sun"
+    },
+    {
+      "name": "5b Effects: fog and beam",
+      "src": "footage/extras1/effects/effect-fog-and-beam.mp4",
+      "from": 0.5,
+      "dur": 3.5,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.35,
+      "caption": "Fog drifts, the beam turns"
+    },
+    {
+      "name": "5b Effects: river",
+      "src": "footage/extras1/effects/effect-river-flow-and-glows.mp4",
+      "from": 0.5,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.35,
+      "caption": "Water flows, lanterns flicker"
+    },
+    {
+      "name": "5b Effects: parallax",
+      "src": "footage/extras1/effects/effect-parallax-tracking.mp4",
+      "from": 0.3,
+      "dur": 4,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.35,
+      "caption": "The camera follows you, in depth"
+    },
+    {
       "name": "6 Play: the pier",
-      "src": "footage/lantern6/walk/lantern-harbour--harbour-pier.mp4",
+      "src": "footage/lantern7/walk/lantern-harbour--harbour-pier.mp4",
       "from": 0.5,
       "dur": 6,
       "crop": [
@@ -220,7 +312,7 @@
     },
     {
       "name": "6 Play: the lantern seller",
-      "src": "footage/lantern6/walk/lantern-harbour--lantern-market.mp4",
+      "src": "footage/lantern7/walk/lantern-harbour--lantern-market.mp4",
       "from": 0.5,
       "dur": 6,
       "crop": [
@@ -234,7 +326,7 @@
     },
     {
       "name": "6 Play: the candle child",
-      "src": "footage/lantern6/walk/lantern-harbour--river-dock.mp4",
+      "src": "footage/lantern7/walk/lantern-harbour--river-dock.mp4",
       "from": 0.5,
       "dur": 5.5,
       "crop": [
@@ -244,6 +336,60 @@
         810
       ],
       "fade": 0.3
+    },
+    {
+      "name": "9 More worlds: kids ghost path",
+      "src": "footage/extras1/worlds/walk/drawn-dreams--mushroom-ghost-path.mp4",
+      "from": 0.5,
+      "dur": 3.5,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.35,
+      "caption": "Drawn by kids, played by kids"
+    },
+    {
+      "name": "9 More worlds: kids houses",
+      "src": "footage/extras1/worlds/alive/drawn-dreams--sunny-tower-house.mp4",
+      "from": 0.5,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.35
+    },
+    {
+      "name": "9 More worlds: paper maze",
+      "src": "footage/extras1/worlds/walk/lost-friends-maze--round-chamber.mp4",
+      "from": 1,
+      "dur": 3.5,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.35,
+      "caption": "Paper craft, in Polish"
+    },
+    {
+      "name": "9 More worlds: paper maze land",
+      "src": "footage/extras1/worlds/alive/lost-friends-maze--spiral-maze-land.mp4",
+      "from": 0.5,
+      "dur": 3,
+      "crop": [
+        0,
+        135,
+        1440,
+        810
+      ],
+      "fade": 0.35
     },
     {
       "name": "9 More worlds: the garden at dusk",
