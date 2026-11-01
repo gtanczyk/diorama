@@ -29,7 +29,27 @@ export class Memo {
 
   constructor(readonly dir: string) {}
 
+  /** Asks on their way: the same question asked twice at once (two exits with one sound) is paid once. */
+  private readonly asking = new Map<string, Promise<Buffer>>();
+
   async remember(model: ModelName, label: string, hash: string, ext: string, ask: () => Promise<Buffer | Paid>): Promise<Buffer> {
+    const id = `${model}/${hash}.${ext}`;
+    const pending = this.asking.get(id);
+    if (pending) {
+      const answer = await pending;
+      this.log({ model, label, hash, ms: 0, hit: true });
+      return answer;
+    }
+    const work = this.recall(model, label, hash, ext, ask);
+    this.asking.set(id, work);
+    try {
+      return await work;
+    } finally {
+      this.asking.delete(id);
+    }
+  }
+
+  private async recall(model: ModelName, label: string, hash: string, ext: string, ask: () => Promise<Buffer | Paid>): Promise<Buffer> {
     const file = path.join(this.dir, model, `${hash}.${ext}`);
     // Paid audio is also kept for every world on this machine: another world asking the same pays nothing.
     const shared = SHARED.has(model) ? sharedFile(model, hash, ext) : undefined;

@@ -1,5 +1,6 @@
 // Muse paints the hero from four sides, standing still: the front view is what TRELLIS turns into a
 // model, and all four are projected back onto it, so the walking model looks painted from every side.
+import sharp from 'sharp';
 import { museEdit } from '../meta/muse.ts';
 import type { Memo } from '../meta/memo.ts';
 import type { ViewName } from './fit.ts';
@@ -63,12 +64,15 @@ export function carriedLine(view: ViewName, items: Carried[]): string {
   return `What they carry stays where it is on the body, it does not move round when we walk round them: ${items.map((i) => `the ${i.name}${i.strap ? ` (strap ${i.strap})` : ''} is ${spotIn(view, i.at)}`).join('; ')}.`;
 }
 
+/** A view at check size: where a bag hangs reads at 640 px; four full 1024 px views cost four times the tokens. */
+const small = (png: Buffer) => sharp(png).resize(640, 640, { fit: 'inside' }).png().toBuffer();
+
 /** The views that show a carried thing in the wrong place, or something on the ground at the feet, with why. */
 export async function checkCarried(memo: Memo, key: string, views: Record<ViewName, Buffer>, items: Carried[], round = 0): Promise<Partial<Record<ViewName, string>>> {
   const names: ViewName[] = ['front', 'back', 'left', 'right'];
   const expect = items.length ? names.map((v, n) => `Picture ${n + 1} (${v} view): ${items.map((i) => `the ${i.name} should be ${spotIn(v, i.at)}`).join('; ')}.`).join('\n') : 'They carry nothing that is not plain clothing.';
   const a = await askSparkJson<Record<string, { ok?: unknown; why?: unknown }>>(memo, {
-    label: `views-carried-check:${key}#${round}`, images: names.map((v) => views[v]),
+    label: `views-carried-check:${key}#${round}`, images: await Promise.all(names.map((v) => small(views[v]))),
     prompt: `Four pictures of one character, seen from the front, back, their left side (facing the picture's left) and their right side (facing the picture's right). Check only where the carried things are, and that nothing stands or lies on the ground; ignore everything else.\n${expect}\n\n`
       + 'A thing that shows on the wrong side of the body, on the front when it should be on the back (or the other way round), twice, or missing where it should be fully visible, is wrong. '
       + 'Anything standing or lying on the ground, at the feet or beside them (a suitcase, a bag, a box, a plank), or held in a hand, is wrong in every view, the front too; so is a flag, banner, pole, staff or umbrella anywhere in the picture, behind the figure or over the shoulder too. '

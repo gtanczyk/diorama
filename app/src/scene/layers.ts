@@ -242,12 +242,21 @@ export function waterMask(found: Mask, cards: Mask, floors: Array<{ key: string;
  * its edges from its own colours so a shifted copy never shows the bank, and its mask. None without water.
  * `cards` and `floors` may be wet in SAM's eyes: see waterMask.
  */
+/** Words that say a place may show water, in English and Polish (world text follows the world's language). */
+const WET = /\b(water|river|sea|ocean|lake|pond|pool|stream|canal|creek|brook|waves?|fountain|puddles?|harbou?r|port|quay|dock|pier|jetty|wharf|beach|shore|coast|bay|marsh|swamp|bridge|boats?|ship|ferry|rain|wet|flood|waterfall|spring|well)|wod|rzek|rzecz|morz|jezior|staw|strum|potok|kana[łl]|fontann|ka[łl]u[żz]|port|nabrze|przysta|pla[żz]|brzeg|most|[łl][óo]d[źz]|[łl]odz|statk|prom|deszcz|mokr|bagn|wodospad|studni|zdr[óo]j/i;
+
+export function mayBeWet(place: Place): boolean {
+  return WET.test([place.key, place.shows, place.mood, ...place.things.map((t) => JSON.stringify(t))].join(' '));
+}
+
 export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer, cards: Mask, floors: Array<{ key: string; mask: Mask }>, depth: Depth = Depth.parse({})): Promise<Water | undefined> {
   const [W, H]: [number, number] = [FRAME.width, FRAME.height];
   let mask: Mask | undefined;
   let phrase = '';
   let swallowed: string[] = [];
-  for (const p of ['water', 'river', 'sea']) {
+  // SAM is asked about water only where the place could have some (its description, its things), or the author
+  // marked it: a clockmaker's workshop paid three asks, one after another, to hear there is no sea in it.
+  for (const p of mayBeWet(place) ? ['water', 'river', 'sea'] : []) {
     const hits = await samFind(memo, { label: `water:${place.key}/${p}`, image: backdrop, prompt: p });
     const m = waterMask(unionAll(W, H, hits.map((f) => f.mask)), cards, floors, depth);
     if (maskArea(m.mask) >= 8000) [mask, phrase, swallowed] = [m.mask, p, m.swallowed];
@@ -368,6 +377,12 @@ export async function mistSheet(memo: Memo, place: Place, backdrop: Buffer, notM
   const rgb = new Uint8Array(await sharp(backdrop).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer());
   const density = new Uint8Array(W * H);
   let phrase = '';
+  // Asked first, once: is there fog at all? Most places have none, and SAM was asked fog, mist and haze one after
+  // another on every one of them (three calls and up to three minutes in the queue) before Spark said "clear".
+  const fogPrompt = `This is a painted game scene, ${W}x${H} px. Is there fog, mist or haze painted in it: a bank of fog over the land or the water, mist round a far building, a veil over hills?
+Answer with JSON only: {"bands": [{"box": [x0, y0, x1, y1], "what": "low fog over the dunes"}]}, one box in px round each band of fog (at most 4), or {"bands": []} when the air is clear. Not clouds high in the sky, not smoke from a chimney.`;
+  const { bands } = FogBands.parse(await askSparkJson(memo, { schema: FogBands, label: `mist-bands:${place.key}`, prompt: fogPrompt, images: [backdrop] }));
+  if (!bands.length) return undefined;
   for (const p of ['fog', 'mist', 'haze']) {
     const hits = await samFind(memo, { label: `mist:${place.key}/${p}`, image: backdrop, prompt: p });
     const m = subtract(unionAll(W, H, hits.map((f) => f.mask)), notMist);
@@ -379,9 +394,6 @@ export async function mistSheet(memo: Memo, place: Place, backdrop: Buffer, notM
     break;
   }
   if (!phrase) {
-    const prompt = `This is a painted game scene, ${W}x${H} px. Is there fog, mist or haze painted in it: a bank of fog over the land or the water, mist round a far building, a veil over hills?
-Answer with JSON only: {"bands": [{"box": [x0, y0, x1, y1], "what": "low fog over the dunes"}]}, one box in px round each band of fog (at most 4), or {"bands": []} when the air is clear. Not clouds high in the sky, not smoke from a chimney.`;
-    const { bands } = FogBands.parse(await askSparkJson(memo, { schema: FogBands, label: `mist-bands:${place.key}`, prompt, images: [backdrop] }));
     for (const b of bands) {
       const [x0, y0, x1, y1] = [Math.max(0, Math.round(b.box[0])), Math.max(0, Math.round(b.box[1])), Math.min(W, Math.round(b.box[2])), Math.min(H, Math.round(b.box[3]))];
       if (x1 - x0 < 40 || y1 - y0 < 20) continue;

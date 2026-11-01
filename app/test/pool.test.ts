@@ -38,3 +38,19 @@ describe('cast pool', () => {
     expect(currentStep()).toBeUndefined();
   });
 });
+
+describe('memo', () => {
+  it('the same question asked twice at once is paid once', async () => {
+    const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path');
+    const { Memo } = await import('../src/meta/memo.ts');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'memo-'));
+    const memo = new Memo(dir);
+    let paid = 0;
+    const ask = async () => { paid++; await tick(10); return Buffer.from('door creak'); };
+    const [a, b] = await Promise.all([memo.remember('spark', 'exit:a', 'h1', 'txt', ask), memo.remember('spark', 'exit:b', 'h1', 'txt', ask)]);
+    expect(paid).toBe(1);
+    expect(a.toString()).toBe(b.toString());
+    expect(memo.sent.spark).toBe(1);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
