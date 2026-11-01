@@ -2,7 +2,7 @@
 // every place on its own, the cast, voices and sound alongside. Keeps a build.json of what happened.
 import fs from 'node:fs';
 import { defineCommand, emit, registry, takeOption } from '../registry.ts';
-import { Geometry } from '../play/geometry.ts';
+import { Geometry, personPx } from '../play/geometry.ts';
 import { maskFromPng, type Mask } from '../image/mask.ts';
 import { autoFixes } from '../scene/autofix.ts';
 import { Corrections, readCorrections, writeCorrections } from '../scene/corrections.ts';
@@ -402,7 +402,10 @@ defineCommand({
           const zone = grid.zone[grid.cellOf(...from)];
           const floor = floors[zone >= 0 ? zone : 0] ?? floors[0];
           const f = (after.floors[floor] ??= { add: [], remove: [], strokes: [] });
-          f.strokes.push({ mode: 'add', radius: 16, points: [from, to] });
+          // As wide as the boardwalk Muse paints (about a person's height across, at that depth), less its railings:
+          // a 16 px line left most of a painted boardwalk dead ground the hero could not step on.
+          const across = personPx(g, (from[1] + to[1]) / 2);
+          f.strokes.push({ mode: 'add', radius: Math.round(Math.max(16, Math.min(90, 0.3 * across))), points: [from, to] });
           what.push(`painted a way to ${t.key} across ${Math.round(far)} px and brushed it onto ${floor} (one Muse edit)`);
         }
       } catch (error) {
