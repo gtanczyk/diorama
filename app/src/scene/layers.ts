@@ -17,6 +17,37 @@ import { cellsMask } from './locate.ts';
 
 /** How far a flat grows under the nearer ones: more than two neighbouring flats ever slide apart. */
 export const FLAT_GROW = 24;
+/** A flat whose outline is soft (no colour step across it) along more than this share is a cut, not a silhouette. */
+export const CUT_SHARE = 0.45;
+
+/**
+ * The share of a mask's outline (inside the frame, above the horizon line) where the paint on both sides is
+ * alike: a silhouette against sky or fog steps in colour, a cut through one building does not. Measured 3 px
+ * in and 3 px out across the outline, every other outline pixel.
+ */
+export function cutShare(rgb: Uint8Array, W: number, H: number, m: Mask, above: Mask): number {
+  const D = 3;
+  let soft = 0;
+  let all = 0;
+  for (let y = D; y < H - D; y++) {
+    for (let x = D; x < W - D; x++) {
+      const i = y * W + x;
+      if (!m.bits[i] || !above.bits[i] || (x + y) % 2) continue;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (m.bits[i + dy * W + dx]) continue;
+        const a = (y - dy * D) * W + (x - dx * D);
+        const b = (y + dy * D) * W + (x + dx * D);
+        if (!above.bits[b]) break;
+        const step = Math.abs(rgb[a * 3] - rgb[b * 3]) + Math.abs(rgb[a * 3 + 1] - rgb[b * 3 + 1]) + Math.abs(rgb[a * 3 + 2] - rgb[b * 3 + 2]);
+        all++;
+        if (step < 24) soft++;
+        break;
+      }
+    }
+  }
+  return all ? soft / all : 0;
+}
+
 /** Flats smaller than this are not worth a layer. */
 const MIN_FLAT_PX = 2000;
 
@@ -67,6 +98,10 @@ Answer only with JSON: {"bands": [{"phrase": "...", "what": "one short sentence"
   }
   if (!keep.length) return undefined;
   const rgb = new Uint8Array(await sharp(backdrop).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer());
+  // A flat whose outline mostly runs through paint of the same colour cut a building or a stall in two (SAM
+  // took half a pavilion with the row of houses): sliding, the two halves would part. Such a flat stays painted.
+  keep = keep.filter((f) => cutShare(rgb, W, H, f.m, above) <= CUT_SHARE);
+  if (!keep.length) return undefined;
   const all = unionAll(W, H, keep.map((f) => f.m));
   const flats: Flat[] = [];
   for (const [k, f] of keep.entries()) {
