@@ -22,6 +22,7 @@ import { BuildPlaces, callBy, extensionDetail, type PlaceRuns, MODEL_NAME, named
 import type { ExtensionProgress } from '../src/world/extension-progress.ts';
 import { Bell, Logo, Rail, forgetWorld, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
 import { CAST_STEPS, castFile, castLine, CastWorkStage, lineStep, castTouched, type CastWork } from './cast-work.tsx';
+import { StepWorkStage, WORK_STEPS } from './step-work.tsx';
 import { SayIt } from './say-it.tsx';
 import { Card, CastCard, CastStage, nice, PlacesCard, PlaceStage, WorldStrip, type StageView } from './world.tsx';
 import { Tips } from './tip.tsx';
@@ -819,7 +820,9 @@ function Workshop({ slug }: { slug: string }) {
       // Talking faces always open in the build view: who speaks, who failed and why, their mouth shapes.
       return onStage(s && (s === 'faces' || liveBuild.plan.includes(s) || seen) ? { kind: 'work', step: s } : { kind: 'cast' });
     }
-    if (phase === 'sound') return setByHand('#cast');
+    // World-wide steps with no place layer (item icons, plates, weather, reactions, sounds): their own live view.
+    if (step && WORK_STEPS.includes(step)) return onStage({ kind: 'work', step });
+    if (phase === 'sound') return step === 'voices' ? setByHand('#cast') : onStage({ kind: 'work', step: 'sound' });
     if (phase === 'verify') return playable ? onStage({ kind: 'play' }) : setLogOpen(true);
     const layer = (step && STEP_SHOWS[step]) ?? ({ paint: 'painting', cut: 'masks', space: 'walk' } as Record<string, LayerName>)[phase];
     if (layer) {
@@ -956,7 +959,7 @@ function Workshop({ slug }: { slug: string }) {
     document.title = `${status?.title ?? slug} · Diorama`;
     return () => void (document.title = 'Diorama Studio');
   }, [status?.title, slug]);
-  const stageTitle = shownView.kind === 'place' ? nice(stagedPlace?.key ?? '') : shownView.kind === 'cast' || shownView.kind === 'work' ? 'Cast' : shownView.kind === 'story' ? 'Story' : shownView.kind === 'build' ? (stagePlace ? nice(stagePlace.key) : 'Building') : status?.title ?? slug;
+  const stageTitle = shownView.kind === 'place' ? nice(stagedPlace?.key ?? '') : shownView.kind === 'work' && WORK_STEPS.includes(shownView.step ?? '') ? 'Building' : shownView.kind === 'cast' || shownView.kind === 'work' ? 'Cast' : shownView.kind === 'story' ? 'Story' : shownView.kind === 'build' ? (stagePlace ? nice(stagePlace.key) : 'Building') : status?.title ?? slug;
   const stageHint = shownView.kind === 'play' ? 'Click to walk, right click to look, or a gamepad' : '';
   // What is open, told to the agent with each message so "this" means something; nothing shows for it.
   // The last thing opened stays meant after its drawer closes, while the stage still shows where it is.
@@ -1025,9 +1028,12 @@ function Workshop({ slug }: { slug: string }) {
             {shownView.kind === 'work' && status && (
               <div class="build-on-stage">
                 <Pipeline job={pipelineJob} all={steps} live={liveBuild} build={status.build} typical={status.typical ?? {}} onOpen={openPhase} />
-                <CastWorkStage slug={slug} step={shownView.step ?? 'cast'} work={castWork} running={liveBuild.running[shownView.step ?? ''] === 'run'}
+                {WORK_STEPS.includes(shownView.step ?? '')
+                  ? <StepWorkStage slug={slug} step={shownView.step!} running={liveBuild.running[shownView.step!] === 'run'}
+                      failed={liveBuild.running[shownView.step!] === 'fail' || (!job && failed?.args[0] === shownView.step) ? plainError(failed?.error ?? 'the step failed') : undefined} since={liveBuild.since[shownView.step!]} took={took(shownView.step!)} version={tick} />
+                  : <CastWorkStage slug={slug} step={shownView.step ?? 'cast'} work={castWork} running={liveBuild.running[shownView.step ?? ''] === 'run'}
                   failed={liveBuild.running[shownView.step ?? ''] === 'fail' || (!job && failed?.args[0] === shownView.step) ? plainError(failed?.error ?? 'the step failed') : undefined} since={liveBuild.since[shownView.step ?? '']} took={took(shownView.step ?? 'cast')} version={tick}
-                  only={job && job.args[0] === shownView.step ? job.args[2] : undefined} onOpen={(key) => setByHand(`#cast:${key}`)} />
+                  only={job && job.args[0] === shownView.step ? job.args[2] : undefined} onOpen={(key) => setByHand(`#cast:${key}`)} />}
               </div>
             )}
             {shownView.kind === 'place' && stagedPlace && <PlaceStage slug={slug} place={stagedPlace} version={tick} onOpen={(thing) => setByHand(`${stagedPlace.key}@${thing}`)} />}

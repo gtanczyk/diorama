@@ -1194,6 +1194,29 @@ select:not([multiple]) { padding-right: 28px !important; }
 .lightbox .prev { left: 16px; } .lightbox .next { right: 16px; }
 .lightbox .count { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 13px; }
 .cast-work img[data-lightbox], .figure-preview canvas[data-lightbox] { cursor: zoom-in; }
+.step-work .sw-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 10px; }
+.step-work .sw-cards li { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; background: var(--panel); box-shadow: 0 1px 2px rgba(60, 40, 20, 0.12); min-width: 0; }
+.step-work .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; align-items: start; }
+.step-work .pair figure { margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.step-work .pair figcaption { font-size: 12px; color: var(--muted); text-align: center; }
+.step-work .sw-crop { position: relative; width: 100%; overflow: hidden; border-radius: 8px; background: var(--raised); cursor: zoom-in; }
+.step-work .sw-crop img { position: absolute; max-width: none; height: auto; display: block; }
+.step-work .sw-crop img.dim { filter: brightness(0.42) saturate(0.6); }
+.step-work .sw-crop img.cut { mask-mode: luminance; -webkit-mask-size: 100% 100%; mask-size: 100% 100%; filter: drop-shadow(0 0 3px rgba(255, 230, 170, 0.9)); }
+.step-work .sw-icon, .step-work .pair .to-come, .step-work .sw-none { width: 100%; aspect-ratio: 1; max-height: 180px; object-fit: contain; border-radius: 8px; background: var(--raised); }
+.step-work .sw-icon { animation: land 0.5s ease-out; cursor: zoom-in; }
+.step-work .pair .to-come { background: repeating-linear-gradient(135deg, var(--raised) 0 14px, transparent 14px 28px); animation: pulse 2.4s ease-in-out infinite; }
+.step-work .pair .to-come.still { animation: none; opacity: 0.6; }
+.step-work .sw-none { display: grid; place-items: center; color: var(--muted); font-size: 13px; text-align: center; padding: 8px; box-sizing: border-box; }
+.step-work .words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.step-work .words strong { font-family: var(--display); font-weight: 400; font-size: 17px; }
+.step-work .words .detail { font-size: 12.5px; overflow-wrap: anywhere; }
+.step-work .sw-sounds { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.step-work .sw-sounds li { display: grid; grid-template-columns: 54px minmax(0, 1fr) minmax(0, 240px); gap: 10px; align-items: center; padding: 6px 10px; border-radius: 10px; background: var(--panel); }
+.step-work .sw-sounds .kind { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.step-work .sw-sounds .what { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.step-work .sw-sounds audio { width: 100%; height: 30px; }
+.step-work .sw-sounds li.fail .detail:last-child { color: var(--red, #b0412e); }
 /* History in its own drawer: one card per job, the newest on top. */
 .drawer.history { display: flex; flex-direction: column; }
 .drawer.history > .history-list, .drawer.history > .note { flex: 1; min-height: 0; overflow: auto; }

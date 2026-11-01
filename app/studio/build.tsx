@@ -153,7 +153,10 @@ const STEP_DOES: Record<string, string> = {
 /** What a click on a step's segment opens. */
 const STEP_OPENS: Record<string, string> = {
   world: 'the places plan (the story is written over it)', story: 'the story', layout: 'the plan sketch Muse paints over', paint: 'the painting',
-  masks: 'what SAM cut out', plates: 'what SAM cut out', icons: 'what SAM cut out', derive: 'the walkable floor', backdrop: 'the depth map',
+  masks: 'what SAM cut out', plates: 'each thing that is taken or changes, and the place after', icons: 'every item: where SAM cuts it from and its icon',
+  derive: 'the walkable floor', backdrop: 'the depth map', weather: 'each place and the weather read for it', reactions: 'each place and what reacts there',
+  cast: 'each character as it is painted', model: 'the 3D bodies as they are built', sprites: 'the sprite sheets as they are painted', faces: 'the talking faces',
+  sound: 'every sound, to listen to', voices: 'each character\'s voice', verify: 'the game, or the build log',
 };
 
 export const STEP_SHOWS: Record<string, LayerName> = { layout: 'blockin', paint: 'painting', masks: 'masks', plates: 'masks', derive: 'walk', backdrop: 'depth', weather: 'painting', reactions: 'painting' };
