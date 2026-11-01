@@ -7,9 +7,16 @@ import { nice } from './world.tsx';
 import { named, nowBy } from './build.tsx';
 import { Icon } from './icons.tsx';
 
+<<<<<<< Updated upstream
 /** Per character: the files the running job wrote (world path → when) and what the build last said about them. */
 export type CastWork = Record<string, { files: Record<string, number>; said: string; at: number; first: number }>;
 export const CAST_STEPS = ['cast', 'model', 'sprites', 'faces'];
+=======
+/** Per character: the files the running job wrote (world path → when), what the build last said about them, and
+ * when each cast step first touched them (a build paints the whole cast long before it models the last one). */
+export type CastWork = Record<string, { files: Record<string, number>; said: string; at: number; began: Record<string, number> }>;
+export const CAST_STEPS = ['cast', 'model', 'sprites'];
+>>>>>>> Stashed changes
 
 const FILE = /^cast\/([a-z0-9][\w-]*)(-painting\.png|\.png|\/model\/[\w-]+\.(?:png|json)|\/sprites\/[\w-]+\.(?:png|json)|\/face-[\w-]+\.(?:png|json)|\/face-work\/[\w-]+\.png)$/;
 /** A file the cast steps write, as [character, step]. */
@@ -22,6 +29,21 @@ export function castFile(file: string): [string, string] | null {
 export function castLine(line: string): [string, string] | null {
   const m = /^([a-z0-9][\w-]*)((?: (?:walk|talk) [\w-]+(?: \[[^\]]*\])?)?): (.+)$/.exec(line.trim());
   return m ? [m[1], `${m[2].trim() ? `${m[2].trim()}: ` : ''}${m[3]}`] : null;
+}
+
+/** The cast step a build line belongs to ("<key>: TRELLIS builds the body" is the model step). */
+export function lineStep(words: string): string {
+  return /4 sides|TRELLIS|rigging|3D model|auto-rig/.test(words) ? 'model' : /^(?:walk|talk) |sprite/.test(words) ? 'sprites' : 'cast';
+}
+
+/** One character's work with a build line or a landed file added, the step's start kept from the first touch. */
+export function castTouched(w: CastWork[string] | undefined, step: string, change: { said?: string; file?: string }, now = Date.now()): CastWork[string] {
+  return {
+    said: change.said ?? w?.said ?? '',
+    files: change.file ? { ...w?.files, [change.file]: now } : w?.files ?? {},
+    began: w?.began[step] ? w.began : { ...w?.began, [step]: now },
+    at: now,
+  };
 }
 
 const VIEWS = ['front', 'back', 'left', 'right'];
@@ -90,7 +112,7 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
   if (only && known.has(only) && !keys.includes(only)) keys.unshift(only);
   const [pick, setPick] = useState<string | null>(null);
   const focus = pick && keys.includes(pick) ? pick : keys[0];
-  const empty = { files: {}, said: '', at: 0, first: 0 };
+  const empty = { files: {}, said: '', at: 0, began: {} };
   const elapsed = since ? (now - since) / 1000 : 0;
   // A job for one character takes about one character's time, not the build's whole model step.
   const left = Math.max(0, (only && step === 'model' ? STAGES.reduce((sum, x) => sum + x.s, 0) : took) - elapsed);
@@ -120,7 +142,8 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
         const w = work[focus] ?? empty;
         const c = cast?.find((x) => x.key === focus);
         const st = { ...where(step, focus, w), ...(failed && !where(step, focus, w).done && { stopped: true }) } as ReturnType<typeof where> & { stopped?: boolean };
-        const mine = w.first ? (now - w.first) / 1000 : 0;
+        // This character's time in this step: in a whole build it was painted with the cast half an hour before.
+        const mine = w.began[step] ? (now - w.began[step]) / 1000 : 0;
         return (
           <section class={`cw-focus${st.done ? ' done' : ''}`}>
             <div class="cw-who">

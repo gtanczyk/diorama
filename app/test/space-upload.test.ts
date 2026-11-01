@@ -55,3 +55,27 @@ test('download does not ask again after a 404', async () => {
   await expect(new Space('test/model').download({ path: '/tmp/gradio/x.png' })).rejects.toThrow('test/model download /tmp/gradio/x.png: 404');
   expect(fetch).toHaveBeenCalledTimes(1);
 });
+
+test('a call whose queue stream goes silent gives up instead of hanging the build', async () => {
+  const config = { components: [], dependencies: [{ id: 0, api_name: 'run', inputs: [] }] };
+  const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/config')) return Response.json(config);
+    if (url.includes('/queue/join')) return Response.json({ event_id: 'e1' });
+    // The queue opens and never says anything again, until the caller aborts.
+    return new Response(new ReadableStream({
+      start(ctrl) {
+        ctrl.enqueue(new TextEncoder().encode('data: {"msg":"estimation","event_id":"e1"}\n\n'));
+        init?.signal?.addEventListener('abort', () => ctrl.error(new DOMException('aborted', 'AbortError')));
+      },
+    }));
+  });
+  vi.stubGlobal('fetch', fetch);
+  const { SPACE_WAIT } = await import('../src/model/space.ts');
+  const was = { ...SPACE_WAIT };
+  Object.assign(SPACE_WAIT, { idleMs: 30, totalMs: 1000 });
+  try {
+    await expect(new Space('test/model').call('run', [])).rejects.toThrow('test/model /run: silent for 0 s');
+  } finally {
+    Object.assign(SPACE_WAIT, was);
+  }
+});

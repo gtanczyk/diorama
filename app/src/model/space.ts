@@ -7,6 +7,11 @@ export const HF_TOKEN_VARS = ['HUGGING_FACE_API_KEY', 'HF_TOKEN'] as const;
 /** HTTP answers of a busy or restarting Space: asking again later can work. */
 export const TRANSIENT = [408, 429, 500, 502, 503, 504];
 
+/** How long a call waits: a Space that sends nothing (not even Gradio's heartbeat, every 15 s) for `idleMs`, or
+ * has not answered after `totalMs` (a ZeroGPU queue that never moves), is given up on, so the caller can ask
+ * again or go on without it instead of a build hanging on one character. Tests shorten them. */
+export const SPACE_WAIT = { idleMs: 180_000, totalMs: 900_000 };
+
 /** A file argument, as Gradio expects it after an upload. */
 export type SpaceFile = { path: string; meta: { _type: 'gradio.FileData' }; orig_name?: string };
 
@@ -57,15 +62,43 @@ export class Space {
       method: 'POST',
       headers: { ...this.headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ data, fn_index: fn, session_hash: this.session, event_data: null, trigger_id: null }),
+      signal: AbortSignal.timeout(60_000),
     });
     if (!join.ok) throw new Error(`${this.id} /${api}: ${join.status} ${(await join.text()).slice(0, 200)}`);
     const { event_id } = (await join.json()) as { event_id: string };
-    const stream = await fetch(`${this.base}/queue/data?session_hash=${this.session}`, { headers: this.headers });
+    const started = Date.now();
+    const stop = new AbortController();
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    let why = '';
+    const wait = () => {
+      clearTimeout(quiet);
+      const ms = Math.min(SPACE_WAIT.idleMs, SPACE_WAIT.totalMs - (Date.now() - started));
+      quiet = setTimeout(() => {
+        why = Date.now() - started >= SPACE_WAIT.totalMs ? `no answer after ${Math.round(SPACE_WAIT.totalMs / 1000)} s` : `silent for ${Math.round(SPACE_WAIT.idleMs / 1000)} s`;
+        stop.abort();
+      }, Math.max(0, ms));
+    };
+    wait();
+    try {
+      return await this.listen(api, event_id, stop.signal, wait);
+    } catch (error) {
+      if (why) throw new Error(`${this.id} /${api}: ${why}`);
+      throw error;
+    } finally {
+      clearTimeout(quiet);
+      stop.abort();
+    }
+  }
+
+  /** Reads the queue's event stream until the call's own answer; `heard` is called on every chunk. */
+  private async listen(api: string, event_id: string, signal: AbortSignal, heard: () => void): Promise<unknown[][]> {
+    const stream = await fetch(`${this.base}/queue/data?session_hash=${this.session}`, { headers: this.headers, signal });
     if (!stream.ok || !stream.body) throw new Error(`${this.id} /${api}: queue ${stream.status}`);
     const events: unknown[][] = [];
     const decoder = new TextDecoder();
     let buffered = '';
     for await (const chunk of stream.body as unknown as AsyncIterable<Uint8Array>) {
+      heard();
       buffered += decoder.decode(chunk, { stream: true });
       const lines = buffered.split('\n');
       buffered = lines.pop() ?? '';
@@ -91,7 +124,7 @@ export class Space {
   /** The fn_index of a named endpoint and where its hidden state inputs go, from the app's config. */
   private async endpoint(api: string): Promise<{ fn: number; states: number[] }> {
     if (!this.endpoints) {
-      const res = await fetch(`${this.base.replace(/\/gradio_api$/, '')}/config`, { headers: this.headers });
+      const res = await fetch(`${this.base.replace(/\/gradio_api$/, '')}/config`, { headers: this.headers, signal: AbortSignal.timeout(60_000) });
       if (!res.ok) throw new Error(`${this.id} config: ${res.status}`);
       type Config = { components: { id: number; type: string }[]; dependencies: { id?: number; api_name?: string | false; inputs: number[] }[] };
       const config = (await res.json()) as Config;
@@ -108,7 +141,7 @@ export class Space {
   async download(file: { path: string; url?: string }): Promise<Buffer> {
     // A download only reads a file the Space already made, so a busy or restarting Space is asked again.
     for (let attempt = 0; ; attempt++) {
-      const res = await fetch(file.url ?? `${this.base}/file=${file.path}`, { headers: this.headers }).catch((error: Error) => error);
+      const res = await fetch(file.url ?? `${this.base}/file=${file.path}`, { headers: this.headers, signal: AbortSignal.timeout(120_000) }).catch((error: Error) => error);
       if (!(res instanceof Error) && res.ok) return Buffer.from(await res.arrayBuffer());
       if (!(res instanceof Error)) await res.body?.cancel();
       const status = res instanceof Error ? res.message : res.status;

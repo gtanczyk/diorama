@@ -10,6 +10,7 @@ import { Layout } from '../scene/layout.ts';
 import { locateThings, markFloors } from '../scene/locate.ts';
 import { checkMasks, type MaskCheck } from '../scene/maskcheck.ts';
 import { maskFloors, maskThings } from '../scene/masks.ts';
+import { paintingLayoutHash } from '../scene/paint-layout.ts';
 import { maskBox, type Rect } from '../image/raster.ts';
 import { WorldFiles } from '../world/files.ts';
 
@@ -27,6 +28,14 @@ defineCommand({
       const layout = Layout.parse(files.readJson(at('layout.json')));
       const brief = Brief.parse(files.readJson(at('brief.json')));
       const painting = fs.readFileSync(at('painting.png'));
+      // A rejected/stale checked painting must not be rescued by masks and invented floor strokes.
+      // Legacy worlds without a report remain editable; rebuilding from paint checks them too.
+      if (!fs.existsSync(at('photo.png')) && fs.existsSync(at('painting-layout.json'))) {
+        const report = files.readJson(at('painting-layout.json')) as { ok?: boolean; inputs?: string };
+        if (!report.ok || report.inputs !== paintingLayoutHash(place, layout, fs.readFileSync(at('blockin.png')), painting)) {
+          throw new Error(`PAINT_LAYOUT_MISMATCH ${place.key}: painting/layout changed or its composition check failed; rebuild this place from paint to inspect and repair it before masks`);
+        }
+      }
       const flagged: string[] = [];
       const log = (line: string) => {
         flagged.push(line);

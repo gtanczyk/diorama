@@ -2,7 +2,7 @@
 // every place on its own, the cast, voices and sound alongside. Keeps a build.json of what happened.
 import fs from 'node:fs';
 import { defineCommand, emit, registry, takeOption } from '../registry.ts';
-import { Geometry, personPx } from '../play/geometry.ts';
+import { Geometry } from '../play/geometry.ts';
 import { maskFromPng, type Mask } from '../image/mask.ts';
 import { autoFixes } from '../scene/autofix.ts';
 import { Corrections, readCorrections, writeCorrections } from '../scene/corrections.ts';
@@ -365,67 +365,11 @@ defineCommand({
         repairs.push({ place, by: 'auto', fixes: fixes.map((f) => f.what), ok: r.ok });
         emit('repair.end', { place, by: 'auto', ok: r.ok });
       }
-      return recutCards(place, await paintMissing(place, await paintWays(place, await newTake(place, r))));
+      return recutCards(place, await paintMissing(place, await newTake(place, r)));
     }
 
-    /**
-     * A painting that left the layout so far that a floor of it cannot be walked on (FLOOR_LOST: the stairs or the trail
-     * an exit leads off painted somewhere else) gets a new take of the whole painting: one Muse painting, kept in
-     * corrections.json as the place's take, and the place is rebuilt from paint. At most two new takes per place; the
-     * repaints the build asked for on the old painting are dropped, as they were placed for it.
-     */
-    /**
-     * The painting kept, but an exit or item stands where the hero cannot walk (stairs across a strip of water, a can
-     * on a moored boat): its stand spot was pulled back to the nearest reached floor, far from the thing. A way is
-     * painted there (one Muse edit: a boardwalk or gangplank from the reached floor to the thing) and brushed onto
-     * the floor the hero stands on, then the place is rebuilt from paint. Up to three ways, each asked for once.
-     */
-    async function paintWays(place: string, r: Report | null): Promise<Report | null> {
-      if (!r || r.ok || r.from || !r.issues.some((i) => /^FLOOR_(LOST|UNREACHABLE)$|^UNREACHABLE$/.test(i.code))) return r;
-      const dir = files.place(place);
-      const before = readCorrections(dir);
-      const after = Corrections.parse(JSON.parse(JSON.stringify(before)));
-      const what: string[] = [];
-      try {
-        const g = Geometry.parse(files.readJson(files.place(place, 'geometry.json')));
-        const floors = Layout.parse(files.readJson(files.place(place, 'layout.json'))).floors.map((f) => f.key);
-        const grid = gridOf(g);
-        for (const t of g.things) {
-          if (what.length >= 3 || (t.role !== 'exit' && t.role !== 'item')) continue;
-          const [x0, , x1, y1] = t.box;
-          const to: [number, number] = [Math.round(Math.min(x1, Math.max(x0, t.stand[0]))), Math.round(y1 - 8)];
-          const from: [number, number] = [Math.round(t.stand[0]), Math.round(t.stand[1])];
-          const far = Math.hypot(to[0] - from[0], to[1] - from[1]);
-          if (far < 70 || far > 420) continue;
-          const fix = `${BUILD_REPAINT} way to the ${t.key.replace(/-/g, ' ')}: a sturdy wooden boardwalk with low railings from (${from.join(', ')}) to (${to.join(', ')}), lying on whatever is between them (water, rocks), wide enough to walk along, in the painting's own style and light; keep everything else`;
-          if (after.repaint.some((x) => x.fix === fix)) continue;
-          const pad = 70;
-          after.repaint.push({ fix, region: [Math.max(0, Math.min(from[0], to[0]) - pad), Math.max(0, Math.min(from[1], to[1]) - pad), Math.min(1200, Math.max(from[0], to[0]) + pad), Math.min(896, Math.max(from[1], to[1]) + pad)] });
-          const zone = grid.zone[grid.cellOf(...from)];
-          const floor = floors[zone >= 0 ? zone : 0] ?? floors[0];
-          const f = (after.floors[floor] ??= { add: [], remove: [], strokes: [] });
-          // As wide as the boardwalk Muse paints (about a person's height across, at that depth), less its railings:
-          // a 16 px line left most of a painted boardwalk dead ground the hero could not step on.
-          const across = personPx(g, (from[1] + to[1]) / 2);
-          f.strokes.push({ mode: 'add', radius: Math.round(Math.max(16, Math.min(90, 0.3 * across))), points: [from, to] });
-          what.push(`painted a way to ${t.key} across ${Math.round(far)} px and brushed it onto ${floor} (one Muse edit)`);
-        }
-      } catch (error) {
-        console.log(`${place}: could not paint a way: ${error instanceof Error ? error.message : error}`);
-        return r;
-      }
-      if (!what.length) return r;
-      writeCorrections(dir, after);
-      console.log(`\n# repair ${place}: ${what.join('; ')}`);
-      emit('repair.start', { place, by: 'auto', fixes: what });
-      for (const step of PLACE_STEPS.slice(PLACE_STEPS.indexOf('paint'))) {
-        if (!broken.has(place)) await runPlace(step, place);
-      }
-      const next = reportOf(place) ?? r;
-      repairs.push({ place, by: 'auto', fixes: what, ok: next.ok });
-      emit('repair.end', { place, by: 'auto', ok: next.ok });
-      return next;
-    }
+    // Do not paint a bridge to a snapped interaction spot and brush it open without measuring it.
+    // Paint now restores the plan's composition before masks; remaining gaps need observed floor evidence.
 
     /**
      * A card whose mask leaves out a painted part of its thing (CARD_CUT: the boat's bow, a lamp on its post) leaves

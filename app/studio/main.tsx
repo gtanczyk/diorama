@@ -21,7 +21,7 @@ import { PlaceEditor } from './place.tsx';
 import { BuildPlaces, callBy, extensionDetail, type PlaceRuns, MODEL_NAME, named, Pipeline, standIn, viaName, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
 import type { ExtensionProgress } from '../src/world/extension-progress.ts';
 import { Bell, Logo, Rail, forgetWorld, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
-import { CAST_STEPS, castFile, castLine, CastWorkStage, type CastWork } from './cast-work.tsx';
+import { CAST_STEPS, castFile, castLine, CastWorkStage, lineStep, castTouched, type CastWork } from './cast-work.tsx';
 import { SayIt } from './say-it.tsx';
 import { Card, CastCard, CastStage, nice, PlacesCard, PlaceStage, WorldStrip, type StageView } from './world.tsx';
 import { Tips } from './tip.tsx';
@@ -668,7 +668,7 @@ function Workshop({ slug }: { slug: string }) {
           const tried = /^\s*story (try \d+|: kept)/.test(line);
           if (tried) setStoryLog((l) => [...l, { at: Date.now(), text: line.trim().replace(/^story /, '').slice(0, 220), kind: 'check' }]);
           const about = castLine(line);
-          if (about) setCastWork((w) => ({ ...w, [about[0]]: { files: w[about[0]]?.files ?? {}, first: w[about[0]]?.first ?? Date.now(), said: about[1], at: Date.now() } }));
+          if (about) setCastWork((w) => ({ ...w, [about[0]]: castTouched(w[about[0]], lineStep(about[1]), { said: about[1] }) }));
           return add(e, line, e.stream === 'err' ? 'err' : 'out');
         }
         case 'build.start': return setJobPlan(e.steps as string[]);
@@ -701,7 +701,7 @@ function Workshop({ slug }: { slug: string }) {
           if (at && e.exists) setLivePlace({ key: at[1], at: Date.now() });
           // A character's picture as it lands: the live cast view shows it.
           const who = e.exists ? castFile(String(e.file)) : null;
-          if (who) setCastWork((w) => ({ ...w, [who[0]]: { said: w[who[0]]?.said ?? '', first: w[who[0]]?.first ?? Date.now(), files: { ...w[who[0]]?.files, [String(e.file)]: Date.now() }, at: Date.now() } }));
+          if (who) setCastWork((w) => ({ ...w, [who[0]]: castTouched(w[who[0]], who[1], { file: String(e.file) }) }));
           return soon();
         }
         case 'feedback.changed': return soon();

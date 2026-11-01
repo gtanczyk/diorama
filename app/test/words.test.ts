@@ -25,6 +25,7 @@ vi.mock('../src/meta/spark.ts', () => ({
       return { shows: 'a quiet playground among leafless trees', mood: 'pale morning', looks: { swing: 'a faded swing frame, its two seats resting low', grass: 'worn pale grass under the frame' } };
     }
     if (label.startsWith('critic:')) return { issues: [] };
+    if (label.startsWith('paint-layout:')) return { horizon: 300, things: [{ key: 'swing', box: [450, 500, 750, 700], approach: true, why: 'same frame' }], floors: [{ key: 'grass', coverage: 1, connected: true, reachesEdges: true, why: 'continuous grass' }] };
     throw new Error(`unexpected spark ask ${label}`);
   },
 }));
