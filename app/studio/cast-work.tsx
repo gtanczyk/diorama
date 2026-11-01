@@ -9,14 +9,14 @@ import { Icon } from './icons.tsx';
 
 /** Per character: the files the running job wrote (world path → when) and what the build last said about them. */
 export type CastWork = Record<string, { files: Record<string, number>; said: string; at: number; first: number }>;
-export const CAST_STEPS = ['cast', 'model', 'sprites'];
+export const CAST_STEPS = ['cast', 'model', 'sprites', 'faces'];
 
-const FILE = /^cast\/([a-z0-9][\w-]*)(-painting\.png|\.png|\/model\/[\w-]+\.(?:png|json)|\/sprites\/[\w-]+\.(?:png|json))$/;
+const FILE = /^cast\/([a-z0-9][\w-]*)(-painting\.png|\.png|\/model\/[\w-]+\.(?:png|json)|\/sprites\/[\w-]+\.(?:png|json)|\/face-[\w-]+\.(?:png|json)|\/face-work\/[\w-]+\.png)$/;
 /** A file the cast steps write, as [character, step]. */
 export function castFile(file: string): [string, string] | null {
   const m = FILE.exec(file);
   if (!m) return null;
-  return [m[1], m[2].startsWith('/model/') ? 'model' : m[2].startsWith('/sprites/') ? 'sprites' : 'cast'];
+  return [m[1], m[2].startsWith('/model/') ? 'model' : m[2].startsWith('/sprites/') ? 'sprites' : m[2].startsWith('/face') ? 'faces' : 'cast'];
 }
 /** A build line about one character ("hero: TRELLIS builds the body", "hero walk right: take 2 …"), as [character, words]. */
 export function castLine(line: string): [string, string] | null {
@@ -30,7 +30,9 @@ const STAGES = [
   { word: 'Body', by: 'TRELLIS', tip: 'TRELLIS builds a 3D body from the four sides (Hugging Face GPU)', s: 30 },
   { word: 'Skeleton', by: 'auto-rig', tip: 'A skeleton is fitted into the body so it can walk', s: 25 },
 ];
-const WHAT: Record<string, string> = { cast: 'Painting the cast', model: 'Building 3D models', sprites: 'Painting sprites' };
+const WHAT: Record<string, string> = { cast: 'Painting the cast', model: 'Building 3D models', sprites: 'Painting sprites', faces: 'Preparing talking faces' };
+/** The newest face picture the faces step wrote for one character: the mouth shapes so far. */
+const newestFace = (key: string, w: CastWork[string]) => Object.entries(w.files).filter(([f]) => f.startsWith(`cast/${key}/face`) && f.endsWith('.png') && !f.endsWith('-reference.png')).sort((a, b) => b[1] - a[1])[0];
 
 type Who = { key: string; role: string; looksNow: string; figure: { file: string; v: number } | null; painting: { file: string; v: number } | null; stamps: { rig: number | null; model: number | null; sprites: number | null }; body: { upright: boolean } | null };
 
@@ -45,6 +47,7 @@ function where(step: string, key: string, w: CastWork[string]) {
     return { at: /rigging/.test(w.said) ? 2 : /TRELLIS/.test(w.said) ? 1 : 0, done: false };
   }
   if (step === 'sprites') return { at: 0, done: has(`cast/${key}/sprites/sprites.json`) };
+  if (step === 'faces') return { at: 0, done: has(`cast/${key}/face-attempt.json`) || /face (prepared|unchanged)/.test(w.said) };
   return { at: 0, done: has(`cast/${key}.png`) && /\.png · /.test(w.said) };
 }
 
@@ -54,6 +57,11 @@ function slots(step: string, key: string, w: CastWork[string]): Array<{ name: st
   if (step === 'sprites') {
     const painted = Object.keys(w.files).filter((f) => /\/sprites\/(?:talk-)?painted-[\w-]+\.png$/.test(f));
     return painted.length ? painted.map((f) => ({ name: f.split('/').at(-1)!.replace(/\.png$/, '').replace('painted-', ''), file: f, v: w.files[f] })) : [{ name: 'walk' }];
+  }
+  if (step === 'faces') {
+    // What it works from (the painted figure) and the mouth shapes as they are painted and checked.
+    const atlas = newestFace(key, w);
+    return [{ name: 'works from', file: `cast/${key}.png`, v: 0 }, { name: 'mouth shapes', file: atlas?.[0], v: atlas?.[1] }];
   }
   return [`cast/${key}-painting.png`, `cast/${key}.png`].map((f, i) => ({ name: i ? 'cut out' : 'painted', file: w.files[f] ? f : undefined, v: w.files[f] }));
 }
@@ -77,7 +85,7 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
   const known = new Set((cast ?? []).map((c) => c.key));
   // Who this step touched, newest first; a job for one character shows that one from the start.
   const keys = Object.entries(work)
-    .filter(([k, w]) => known.has(k) && (Object.keys(w.files).some((f) => castFile(f)?.[1] === step) || (step === 'model' && /sides|TRELLIS|rigging|3D model/.test(w.said))))
+    .filter(([k, w]) => known.has(k) && (Object.keys(w.files).some((f) => castFile(f)?.[1] === step) || (step === 'model' && /sides|TRELLIS|rigging|3D model/.test(w.said)) || (step === 'faces' && /face|mouth|facial|lips/.test(w.said))))
     .sort((a, b) => b[1].at - a[1].at).map(([k]) => k);
   if (only && known.has(only) && !keys.includes(only)) keys.unshift(only);
   const [pick, setPick] = useState<string | null>(null);
@@ -96,7 +104,18 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
           {keys.length > 1 ? ` · ${keys.length} characters` : ''}
         </span>
       </div>
-      {!focus && <div class="cw-wait"><span>{cast === null ? 'Reading the cast…' : named(step === 'model' ? 'Muse Image is about to paint the first character from four sides…' : step === 'sprites' ? 'Muse Image is about to paint the first sprite sheet…' : 'Muse Image is painting the cast…')}</span></div>}
+      {!focus && step === 'faces' && cast && cast.some((c) => c.figure) && (
+        // Before the first mouth lands: who will get a talking face, from the figures it works from.
+        <div class="cw-slots">
+          {cast.filter((c) => c.figure).map((c) => (
+            <figure class="in">
+              <img src={fileUrl(slug, c.figure!.file, c.figure!.v)} data-lightbox={fileUrl(slug, c.figure!.file, c.figure!.v)} title={`${nice(c.key)}: its mouth shapes are painted from this figure. Click: large`} alt={c.key} />
+              <figcaption>{nice(c.key)}</figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
+      {!focus && (step !== 'faces' || !cast?.some((c) => c.figure)) && <div class="cw-wait"><span>{cast === null ? 'Reading the cast…' : named(step === 'model' ? 'Muse Image is about to paint the first character from four sides…' : step === 'sprites' ? 'Muse Image is about to paint the first sprite sheet…' : step === 'faces' ? 'Muse Image is about to paint the first mouth shapes…' : 'Muse Image is painting the cast…')}</span></div>}
       {focus && (() => {
         const w = work[focus] ?? empty;
         const c = cast?.find((x) => x.key === focus);
@@ -119,7 +138,7 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
                 </div>
               </div>
             </div>
-            {st.done && c && (c.stamps.model || c.stamps.sprites || c.stamps.rig)
+            {step !== 'faces' && st.done && c && (c.stamps.model || c.stamps.sprites || c.stamps.rig)
               ? <>
                   {/* The sides stay in sight after the step: what TRELLIS built the body from. */}
                   {step === 'model' && c.stamps.model && <Sides slug={slug} dir={`cast/${focus}/model`} v={c.stamps.model} />}
@@ -127,7 +146,7 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
                 </>
               : (
                 <div class="cw-slots">
-                  {slots(step, focus, w).map((s) => (
+                  {slots(step, focus, w).map((s) => s.name === 'works from' && c?.figure ? { ...s, file: c.figure.file, v: c.figure.v } : s).map((s) => (
                     <figure class={s.file ? 'in' : ''}>
                       {s.file ? <img src={fileUrl(slug, s.file, s.v)} data-lightbox={fileUrl(slug, s.file, s.v)} title="Click: large" alt={s.name} /> : <div class={`to-come${failed ? ' still' : ''}`} />}
                       <figcaption>{s.name}</figcaption>
