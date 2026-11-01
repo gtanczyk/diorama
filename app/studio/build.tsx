@@ -123,6 +123,33 @@ export const STEP_TITLE: Record<string, string> = {
   derive: 'Walkable floor', backdrop: 'Depth', weather: 'Weather', reactions: 'Reactions', cast: 'Characters', model: '3D models', sprites: 'Sprites',
   faces: 'Talking faces', sound: 'Sounds', voices: 'Voices', verify: 'Checks',
 };
+/** Who does each step, and what it does, in a line: the tip on a step still to come. */
+const STEP_BY: Record<string, string> = {
+  world: 'Muse Spark', story: 'Muse Spark', layout: 'Muse Spark', paint: 'Muse Image', masks: 'SAM 3.1', plates: 'Muse Image', icons: 'Muse Image',
+  derive: 'Depth Anything', backdrop: 'Muse Image', weather: 'code', reactions: 'Muse Spark', cast: 'Muse Image', model: '3D', sprites: 'Muse Image',
+  faces: 'Muse Image', sound: 'ElevenLabs', voices: 'ElevenLabs', verify: 'code',
+};
+const STEP_DOES: Record<string, string> = {
+  world: 'plans the places, who lives there and how they connect',
+  story: 'writes the story, the dialogue and the endings over the places plan',
+  layout: 'sketches each place: where every thing, light, door and floor goes',
+  paint: 'paints each place over its plan sketch, in the world\'s style',
+  masks: 'cuts every thing and the walkable floor out of each painting',
+  plates: 'paints what a place looks like when something changes there (a door opens, an item is taken)',
+  icons: 'draws an icon for every item the hero can pick up',
+  derive: 'measures depth, scale and where the hero can walk in each place',
+  backdrop: 'paints what is hidden behind the cut-out things, so they can move in parallax',
+  weather: 'adds weather and moving light: rain, fog, glows, water',
+  reactions: 'decides how things react when the hero touches or uses them',
+  cast: 'paints every character once, standing, from the story\'s looks',
+  model: 'turns each character into a 3D body with a skeleton',
+  sprites: 'renders each character walking and talking from every side',
+  faces: 'prepares talking faces for the speaking characters',
+  sound: 'makes the ambience and the sound effects of each place',
+  voices: 'casts and records a voice for every spoken line',
+  verify: 'plays every place and every ending to check the game can be finished',
+};
+
 /** What a click on a step's segment opens. */
 const STEP_OPENS: Record<string, string> = {
   world: 'the places plan (the story is written over it)', story: 'the story', layout: 'the plan sketch Muse paints over', paint: 'the painting',
@@ -208,11 +235,14 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
                 return <span class={`fill ${states[i]}`} style={{ left: `${100 * before / Math.max(1, all)}%`, width: `${100 * amount / Math.max(1, all)}%` }} />;
               })}
                 {p.steps.slice(1).map((s) => <span class="tick" style={{ left: `${(100 * p.steps.slice(0, p.steps.indexOf(s)).reduce((a, x) => a + took(x), 0)) / Math.max(1, all)}%` }} />)}
-                {open && p.steps.map((s, i) => {
+                {p.steps.map((s, i) => {
                   const from = at;
                   at += took(s);
-                  const ready = states[i] === 'ok' || states[i] === 'existing' || states[i] === 'run' || states[i] === 'warn';
-                  return ready && <button type="button" class="seg" style={{ left: `${(100 * from) / Math.max(1, all)}%`, width: `${(100 * took(s)) / Math.max(1, all)}%` }}
+                  const ready = !!open && (states[i] === 'ok' || states[i] === 'existing' || states[i] === 'run' || states[i] === 'warn');
+                  // A step still to come (or skipped) says what it will do, who does it and about how long.
+                  if (!ready) return <span class={`seg later ${states[i]}`} style={{ left: `${(100 * from) / Math.max(1, all)}%`, width: `${(100 * took(s)) / Math.max(1, all)}%` }}
+                    title={named(`${STEP_TITLE[s] ?? s}${STEP_BY[s] && STEP_BY[s] !== 'code' ? ` · ${STEP_BY[s]}` : ''}: ${states[i] === 'fail' ? 'failed' : states[i] === 'skip' ? 'not part of this build' : job ? 'not started yet' : 'not built yet'}.\n${STEP_DOES[s] ? `${STEP_DOES[s][0].toUpperCase()}${STEP_DOES[s].slice(1)}.` : ''}${states[i] !== 'skip' && took(s) ? `\nUsually about ${took(s) >= 90 ? `${Math.round(took(s) / 60)} min` : `${Math.max(5, Math.round(took(s) / 5) * 5)} s`}.` : ''}`)} />;
+                  return <button type="button" class="seg" style={{ left: `${(100 * from) / Math.max(1, all)}%`, width: `${(100 * took(s)) / Math.max(1, all)}%` }}
                     title={`${STEP_TITLE[s] ?? s} (${s})${states[i] === 'run' ? ': working now, not finished' : asideAt(s).length ? `: failed for ${asideAt(s).join(', ')}, set aside (later steps skip it); done for the other places` : states[i] === 'existing' ? ': from the earlier build' : done[s] !== undefined ? `: done in ${Math.round(done[s])} s` : ': done'}.\nClick to see ${STEP_OPENS[s] ?? 'what it made'}${states[i] === 'run' ? ' (what it works from, until it is ready)' : ''}`} onClick={() => onOpen!(p.key, s)} />;
                 })}
               </span>
@@ -602,11 +632,16 @@ export function BuildPlaces({ slug, places, runs, repairing, building, watched, 
     el.addEventListener('wheel', wheel, { passive: false });
     return () => (ro.disconnect(), el.removeEventListener('wheel', wheel));
   }, [places.length]);
-  // The place on stage stays in view as the build moves from place to place.
+  // A place picked elsewhere (or on first show) is brought into view, by scrolling this row only. Not while the
+  // build rotates the stage: every scroll closes any open tooltip.
+  const pinned = watched ?? (building && onFollow ? undefined : shown);
   useEffect(() => {
-    const chip = shown ? list.current?.querySelector<HTMLElement>(`[data-place="${CSS.escape(shown)}"]`) : null;
-    chip?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
-  }, [shown]);
+    const el = list.current;
+    const chip = pinned ? el?.querySelector<HTMLElement>(`[data-place="${CSS.escape(pinned)}"]`) : null;
+    if (!el || !chip) return;
+    const left = chip.offsetLeft - el.offsetLeft;
+    if (left < el.scrollLeft || left + chip.offsetWidth > el.scrollLeft + el.clientWidth) el.scrollTo({ left: Math.max(0, left - 40), behavior: 'smooth' });
+  }, [pinned]);
   const page = (dir: number) => list.current?.scrollBy({ left: dir * list.current.clientWidth * 0.8, behavior: 'smooth' });
   const count = (k: ChipState['kind']) => states.filter((x) => x.s.kind === k).length;
   const sums = building
