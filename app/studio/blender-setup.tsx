@@ -15,16 +15,15 @@ export function BlenderSetup() {
     catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
-  return <section class="budget" aria-label="Blender">
+  return <section class="budget blender" aria-label="Blender">
     <h2>3D animation</h2>
-    <label title="Free, runs on this computer. New 3D models get it automatically; existing ones with Relax in the cast (cast_relax)">
-      <input type="checkbox" checked={!!state?.enabled} disabled={!state || busy || state.env !== null} onChange={(e) => void toggle(e.currentTarget.checked)} />
-      {' '}Use Blender for natural walks
+    <label class="switch-row" title="Free, runs on this computer. New 3D models get it automatically; existing ones with Relax in the cast (cast_relax)">
+      <span>Use Blender for natural walks</span>
+      <input type="checkbox" role="switch" checked={!!state?.enabled} disabled={!state || busy || state.env !== null} onChange={(e) => void toggle(e.currentTarget.checked)} />
     </label>
     <p class="note">{!state ? 'Looking for Blender…'
-      : state.installed ? `Blender ${state.installed.version} found${state.active ? ', in use' : ', not in use'}.`
-      : 'Blender is not installed. On a Mac: brew install --cask blender, or blender.org. Then Check again.'}</p>
-    <p class="note">Blender puts each 3D figure into a calm pose (arms down by the sides, feet under the hips) before it walks. Without it figures walk from the pose they were built in: legs apart, arms out.</p>
+      : state.installed ? `Blender ${state.installed.version} found${state.active ? ', in use' : ', not in use'}. It puts each 3D figure into a calm pose (arms down, feet under the hips) before it walks; without it they walk legs apart, arms out.`
+      : 'Not installed. On a Mac: brew install --cask blender, or blender.org. Then Check again. Without it 3D figures walk legs apart, arms out.'}</p>
     {state?.env !== null && state?.env !== undefined && <p class="note">Set by DIORAMA_BLENDER={state.env}. Unset it and restart Studio to switch it here.</p>}
     {error && <p class="error" role="alert">{error}</p>}
   </section>;

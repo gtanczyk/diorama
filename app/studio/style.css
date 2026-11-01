@@ -994,10 +994,14 @@ button.danger-fill { background: var(--bad); color: #fff; border: 0; font-weight
 .top-menu .mi-confirm .mi.go { width: auto; display: inline-flex; padding: 0 12px; color: #fff; }
 /* A switch, not a raw checkbox. */
 .mi.switch { justify-content: space-between; }
-.mi.switch input { appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 32px; height: 18px; margin: 0; border-radius: 9px; background: var(--line-strong); cursor: pointer; transition: background .15s; }
-.mi.switch input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform .15s; }
-.mi.switch input:checked { background: var(--ok); }
-.mi.switch input:checked::after { transform: translateX(14px); }
+.budget .switch-row { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--text); cursor: pointer; }
+.budget.blender { gap: 8px; }
+.budget.blender p { margin: 0; }
+.mi.switch input, .switch-row input { appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 32px; height: 18px; margin: 0; border-radius: 9px; background: var(--line-strong); cursor: pointer; transition: background .15s; }
+.mi.switch input::after, .switch-row input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform .15s; }
+.mi.switch input:checked, .switch-row input:checked { background: var(--ok); }
+.mi.switch input:checked::after, .switch-row input:checked::after { transform: translateX(14px); }
+.switch-row input:disabled { opacity: .5; cursor: default; }
 /* Hand tools sit on the stage they work on, not in ☰. */
 .stage-body { position: relative; }
 .stage-tool { position: absolute; right: 8px; bottom: 6px; z-index: 2; min-height: 32px; padding: 0 12px; font-size: 13px; border-color: var(--line); background: color-mix(in srgb, var(--panel) 88%, transparent); color: var(--muted); backdrop-filter: blur(4px); }
