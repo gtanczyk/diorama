@@ -42,46 +42,41 @@ function clapAt(file: string, within = 90): number {
 const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const FONT = "'Arial Black', 'DejaVu Sans', sans-serif";
 
-/** A game-show board: deep blue, a gold frame of bulbs, the big title in gold, a line under it. */
+/** A title board in the look of 90s TVP: a dark blue gradient, a thin white rule, plain white title, sub in yellow. */
 async function board(title: string, sub: string, file: string) {
-  const bulbs = [] as string[];
-  for (let x = 60; x <= W - 60; x += 60) bulbs.push(`<circle cx="${x}" cy="60" r="10"/><circle cx="${x}" cy="${H - 60}" r="10"/>`);
-  for (let y = 120; y <= H - 120; y += 60) bulbs.push(`<circle cx="60" cy="${y}" r="10"/><circle cx="${W - 60}" cy="${y}" r="10"/>`);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><defs>
-<radialGradient id="bg" cx="50%" cy="45%" r="75%"><stop offset="0" stop-color="#2346c8"/><stop offset="0.6" stop-color="#0e1f73"/><stop offset="1" stop-color="#050b33"/></radialGradient>
-<linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3b0"/><stop offset="0.5" stop-color="#ffc93c"/><stop offset="1" stop-color="#c47a00"/></linearGradient></defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b1a4a"/><stop offset="1" stop-color="#020617"/></linearGradient></defs>
 <rect width="${W}" height="${H}" fill="url(#bg)"/>
-<g fill="none" stroke="#ffc93c" stroke-width="6"><rect x="90" y="90" width="${W - 180}" height="${H - 180}" rx="28"/></g>
-<g fill="#ffe28a">${bulbs.join('')}</g>
-<text x="${W / 2}" y="${H / 2 + 20}" text-anchor="middle" font-family="${FONT}" font-size="150" fill="url(#gold)" stroke="#5a2d00" stroke-width="5">${esc(title)}</text>
-<text x="${W / 2}" y="${H / 2 + 130}" text-anchor="middle" font-family="${FONT}" font-size="56" fill="#ffffff">${esc(sub)}</text></svg>`;
+<rect x="260" y="${H / 2 + 46}" width="${W - 520}" height="4" fill="#ffffff" opacity="0.85"/>
+<text x="${W / 2}" y="${H / 2 + 10}" text-anchor="middle" font-family="${FONT}" font-size="128" fill="#ffffff" letter-spacing="6">${esc(title)}</text>
+<text x="${W / 2}" y="${H / 2 + 130}" text-anchor="middle" font-family="${FONT}" font-size="54" fill="#ffd84a">${esc(sub)}</text></svg>`;
   await sharp(Buffer.from(svg)).png().toFile(file);
 }
 
-/** A lower third in the show's colours: a gold tab with the model, a blue bar with what happens. */
+/** A 90s TV caption: a dark translucent band from the left, the model in yellow, then what happens in white. */
 async function lowerThird(caption: string, by: string | undefined, file: string) {
-  const tab = by ? by.length * 24 + 60 : 0;
-  const bar = caption.length * 27 + 80;
-  const x = Math.round((W - tab - bar) / 2), y = Math.round(H * 0.86) - 100;
+  const y = Math.round(H * 0.84) - 96;
+  const text = by ? `<tspan fill="#ffd84a">${esc(by)}</tspan><tspan fill="#ffffff">  ·  ${esc(caption)}</tspan>` : `<tspan fill="#ffffff">${esc(caption)}</tspan>`;
+  const len = (by ? by.length + 5 : 0) + caption.length;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-${by ? `<rect x="${x}" y="${y}" width="${tab}" height="100" rx="14" fill="#ffc93c"/><text x="${x + tab / 2}" y="${y + 64}" text-anchor="middle" font-family="${FONT}" font-size="38" fill="#2b1600">${esc(by)}</text>` : ''}
-<rect x="${x + tab}" y="${y}" width="${bar}" height="100" rx="14" fill="#0e1f73" stroke="#ffc93c" stroke-width="4"/>
-<text x="${x + tab + bar / 2}" y="${y + 66}" text-anchor="middle" font-family="${FONT}" font-size="46" fill="#ffffff">${esc(caption)}</text></svg>`;
+<rect x="0" y="${y}" width="${Math.min(W, 200 + len * 27)}" height="96" fill="#05103a" fill-opacity="0.82"/>
+<rect x="0" y="${y + 92}" width="${Math.min(W, 200 + len * 27)}" height="4" fill="#ffd84a"/>
+<text x="120" y="${y + 64}" font-family="${FONT}" font-size="46">${text}</text></svg>`;
   await sharp(Buffer.from(svg)).png().toFile(file);
 }
 
 /** The show's boards, edit here: one per round. */
 const BOARDS: Array<[string, string, string]> = [
-  ['intro', 'DIORAMA', 'one sentence, a whole game'],
-  ['round1', 'ROUND 1', 'the idea'],
-  ['round2', 'ROUND 2', 'the build'],
-  ['round3', 'ROUND 3', 'we play'],
-  ['final', 'FINAL', 'change it, play again'],
+  ['intro', 'DIORAMA', 'Grzegorz Tańczyk plays a game he just made'],
+  ['idea', 'THE IDEA', 'one sentence'],
+  ['build', 'THE BUILD', 'Muse Spark, Muse Image, SAM 3.1'],
+  ['play', 'THE GAME', 'let us play'],
+  ['change', 'ONE MORE THING', 'change it by asking'],
   ['end', 'DIORAMA', 'github.com/gtanczyk/diorama'],
 ];
 
 type Shot = { from?: number; to?: number; dur?: number; view: 'phone' | 'screen' | 'tv' | 'board'; speed?: number; caption?: string; by?: string; board?: string };
-type Live = { phone: string; screen: string; offset: number; boards?: string; shots: Shot[] };
+type Live = { phone: string; screen: string; offset: number; boards?: string; vhs?: boolean; shots: Shot[] };
 
 async function cut(file: string, out: string) {
   const live = JSON.parse(fs.readFileSync(file, 'utf8')) as Live;
@@ -131,7 +126,9 @@ async function cut(file: string, out: string) {
   const list = path.join(tmp, 'list.txt');
   fs.writeFileSync(list, parts.map((p) => `file '${p}'`).join('\n'));
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-c:v', 'libx264', '-crf', '20', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', out], { stdio: 'inherit' });
+  // A light 90s TV tape look over everything: soft, a little grain, faint scanlines, colour bleeding sideways.
+  const vhs = live.vhs === false ? [] : ['-vf', `gblur=sigma=0.6,noise=alls=7:allf=t,rgbashift=rh=2:bh=-2,drawgrid=w=${W}:h=3:t=1:c=black@0.12,eq=saturation=1.08:contrast=1.04`];
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, ...vhs, '-c:v', 'libx264', '-crf', '20', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', out], { stdio: 'inherit' });
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(out);
 }
