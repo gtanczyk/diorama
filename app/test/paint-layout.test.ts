@@ -98,10 +98,10 @@ test('a mismatch is repaired using BOTH images and measured problems, then check
   expect(call.prompt).toContain('polygon [[130,620]');
 });
 
-test('two unsuccessful repairs terminate with actionable diagnostics; a passing image costs no edit', async () => {
+test('an unsuccessful repair terminates with actionable diagnostics; a passing image costs no edit', async () => {
   vi.mocked(askSparkJson).mockResolvedValue(drifted());
   await expect(alignPainting(new Memo(dir), place, layout, plan, original, brief, 0)).rejects.toBeInstanceOf(PaintingLayoutError);
-  expect(museEdit).toHaveBeenCalledTimes(2); expect(askSparkJson).toHaveBeenCalledTimes(3);
+  expect(museEdit).toHaveBeenCalledTimes(1); expect(askSparkJson).toHaveBeenCalledTimes(2);
   vi.clearAllMocks(); vi.mocked(askSparkJson).mockResolvedValue(passing());
   expect((await alignPainting(new Memo(dir), place, layout, plan, original, brief, 0)).painting).toEqual(original);
   expect(museEdit).not.toHaveBeenCalled();
@@ -121,7 +121,7 @@ test('paint command retains the old painting on rejection and masks stops before
   vi.mocked(askSparkJson).mockResolvedValue(drifted());
   await expect(registry.get('paint')!.run(['w'])).rejects.toThrow('PAINT_LAYOUT_MISMATCH');
   expect(fs.readFileSync(at('painting.png'))).toEqual(original);
-  expect(JSON.parse(fs.readFileSync(at('painting-layout.json'), 'utf8'))).toMatchObject({ ok: false, attempts: [{}, {}, {}] });
+  expect(JSON.parse(fs.readFileSync(at('painting-layout.json'), 'utf8'))).toMatchObject({ ok: false, attempts: [{}, {}] });
   vi.clearAllMocks();
   await expect(registry.get('masks')!.run(['w'])).rejects.toThrow('rebuild this place from paint');
   expect(askSparkJson).not.toHaveBeenCalled();

@@ -81,23 +81,26 @@ Return JSON {"horizon":300,"people":false,"things":[{"key":"...","box":[0,0,100,
   return PaintedLayout.parse(await askSparkJson(memo, { schema: PaintedLayout, label: `paint-layout:${place.key}`, prompt, images: [blockin, painting] }));
 }
 
+const REPAIRS = 1;
 export type LayoutAttempt = { seen: PaintedLayout; issues: string[] };
 export class PaintingLayoutError extends Error {
   constructor(readonly attempts: LayoutAttempt[]) {
-    super(`PAINT_LAYOUT_MISMATCH: ${attempts.at(-1)!.issues.join('; ')}. Two composition repairs were tried. Read place_status.paintingLayout; use layout_fix for a simpler connected plan or paint_retry for a new take. No floor has been invented to hide this mismatch.`);
+    super(`PAINT_LAYOUT_MISMATCH: ${attempts.at(-1)!.issues.join('; ')}. A composition repair was tried. Read place_status.paintingLayout; use layout_fix for a simpler connected plan or paint_retry for a new take. No floor has been invented to hide this mismatch.`);
   }
 }
 
 /** Full-frame repair: a moved camera/path cannot be fixed by pasting a little rectangle. Never publish a rejected candidate. */
 export async function alignPainting(memo: Memo, place: Place, layout: Layout, blockin: Buffer, painting: Buffer, brief: Brief, take: number, fixes: string[] = []): Promise<{ painting: Buffer; attempts: LayoutAttempt[] }> {
   const attempts: LayoutAttempt[] = [];
-  for (let n = 0; n <= 2; n++) {
+  // One repair round: each is a full Muse repaint plus a Spark check (minutes per place); a second rarely saved
+  // a painting the first could not, and the place then goes to the agent (layout_fix, paint_retry) anyway.
+  for (let n = 0; n <= REPAIRS; n++) {
     const seen = await inspectPaintedLayout(memo, place, layout, blockin, painting, brief);
     const issues = paintedLayoutIssues(place, layout, seen);
     attempts.push({ seen, issues });
     if (!issues.length) return { painting, attempts };
-    if (n === 2) throw new PaintingLayoutError(attempts);
-    console.log(`  ${place.key}: composition repair ${n + 1}/2: ${issues.join('; ')}`);
+    if (n === REPAIRS) throw new PaintingLayoutError(attempts);
+    console.log(`  ${place.key}: composition repair ${n + 1}/${REPAIRS}: ${issues.join('; ')}`);
     const prompt = `Restore this game background to its planned composition. Image 1 is the authoritative spatial plan. Image 2 supplies ONLY the finished appearance, materials, palette and lighting. Repaint the whole composition where necessary, not a small patch. Preserve object identities and art style from image 2, but restore the camera, sizes, walking surfaces, joins and positions from image 1.
 ${layoutContract(place, layout)}
 Object appearances: ${JSON.stringify(brief.looks)}

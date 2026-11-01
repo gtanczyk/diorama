@@ -179,8 +179,10 @@ test('speaking-animation failure is recorded as incomplete while playable places
   expect(log.steps.verify).toBeDefined();
 });
 
-test('unexpected faces command failure is not silently classified as optional degradation', async () => {
+test('even an unexpected faces failure never fails the build: it is recorded as incomplete with its error', async () => {
   world();
   defineCommand({ name: 'faces', usage: 'faces', async run() { throw new Error('broken command'); } });
-  await expect(registry.get('build')!.run(['w', '--from', 'faces', '--to', 'faces'])).rejects.toThrow('broken command');
+  await registry.get('build')!.run(['w', '--from', 'faces', '--to', 'faces']);
+  const log = JSON.parse(fs.readFileSync(path.join('worlds', 'w', 'build.json'), 'utf8'));
+  expect(log.steps.faces).toMatchObject({ status: 'incomplete', warnings: ['broken command'] });
 });
