@@ -9,6 +9,7 @@ type Node = { mesh?: number; skin?: number; children?: number[]; matrix?: number
 type Accessor = { bufferView: number; byteOffset?: number; componentType: number; count: number; type: string };
 type Gltf = {
   nodes: Node[];
+  skins?: { joints: number[]; inverseBindMatrices?: number }[];
   meshes: { primitives: { attributes: Record<string, number>; indices?: number }[] }[];
   accessors: Accessor[];
   bufferViews: { byteOffset?: number; byteStride?: number; byteLength: number }[];
@@ -40,7 +41,7 @@ function local(n: Node): M4 {
 function readAccessor(gltf: Gltf, bin: Buffer, index: number): Float32Array | Uint32Array {
   const a = gltf.accessors[index];
   const view = gltf.bufferViews[a.bufferView];
-  const width = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[a.type] ?? 1;
+  const width = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 }[a.type] ?? 1;
   const size = { 5126: 4, 5125: 4, 5123: 2, 5121: 1 }[a.componentType] ?? 4;
   const stride = view.byteStride ?? width * size;
   const start = (view.byteOffset ?? 0) + (a.byteOffset ?? 0);
@@ -101,6 +102,60 @@ export function readShape(glb: Buffer): Shape {
   return { positions: Float32Array.from(positions), triangles: Uint32Array.from(triangles) };
 }
 
+/** Inverse of a column-major 4x4 matrix (cofactors). */
+function invert(m: M4): M4 {
+  const o = new Array(16).fill(0);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+    // Cofactor of m[row c][col r], transposed into o[col c][row r].
+    const rows = [0, 1, 2, 3].filter((i) => i !== c);
+    const cols = [0, 1, 2, 3].filter((i) => i !== r);
+    const at = (i: number, j: number) => m[cols[j] * 4 + rows[i]];
+    const det3 = at(0, 0) * (at(1, 1) * at(2, 2) - at(1, 2) * at(2, 1)) - at(0, 1) * (at(1, 0) * at(2, 2) - at(1, 2) * at(2, 0)) + at(0, 2) * (at(1, 0) * at(2, 1) - at(1, 1) * at(2, 0));
+    o[c * 4 + r] = ((r + c) % 2 ? -1 : 1) * det3;
+  }
+  const det = m[0] * o[0] + m[4] * o[1] + m[8] * o[2] + m[12] * o[3];
+  return o.map((v) => v / det);
+}
+
+/**
+ * Why the auto-rig's skeleton cannot walk this body, or null. Make-It-Animatable guesses the joints from the
+ * shape alone; on a floor-length robe it once put both feet at hip height and the knees below them, so every
+ * step tore the robe apart and pulled the shoes up into poles. Heights are shares of the body's height, at bind.
+ */
+export function rigProblem(glb: Buffer): string | null {
+  const jsonLength = glb.readUInt32LE(12);
+  const gltf = JSON.parse(glb.subarray(20, 20 + jsonLength).toString('utf8')) as Gltf;
+  const skin = gltf.skins?.[0];
+  if (!skin?.inverseBindMatrices && skin?.inverseBindMatrices !== 0) return null;
+  const binStart = 20 + jsonLength;
+  const bin = glb.subarray(binStart + 8, binStart + 8 + glb.readUInt32LE(binStart));
+  const parent = new Map<number, number>();
+  gltf.nodes.forEach((n, i) => n.children?.forEach((c) => parent.set(c, i)));
+  const meshNode = gltf.nodes.findIndex((n) => n.mesh !== undefined && n.skin === 0);
+  let world = identity();
+  for (let i: number | undefined = meshNode; i !== undefined && i >= 0; i = parent.get(i)) world = multiply(local(gltf.nodes[i]), world);
+  const ibm = readAccessor(gltf, bin, skin.inverseBindMatrices);
+  const y: Record<string, number> = {};
+  skin.joints.forEach((node, j) => {
+    const bind = multiply(world, invert(Array.from(ibm.subarray(j * 16, j * 16 + 16))));
+    y[((gltf.nodes[node] as { name?: string }).name ?? '').replace(/^mixamorig:?/, '')] = bind[13];
+  });
+  const shape = readShape(glb).positions;
+  let [lo, hi] = [Infinity, -Infinity];
+  for (let i = 1; i < shape.length; i += 3) { lo = Math.min(lo, shape[i]); hi = Math.max(hi, shape[i]); }
+  const at = (bone: string) => (y[bone] - lo) / (hi - lo);
+  const need = ['Hips', 'Neck', 'Head', 'LeftLeg', 'RightLeg', 'LeftFoot', 'RightFoot'];
+  if (need.some((b) => y[b] === undefined)) return null;
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  if (!(at('Hips') < at('Neck') && at('Neck') < at('Head'))) return `skeleton upside down: hips at ${pct(at('Hips'))}, head at ${pct(at('Head'))} of the height`;
+  for (const side of ['Left', 'Right']) {
+    const [knee, foot] = [at(`${side}Leg`), at(`${side}Foot`)];
+    // Feet sit at 4-13% in every rig that walks; a kicking or stepping pose reaches about 35%.
+    if (foot > 0.4 || foot >= knee || knee >= at('Hips')) return `skeleton misplaced: ${side.toLowerCase()} foot at ${pct(foot)}, knee at ${pct(knee)}, hips at ${pct(at('Hips'))} of the height`;
+  }
+  return null;
+}
+
 /** Feet at y 0, height 1, centred on x and z: the hero-unit space the runtime projects views in. */
 export function normalise({ positions, triangles }: Shape): Shape {
   const lo = [Infinity, Infinity, Infinity];
@@ -124,7 +179,8 @@ export function modelProblem(modelDir: string): string | null {
   const glb = path.join(modelDir, 'model.glb');
   if (!fs.existsSync(glb)) return 'no model.glb';
   try {
-    return badModel(readShape(fs.readFileSync(glb)));
+    const file = fs.readFileSync(glb);
+    return badModel(readShape(file)) ?? rigProblem(file);
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }

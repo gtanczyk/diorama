@@ -26,3 +26,29 @@ export function boxGlb(size: [number, number, number], scale = 1, translation = 
   chunk.writeUInt32LE(bin.length, 0); chunk.writeUInt32LE(0x004e4942, 4);
   return Buffer.concat([header, json, chunk, bin]);
 }
+
+/** A 1 m tall box skinned to a bare skeleton whose joints stand at the given heights (shares of the height). */
+export function riggedBoxGlb(heights: Record<string, number>): Buffer {
+  const plain = boxGlb([0.4, 1, 0.3], 1, [0, 0.5, 0]);
+  const jsonLength = plain.readUInt32LE(12);
+  const gltf = JSON.parse(plain.subarray(20, 20 + jsonLength).toString('utf8'));
+  const bin = plain.subarray(20 + jsonLength + 8);
+  const names = Object.keys(heights);
+  // Inverse bind of a joint at (0, h, 0) is a translation by -h, column-major, in the box's own space (centred).
+  const ibm = new Float32Array(names.flatMap((n) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0.5 - heights[n], 0, 1]));
+  gltf.nodes = [{ ...gltf.nodes[0], skin: 0 }, ...names.map((name, i) => ({ name: `mixamorig:${name}`, translation: [0, heights[names[i]], 0] }))];
+  gltf.scenes = [{ nodes: gltf.nodes.map((_: unknown, i: number) => i) }];
+  gltf.skins = [{ joints: names.map((_, i) => i + 1), inverseBindMatrices: gltf.accessors.length }];
+  gltf.accessors.push({ bufferView: gltf.bufferViews.length, componentType: 5126, count: names.length, type: 'MAT4' });
+  gltf.bufferViews.push({ buffer: 0, byteOffset: bin.length, byteLength: ibm.byteLength });
+  const all = Buffer.concat([bin, Buffer.from(ibm.buffer)]);
+  gltf.buffers = [{ byteLength: all.length }];
+  let json = Buffer.from(JSON.stringify(gltf));
+  json = Buffer.concat([json, Buffer.alloc((4 - json.length % 4) % 4, ' ')]);
+  const header = Buffer.alloc(20), chunk = Buffer.alloc(8);
+  header.writeUInt32LE(0x46546c67, 0); header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(20 + json.length + 8 + all.length, 8);
+  header.writeUInt32LE(json.length, 12); header.writeUInt32LE(0x4e4f534a, 16);
+  chunk.writeUInt32LE(all.length, 0); chunk.writeUInt32LE(0x004e4942, 4);
+  return Buffer.concat([header, json, chunk, all]);
+}

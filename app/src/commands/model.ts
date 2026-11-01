@@ -5,7 +5,7 @@ import { refusedByFilter } from '../scene/words.ts';
 import { defineCommand, registry, takeOption } from '../registry.ts';
 import { autoRig, reconstruct } from '../model/build.ts';
 import { fitViews, refitIfOld } from '../model/fit.ts';
-import { badModel, lean, readShape, standUp } from '../model/glb.ts';
+import { badModel, lean, readShape, rigProblem, standUp } from '../model/glb.ts';
 import { paintViews } from '../model/views.ts';
 import { planSprites } from '../model/plan.ts';
 import { animationSettings, animationOptions, saveAnimationSettings } from '../model/animation.ts';
@@ -148,6 +148,9 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
   // one that keeps failing leaves the character in 2D, so the world is still built and playable.
   let unavailable: string | undefined;
   let failures = 0;
+  let built: Buffer | undefined;
+  let rigDown: string | undefined;
+  let misplaced: string | undefined;
   for (const [seed, from] of tries) {
     if (given) break;
     console.log(`${key}: TRELLIS builds the body${seed > 1 || from.length === 1 ? ` (try ${seed + (from.length === 1 ? 3 : 0)})` : ''}`);
@@ -165,8 +168,24 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
     }
     unavailable = undefined;
     const bad = badModel(readShape(made));
-    if (!bad) { shell = made; break; }
-    console.log(`${key}: TRELLIS (seed ${seed}${from.length === 1 ? ', front only' : ''}) made a model that is ${bad}`);
+    if (bad) {
+      console.log(`${key}: TRELLIS (seed ${seed}${from.length === 1 ? ', front only' : ''}) made a model that is ${bad}`);
+      continue;
+    }
+    if (creature) { shell = made; break; }
+    // The auto-rig guesses joints from the shape alone and is deterministic: a skeleton it misplaces (a long
+    // robe hides the legs) comes back the same for the same body, so the next TRELLIS body gets the next try.
+    console.log(`${key}: rigging the skeleton`);
+    let skinned: Buffer;
+    try {
+      skinned = await autoRig(files.memo, key, made);
+    } catch (error) {
+      rigDown = error instanceof Error ? error.message : String(error);
+      break;
+    }
+    misplaced = rigProblem(skinned) ?? undefined;
+    if (!misplaced) { shell = made; built = skinned; break; }
+    console.log(`${key}: auto-rig on TRELLIS seed ${seed}${from.length === 1 ? ', front only' : ''}: ${misplaced}`);
   }
   const rejected = out('model.json');
   const reject = (why: string) => {
@@ -174,9 +193,10 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
     console.log(`${key}: no 3D model: ${why}; ${creature ? 'the painted figure hops as it is' : 'the game walks the 2D rig'}`);
     return why;
   };
+  if (rigDown) return reject(`${SERVICE_DOWN}: ${rigDown}`);
   if (!given && !shell) {
     // An older model of this character (a flat one, kept before this gate) must not stay in the game.
-    return reject(unavailable ? `${SERVICE_DOWN}: ${unavailable}` : 'every reconstruction was flat or invalid');
+    return reject(unavailable ? `${SERVICE_DOWN}: ${unavailable}` : misplaced ? `every skeleton the auto-rig made was misplaced (${misplaced})` : 'every reconstruction was flat or invalid');
   }
   if (creature) {
     // Make-It-Animatable rigs a person's skeleton only; a creature keeps TRELLIS's mesh as it came (no standing up:
@@ -188,13 +208,9 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
     console.log(`${key}: ${out('model.glb')} · a creature, no skeleton: hops, squashes and blinks as one body · views ${Object.entries(fits).map(([v, f]) => `${v} ${f.iou}`).join(', ')}`);
     return null;
   }
-  if (!supplied) console.log(`${key}: rigging the skeleton`);
-  let built: Buffer;
-  try {
-    built = supplied ?? await autoRig(files.memo, key, shell!);
-  } catch (error) {
-    return reject(`${SERVICE_DOWN}: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  built ??= supplied!;
+  const misrigged = rigProblem(built);
+  if (misrigged) return reject(`rigged body rejected: ${misrigged}`);
   const bad = badModel(readShape(built));
   if (bad) return reject(`rigged body rejected: ${bad}`);
   const tilt = lean(readShape(built));

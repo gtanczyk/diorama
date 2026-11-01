@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { badModel, readShape, type Shape } from '../src/model/glb.ts';
-import { boxGlb } from './fixtures/model-box.ts';
+import { badModel, readShape, rigProblem, type Shape } from '../src/model/glb.ts';
+import { boxGlb, riggedBoxGlb } from './fixtures/model-box.ts';
 
 /** A box of vertices, width x height x depth, as a Shape (triangles do not matter to badModel). */
 function box(w: number, h: number, d: number): Shape {
@@ -40,5 +40,18 @@ describe('model gate', () => {
       const s = box(1, 1, 1); s.positions[0] = value;
       expect(badModel(s)).toMatch(/^invalid/);
     }
+  });
+  // Measured on the auto-rig's skeleton of a queen in a floor-length robe: the steps tore the robe and pulled the shoes up.
+  const walking = { Hips: 0.5, Neck: 0.8, Head: 0.86, LeftLeg: 0.28, RightLeg: 0.28, LeftFoot: 0.07, RightFoot: 0.07 };
+  it('keeps a skeleton with its feet on the ground, also mid-kick', () => {
+    expect(rigProblem(riggedBoxGlb(walking))).toBeNull();
+    expect(rigProblem(riggedBoxGlb({ ...walking, RightLeg: 0.34, RightFoot: 0.29 }))).toBeNull();
+  });
+  it('rejects a skeleton whose feet the auto-rig put above the knees', () => {
+    expect(rigProblem(riggedBoxGlb({ ...walking, Hips: 0.52, LeftLeg: 0.29, LeftFoot: 0.49 }))).toMatch(/^skeleton misplaced: left foot at 49%/);
+    expect(rigProblem(riggedBoxGlb({ ...walking, Head: 0.3 }))).toMatch(/^skeleton upside down/);
+  });
+  it('has nothing to say about a model with no skeleton', () => {
+    expect(rigProblem(boxGlb([0.4, 1, 0.3]))).toBeNull();
   });
 });
