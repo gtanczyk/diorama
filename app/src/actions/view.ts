@@ -51,8 +51,8 @@ defineAction({
     + 'layer "masks": each thing\'s mask tinted and labelled, its mask box solid and the box it should be in dashed (the fixed box, else the one Spark saw); in words per thing its kind, '
     + 'SAM phrase, how the mask was found and how well it overlaps that box (low overlap: SAM cut out the wrong thing, fix with mask_fix box or phrase). '
     + 'layer "water": where the water moves (tinted magenta), with the grid water_area takes; in words which way it flows and the cells the author added or removed. '
-    + 'layer "painting": the painting alone with the grid.',
-  input: z.object({ slug: Slug, place: z.string().min(1), layer: z.enum(['walk', 'masks', 'water', 'painting']).optional() }),
+    + 'layer "painting": the painting alone with the grid. "blockin": the authoritative layout plan; "first": the first painted candidate, including one rejected before masks.',
+  input: z.object({ slug: Slug, place: z.string().min(1), layer: z.enum(['walk', 'masks', 'water', 'painting', 'blockin', 'first']).optional() }),
   async run({ slug, place, layer = 'walk' }, ctx) {
     const dir = path.join(ctx.root, slug, 'places', place);
     const at = (f: string) => path.join(dir, f);
@@ -64,6 +64,11 @@ defineAction({
       const jpeg = await sharp(picture).jpeg({ quality: 78 }).toBuffer();
       return { ...words, picture: `places/${place}/${file}`, images: [{ mimeType: 'image/jpeg', data: jpeg.toString('base64') }] };
     };
+    if (layer === 'blockin' || layer === 'first') {
+      const file = layer === 'blockin' ? 'blockin.png' : 'painting-first.png';
+      if (!fs.existsSync(at(file))) throw new ActionError(404, `${slug}/${place} has no ${file} yet`);
+      return shown(await gridImage(fs.readFileSync(at(file))), `view-${layer}.png`, { layer });
+    }
     if (layer === 'painting') return shown(await gridImage(fs.readFileSync(painting)), 'view-painting.png', { layer });
     if (layer === 'water') {
       const depth = Depth.parse(fs.existsSync(at('depth.json')) ? JSON.parse(fs.readFileSync(at('depth.json'), 'utf8')) : {});

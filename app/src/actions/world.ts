@@ -202,11 +202,13 @@ defineAction({
       return { role, removable: true };
     };
     const broke = report?.issues?.filter((i) => i.code === 'STEP_FAILED') ?? [];
+    const composition = readJson<{ ok: boolean; pending?: boolean; error?: string; attempts?: Array<{ issues: string[] }> }>(path.join(dir, 'painting-layout.json'));
     return {
       playable: broke.length === 0 && (verdict?.ok ?? null),
       errors: [...broke, ...(verdict?.errors ?? [])].map((e) => withPlay(e, verdict?.flags)),
       flags: verdict?.flags ?? [],
       place,
+      paintingLayout: composition && { ok: composition.ok, pending: composition.pending ?? false, attempts: composition.attempts?.length ?? 0, issues: composition.attempts?.at(-1)?.issues ?? [], error: composition.error ?? null },
       pictures: { painting: picture('painting.png') ?? picture('blockin.png'), masks: picture('masks/overlay.png'), walk: picture('walk.png') },
       things: Object.entries(masks?.things ?? {}).map(([key, t]) => ({ key, ...t, stand: geometry?.things.find((g) => g.key === key)?.stand ?? null, ...removable(key) })),
       floors: Object.entries(masks?.floors ?? {}).map(([key, f]) => ({ key, ...f })),

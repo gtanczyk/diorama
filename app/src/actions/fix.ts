@@ -47,6 +47,14 @@ async function fixPlace(ctx: ActionContext, slug: string, place: string, from: '
 const thingOf = (c: Corrections, key: string) => (c.things[key] ??= { strokes: [] });
 const floorOf = (c: Corrections, key: string) => (c.floors[key] ??= { add: [], remove: [], strokes: [] });
 
+/** Only an observed composition rejection unlocks relayout of an already painted place. */
+function compositionFailed(dir: string): boolean {
+  try {
+    const r = JSON.parse(fs.readFileSync(path.join(dir, 'painting-layout.json'), 'utf8')) as { ok: boolean; attempts?: Array<{ issues: string[] }> };
+    return r.ok === false && !!r.attempts?.at(-1)?.issues.length;
+  } catch { return false; }
+}
+
 defineAction({
   name: 'corrections_get',
   reads: true,
@@ -247,16 +255,28 @@ defineAction({
 });
 
 defineAction({
+  name: 'paint_retry',
+  description: 'Try a new painting take for one place using its existing plan, then rebuild it through verify. Use after PAINT_LAYOUT_MISMATCH: advances the take instead of replaying the same rejected cached image. Keeps the previous painting until the replacement passes composition checks.',
+  input: z.object({ slug: Slug, place: Slug }),
+  job: true,
+  async run({ slug, place }, ctx) {
+    if (!new WorldFiles(slug, ctx.root).world().places.some((p) => p.key === place)) throw new ActionError(404, `${slug} has no place ${place}`);
+    return fixPlace(ctx, slug, place, 'paint', 'new painting take', (c) => { c.take = (c.take ?? 0) + 1; });
+  },
+});
+
+defineAction({
   name: 'layout_fix',
-  description: 'Repair a place whose layout has not finished, even if its directory and painting do not exist. Save concrete layout guidance (camera, object sizes, floor access) and rebuild only that place through verify. Read place_status first. Existing painted scenes use the other fix tools.',
+  description: 'Repair an unfinished layout, or simplify a plan whose painting failed PAINT_LAYOUT_MISMATCH. Save concrete layout guidance (camera, object sizes, floor access) and rebuild only that place through verify. Read place_status first. Other existing painted scenes use the other fix tools.',
   input: z.object({ slug: Slug, place: Slug, guidance: z.string().min(10).max(4000) }),
   job: true,
   async run({ slug, place, guidance }, ctx) {
     const files = new WorldFiles(slug, ctx.root);
     if (!files.world().places.some((p) => p.key === place)) throw new ActionError(404, `${slug} has no place ${place}`);
-    if (fs.existsSync(files.place(place, 'painting.png'))) throw new ActionError(409, `${place} already has a painting: use the existing place fix tools`);
+    const painted = () => fs.existsSync(files.place(place, 'painting.png')) && !compositionFailed(files.place(place));
+    if (painted()) throw new ActionError(409, `${place} already has a painting: use the existing place fix tools`);
     return fixPlace(ctx, slug, place, 'layout', 'repair layout', (c) => {
-      if (fs.existsSync(files.place(place, 'painting.png'))) throw new ActionError(409, `${place} acquired a painting while this repair waited: use the existing place fix tools`);
+      if (painted()) throw new ActionError(409, `${place} acquired a painting while this repair waited: use the existing place fix tools`);
       c.layout = { guidance };
     });
   },
@@ -277,6 +297,8 @@ defineAction({
       if (blocked) throw new ActionError(423, blocked);
       const job = trouble.from === 'layout'
         ? await fixPlace(ctx, slug, place, 'layout', 'retry layout', () => {})
+        : trouble.from === 'paint' && compositionFailed(path.join(dir, 'places', place))
+        ? await fixPlace(ctx, slug, place, 'paint', 'new painting take', (c) => { c.take = (c.take ?? 0) + 1; })
         : ctx.jobs.start(slug, ['build', slug, '--from', trouble.from, '--to', 'verify', '--place', place], `fix ${place} from ${trouble.from}`, ctx.by);
       return { did: 'rebuild', from: trouble.from, why: trouble.why, job };
     }

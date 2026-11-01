@@ -26,3 +26,17 @@ test('list, world and place status recheck current masks instead of trusting an 
   fs.rmSync(path.join(dir, 'places/room/geometry.json'));
   expect(worldSummary(root, 'w').playable).toBe(0);
 });
+
+test('an old green verify cannot hide a rejected painting, and the agent gets its diagnostics', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'diorama-status-')); roots.push(root);
+  const { put } = await scene(root);
+  put('places/room/painting-layout.json', { ok: false, attempts: [{ issues: ['floor detached from the pier'] }] });
+  expect(worldSummary(root, 'w').playable).toBe(0);
+  const events = new Events(); const ctx = { root, events, jobs: new Jobs(events), by: 'user' as const };
+  const status = await runAction('place_status', { slug: 'w', place: 'room' }, ctx);
+  expect(status).toMatchObject({ playable: false, paintingLayout: { ok: false, attempts: 1, issues: ['floor detached from the pier'] }, errors: [{ code: 'PAINT_LAYOUT_MISMATCH', play: { tools: [expect.stringContaining('paint_retry')] } }] });
+  fs.copyFileSync(path.join(root, 'w/places/room/painting.png'), path.join(root, 'w/places/room/painting-first.png'));
+  for (const layer of ['blockin', 'first']) {
+    expect(await runAction('place_view', { slug: 'w', place: 'room', layer }, ctx)).toMatchObject({ layer, images: [{ mimeType: 'image/jpeg', data: expect.any(String) }] });
+  }
+});

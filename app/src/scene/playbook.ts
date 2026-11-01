@@ -35,6 +35,11 @@ const CLOSE_UP: Play = {
 };
 
 export const PLAYBOOK: Record<string, Play> = {
+  PAINT_LAYOUT_MISMATCH: {
+    look: 'place_status.paintingLayout: measured composition problems; place_view layers blockin, first and painting compare the plan with the art',
+    tools: ['paint_retry: new take with the current plan, followed by composition checks and rebuilding this place'],
+    last: 'layout_fix: simplify the plan with concrete camera, floor joins and object-position guidance, then rebuild this place; allowed for an observed composition rejection',
+  },
   FLOOR_UNREACHABLE: FLOOR_GAP,
   UNREACHABLE: FLOOR_GAP,
   NO_FLOOR: {
@@ -97,6 +102,7 @@ export const PLAYBOOK: Record<string, Play> = {
       'layout_fix: when layout failed, save concrete camera, size or floor guidance and rebuild; works before any place files exist',
       'job_retry: when it was a network or model hiccup (it starts at the step where the place broke)',
       'paint_words: when paint was refused by the image safety filter (content_policy_violation) even after Spark reworded it: calm, plain words for the scene and the looks it names',
+      'PAINT_LAYOUT_MISMATCH: read place_status.paintingLayout and place_view layers blockin/first/painting; paint already tried two composition repairs. Use layout_fix for a simpler connected plan or paint_retry for a new take. Do not bridge displaced objects with floor_cells',
       'the fix tool for what the error names, then rebuild the place',
     ],
   },

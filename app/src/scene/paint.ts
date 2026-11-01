@@ -8,6 +8,7 @@ import { fallsIn } from '../play/weather.ts';
 import { paintedAnimals, type Brief } from './brief.ts';
 import { shapeOf } from './blockin.ts';
 import { FRAME, type Layout, type Shape } from './layout.ts';
+import { layoutContract } from './paint-layout.ts';
 
 /** Animals listed as masses are painted (a cow in its stall); any other animal is not. */
 const noAnimals = (brief?: Brief) => {
@@ -41,6 +42,8 @@ Style: ${world.style}
 
 The shapes:
 ${[...masses, ...floors].join('\n')}
+
+${layoutContract(place, layout)}
 
 Seen a little from above, like a stage. Keep the floor areas clear to walk on. No people, ${noAnimals(brief)}, no text or letters, no border.${fallsIn(`${place.shows} ${place.mood}`) ? '\nThe rain or snow itself is animated over the picture later: paint no falling streaks, drops or flakes in the air, only what the weather leaves (wet sheen, puddles, snow lying on the ground).' : ''}`;
 }

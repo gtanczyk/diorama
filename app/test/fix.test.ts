@@ -350,3 +350,24 @@ test('missing layout has readable status and both retry and guidance repair can 
   fs.writeFileSync(path.join(place, 'painting.png'), 'x');
   await expect(runAction('layout_fix', { slug: 'w', place: 'dock', guidance: 'Change the room.' }, ctx('agent'))).rejects.toThrow(/already has a painting/);
 });
+
+test('composition failure has a new-take retry and can simplify a plan while preserving old paid art', async () => {
+  const { dir, place, ctx, jobs } = world();
+  fs.writeFileSync(path.join(dir, 'world.json'), JSON.stringify({
+    title: 'Quay', pitch: 'A small quay on a river at dusk.', style: 'gouache on paper', start: 'dock',
+    hero: { key: 'wren', looks: 'a keeper in a yellow coat' },
+    places: [{ key: 'dock', shows: 'a small quay', mood: 'calm', exits: [], things: [{ key: 'boat', role: 'prop', looks: 'a boat' }] }],
+  }));
+  fs.writeFileSync(path.join(place, 'painting-layout.json'), JSON.stringify({ ok: false, attempts: [{ issues: ['stairs disconnected'] }] }));
+  fs.writeFileSync(path.join(dir, 'build.json'), JSON.stringify({ steps: {}, places: [{ place: 'dock', ok: false, from: 'paint', errors: ['PAINT_LAYOUT_MISMATCH'], issues: [{ code: 'STEP_FAILED', key: 'paint', detail: 'PAINT_LAYOUT_MISMATCH' }] }] }));
+  const first = await runAction('paint_retry', { slug: 'w', place: 'dock' }, ctx('agent')) as { id: string; args: string[] };
+  expect(first.args).toEqual(['build', 'w', '--from', 'paint', '--to', 'verify', '--place', 'dock']);
+  await jobs.wait(first.id); expect(readCorrections(place).take).toBe(1);
+  const second = await runAction('place_fix', { slug: 'w', place: 'dock' }, ctx('user')) as { job: { id: string } };
+  await jobs.wait(second.job.id); expect(readCorrections(place).take).toBe(2);
+  const fix = await runAction('layout_fix', { slug: 'w', place: 'dock', guidance: 'Keep one broad connected pier and put the stairs directly on it.' }, ctx('agent')) as { id: string };
+  await jobs.wait(fix.id); expect(readCorrections(place).layout?.guidance).toContain('connected pier');
+  expect(fs.readFileSync(path.join(place, 'painting.png'), 'utf8')).toBe('x');
+  fs.writeFileSync(path.join(place, 'painting-layout.json'), JSON.stringify({ ok: true, attempts: [{ issues: [] }] }));
+  await expect(runAction('layout_fix', { slug: 'w', place: 'dock', guidance: 'Change the room.' }, ctx('agent'))).rejects.toThrow('already has a painting');
+});

@@ -119,6 +119,21 @@ test('a short gap is bridged for free: a floor stroke in corrections.json, the p
   expect(process.exitCode).toBeUndefined();
 });
 
+test('a remote interaction spot does not cause an invented boardwalk or brushed floor across a large gap', async () => {
+  const { dir, ran } = world();
+  const at = path.join(dir, 'places', 'stuck');
+  const g = JSON.parse(fs.readFileSync(path.join(at, 'geometry.json'), 'utf8'));
+  g.walk = Array.from({ length: 112 }, (_, r) => (r >= 30 && r < 48 || r >= 80 ? '#' : '.').repeat(150));
+  g.zone = Array.from({ length: 112 }, (_, r) => (r >= 30 && r < 48 ? '1' : r >= 80 ? '0' : '.').repeat(150));
+  g.things = [{ key: 'stuck-door', role: 'exit', kind: 'wall', box: [580, 350, 620, 400], stand: [600, 652] }];
+  fs.writeFileSync(path.join(at, 'geometry.json'), JSON.stringify(g));
+  await registry.get('build')!.run(['w', '--from', 'verify', '--to', 'verify', '--place', 'stuck']);
+  expect(ran).toEqual(['verify:stuck']);
+  expect(fs.existsSync(path.join(at, 'corrections.json'))).toBe(false);
+  const log = JSON.parse(fs.readFileSync(path.join(dir, 'build.json'), 'utf8'));
+  expect(log.places[0].ok).toBe(false);
+});
+
 test('places do not wait for each other: a quick place is played while a slow one is still painted, the cast is made alongside', async () => {
   const { ran } = world();
   for (const step of ['cast', 'model', 'sprites', 'voices', 'sound', 'icons', 'faces']) defineCommand({ name: step, usage: step, async run() { ran.push(step); } });
