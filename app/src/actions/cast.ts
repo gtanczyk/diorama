@@ -168,6 +168,18 @@ defineAction({
 });
 
 defineAction({
+  name: 'cast_relax',
+  description: 'Put 3D figures into a calm rest pose with the local Blender (no calls, free): arms down by the sides and feet under the hips, '
+    + 'then their UV sprites are drawn again. Use it when the person says characters walk straddle-legged, with arms out to the sides, like zombies, '
+    + 'or hands stick out. Needs Blender (blender_get). Without key, every character with a 3D model. Then play_reload. Runs as a job.',
+  input: z.object({ slug: Slug, key: z.string().min(1).optional() }),
+  job: true,
+  async run({ slug, key }, ctx) {
+    return ctx.jobs.start(slug, ['model', slug, ...(key ? [key] : []), '--relax'], key ? `relax ${key}` : 'relax the cast', ctx.by);
+  },
+});
+
+defineAction({
   name: 'cast_rewalk',
   description: 'Make a character\'s 2D walk again from its painting (no Muse calls): the painting bent by its bones as one piece, so an apron, a coat '
     + 'or a skirt stretches with the legs and never tears, and what they hold (a lantern, a net) stays on. Use it when the person says a walk tears, '

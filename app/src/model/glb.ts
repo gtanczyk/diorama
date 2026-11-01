@@ -72,8 +72,12 @@ export function hasModelTexture(glb: Buffer): boolean {
   } catch { return false; }
 }
 
-/** The first mesh in the file (the skinned one when there is a skin), in scene space. */
-export function readShape(glb: Buffer): Shape {
+/**
+ * The first mesh in the file (the skinned one when there is a skin), in scene space. `original`: the surface as
+ * TRELLIS built it, where Blender relaxed the pose (src/model/blender.ts keeps it as the _REST attribute); the
+ * painted views were fitted to that surface.
+ */
+export function readShape(glb: Buffer, original = false): Shape {
   if (glb.readUInt32LE(0) !== 0x46546c67) throw new Error('not a glTF binary');
   const jsonLength = glb.readUInt32LE(12);
   const gltf = JSON.parse(glb.subarray(20, 20 + jsonLength).toString('utf8')) as Gltf;
@@ -91,7 +95,7 @@ export function readShape(glb: Buffer): Shape {
   const triangles: number[] = [];
   for (const prim of gltf.meshes[gltf.nodes[nodeIndex].mesh!].primitives) {
     const base = positions.length / 3;
-    const p = readAccessor(gltf, bin, prim.attributes.POSITION) as Float32Array;
+    const p = readAccessor(gltf, bin, original && prim.attributes._REST !== undefined ? prim.attributes._REST : prim.attributes.POSITION) as Float32Array;
     for (let i = 0; i < p.length; i += 3) {
       const [x, y, z] = [p[i], p[i + 1], p[i + 2]];
       positions.push(world[0] * x + world[4] * y + world[8] * z + world[12], world[1] * x + world[5] * y + world[9] * z + world[13], world[2] * x + world[6] * y + world[10] * z + world[14]);

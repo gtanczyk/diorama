@@ -163,7 +163,7 @@ function fitBands(sil: Uint8Array, mask: Uint8Array, whole: ViewFit, W: number):
 
 /** Fits every view of a model; model.json's `views`. */
 export async function fitViews(glb: Buffer, views: Record<ViewName, Buffer>): Promise<Record<ViewName, { image: string } & ViewFit>> {
-  const shape = normalise(readShape(glb));
+  const shape = normalise(readShape(glb, true));
   const fits = {} as Record<ViewName, { image: string } & ViewFit>;
   for (const v of Object.keys(VIEWS) as ViewName[]) fits[v] = { image: `${v}.png`, ...(await fitView(shape, v, views[v])) };
   return fits;

@@ -7,6 +7,7 @@ import { defineCommand, registry, takeOption } from '../registry.ts';
 import { autoRig, reconstruct } from '../model/build.ts';
 import { fitViews, refitIfOld } from '../model/fit.ts';
 import { badModel, lean, readShape, rigProblem, standUp } from '../model/glb.ts';
+import { findBlender, relaxPose } from '../model/blender.ts';
 import { paintViews } from '../model/views.ts';
 import { planSprites } from '../model/plan.ts';
 import { animationSettings, animationOptions, saveAnimationSettings } from '../model/animation.ts';
@@ -17,13 +18,14 @@ import { WorldFiles } from '../world/files.ts';
 
 defineCommand({
   name: 'model',
-  usage: 'model <slug> [key]       with [key], also finishes its required sprites; Muse paints each character who needs sprites (or [key]) from 4 sides, TRELLIS + auto-rig make a 3D model (cast/<key>/model/) [--texture model|views: saved per character] [--glb rigged.glb: skip TRELLIS and the rig] [--coat-correction on|off: off for trousers] [--sprites: finish the character animation, used by Studio] [--take N] [--refit: only fit the views onto the model again, no calls]',
+  usage: 'model <slug> [key]       with [key], also finishes its required sprites; Muse paints each character who needs sprites (or [key]) from 4 sides, TRELLIS + auto-rig make a 3D model (cast/<key>/model/) [--texture model|views: saved per character] [--glb rigged.glb: skip TRELLIS and the rig] [--coat-correction on|off: off for trousers] [--sprites: finish the character animation, used by Studio] [--take N] [--refit: only fit the views onto the model again, no calls] [--relax: only put existing models into a calm rest pose with a local Blender, no calls]',
   async run(args) {
     const options = animationOptions(takeOption(args, 'texture', ''), '', takeOption(args, 'coat-correction', ''));
     const take = Number(takeOption(args, 'take', '0'));
     const given = takeOption(args, 'glb', '');
     const refit = args.includes('--refit');
-    const [slug, keyArg] = args.filter((a) => a !== '--refit' && a !== '--sprites');
+    const relaxOnly = args.includes('--relax');
+    const [slug, keyArg] = args.filter((a) => a !== '--refit' && a !== '--sprites' && a !== '--relax');
     // An individual Animate request includes its sprites, including older Studio clients.
     const withSprites = !!keyArg || args.includes('--sprites');
     if (!slug) throw new Error('usage: diorama model <slug> [key] [--glb rigged.glb] [--refit]');
@@ -35,6 +37,17 @@ defineCommand({
         await refitIfOld(files.path('cast', key, 'model'), true);
         console.log(`${key}: views fitted again, slice by slice`);
       }
+      return;
+    }
+    if (relaxOnly) {
+      const blender = await findBlender();
+      if (!blender) throw new Error('--relax needs Blender 3.6+ (install it, or set DIORAMA_BLENDER to its path)');
+      const files = new WorldFiles(slug);
+      const castDir = files.path('cast');
+      const keys = keyArg ? [keyArg] : fs.readdirSync(castDir).filter((k) => fs.existsSync(files.path('cast', k, 'model', 'model.json')));
+      for (const key of keys) console.log(`${key}: ${await relaxModel(files, key, true)}`);
+      // Renders of the model itself follow it; painted sprites are redrawn by diorama sprites (Muse).
+      for (const key of keys) if (animationSettings(files, key).texture === 'model') await registry.get('sprites')!.run([slug, key]);
       return;
     }
     if (given && !keyArg) throw new Error('--glb needs the key of the character it is');
@@ -224,7 +237,33 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
 
   const fits = await fitViews(rigged, views);
   files.write(out('model.json'), { glb: 'model.glb', views: fits, ...finishSettings(rigged) });
+  console.log(`${key}: ${await relaxModel(files, key)}`);
   const degrees = (slope: number) => Math.round(Math.atan(slope) * 180 / Math.PI * 10) / 10;
   console.log(`${key}: ${out('model.glb')} · stood up ${degrees(tilt.z)}° forward, ${degrees(tilt.x)}° sideways · views ${Object.entries(fits).map(([v, f]) => `${v} ${f.iou}`).join(', ')}`);
   return null;
+}
+
+/**
+ * With a local Blender, the model's rest pose becomes calm (arms down, feet under the hips): the game's walk
+ * then turns bones a little from rest instead of 100 degrees from TRELLIS's raised arms, which pinched the
+ * shoulders, glued sleeves to the chest and splayed the hands. model.source.glb keeps the rig as it came, so
+ * this can run again; model.json says relaxed. Says what happened, in a line.
+ */
+export async function relaxModel(files: WorldFiles, key: string, again = false): Promise<string> {
+  const out = (name: string) => files.path('cast', key, 'model', name);
+  const info = files.readJson(out('model.json')) as { glb: string; relaxed?: boolean; creature?: boolean };
+  if (info.creature) return 'a creature has no skeleton to relax';
+  if (info.relaxed && !again) return 'rest pose already relaxed';
+  const blender = await findBlender();
+  if (!blender) return 'rest pose as TRELLIS built it (no local Blender; install Blender 3.6+ for calmer walks)';
+  const source = fs.existsSync(out('model.source.glb')) ? fs.readFileSync(out('model.source.glb')) : fs.readFileSync(out(info.glb));
+  const done = await relaxPose(source, (line) => console.log(`${key}: ${line}`));
+  if (!done) return 'rest pose as TRELLIS built it (Blender could not relax it)';
+  const problem = rigProblem(done.glb) ?? badModel(readShape(done.glb));
+  if (problem) return `rest pose as TRELLIS built it (relaxed body rejected: ${problem})`;
+  if (!fs.existsSync(out('model.source.glb'))) files.write(out('model.source.glb'), source);
+  files.write(out('model.glb'), done.glb);
+  files.write(out('model.json'), { ...info, glb: 'model.glb', relaxed: true });
+  const arms = Object.values(done.report.armTurn ?? {}).map(Math.round).join('/');
+  return `Blender ${blender.version} relaxed the rest pose (arms turned ${arms}° down, feet under the hips)`;
 }

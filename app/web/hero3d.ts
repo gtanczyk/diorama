@@ -27,6 +27,8 @@ export type ModelInfo = {
   face?: 'views';
   /** Not a person on two legs (a round eye, a frog): the model has no skeleton and moves as a whole body (src/play/creature.ts). */
   creature?: boolean;
+  /** Blender put the rest pose calm (src/model/blender.ts): arms hang, so they may swing like a walker's. */
+  relaxed?: boolean;
   /** bands: the across fit per slice of the height (src/model/fit.ts BANDS), feet first; without them, u everywhere. */
   views: Record<'front' | 'back' | 'left' | 'right', { image: string; u: [number, number]; v: [number, number]; iou: number; bands?: [number, number][] }>;
 };
@@ -244,6 +246,7 @@ export class Figure3D {
   private hipsRest!: THREE.Vector3;
   /** A creature: no bones, the whole body hops, squashes and leans; reach is how far it spreads from its centre, in heights. */
   private creature = false;
+  private relaxed = false;
   private reach = 0.45;
   private seed = Math.random() * 10;
   private lastFrame?: {frame:number;key:string};
@@ -313,6 +316,7 @@ export class Figure3D {
     });
     // A creature's model is TRELLIS's mesh as it came, with no skeleton: it moves as one body.
     this.creature = !skinned;
+    this.relaxed = !!info.relaxed && !!skinned;
     if (!skinned && !(info.creature && first)) throw new Error(`${info.glb}: no skinned mesh`);
     const body = (skinned ?? first)!;
     if (skinned) {
@@ -376,8 +380,17 @@ export class Figure3D {
   /** Muse's views, projected in the bind pose, so the paint rides on the surface while it moves. */
   private async paintViews(skinned: THREE.Mesh, info: ModelInfo, url: (file: string) => string, headOnly = false) {
     const g = skinned.geometry;
-    const pos = g.attributes.position;
-    const nrm = g.attributes.normal;
+    // A model Blender relaxed carries the surface as TRELLIS built it (_REST): the views were painted and fitted on that.
+    const original = g.attributes._rest as THREE.BufferAttribute | undefined;
+    const pos = original ?? g.attributes.position;
+    let nrm = g.attributes.normal;
+    if (original) {
+      const was = new THREE.BufferGeometry();
+      was.setAttribute('position', original);
+      if (g.index) was.setIndex(g.index);
+      was.computeVertexNormals();
+      nrm = was.attributes.normal;
+    }
     const mw = skinned.matrixWorld;
     const nm = new THREE.Matrix3().getNormalMatrix(mw);
     const v = new THREE.Vector3();
@@ -567,7 +580,9 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
     for (const side of ['Left', 'Right'] as const) {
       const sign = side === 'Left' ? 1 : -1;
       const a = walking ? armSwing * Math.cos(ph + (side === 'Left' ? Math.PI : 0)) : 0;
-      const down = new THREE.Vector3(sign * Math.sin(0.22), -Math.cos(0.22), 0);
+      // A relaxed rest pose (Blender) hangs the arms close to the body; otherwise wider, or sleeves sink into the coat.
+      const out = this.relaxed ? 0.09 : 0.22;
+      const down = new THREE.Vector3(sign * Math.sin(out), -Math.cos(out), 0);
       this.turnBone(`${side}Arm`, turn(X, -a).multiply(new THREE.Quaternion().setFromUnitVectors(this.arms[side], down)));
       this.turnBone(`${side}ForeArm`, turn(X, -(0.25 + Math.max(0, a) * 0.6)));
     }
@@ -590,7 +605,7 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
    * One frame, `px` pixels tall. yaw: 0 faces the viewer, PI/2 faces screen right. elevation: how far
    * the camera looks down (radians). Returns the canvas, feet at (width / 2, height * feetAt).
    */
-  draw({ phase = 0, walking = false, yaw = 0, elevation = 0.18, px = 300, light, armSwing = 0.12, gesture, time = performance.now() / 1000, talk, face, frame }: {
+  draw({ phase = 0, walking = false, yaw = 0, elevation = 0.18, px = 300, light, armSwing, gesture, time = performance.now() / 1000, talk, face, frame }: {
     phase?: number; walking?: boolean; yaw?: number; elevation?: number; px?: number; light?: FigureLight; armSwing?: number; frame?: number;
     /** A talking pose (index into src/play/gestures.ts GESTURES), standing. A creature only bounces on its words. */
     gesture?: number;
@@ -609,7 +624,7 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
       this.holder.scale.set(1 / Math.sqrt(m.stretch), m.stretch, 1 / Math.sqrt(m.stretch));
       // Room for the highest hop and a stretched take-off, and for a long body turned side on.
       [top, bottom, half] = [1.55, -0.06, this.reach];
-    } else this.pose(phase, walking && gesture === undefined, armSwing, gesture);
+    } else this.pose(phase, walking && gesture === undefined, armSwing ?? (this.relaxed ? 0.32 : 0.12), gesture);
     if (face) { this.facial?.apply(face); this.paintFace(face); }
     this.holder.rotation.y = yaw;
     this.camDir.value.set(-Math.sin(yaw), 0, Math.cos(yaw));

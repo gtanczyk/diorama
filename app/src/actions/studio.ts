@@ -6,6 +6,7 @@ import { Slug } from '../world/schema.ts';
 import { defineAction } from './registry.ts';
 import { soundQuality } from '../sound/cost.ts';
 import { writeSoundQuality } from '../sound/settings.ts';
+import { blenderEnv, blenderState, writeBlenderSettings } from '../model/blender.ts';
 
 const audioState = () => ({ quality: soundQuality(), env: process.env.DIORAMA_SOUND ?? null });
 
@@ -25,6 +26,25 @@ defineAction({
     if (process.env.DIORAMA_SOUND !== undefined) throw new Error('DIORAMA_SOUND overrides Setup. Unset it and restart Studio to choose audio quality here.');
     writeSoundQuality(quality);
     return audioState();
+  },
+});
+
+defineAction({
+  name: 'blender_get',
+  reads: true,
+  description: 'Whether a local Blender relaxes 3D figures\' rest pose (arms down, feet under the hips) before they walk: found or not, on or off.',
+  input: z.object({}),
+  async run() { return blenderState(); },
+});
+
+defineAction({
+  name: 'blender_set',
+  description: 'Turn the local Blender step for 3D figures on or off for this machine. On: new models get a calm rest pose; cast_relax fixes existing ones.',
+  input: z.object({ enabled: z.boolean() }),
+  async run({ enabled }) {
+    if (blenderEnv() !== undefined) throw new Error('DIORAMA_BLENDER overrides Setup. Unset it and restart Studio to switch Blender here.');
+    writeBlenderSettings({ enabled });
+    return blenderState();
   },
 });
 

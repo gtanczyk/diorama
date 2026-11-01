@@ -3,6 +3,7 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { blenderState } from '../model/blender.ts';
 import { envValue, findVault, loadSecrets, NO_VAULT, type SecretName } from '../secrets.ts';
 
 export type Check = {
@@ -84,6 +85,14 @@ export async function runChecks(opts: { live?: boolean } = {}): Promise<Check[]>
   checks.push(await keyCheck('DIORAMA_ANTHROPIC_API_KEY', 'Anthropic API key', false, 'Optional: with DIORAMA_SPARK_VIA=claude, Spark\'s text and vision asks go to Claude (Sonnet 5.5) instead of Meta.', sources.DIORAMA_ANTHROPIC_API_KEY));
   checks.push(await keyCheck('OPENROUTER_API_KEY', 'OpenRouter key', false, 'Optional: DIORAMA_IMAGE_VIA=gemini-flash, gemini-lite, nano-banana or gemini-pro paints with Gemini instead of Muse Image; DIORAMA_SPARK_VIA=openrouter:<model> for any chat model.', sources.OPENROUTER_API_KEY));
   checks.push(await keyCheck('GEMINI_API_KEY', 'Google Gemini key', false, 'Optional: with DIORAMA_IMAGE_VIA=gemini-flash (or gemini-lite, nano-banana, gemini-pro) Gemini paints straight from Google instead of through OpenRouter.', sources.GEMINI_API_KEY));
+
+  const blender = await blenderState();
+  const blenderWhat = 'With Blender 3.6+ installed, 3D figures get a calm rest pose (arms down, feet under the hips) before they walk, so they stop walking straddle-legged with arms out.';
+  checks.push(blender.installed
+    ? { id: 'blender', label: 'Blender for natural 3D walks', state: blender.enabled ? 'ok' : 'optional',
+      detail: blender.enabled ? `Blender ${blender.installed.version} (${blender.installed.bin}): on. Turn it off in Setup.` : `Blender ${blender.installed.version} found but turned off in Setup.` }
+    : { id: 'blender', label: 'Blender for natural 3D walks', state: 'optional', detail: `Optional: ${blenderWhat} Without it they walk from the pose TRELLIS built. Or set DIORAMA_BLENDER to its path.`,
+      fix: [process.platform === 'darwin' ? 'brew install --cask blender' : 'https://www.blender.org/download/'] });
 
   const py = process.env.DIORAMA_PYTHON;
   checks.push(!py
