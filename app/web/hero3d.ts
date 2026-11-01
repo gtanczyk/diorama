@@ -490,7 +490,11 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
     for (int i = 0; i < 4; i++) { float w = pow(max(0., facing[i]), 4.) * paint[i] + 1e-6 * paint[i]; acc += c[i] * w; wsum += w; } }
   // Over the UV texture only the front painting goes on the face, and only where the face looks forward:
   // two views meeting on a head leave a second eye at the seam, the UV texture round the side never does.
-  if (headOnly > 0.5) diffuseColor.rgb = mix(diffuseColor.rgb * uvGain, c[0], faceFromViews * head * paint[0] * smoothstep(0.4, 0.7, facing[0]));
+  // Only where the front painting sees the surface (vVis.x): a ponytail or bun behind the head faces forward
+  // too, and wore a second face. And it fades as the camera goes round to the side: seen edge-on, the front
+  // painting smears across the profile, while the model's own texture there is a clean cheek.
+  if (headOnly > 0.5) diffuseColor.rgb = mix(diffuseColor.rgb * uvGain, c[0], faceFromViews * head * paint[0] * smoothstep(0.4, 0.7, facing[0])
+    * vVis[0] * smoothstep(0.3, 0.65, camDir.z));
   else if (wsum > 0.) diffuseColor.rgb = acc / wsum;`);
     };
     m.needsUpdate = true;
