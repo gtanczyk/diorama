@@ -27,7 +27,7 @@ diorama play lanterns               # http://localhost:4173
 diorama browsers                    # once, for playthrough videos and sprites (Chromium)
 ```
 
-Update with `npm install -g @gtanczyk/diorama@latest`; `npx` picks up a new version by itself.
+To update: `npm install -g @gtanczyk/diorama@latest`, or add `@latest` to the `npx` line (`npx -y @gtanczyk/diorama@latest studio`).
 
 From a checkout, for working on Diorama itself:
 
