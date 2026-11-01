@@ -465,7 +465,8 @@ export async function floatSheet(memo: Memo, place: Place, backdrop: Buffer, not
   const hits = await samFind(memo, { label: `floats:${place.key}`, image: backdrop, prompt: 'boat' });
   const all = subtract(unionAll(W, H, hits.map((f) => f.mask)), notFloat);
   const rgba = await sharp(backdrop).resize(W, H, { fit: 'fill' }).ensureAlpha().raw().toBuffer();
-  const wetAround = dilate(water, 6);
+  // A far boat sits on the water's far edge, where the water mask often stops short of the shore.
+  const wetAround = dilate(water, 28);
   const out: Smoke[] = [];
   for (const boat of components(all)) {
     const px = maskArea(boat);

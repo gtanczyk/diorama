@@ -23,10 +23,10 @@ export class GlowFx {
 
   private readonly glows: Glow[];
 
-  constructor(planned: Glow[], private readonly H: number, painting?: CanvasImageSource & { width: number; height: number }, wet?: Uint8Array) {
+  constructor(planned: Glow[], private readonly H: number, painting?: CanvasImageSource & { width: number; height: number }, wet?: Uint8Array, cards: number[][] = []) {
     // The planned lights, then every other light Muse painted (a market's strings of lanterns, candle boats, lit
     // windows), found in the painting itself: each flickers on its own phase too.
-    this.glows = painting ? [...planned, ...paintedLights(painting, planned, wet)] : planned;
+    this.glows = painting ? [...planned, ...paintedLights(painting, planned, wet, cards)] : planned;
     const glows = this.glows;
     this.lit = glows.map((g) => (painting && g.kind !== 'twinkle' && g.kind !== 'beam' ? brightPaint(painting, g, H) : undefined));
     this.sparks = glows.map((g) => {
@@ -149,7 +149,7 @@ const MAX_PAINTED = 48;
  * lit pane), found on a quarter-size copy. Each becomes a flame, or on water (a reflection) a flame too but drawn
  * over the shimmer; far from any planned light, so none is lit twice. No model call.
  */
-function paintedLights(painting: CanvasImageSource & { width: number; height: number }, planned: Glow[], wet?: Uint8Array): Glow[] {
+function paintedLights(painting: CanvasImageSource & { width: number; height: number }, planned: Glow[], wet?: Uint8Array, cards: number[][] = []): Glow[] {
   const S = 4;
   const [w, h] = [Math.floor(painting.width / S), Math.floor(painting.height / S)];
   if (w < 8 || h < 8) return [];
@@ -192,6 +192,8 @@ function paintedLights(painting: CanvasImageSource & { width: number; height: nu
     const inner = (0.3 * sr + 0.59 * sg + 0.11 * sb) / n;
     if (!rn || inner - ring / rn < 70) continue;
     if (planned.some((g) => Math.hypot(g.x - x, g.y - y) < 40)) continue;
+    // A light on a card slides with it; a glow laid at its painted place would part from it.
+    if (cards.some((b) => x >= b[0] - 10 && x <= b[2] + 10 && y >= b[1] - 10 && y <= b[3] + 10)) continue;
     const hex = (v: number) => Math.round(Math.min(255, v / n)).toString(16).padStart(2, '0');
     const onWater = !!wet && wet[Math.round(y) * painting.width + Math.round(x)] > 100;
     found.push({ key: `painted-${onWater ? 'reflection' : 'lantern'}-${Math.round(x)}-${Math.round(y)}`, x, y, colour: `#${hex(sr)}${hex(sg)}${hex(sb)}`, kind: 'flame', n });

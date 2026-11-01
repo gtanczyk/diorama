@@ -72,8 +72,13 @@ defineCommand({
       fs.rmSync(at('layers.json'), { force: true });
       // The far flats and the water are cut from the backdrop: asked about the last backdrop where its change does not reach them.
       const moved = lastBackdrop && (await carryBetween(lastBackdrop, png));
-      const farOff: [number, number, number, number][] = [[0, 0, FRAME.width, Math.max(0, g.scale.horizonY)], ...(lastLayers.flats ?? []).flatMap((f) => (f.box ? [f.box] : []))];
-      const farAsked = farFlats(files.memo, place, paintingFor(moved || undefined, png, farOff), g.scale.horizonY).catch((error) => {
+      // Where the far view ends: Spark's horizon, unless it lies far above the planned one (a scale fitted to a
+      // tilted view put it at y 20 and no flat was left above it): then the plan's horizon.
+      const planned = fs.existsSync(at('layout.json')) ? Number((files.readJson(at('layout.json')) as { horizon?: number }).horizon) : NaN;
+      const farLine = Number.isFinite(planned) && g.scale.horizonY < planned - 120 ? planned : g.scale.horizonY;
+      if (farLine !== g.scale.horizonY) console.log(`  ${place.key}: far flats down to the planned horizon ${planned} (the scale's horizon ${Math.round(g.scale.horizonY)} lies far above it)`);
+      const farOff: [number, number, number, number][] = [[0, 0, FRAME.width, Math.max(0, farLine)], ...(lastLayers.flats ?? []).flatMap((f) => (f.box ? [f.box] : []))];
+      const farAsked = farFlats(files.memo, place, paintingFor(moved || undefined, png, farOff), farLine).catch((error) => {
         console.log(`  ${place.key}: no far flats (${error instanceof Error ? error.message.slice(0, 120) : error})`);
         return undefined;
       });

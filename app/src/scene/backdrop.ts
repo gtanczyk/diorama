@@ -182,7 +182,10 @@ export function seamOf(
     const inside = idx(x + 12 * nx, y + 12 * ny);
     const out = idx(x - 4 * nx, y - 4 * ny);
     const further = idx(x - 14 * nx, y - 14 * ny);
-    if (dist(B, inside, P, out) - 0.5 * dist(P, further, P, out) > SEAM_STEP && dist(E, out, P, out) > SEAM_STEP) seam.bits[i] = 1;
+    // A lamp's painted glow round a thing is light, not a part of it: where the painting just outside is bright
+    // and warm, a step there is the glow Muse took out with the lamp, and brushing it onto the card left a disc.
+    const glow = 0.3 * P[0][out] + 0.59 * P[1][out] + 0.11 * P[2][out] > 150 && P[0][out] - P[2][out] > 50;
+    if (!glow && dist(B, inside, P, out) - 0.5 * dist(P, further, P, out) > SEAM_STEP && dist(E, out, P, out) > SEAM_STEP) seam.bits[i] = 1;
   }
   // Runs along the outline: seam px a few apart joined (a fish tail between two heads still steps a little).
   const runs = components(dilate(seam, 5)).map((c) => ({ c, px: maskArea(intersect(c, seam)) }));

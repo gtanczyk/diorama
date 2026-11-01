@@ -31,11 +31,11 @@ export async function locateThings(memo: Memo, place: Place, brief: Brief, paint
   const prompt = `This is a painted background for a 2D point-and-click adventure (${FRAME.width}x${FRAME.height} px, x right, y down). For each thing below give:
 - box: a tight box [x0, y0, x1, y1] around it in the painting, or null if it is not painted
 - kind: how it meets the floor:
-  standing = stands on the floor and people walk around it (barrel, table, tree, lamp post, boat on land, tower)
+  standing = stands on the floor and people walk around it (barrel, table, tree, lamp post, tower, a boat on land or afloat on water)
   wall = hangs on or is part of a wall or backdrop, people never pass in front of its base (door, window, sign, cliff)
   on-top = rests on another thing (a pot on a table, a lamp on a crate)
   walk-on = people walk on it (rug, path, bridge, stairs, jetty)
-  flat = lies flat and cannot be walked on (water, a pond, a hole)
+  flat = lies flat and cannot be walked on (water, a pond, a hole); never something that rises above the ground or the water, like a boat
 - phrase: two or three plain words naming what is painted, for an image search ("rowing boat", "oil can")
 - also: another short name for it, in case the first finds nothing ("street lantern" for "lamp post")
 
