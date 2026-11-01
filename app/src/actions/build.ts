@@ -1,3 +1,5 @@
+import { WorldFiles } from '../world/files.ts';
+import { placesFirst } from './faces.ts';
 // Building: the whole pipeline or one step, as a job; plus the job list and cancel.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -53,6 +55,7 @@ defineAction({
     if (step === 'world') throw new Error('the world step makes a new world: use world_build with an idea');
     const blocked = agentBlocked(path.join(ctx.root, slug), ctx.by);
     if (blocked) throw new ActionError(423, blocked);
+    if (step === 'faces') { const later = placesFirst(new WorldFiles(slug, ctx.root), slug, ctx); if (later) throw new ActionError(409, later); }
     if (place) return ctx.jobs.start(slug, ['build', slug, '--from', step, '--to', 'verify', '--place', place], `${step} · ${place}`, ctx.by);
     return ctx.jobs.start(slug, ['build', slug, '--from', step, '--to', step], step, ctx.by);
   },

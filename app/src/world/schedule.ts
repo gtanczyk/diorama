@@ -36,7 +36,8 @@ export const NEEDS: Record<Step, readonly Step[]> = {
   sprites: ['model', 'derive'],
   sound: ['story', 'paint'],
   voices: ['story'],
-  faces: ['cast', 'sprites', 'voices'],
+  // Last: talking mouths are polish. They start once every place is verified, so they never hold up a playable game.
+  faces: ['cast', 'sprites', 'voices', 'verify'],
   verify: [],
 };
 

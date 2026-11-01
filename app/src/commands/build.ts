@@ -207,9 +207,10 @@ defineCommand({
       try {
         await inStep(step, () => registry.get(step)!.run(args));
       } catch (error) {
-        if (step === 'faces' && error instanceof FacePreparationError) {
-          optionalWarnings.set(step,error.failures);
-          console.log(`Speaking animation incomplete; game build continues: ${error.failures.join('; ')}`);
+        // Speaking faces never fail a build: whatever went wrong, the game plays with gestures.
+        if (step === 'faces') {
+          optionalWarnings.set(step,error instanceof FacePreparationError ? error.failures : [error instanceof Error ? error.message : String(error)]);
+          console.log(`Speaking animation incomplete; game build continues: ${optionalWarnings.get(step)!.join('; ')}`);
           finish(step,since);return;
         }
         emit('step.fail', { step, error: error instanceof Error ? error.message : String(error) });

@@ -10,6 +10,7 @@ import { Slug } from '../world/schema.ts';
 import { lipSyncData } from '../sound/lipsync.ts';
 import { agentBlocked } from '../studio/locks.ts';
 import { ActionError, defineAction } from './registry.ts';
+import { placeTrouble } from '../studio/trouble.ts';
 import { FaceWorkId, FaceRevision, MouthName, LipBox, readFaceWork, faceWorkList, faceWorkAtlas, faceWorkReference, workRevision } from '../scene/face-work.ts';
 import { MOUTHS } from '../play/lipsync.ts';
 
@@ -70,6 +71,21 @@ defineAction({
   },
 });
 
+
+/**
+ * Speaking faces are the last polish, never ahead of a playable game: while a place is unpainted, being built or
+ * left unplayable, the agent's face jobs wait (a face job queued first would hold the place repairs behind it,
+ * and a live demo would hang on a cat's lips). The person can still ask for one from its card.
+ */
+export function placesFirst(files: WorldFiles, slug: string, ctx: { by: string; jobs: { list(world?: string): Array<{ state: string; args: string[] }> } }): string | null {
+  if (ctx.by !== 'agent') return null;
+  const world = fs.existsSync(files.path('world.json')) ? files.readJson(files.path('world.json')) as { places?: Array<{ key: string; title?: string }> } : {};
+  const waiting = (world.places ?? []).filter((p) => !fs.existsSync(files.path('places', p.key, 'painting.png')) || placeTrouble(files.dir, p.key)).map((p) => p.title ?? p.key);
+  const building = ctx.jobs.list(slug).some((j) => (j.state === 'queued' || j.state === 'running') && j.args[0] !== 'faces');
+  if (!waiting.length && !building) return null;
+  return `Places first: ${waiting.length ? `${waiting.join(', ')} ${waiting.length > 1 ? 'are' : 'is'} not playable yet` : 'a build or repair is still running'}. Speaking faces wait until every place plays (characters talk with gestures meanwhile). Repair the places (place_status, place_fix) and come back to faces after.`;
+}
+
 const RepairTarget={slug:Slug,key:Slug,id:FaceWorkId,revision:FaceRevision,mouth:MouthName};
 for(const kind of ['repair','calibrate'] as const)defineAction({
   name:kind==='repair'?'face_frame_repair':'face_lips_set', job:true,
@@ -82,6 +98,7 @@ for(const kind of ['repair','calibrate'] as const)defineAction({
   async run({slug,key,id,revision,mouth,hint,box},ctx) {
     const files=new WorldFiles(slug,ctx.root),blocked=agentBlocked(files.dir,ctx.by);
     if(blocked)throw new ActionError(423,blocked);
+    const later=placesFirst(files,slug,ctx);if(later)throw new ActionError(409,later);
     if(!faceCharacters(files).includes(key))throw new ActionError(404,`No character ${key}`);
     const work=readFaceWork(files,key,id,revision);
     if(kind==='calibrate'&&!work.accepted)throw new ActionError(409,'Repair articulation before calibrating the lips');
@@ -97,6 +114,7 @@ defineAction({
     const files = new WorldFiles(slug, ctx.root);
     const blocked = agentBlocked(files.dir, ctx.by);
     if (blocked) throw new ActionError(423, blocked);
+    const later=placesFirst(files,slug,ctx);if(later)throw new ActionError(409,later);
     const keys = faceCharacters(files);
     if (key && !keys.includes(key)) throw new ActionError(404, `No character ${key}`);
     if (anotherTake && !key) throw new ActionError(400, 'Choose one character for another face take');
@@ -129,6 +147,7 @@ defineAction({
   async run({slug,key,target,revision,imageHash,box,open},ctx) {
     const files=new WorldFiles(slug,ctx.root),blocked=agentBlocked(files.dir,ctx.by);
     if(blocked)throw new ActionError(423,blocked);
+    const later=placesFirst(files,slug,ctx);if(later)throw new ActionError(409,later);
     if(!faceCharacters(files).includes(key))throw new ActionError(404,`No character ${key}`);
     const current=await inspectFaceCalibration(files,key,target);
     if(current.revision!==revision||current.imageHash!==imageHash)throw new ActionError(409,'Face changed; inspect it again');
