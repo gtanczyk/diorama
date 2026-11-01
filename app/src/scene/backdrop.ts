@@ -64,7 +64,7 @@ export function smearFill(rgb: Uint8Array, W: number, H: number, hole: Mask, kno
 
 export type Card = { key: string; phrase: string; mask: Mask };
 /** cut: the card leaves a painted part of its thing on the backdrop (see seamOf): the longest run, where. */
-export type Backdrop = { png: Buffer; report: Record<string, { stillThere: boolean; iou: number; ghost?: boolean; cut?: { px: number; box: [number, number, number, number] | null } }> };
+export type Backdrop = { png: Buffer; report: Record<string, { stillThere: boolean; iou: number; ghost?: boolean; /** Taken out on a close crop after the whole-picture edit left it. */ close?: boolean; cut?: { px: number; box: [number, number, number, number] | null } }> };
 
 /** Darker than this (in luma, 0..255) across its outline, a removed card left its silhouette. */
 const GHOST_STEP = 12;
@@ -240,6 +240,28 @@ export async function backdropFor(memo: Memo, place: Place, cards: Card[], paint
     report[card.key] = { stillThere, iou: Math.round(iou * 100) / 100 };
     if (stillThere) leftover.push(dilate(card.mask, BACKDROP_GROW));
   });
+  // A card Muse left in: asked once more on a close crop round it (Muse sees it big, and the rest of the picture
+  // cannot pull it back in), pasted inside its area; only what SAM still finds after that is smeared.
+  const stuck = cards.filter((c) => report[c.key].stillThere);
+  if (stuck.length) {
+    leftover.length = 0;
+    for (const card of stuck) {
+      const fixed = await removeClose(memo, place, card, png);
+      if (fixed) {
+        const grown = dilate(card.mask, BACKDROP_GROW);
+        const candidate = await pasteInside(png, await matchTone(fixed, png, grown), grown);
+        const again = await samFind(memo, { label: `backdrop-check-close:${place.key}/${card.key}`, image: candidate, prompt: card.phrase });
+        const iou = Math.max(0, ...again.map((f) => maskIou(intersect(f.mask, area), card.mask)));
+        const left = again.reduce((px, f) => px + maskArea(intersect(f.mask, card.mask)), 0);
+        if (!(iou > 0.4 || left > 0.4 * maskArea(card.mask))) {
+          png = candidate;
+          report[card.key] = { stillThere: false, iou: Math.round(iou * 100) / 100, close: true };
+          continue;
+        }
+      }
+      leftover.push(dilate(card.mask, BACKDROP_GROW));
+    }
+  }
   // A ghost left where a card was taken out: Muse once more on those, then the smear for any still there.
   let ghosts = await ghostsIn(png, cards.filter((c) => !report[c.key].stillThere));
   if (ghosts.length) {
@@ -268,6 +290,28 @@ export async function backdropFor(memo: Memo, place: Place, cards: Card[], paint
     if (seam.cut) report[card.key].cut = { px: seam.px, box: seam.box };
   }
   return { png, report };
+}
+
+/**
+ * One card taken out on a close crop: the card's box with room round it, scaled up to Muse's size, edited, and
+ * scaled back into the whole picture. Undefined when Muse fails (the smear stays the fallback).
+ */
+async function removeClose(memo: Memo, place: Place, card: Card, png: Buffer): Promise<Buffer | undefined> {
+  const { width: W, height: H } = FRAME;
+  const box = maskBox(card.mask);
+  if (!box) return undefined;
+  const [x0, y0, x1, y1] = box;
+  const side = Math.min(Math.max(W, H), Math.max(x1 - x0, y1 - y0) * 2.2);
+  const w = Math.round(Math.min(W, side * 1.34)), h = Math.round(Math.min(H, side));
+  const left = Math.round(Math.min(W - w, Math.max(0, (x0 + x1) / 2 - w / 2))), top = Math.round(Math.min(H - h, Math.max(0, (y0 + y1) / 2 - h / 2)));
+  const crop = await sharp(png).resize(W, H, { fit: 'fill' }).extract({ left, top, width: w, height: h }).resize(1200, 896, { fit: 'fill' }).png().toBuffer();
+  const edited = await museEdit(memo, {
+    label: `backdrop-close:${place.key}/${card.key}`, images: [crop],
+    prompt: `Remove the ${card.phrase} from this picture completely. Paint what is behind it where it was: continue the water, the planks, the stones, the walls and the light around it, with no trace, shadow, reflection or outline of it. Leave everything else exactly as it is, same painted style. No people, no text.`,
+  }).catch(() => undefined);
+  if (!edited) return undefined;
+  const back = await sharp(edited).resize(w, h, { fit: 'fill' }).png().toBuffer();
+  return sharp(png).resize(W, H, { fit: 'fill' }).composite([{ input: back, left, top }]).png().toBuffer();
 }
 
 /** The smeared fill alone, for a place without a key or when Muse is not wanted. */
