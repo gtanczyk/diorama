@@ -15,6 +15,8 @@ export type ProbeHit = {
   overNearer: Record<string, number>;
   /** Hidden hero pixels under a thing whose floor line is behind his feet: he should be in front of it. */
   hiddenByFarther: Record<string, number>;
+  /** Visible hero pixels where the depth map says the painting stands nearer than his feet (a lamp post nobody masked). */
+  overDepth?: number;
   /** Hero pixels inside the box of a thing with only a box for a mask, while his feet are behind its bottom. */
   overBox: Record<string, number>;
   /** Things whose floor footprint holds his feet: he would stand inside them. */
@@ -74,13 +76,15 @@ export const PROBE_JS = String.raw`async ({ placeKey, positions }) => {
     const off = Math.max(0, h - y) / h + (Math.max(0, w / 2 - x) + Math.max(0, x + w / 2 - W)) / w;
     const x0 = Math.max(0, Math.floor(x - w / 2 - 3)), x1 = Math.min(W, Math.ceil(x + w / 2 + 3));
     const y0 = Math.max(0, Math.floor(y - h - 3)), y1 = Math.min(H, Math.ceil(y + 4));
-    Object.assign(game.hero, { x, y, facing: 1, phase: 0 });
+    // foot: where the feet were drawn last (a stair's tread); a probe stands him afresh.
+    Object.assign(game.hero, { x, y, facing: 1, phase: 0, foot: undefined });
     place.cuts = cuts; game.render();
     const occluded = region(x0, y0, x1, y1);
-    place.cuts = []; game.render();
+    place.cuts = []; game.depthOcclusion = false; game.render();
     const bare = region(x0, y0, x1, y1);
-    place.cuts = cuts;
-    const hit = { x, y, drawn: 0, hidden: 0, overNearer: {}, hiddenByFarther: {}, overBox: {}, feetIn: [], off: Math.round(off * 100) / 100 };
+    place.cuts = cuts; game.depthOcclusion = true;
+    const front = game.frontOf ? game.frontOf([x0, y0, x1, y1], x, y) : null;
+    const hit = { x, y, drawn: 0, hidden: 0, overNearer: {}, overDepth: 0, hiddenByFarther: {}, overBox: {}, feetIn: [], off: Math.round(off * 100) / 100 };
     const rw = x1 - x0;
     for (let py = y0; py < y1; py++) {
       // The shadow under his feet is not him.
@@ -92,6 +96,8 @@ export const PROBE_JS = String.raw`async ({ placeKey, positions }) => {
         hit.drawn++;
         const back = Math.abs(occluded[r] - empty[f]) + Math.abs(occluded[r + 1] - empty[f + 1]) + Math.abs(occluded[r + 2] - empty[f + 2]) < 12;
         if (back) hit.hidden++;
+        // Still the hero as drawn with nothing put back: the depth map's work did not reach him there.
+        else if (front && front[(py - y0) * rw + (px - x0)] && Math.abs(occluded[r] - bare[r]) + Math.abs(occluded[r + 1] - bare[r + 1]) + Math.abs(occluded[r + 2] - bare[r + 2]) < 12) hit.overDepth++;
         for (const b of boxes) {
           if (px >= b.box[0] && px < b.box[2] && py >= b.box[1] && py < b.box[3] && y < b.box[3] - 4) hit.overBox[b.key] = (hit.overBox[b.key] ?? 0) + 1;
         }

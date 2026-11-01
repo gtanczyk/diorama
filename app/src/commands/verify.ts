@@ -5,6 +5,7 @@ import { defineCommand } from '../registry.ts';
 import { gapError, placeGap } from './build.ts';
 import { verifyPlace, type BackdropNotes, type MaskNotes, type PlateNotes } from '../scene/verify.ts';
 import { WorldFiles } from '../world/files.ts';
+import { checkPlaceOcclusion, occlusionFindings } from '../scene/occlusion-check.ts';
 import { Reactions } from '../play/reactions.ts';
 import { reactionInput } from './reactions.ts';
 import { reactionSource } from '../scene/reactions.ts';
@@ -25,6 +26,8 @@ defineCommand({
       const plates = (fs.existsSync(at('plates.json')) ? files.readJson(at('plates.json')) : {}) as PlateNotes;
       const backdrop = (fs.existsSync(at('backdrop.json')) ? files.readJson(at('backdrop.json')) : {}) as BackdropNotes;
       const verdict = verifyPlace(place, geometry, files.readJson(at('masks.json')) as MaskNotes, plates, backdrop);
+      // Who the painting hides where, by the depth map: also the things nobody named (a lamp post, a bridge's side).
+      verdict.flags.push(...occlusionFindings(geometry, await checkPlaceOcclusion(files.place(place.key), geometry)));
       if (fs.existsSync(at('reactions.json'))) {
         try {
           const rules = Reactions.parse(files.readJson(at('reactions.json')));

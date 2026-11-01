@@ -5,6 +5,7 @@ import { FLAME_GLOW, FLAME_SWAY_M, flameAt, depthStretch, flicker, floorYAt, hid
 import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, RIM_ALPHA, RIM_COLOUR, RIM_WIDTH, SEPARATE_ALPHA, SEPARATE_BLUR, SEPARATE_SHIFT } from '../src/play/focus.ts';
+import { frontMask } from '../src/play/depth-occlusion.ts';
 import { catchers, decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
 import { CYCLE, pose, sheetCell, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, holds, pickDialogue, pickInteraction, speakerOf, startState, type Action, type State } from '../src/story/engine.ts';
@@ -98,8 +99,10 @@ type Place = {
   light?: { cols: number; rows: number; luma: Float32Array };
   /** Painted shadows on the floors (geometry.shadows): a person standing in one is darkened. */
   shade?: Bits;
-  /** How far every pixel is (geometry.depth): cast shadows follow the ground's shape with it. */
+  /** How far every pixel is (geometry.depth): cast shadows follow the ground's shape with it, and what nobody masked hides people. */
   depth?: Depth;
+  /** The cards' pixels at the depth map's size: there the cards, not the depth map, decide who is hidden (made on first use). */
+  carded?: Uint8Array;
   /** How far every pixel is for focus and separation: the depth map, or the floor plane with the cards stood on it. */
   focus?: Depth;
   /** The water's soft mask over the frame, 0..255: a shadow barely shows on water. */
@@ -1595,6 +1598,16 @@ class Game {
     this.place.glows?.draw(ctx, (y) => this.shift(y));
     this.place.weather?.drawDrips(ctx, (y) => this.shift(y));
     this.drawFocus();
+    // The place as drawn so far, without anyone: what the depth map puts back over a person (occludeDepth).
+    this.snapped = false;
+    if (this.place.depth && this.depthOcclusion && !nobody && people.length) {
+      const snap = (this.snap ??= document.createElement('canvas'));
+      if (snap.width !== canvas.width || snap.height !== canvas.height) Object.assign(snap, { width: canvas.width, height: canvas.height });
+      const sc = snap.getContext('2d')!;
+      sc.clearRect(0, 0, snap.width, snap.height);
+      sc.drawImage(canvas, 0, 0);
+      this.snapped = true;
+    }
     // Everyone is drawn far to near, and each one gets the things in front of them put back.
     let rect: Rect = [0, 0, 0, 0];
     const lit = this.hover && !hideCursor ? this.hover : undefined;
@@ -1620,11 +1633,13 @@ class Game {
       if (who.npc) {
         const drawn = this.drawWho(who, lit, 'body');
         this.drawn.push({ hot: who.npc, rect: drawn });
-        this.occlude(drawn, who.y, gone);
+        const body = who.npc.npc?.body;
+        this.occlude(drawn, who.y, gone, body?.x, body && (body.foot ?? stepFootY(g, body.x, who.y)));
       } else {
         const drawn = this.drawWho(who, lit, 'body');
         if (who.body === this.hero) rect = drawn;
-        this.occlude(drawn, who.y, gone);
+        // The depth map goes by where the feet are drawn: on a stair's tread, not at the walker's row.
+        this.occlude(drawn, who.y, gone, who.body?.x, who.body && (who.body.foot ?? stepFootY(g, who.body.x, who.y)));
       }
     }
     burn();
@@ -2438,8 +2453,98 @@ class Game {
     return Math.min(1.1, Math.max(0.4, 0.35 + (0.65 * sum) / n / 150));
   }
 
+  /** For the explorer: where the depth map puts the painting in front of feet at (x, feetY), over rect (src/qa/probe.ts). */
+  frontOf(rect: [number, number, number, number], x: number, feetY: number): Uint8Array | null {
+    return this.depthFront(rect, feetY, x)?.front ?? null;
+  }
+
+  /** False while the explorer draws a person with nothing put back over them (src/qa/probe.ts). */
+  depthOcclusion = true;
+  private snap?: HTMLCanvasElement;
+  private snapped = false;
+  private depthMask?: HTMLCanvasElement;
+  private depthPatch?: HTMLCanvasElement;
+
+  /**
+   * Where, over a person's box (whole px), the place stands in front of them by the depth map and no card looks
+   * after it: a lamp post, a railing, a bridge's parapet nobody named (src/play/depth-occlusion.ts). In screen
+   * space: under parallax each painted pixel slides as the floor row at its own distance.
+   */
+  private depthFront(rect: [number, number, number, number], feetY: number, x?: number): { front: Uint8Array; r: [number, number, number, number] } | undefined {
+    const { g, depth, cuts } = this.place;
+    if (!depth) return undefined;
+    const owned = (this.place.carded ??= ownerMap(depth, cuts));
+    // Where the feet are: a figure's box need not be centred on them.
+    const feetX = x ?? (rect[0] + rect[2]) / 2;
+    const r: [number, number, number, number] = [Math.floor(rect[0]), Math.floor(rect[1]), Math.ceil(rect[2]), Math.ceil(Math.min(rect[3], feetY))];
+    const w = r[2] - r[0];
+    const h = r[3] - r[1];
+    if (w <= 0 || h <= 0) return undefined;
+    const p = this.parallax();
+    if (!p) {
+      const front = frontMask(g, depth, r, feetX, feetY, owned);
+      return front ? { front, r } : undefined;
+    }
+    const pad = Math.ceil(Math.max(...[g.scale.horizonY, g.frame.height].map((y) => Math.max(...this.shift(y).map(Math.abs))))) + 2;
+    const src: [number, number, number, number] = [r[0] - pad, r[1] - pad, r[2] + pad, r[3] + pad];
+    const back = frontMask(g, depth, src, feetX, feetY, owned);
+    if (!back) return undefined;
+    const sw = src[2] - src[0];
+    const front = new Uint8Array(w * h);
+    const shifts = new Map<number, [number, number]>();
+    let any = false;
+    for (let v = src[1]; v < src[3]; v++) for (let u = src[0]; u < src[2]; u++) {
+      if (!back[(v - src[1]) * sw + (u - src[0])]) continue;
+      const row = Math.round(depth.rows[Math.min(depth.h - 1, Math.floor(v / DEPTH_SCALE)) * depth.w + Math.min(depth.w - 1, Math.floor(u / DEPTH_SCALE))]);
+      let s = shifts.get(row);
+      if (!s) shifts.set(row, (s = this.shift(g.scale.horizonY + row)));
+      const x = Math.round(u + s[0]) - r[0];
+      const y = Math.round(v + s[1]) - r[1];
+      if (x < 0 || y < 0 || x >= w || y >= h) continue;
+      front[y * w + x] = 1;
+      any = true;
+    }
+    return any ? { front, r } : undefined;
+  }
+
+  /** Puts the place, as drawn this frame without anyone, back over a person where depthFront says it is in front. */
+  private occludeDepth(rect: [number, number, number, number], feetY: number, feetX?: number) {
+    if (!this.snapped || !this.snap) return;
+    const found = this.depthFront(rect, feetY, feetX);
+    if (!found) return;
+    const { front, r } = found;
+    const w = r[2] - r[0];
+    const h = r[3] - r[1];
+    const mask = (this.depthMask ??= document.createElement('canvas'));
+    Object.assign(mask, { width: w, height: h });
+    const mc = mask.getContext('2d')!;
+    const img = mc.createImageData(w, h);
+    for (let i = 0; i < front.length; i++) if (front[i]) img.data[i * 4 + 3] = 255;
+    mc.putImageData(img, 0, 0);
+    // In the canvas's own pixels: the snapshot was taken there, zoomed and panned.
+    const t = ctx.getTransform();
+    const dx = Math.floor(t.a * r[0] + t.e);
+    const dy = Math.floor(t.d * r[1] + t.f);
+    const dw = Math.ceil(t.a * w) + 1;
+    const dh = Math.ceil(t.d * h) + 1;
+    if (dw <= 0 || dh <= 0) return;
+    const patch = (this.depthPatch ??= document.createElement('canvas'));
+    Object.assign(patch, { width: dw, height: dh });
+    const pc = patch.getContext('2d')!;
+    pc.globalCompositeOperation = 'source-over';
+    pc.drawImage(this.snap, dx, dy, dw, dh, 0, 0, dw, dh);
+    pc.globalCompositeOperation = 'destination-in';
+    pc.imageSmoothingEnabled = true;
+    pc.drawImage(mask, t.a * r[0] + t.e - dx, t.d * r[1] + t.f - dy, t.a * w, t.d * h);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(patch, dx, dy);
+    ctx.restore();
+  }
+
   /** Puts the painting back over the hero, column by column, wherever an occluder stands in front of him. */
-  private occlude(rect: [number, number, number, number], feetY: number, gone: Set<string>) {
+  private occlude(rect: [number, number, number, number], feetY: number, gone: Set<string>, feetX?: number, drawnFeetY?: number) {
+    if (this.depthOcclusion) this.occludeDepth(rect, drawnFeetY ?? feetY, feetX);
     const support = (k: string) => this.place.byKey.get(k);
     for (const cut of this.place.cuts) {
       if (cut.occ.thing && gone.has(cut.occ.thing)) continue;
