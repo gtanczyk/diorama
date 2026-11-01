@@ -1353,3 +1353,10 @@ button > .icon, .detail > .icon { margin-right: 2px; }
 /* The places strip above a place on stage and atop the Places drawer: the same chips as the build room. */
 .theatre > .build-places { margin-bottom: -2px; }
 .drawer.by-hand > .build-places { flex: none; overflow: visible; margin-bottom: 4px; }
+.cw-faces { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; overflow: auto; min-height: 0; }
+.cw-faces > li { display: flex; gap: 12px; align-items: flex-start; padding: 8px; border-radius: 10px; background: var(--raised); }
+.cw-faces > li > img { width: 72px; height: 96px; object-fit: contain; flex: none; }
+.cw-faces > li.fail .detail { color: var(--warn, #b5651d); }
+.mouths .sheets { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0; margin: 4px 0 0; }
+.mouths .sheets li { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.mouths canvas { border-radius: 6px; background: var(--paper, #fff); max-width: 120px; }

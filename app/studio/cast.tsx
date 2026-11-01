@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
 import { named } from './build.tsx';
-import { FigurePreview } from './figure.tsx';
+import { FigurePreview, MouthShapes } from './figure.tsx';
 import { Icon, type IconName } from './icons.tsx';
 
 type Pic = { file: string; v: number | null } | null;
@@ -17,7 +17,7 @@ type Character = {
   body: { height: number; upright: boolean } | null;
   stamps: { rig: number | null; model: number | null; sprites: number | null };
   voice: { voice: string; why: string; stability: number; style: number } | null;
-  face?: { ready: boolean; image: boolean; rig: boolean; spriteViews: number; model3d?: {mouth:boolean;method?:string|null;views?:string[]} | null; attempt?: { state?: string; reason?: string } | null };
+  face?: { ready: boolean; image: boolean; rig: boolean; spriteViews: number; model3d?: {mouth:boolean;method?:string|null;views?:string[]} | null; attempt?: { state?: string; reason?: string; at?: string } | null };
   lines: number; flagged: number; sample: { text: string; file: string } | null;
   voiceFailures?: Array<{ text: string; reason: string }>;
   voiceWarnings?: string[];
@@ -137,6 +137,7 @@ function Card({ slug, c, onError, focused }: { slug: string; c: Character; onErr
           <div class="row" style="margin-bottom:8px">
             <button type="button" class="ghost small" disabled={busy || !c.figure} onClick={() => void act('faces_prepare', {})}>{c.face?.ready ? 'Refresh speech animation' : 'Prepare speech animation'}</button>
             {c.face?.ready && <small>{c.face.model3d?.mouth ? `2D + 3D speech ready (${c.face.model3d.method === 'morphs' ? 'facial morphs' : 'painted surfaces'})` : '2D speaking face ready'}</small>}
+            {c.face?.ready && <details class="detail"><summary title="The mouth shapes this character speaks with, cut from its face atlas. Free to look">Mouth shapes</summary><MouthShapes slug={slug} who={c.key} v={Date.parse(c.face.attempt?.at ?? '') || null} /></details>}
             {c.face?.attempt?.state === 'failed' && <details class="detail"><summary>Speech animation incomplete · previous appearance kept</summary><p>{c.face.attempt.reason}</p></details>}
           </div>
           <form class="say" onSubmit={(e) => (e.preventDefault(), changed && void act('cast_redo', { looks: looks.trim() }))}>

@@ -2,7 +2,7 @@
 // stage it is at (TRELLIS, skeleton) and the time left; when one is done, it moves right there.
 import { useEffect, useState } from 'preact/hooks';
 import { call, fileUrl } from './api.ts';
-import { FigurePreview, Sides } from './figure.tsx';
+import { FigurePreview, MouthShapes, Sides } from './figure.tsx';
 import { nice } from './world.tsx';
 import { named, nowBy } from './build.tsx';
 import { Icon } from './icons.tsx';
@@ -50,7 +50,8 @@ const WHAT: Record<string, string> = { cast: 'Painting the cast', model: 'Buildi
 /** The newest face picture the faces step wrote for one character: the mouth shapes so far. */
 const newestFace = (key: string, w: CastWork[string]) => Object.entries(w.files).filter(([f]) => f.startsWith(`cast/${key}/face`) && f.endsWith('.png') && !f.endsWith('-reference.png')).sort((a, b) => b[1] - a[1])[0];
 
-type Who = { key: string; role: string; looksNow: string; figure: { file: string; v: number } | null; painting: { file: string; v: number } | null; stamps: { rig: number | null; model: number | null; sprites: number | null }; body: { upright: boolean } | null };
+type Who = { key: string; role: string; looksNow: string; figure: { file: string; v: number } | null; painting: { file: string; v: number } | null; stamps: { rig: number | null; model: number | null; sprites: number | null }; body: { upright: boolean } | null;
+  face?: { ready: boolean; attempt?: { state?: string; reason?: string; at?: string; skipped?: string[] } | null } };
 
 const clock = (s: number) => (s < 60 ? `${Math.max(1, Math.round(s))} s` : `${Math.floor(s / 60)} min ${String(Math.round(s % 60)).padStart(2, '0')} s`);
 
@@ -105,7 +106,8 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
     .sort((a, b) => b[1].at - a[1].at).map(([k]) => k);
   if (only && known.has(only) && !keys.includes(only)) keys.unshift(only);
   const [pick, setPick] = useState<string | null>(null);
-  const focus = pick && keys.includes(pick) ? pick : keys[0];
+  // A finished faces step shows everyone's outcome at once rather than the last one it touched.
+  const focus = step === 'faces' && !running ? undefined : pick && keys.includes(pick) ? pick : keys[0];
   const empty = { files: {}, said: '', at: 0, began: {} };
   const elapsed = since ? (now - since) / 1000 : 0;
   // A job for one character takes about one character's time, not the build's whole model step.
@@ -121,15 +123,23 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
         </span>
       </div>
       {!focus && step === 'faces' && cast && cast.some((c) => c.figure) && (
-        // Before the first mouth lands: who will get a talking face, from the figures it works from.
-        <div class="cw-slots">
-          {cast.filter((c) => c.figure).map((c) => (
-            <figure class="in">
-              <img src={fileUrl(slug, c.figure!.file, c.figure!.v)} data-lightbox={fileUrl(slug, c.figure!.file, c.figure!.v)} title={`${nice(c.key)}: its mouth shapes are painted from this figure. Click: large`} alt={c.key} />
-              <figcaption>{nice(c.key)}</figcaption>
-            </figure>
-          ))}
-        </div>
+        // Who gets a talking face, from the figure it is painted from: ready (its mouth shapes), failed and why, or still to come.
+        <ul class="cw-faces">
+          {cast.filter((c) => c.figure).map((c) => {
+            const failedWhy = c.face?.attempt?.state === 'failed' ? c.face.attempt.reason : undefined;
+            return (
+              <li class={c.face?.ready ? 'ok' : failedWhy ? 'fail' : ''}>
+                <img src={fileUrl(slug, c.figure!.file, c.figure!.v)} data-lightbox={fileUrl(slug, c.figure!.file, c.figure!.v)} title={`${nice(c.key)}: its mouth shapes are painted from this figure. Click: large`} alt={c.key} />
+                <div>
+                  <strong>{nice(c.key)}</strong>{' '}
+                  <span class="detail">{c.face?.ready ? '✓ speaks with moving lips' : failedWhy ? `✕ not yet: ${failedWhy}` : running ? '○ waiting its turn' : '○ no talking face yet'}</span>
+                  {c.face?.ready && <MouthShapes slug={slug} who={c.key} v={Date.parse(c.face.attempt?.at ?? '') || null} />}
+                  {!c.face?.ready && <div class="row"><button type="button" class="ghost small" title="Its card: Refresh speech animation tries again (Muse Image, a few calls)" onClick={() => onOpen(c.key)}><Icon name="pencil" /> Details</button></div>}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       )}
       {!focus && (step !== 'faces' || !cast?.some((c) => c.figure)) && <div class="cw-wait"><span>{cast === null ? 'Reading the cast…' : named(step === 'model' ? 'Muse Image is about to paint the first character from four sides…' : step === 'sprites' ? 'Muse Image is about to paint the first sprite sheet…' : step === 'faces' ? 'Muse Image is about to paint the first mouth shapes…' : 'Muse Image is painting the cast…')}</span></div>}
       {focus && (() => {
@@ -174,7 +184,7 @@ export function CastWorkStage({ slug, step, work, running, failed, since, took, 
           </section>
         );
       })()}
-      {keys.length > 1 && (
+      {keys.length > 1 && focus && (
         <ul class="cw-others" aria-label="Others in this step">
           {keys.filter((k) => k !== focus).map((k) => {
             const w = work[k] ?? empty;

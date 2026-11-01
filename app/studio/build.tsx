@@ -254,8 +254,12 @@ export function Pipeline({ job, all, live, build, typical, onOpen }: { job?: Job
         })}
       </ol>
       {build.faces?.status === 'incomplete' && <div class="speech-warning">
-        <span>Some speaking animations are incomplete. Other build steps can continue.</span>
-        {onOpen && <button type="button" class="ghost small" onClick={() => onOpen('cast', 'faces')}>View characters</button>}
+        <span>{(() => {
+          // Warnings start with the character's key ("ola: ..."): name who still has no moving lips.
+          const who = [...new Set((build.faces.warnings ?? []).map((w) => /^([a-z0-9][\w-]*):/.exec(w)?.[1]).filter(Boolean))];
+          return who.length ? `No moving lips yet for ${who.join(', ')}: their mouth shapes did not pass the check. They still talk with gestures; the rest of the build goes on.` : 'Some speaking animations are incomplete. Other build steps can continue.';
+        })()}</span>
+        {onOpen && <button type="button" class="ghost small" title="Who speaks with moving lips, who does not and why, and each one's mouth shapes. Stays in the build view" onClick={() => onOpen('cast', 'faces')}>See the talking faces</button>}
         {!!build.faces.warnings?.length && <details><summary>Animation details</summary><ul>{build.faces.warnings.map(w => <li>{w}</li>)}</ul></details>}
       </div>}
       {job && <span class="detail">Each bar is split into its steps. Green: done now · faded green: kept from the earlier build · orange: working now. Built steps do not confirm visual quality or a playthrough.</span>}

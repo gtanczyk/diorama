@@ -273,3 +273,42 @@ function SpritesView({ slug, dir, v }: { slug: string; dir: string; v: number | 
     </div>
   );
 }
+
+const MOUTH_SAYS: Record<string, string> = { X: 'rest', A: 'M B P', B: 'teeth (S, K)', C: 'EH', D: 'AH', E: 'OH', F: 'OO', G: 'F V', H: 'L' };
+
+/** The mouth shapes a character speaks with (cast/<key>/face.json atlas), each cut out with what it says. */
+export function MouthShapes({ slug, who, v }: { slug: string; who: string; v?: number | null }) {
+  const [face, setFace] = useState<{ img: HTMLImageElement; views: Array<[string, Record<string, [number, number, number, number]>]>; file: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let gone = false;
+    (async () => {
+      const info = await json<{ image: string; mouths: Record<string, [number, number, number, number]>; atlases?: Record<string, Record<string, [number, number, number, number]>> }>(fileUrl(slug, `cast/${who}/face.json`, v));
+      const file = `cast/${who}/${info.image}`;
+      const img = await image(fileUrl(slug, file, v));
+      // Mouth patches in atlas pixels: the painting's own (mouths), then one set per sprite view that has its own heads.
+      const views: Array<[string, Record<string, [number, number, number, number]>]> = [['painting', info.mouths], ...Object.entries(info.atlases ?? {}).filter(([, m]) => Object.keys(m).length)];
+      if (!gone) setFace({ img, file, views: views.filter(([, m]) => m && Object.keys(m).length) });
+    })().catch((e) => !gone && setError((e as Error).message));
+    return () => void (gone = true);
+  }, [slug, who, v]);
+  if (!face) return <span class="detail">{error ? `No mouth shapes to show: ${error}` : 'Loading the mouth shapes…'}</span>;
+  return (
+    <div class="mouths">
+      {face.views.map(([view, boxes]) => (
+        <div>
+          {face.views.length > 1 && <span class="detail">{view}</span>}
+          <ul class="sheets">
+            {Object.entries(boxes).map(([m, [x, y, w, h]]) => (
+              <li key={`${view}-${m}`}>
+                <canvas width={w} height={h} style={`width:${Math.min(120, w)}px;height:auto`} ref={(el) => el?.getContext('2d')?.drawImage(face.img, x, y, w, h, 0, 0, w, h)}
+                  data-lightbox={fileUrl(slug, face.file, v)} title={`${m}: ${MOUTH_SAYS[m] ?? ''}. Click: the whole atlas`} />
+                <span class="detail">{m} · {MOUTH_SAYS[m] ?? ''}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}

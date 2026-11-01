@@ -816,7 +816,8 @@ function Workshop({ slug }: { slug: string }) {
       // A cast step at work (or just done): watch it live; otherwise the cast as it stands.
       const s = step && CAST_STEPS.includes(step) ? step : CAST_STEPS.find((x) => liveBuild.running[x] === 'run') ?? (job ? CAST_STEPS.find((x) => liveBuild.plan.includes(x)) : undefined);
       const seen = !!s && Object.values(castWork).some((w) => Object.keys(w.files).some((f) => castFile(f)?.[1] === s));
-      return onStage(s && (liveBuild.plan.includes(s) || seen) ? { kind: 'work', step: s } : { kind: 'cast' });
+      // Talking faces always open in the build view: who speaks, who failed and why, their mouth shapes.
+      return onStage(s && (s === 'faces' || liveBuild.plan.includes(s) || seen) ? { kind: 'work', step: s } : { kind: 'cast' });
     }
     if (phase === 'sound') return setByHand('#cast');
     if (phase === 'verify') return playable ? onStage({ kind: 'play' }) : setLogOpen(true);
