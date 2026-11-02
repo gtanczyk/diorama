@@ -2115,6 +2115,7 @@ class Game {
     const edge = glow ? ` drop-shadow(0 0 ${Math.max(2, h * 0.008).toFixed(1)}px ${glow}) drop-shadow(0 0 ${Math.max(2, h * 0.008).toFixed(1)}px ${glow})` : '';
     this.separate(x, y, h, paintRaw);
     ctx.filter = `brightness(${bright.toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}${edge}`;
+    const frameAt = ctx.getTransform();
     ctx.translate(x, y - bob);
     ctx.rotate(rock);
     // paint mirrors ctx for a figure facing left; the rim is drawn already mirrored, so it goes on the unmirrored frame.
@@ -2125,6 +2126,7 @@ class Game {
       ctx.setTransform(feetAt);
       this.rim(h, paint, bright * (1 - shaded), light);
     }
+    this.shadeOver(paint, frameAt, feetAt, [x - half - 4, y - h * 1.06 - bob - 4, x + half + 4, y + Math.max(3, h * 0.04) + 4]);
     ctx.restore();
     return [x - half - 2 + sx, y - h * 1.04 - bob - 2 + sy, x + half + 2 + sx, y + Math.max(3, h * 0.04) + sy];
   }
@@ -2236,6 +2238,7 @@ class Game {
       any = true;
     }
     if (!any) return [x + sx, y + sy, x + sx, y + sy];
+    if (!keepAttached(out, Math.floor(x / S) - x0, Math.floor(y / S) - y0, Math.max(2, Math.round(h * 0.04 / S)), Math.round(h * 0.15 / S))) return undefined;
     const gx = gc.getContext('2d')!;
     gx.clearRect(0, 0, gc.width, gc.height);
     gx.putImageData(out, 0, 0);
@@ -2460,6 +2463,55 @@ class Game {
       }
       ctx.restore();
     });
+  }
+
+  private shadeCanvas: { place: Place; canvas: HTMLCanvasElement } | undefined;
+  private shadeScratch = document.createElement('canvas');
+
+  /**
+   * The painting's own shadows (a beam of shade across a path) fall on a person standing in them, pixel by pixel:
+   * the part of the body inside a painted shadow is darkened softly, the rest stays lit. ?shadeover=0 turns it off.
+   */
+  private shadeOver(paint: (c: CanvasRenderingContext2D) => number, frameAt: DOMMatrix, feetAt: DOMMatrix, box: Rect) {
+    const shade = this.place.shade;
+    if (!shade || params.get('shadeover') === '0') return;
+    const { width: W } = this.place.g.frame;
+    const H = shade.bits.length / W;
+    // Only when some of the painted shadow lies inside the person's box.
+    const [bx0, by0, bx1, by1] = [Math.max(0, Math.floor(box[0])), Math.max(0, Math.floor(box[1])), Math.min(W, Math.ceil(box[2])), Math.min(H, Math.ceil(box[3]))];
+    let any = false;
+    for (let y = by0; y < by1 && !any; y += 3) for (let x = bx0; x < bx1; x += 3) if (shade.bits[y * W + x]) { any = true; break; }
+    if (!any) return;
+    if (this.shadeCanvas?.place !== this.place) {
+      const c = Object.assign(document.createElement('canvas'), { width: W, height: H });
+      const img = new ImageData(W, H);
+      // Painted shadows are cool, not black: the same deep blue as a person's cast shadow.
+      for (let i = 0; i < W * H; i++) if (shade.bits[i]) [img.data[i * 4], img.data[i * 4 + 1], img.data[i * 4 + 2], img.data[i * 4 + 3]] = [0x12, 0x18, 0x30, 255];
+      c.getContext('2d')!.putImageData(img, 0, 0);
+      // Soft edges, as a painted shadow has.
+      const soft = Object.assign(document.createElement('canvas'), { width: W, height: H });
+      const sc = soft.getContext('2d')!;
+      sc.filter = 'blur(3px)';
+      sc.drawImage(c, 0, 0);
+      this.shadeCanvas = { place: this.place, canvas: soft };
+    }
+    const o = this.shadeScratch;
+    if (o.width !== canvas.width || o.height !== canvas.height) Object.assign(o, { width: canvas.width, height: canvas.height });
+    const oc = o.getContext('2d')!;
+    oc.setTransform(1, 0, 0, 1, 0, 0);
+    oc.clearRect(0, 0, o.width, o.height);
+    oc.setTransform(feetAt);
+    paint(oc);
+    oc.globalCompositeOperation = 'source-in';
+    oc.setTransform(frameAt);
+    oc.drawImage(this.shadeCanvas.canvas, 0, 0);
+    oc.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.filter = 'none';
+    ctx.globalAlpha = 0.42;
+    ctx.drawImage(o, 0, 0);
+    ctx.restore();
   }
 
   /** The share of the floor under the feet (an ellipse a person's shadow would cover) inside a painted shadow. */
@@ -3221,4 +3273,35 @@ function idleWarp(c: CanvasRenderingContext2D, paint: (c: CanvasRenderingContext
   }
   c.drawImage(bent, 0, 0, W, H, -W / 2 / density, -(H - foot) / density, W / density, H / density);
   return half + Math.abs(sway) * h;
+}
+
+/**
+ * A cast shadow starts at the feet. Cells of it that no chain from the feet reaches (hopping gaps up to `gap`
+ * cells: a step, a crack) are noise in the depth map, specks far off on a wall or a roof: they are cleared.
+ * False when nothing within `near` cells of the feet is in shadow.
+ */
+function keepAttached(out: ImageData, fx: number, fy: number, gap: number, near: number): boolean {
+  const { width: w, height: h, data } = out;
+  const seen = new Uint8Array(w * h);
+  const queue: number[] = [];
+  const reach = Math.max(gap * 2, near);
+  for (let y = Math.max(0, fy - reach); y <= Math.min(h - 1, fy + reach); y++) {
+    for (let x = Math.max(0, fx - reach); x <= Math.min(w - 1, fx + reach); x++) {
+      const i = y * w + x;
+      if (data[i * 4 + 3] > 0) { seen[i] = 1; queue.push(i); }
+    }
+  }
+  if (!queue.length) return false;
+  while (queue.length) {
+    const i = queue.pop()!;
+    const [cx, cy] = [i % w, Math.floor(i / w)];
+    for (let y = Math.max(0, cy - gap); y <= Math.min(h - 1, cy + gap); y++) {
+      for (let x = Math.max(0, cx - gap); x <= Math.min(w - 1, cx + gap); x++) {
+        const j = y * w + x;
+        if (!seen[j] && data[j * 4 + 3] > 0) { seen[j] = 1; queue.push(j); }
+      }
+    }
+  }
+  for (let i = 0; i < w * h; i++) if (!seen[i]) data[i * 4 + 3] = 0;
+  return true;
 }
