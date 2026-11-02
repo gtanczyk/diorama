@@ -3114,10 +3114,13 @@ function walkStep(hero: Body, dx: number, dy: number) {
   const dir = `${dx},${dy}`;
   // A new step only near the end of the last one, unless the direction changed.
   const left = hero.path.length ? Math.hypot(hero.path.at(-1)![0] - hero.x, hero.path.at(-1)![1] - hero.y) : 0;
-  const step = game.place.g.cell * 0.8;
+  // At least a third of the body's height: a step of under a cell was walked in a single frame across the
+  // picture (slower frames, a fine grid), the path was empty when the figure was drawn and it slid standing.
+  const step = Math.max(game.place.g.cell * 0.8, personPx(game.place.g, hero.y) * 0.35);
   if (dir === headings.get(hero) && left > step * 0.4) return;
   headings.set(hero, dir);
-  const to = game.place.grid.steer([hero.x, hero.y], [dx, dy], step);
+  // Near a wall the long step may not fit where a short one still does.
+  const to = game.place.grid.steer([hero.x, hero.y], [dx, dy], step) ?? game.place.grid.steer([hero.x, hero.y], [dx, dy], game.place.g.cell * 0.8);
   if (to) void game.walkTo(...to, hero);
 }
 if (capture) document.getElementById('bar')!.style.display = 'none';
