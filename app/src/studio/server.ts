@@ -225,9 +225,9 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
         if (!(req.headers['content-type'] ?? '').startsWith('application/json')) return json(415, { error: 'JSON only' });
         const { value, error } = await body();
         if (error) return json(error[0], { jsonrpc: '2.0', id: null, error: { code: -32700, message: error[1] } });
-        const ctx: ActionContext = { by: 'agent', root, jobs, events };
         const batch = Array.isArray(value) ? value : [value];
         const world = Slug.safeParse(url.searchParams.get('world'));
+        const ctx: ActionContext = { by: 'agent', root, jobs, events, ...(world.success && { onPersonSays: (listener: (text: string) => void) => agents.onPersonSays(world.data, listener) }) };
         const replies = (await Promise.all(batch.map((m) => handleMcp(m as Parameters<typeof handleMcp>[0], ctx, world.success ? world.data : undefined, world.success ? (name, args) => agents.called(world.data, name, args) : undefined)))).filter(Boolean);
         if (!replies.length) {
           res.writeHead(202, headers);

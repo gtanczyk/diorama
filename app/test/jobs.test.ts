@@ -49,3 +49,29 @@ test('a place repair never waits behind speaking faces: a running face job stops
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('job_wait ends early when the person writes to the agent, so the steer is not held behind the wait', async () => {
+  const { runAction } = await import('../src/actions/registry.ts');
+  await import('../src/actions/index.ts');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'diorama-jobs-'));
+  const bin = path.join(dir, 'slow.mjs');
+  fs.writeFileSync(bin, 'setTimeout(() => {}, 30000);\n');
+  const events = new Events();
+  const jobs = new Jobs(events, { cwd: dir, bin });
+  const listeners = new Set<(text: string) => void>();
+  try {
+    const job = jobs.start('w', ['cast', 'w', 'mara'], 'cast mara', 'agent');
+    const ctx = { by: 'agent' as const, root: dir, jobs, events, onPersonSays: (l: (text: string) => void) => (listeners.add(l), () => listeners.delete(l)) };
+    const started = Date.now();
+    const waiting = runAction('job_wait', { id: job.id, timeoutSeconds: 60 }, ctx);
+    setTimeout(() => listeners.forEach((l) => l('so what if she has freckles?')), 100);
+    const result = (await waiting) as { state: string; personWrote?: string };
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(result.state).toBe('running');
+    expect(result.personWrote).toBe('so what if she has freckles?');
+    expect(listeners.size).toBe(0);
+  } finally {
+    for (const j of jobs.list('w')) jobs.cancel(j.id);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

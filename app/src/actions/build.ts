@@ -85,13 +85,29 @@ defineAction({
 defineAction({
   name: 'job_wait',
   reads: true,
-  description: 'Wait for a job to end (or up to timeoutSeconds, default 120) and return its state plus recent activity, locally observed operations and progress counts. A return with state running means it is still running. job_inspect shows more activity without waiting.',
+  description: 'Wait for a job to end (or up to timeoutSeconds, default 120) and return its state plus recent activity, locally observed operations and progress counts. A return with state running means it is still running. It returns early with personWrote when the person writes to you meanwhile: deal with that message before waiting again. job_inspect shows more activity without waiting.',
   input: z.object({ id: z.string().min(1), timeoutSeconds: z.number().int().min(1).max(600).optional() }),
   async run({ id, timeoutSeconds }, ctx) {
-    const job = await ctx.jobs.wait(id, (timeoutSeconds ?? 120) * 1000);
+    // The person writing to the agent ends the wait at once: a steer only reaches the agent between tool calls,
+    // so a two-minute wait would hold their message (\"never mind the freckles\") until the job had gone on.
+    const heard = new AbortController();
+    let said: string | undefined;
+    const off = ctx.onPersonSays?.((text) => {
+      said = text;
+      heard.abort();
+    });
+    let job;
+    try {
+      job = await ctx.jobs.wait(id, (timeoutSeconds ?? 120) * 1000, heard.signal);
+    } finally {
+      off?.();
+    }
+    const interrupted = said !== undefined && (job.state === 'running' || job.state === 'queued')
+      ? { personWrote: said, hint: 'The person wrote to you while you waited; their message follows this result. Read it and act on it first (answer, change course, or job_cancel this job if they want something else) before waiting again.' }
+      : {};
     // Still queued: say what it waits behind, so a wait never hangs on a job that has not started.
     const ahead = job.state === 'queued' ? ctx.jobs.list(job.world).find((j) => j.state === 'running') : undefined;
-    return { ...job, ...(job.state === 'queued' && { waitingBehind: ahead ? `${ahead.label} (${ahead.id}), running since ${ahead.startedAt}` : 'nothing; it starts next', hint: ahead ? 'Not started yet. If what runs ahead is not more important, job_cancel it; otherwise do something else and wait again.' : undefined }), telemetry: ctx.jobs.inspect(id, 12) };
+    return { ...job, ...(job.state === 'queued' && { waitingBehind: ahead ? `${ahead.label} (${ahead.id}), running since ${ahead.startedAt}` : 'nothing; it starts next', hint: ahead ? 'Not started yet. If what runs ahead is not more important, job_cancel it; otherwise do something else and wait again.' : undefined }), ...interrupted, telemetry: ctx.jobs.inspect(id, 12) };
   },
 });
 

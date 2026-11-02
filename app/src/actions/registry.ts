@@ -12,6 +12,11 @@ export type ActionContext = {
   root: string;
   jobs: Jobs;
   events: Events;
+  /**
+   * For the agent: calls `listener` with what the person writes to it while it works, until the returned
+   * function is called. A long wait (job_wait) ends early on it, so the agent hears the person at once.
+   */
+  onPersonSays?: (listener: (text: string) => void) => () => void;
 };
 
 export type Action<I extends z.ZodTypeAny = z.ZodTypeAny> = {

@@ -147,20 +147,25 @@ export class Jobs {
   }
 
   /** Resolves when the job has ended, however it ended. */
-  wait(id: string, timeoutMs?: number): Promise<Job> {
+  wait(id: string, timeoutMs?: number, signal?: AbortSignal): Promise<Job> {
     const job = this.get(id);
     if (!job) return Promise.reject(new Error(`no job ${id}`));
-    if (!['queued', 'running'].includes(job.state)) return Promise.resolve({ ...job });
+    if (!['queued', 'running'].includes(job.state) || signal?.aborted) return Promise.resolve({ ...job });
     return new Promise((resolve) => {
       const done = (j: Job) => {
         clearTimeout(timer);
+        signal?.removeEventListener('abort', early);
         resolve(j);
       };
-      // Past the timeout it answers with the job as it stands, still running.
-      const timer = timeoutMs === undefined ? undefined : setTimeout(() => {
+      // Past the timeout, or when the signal ends the wait, it answers with the job as it stands, still running.
+      const early = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', early);
         this.waiters.set(id, (this.waiters.get(id) ?? []).filter((w) => w !== done));
         resolve({ ...job });
-      }, timeoutMs);
+      };
+      const timer = timeoutMs === undefined ? undefined : setTimeout(early, timeoutMs);
+      signal?.addEventListener('abort', early);
       this.waiters.set(id, [...(this.waiters.get(id) ?? []), done]);
     });
   }
