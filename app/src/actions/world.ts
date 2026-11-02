@@ -129,7 +129,20 @@ defineAction({
     const parsed = raw.success ? { success: true as const, data: withThingEdits(raw.data, dir) } : raw;
     const build = readJson<{ steps?: Record<string, unknown> }>(path.join(dir, 'build.json'));
     const animation = readJson<Record<string, { face?: string | null; audio?: string[] }>>(path.join(dir, 'face-preparation.json'));
-    const buildSteps = { ...build?.steps };
+    const buildSteps: Record<string, unknown> = { ...build?.steps };
+    // A step whose work is on disk but not in build.json (the world and story written by the idea flow, an agent's
+    // own step, an older build) was still made: the bar shows it kept from before and opens it, never "not part of this build".
+    const typical = typicalSeconds(ctx.root);
+    const placeKeys = parsed.success ? parsed.data.places.map((p) => p.key) : [];
+    const anyPlace = (f: string) => placeKeys.some((k) => fs.existsSync(path.join(dir, 'places', k, f)));
+    const made: Record<string, () => boolean> = {
+      world: () => fs.existsSync(path.join(dir, 'world.json')), story: () => fs.existsSync(path.join(dir, 'story.json')),
+      layout: () => anyPlace('layout.json'), paint: () => anyPlace('painting.png'), masks: () => anyPlace('masks.json'),
+      icons: () => fs.existsSync(path.join(dir, 'items', 'items.json')), derive: () => anyPlace('geometry.json'), backdrop: () => anyPlace('backdrop.png'),
+      weather: () => anyPlace('weather.json'), reactions: () => anyPlace('reactions.json'),
+      sound: () => fs.existsSync(path.join(dir, 'sound', 'sounds.json')), voices: () => fs.existsSync(path.join(dir, 'voices.json')), verify: () => anyPlace('verify.json'),
+    };
+    for (const [step, has] of Object.entries(made)) if (!buildSteps[step] && has()) buildSteps[step] = { seconds: typical[step] ?? 30, kept: true };
     if (animation) {
       // A face whose retry failed still speaks with the face it had (face.json): not a missing face.
       const speaks = (key: string) => /^[a-z0-9][\w-]*$/.test(key) && fs.existsSync(path.join(dir, 'cast', key, 'face.json'));
@@ -160,7 +173,7 @@ defineAction({
       world: parsed.success ? { start: parsed.data.start, hero: parsed.data.hero, style: parsed.data.style } : null,
       placeDetail: places,
       build: buildSteps,
-      typical: typicalSeconds(ctx.root),
+      typical,
       calls: callCounts(dir),
       callsVia: callCounts(dir, true),
       jobs: ctx.jobs.list(slug).slice(-10),
