@@ -18,7 +18,7 @@ import { StoryView, type StoryProgress } from './story.tsx';
 import { StyleView } from './style-menu.tsx';
 import { askSure, Sure } from './sure.tsx';
 import { PlaceEditor } from './place.tsx';
-import { BuildPlaces, callBy, extensionDetail, type PlaceRuns, MODEL_NAME, named, Pipeline, standIn, viaName, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
+import { BuildPlaces, callBy, PHASES, extensionDetail, type PlaceRuns, MODEL_NAME, named, Pipeline, standIn, viaName, Stage, STEP_SHOWS, working, type LayerName, type Live, type StagePlace } from './build.tsx';
 import type { ExtensionProgress } from '../src/world/extension-progress.ts';
 import { Bell, Logo, Rail, forgetWorld, useAtelierFeed, worlds as allWorlds } from './atelier.tsx';
 import { CAST_STEPS, castFile, castLine, CastWorkStage, lineStep, castTouched, type CastWork } from './cast-work.tsx';
@@ -209,6 +209,8 @@ function ShareButton({ slug, jobs, onError }: { slug: string; jobs: Job[]; onErr
 }
 
 /** Which model does the running step, for the build card. */
+/** Each step's phase on the build bar. */
+const STEP_PHASE: Record<string, string> = Object.fromEntries(PHASES.flatMap((p) => p.steps.map((s) => [s, p.key])));
 const MODEL_FOR: Record<string, string> = { world: 'Muse Spark', story: 'Muse Spark', layout: 'Muse Spark', paint: 'Muse Image', masks: 'SAM 3.1', plates: 'Muse Image', icons: 'Muse Image', derive: 'Depth', backdrop: 'Muse Image', reactions: 'Muse Spark', cast: 'Muse Image', model: '3D', sprites: 'Muse Image', sound: 'ElevenLabs', voices: 'ElevenLabs', faces: 'Muse Image', verify: 'play test' };
 
 function Copy({ text }: { text: string }) {
@@ -837,6 +839,18 @@ function Workshop({ slug }: { slug: string }) {
       if (shownView.kind !== 'build') onStage({ kind: 'build', place: shownView.build?.place });
     }
   };
+  // A click on the running job's card: the build view of the step it is on now, on its place or character, as the
+  // bar's segment for that step would open it ("cast mara" opens the cast view on mara, "repaint quay" the quay).
+  const openJob = () => {
+    if (!job) return onStage({ kind: 'build' });
+    const step = Object.keys(liveBuild.running).find((x) => liveBuild.running[x] === 'run') ?? lone ?? (STEP_PHASE[job.args[0]] ? job.args[0] : undefined);
+    const place = job.args.find((a) => places.some((p) => p.key === a));
+    if (!step) return onStage({ kind: 'build', place });
+    const phase = STEP_PHASE[step];
+    openPhase(phase, step);
+    // A step that shows a place layer: on the place this job works on.
+    if (place && STEP_SHOWS[step] && !WORK_STEPS.includes(step)) onStage({ kind: 'build', place });
+  };
   const playLine = (text: string) => setLines((l) => [...l.slice(-600), { seq: -Date.now() - Math.random(), text, kind: 'play', at: Date.now() }]);
 
   const places = status?.placeDetail ?? [];
@@ -920,7 +934,7 @@ function Workshop({ slug }: { slug: string }) {
           <div class="btns"><button type="button" class="ghost small" title="Stop the test. Nothing in the world changes" onClick={(e) => (e.stopPropagation(), call('job_cancel', { id: job.id }))}>Stop</button></div>
         </Card>
         ) : (
-        <Card kind={job.by === 'agent' ? 'The agent is building' : 'Building'} by={MODEL_FOR[liveBuild.plan.find((s) => running[s] === 'run') ?? ''] } on={shownView.kind === 'build'} onClick={() => onStage({ kind: 'build' })}>
+        <Card kind={job.by === 'agent' ? 'The agent is building' : 'Building'} by={MODEL_FOR[liveBuild.plan.find((s) => running[s] === 'run') ?? ''] } on={shownView.kind === 'build' || shownView.kind === 'work'} onClick={openJob}>
           {job.args[0] === 'extend' ? <p>{extensionDetail(liveBuild.extension, Object.keys(liveBuild.running).find(s => liveBuild.running[s] === 'run') ?? job.step)}</p> : <>
             <p>{job.label}{job.step ? `: ${job.step}` : ''}{total ? (left > 30 ? ` · about ${Math.max(1, Math.round(left / 60))} min left` : left > 0 ? ' · almost done' : ' · longer than last time') : ''}</p>
             <div class="bar"><i style={{ width: `${Math.round((total ? 1 - left / total : 0.05) * 100)}%` }} /></div>
