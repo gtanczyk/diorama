@@ -189,10 +189,11 @@ export function Bell() {
   useEffect(() => {
     if (!open) return;
     const close = (e: Event) => !(e.target as HTMLElement).closest?.('.bell-wrap') && setOpen(false);
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    // Esc closes the menu only, not also the view under it.
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && (e.stopImmediatePropagation(), setOpen(false));
     addEventListener('pointerdown', close);
-    addEventListener('keydown', esc);
-    return () => (removeEventListener('pointerdown', close), removeEventListener('keydown', esc));
+    addEventListener('keydown', esc, true);
+    return () => (removeEventListener('pointerdown', close), removeEventListener('keydown', esc, true));
   }, [open]);
   const list = worlds.value ?? [];
   const items = [

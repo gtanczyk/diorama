@@ -137,10 +137,11 @@ function Menu({ children }: { children?: ComponentChildren }) {
   useEffect(() => {
     if (!open) return;
     const close = (e: Event) => !(e.target as HTMLElement).closest?.('.menu-wrap, .share-menu') && setOpen(false);
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    // Esc closes the menu only, not also the view under it.
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && (e.stopImmediatePropagation(), setOpen(false));
     addEventListener('pointerdown', close);
-    addEventListener('keydown', esc);
-    return () => (removeEventListener('pointerdown', close), removeEventListener('keydown', esc));
+    addEventListener('keydown', esc, true);
+    return () => (removeEventListener('pointerdown', close), removeEventListener('keydown', esc, true));
   }, [open]);
   return (
     <div class="share menu-wrap">

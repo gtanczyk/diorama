@@ -27,7 +27,7 @@ export function Sure() {
   useEffect(() => {
     if (!a) return;
     box.current?.focus();
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && (e.stopPropagation(), done(false));
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && (e.stopImmediatePropagation(), done(false));
     addEventListener('keydown', esc, true);
     return () => removeEventListener('keydown', esc, true);
   }, [a]);
