@@ -7,6 +7,7 @@ import { defineAction } from './registry.ts';
 import { soundQuality } from '../sound/cost.ts';
 import { writeSoundQuality } from '../sound/settings.ts';
 import { blenderEnv, blenderState, writeBlenderSettings } from '../model/blender.ts';
+import { facesState, writeFacesSettings } from '../scene/faces-settings.ts';
 
 const audioState = () => ({ quality: soundQuality(), env: process.env.DIORAMA_SOUND ?? null });
 
@@ -45,6 +46,25 @@ defineAction({
     if (blenderEnv() !== undefined) throw new Error('DIORAMA_BLENDER overrides Setup. Unset it and restart Studio to switch Blender here.');
     writeBlenderSettings({ enabled });
     return blenderState();
+  },
+});
+
+defineAction({
+  name: 'faces_get',
+  reads: true,
+  description: 'Whether builds prepare talking mouths (the faces step) on this machine. Off by default.',
+  input: z.object({}),
+  async run() { return facesState(); },
+});
+
+defineAction({
+  name: 'faces_set',
+  description: 'Turn talking mouths on or off for builds on this machine (the person decides this in Setup; ask before changing it).',
+  input: z.object({ enabled: z.boolean() }),
+  async run({ enabled }) {
+    if (facesState().env !== null) throw new Error('DIORAMA_FACES overrides Setup. Unset it and restart Studio to switch it here.');
+    writeFacesSettings(enabled);
+    return facesState();
   },
 });
 

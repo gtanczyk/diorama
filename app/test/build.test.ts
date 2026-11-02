@@ -5,6 +5,9 @@ import { afterEach, expect, test } from 'vitest';
 import { PLACE_STEPS } from '../src/commands/build.ts';
 import { defineCommand, registry } from '../src/registry.ts';
 
+// These tests run the faces step; the machine default is off (src/scene/faces-settings.ts).
+process.env.DIORAMA_FACES = 'on';
+
 const cwd = process.cwd();
 afterEach(() => {
   process.chdir(cwd);
@@ -185,4 +188,14 @@ test('even an unexpected faces failure never fails the build: it is recorded as 
   await registry.get('build')!.run(['w', '--from', 'faces', '--to', 'faces']);
   const log = JSON.parse(fs.readFileSync(path.join('worlds', 'w', 'build.json'), 'utf8'));
   expect(log.steps.faces).toMatchObject({ status: 'incomplete', warnings: ['broken command'] });
+});
+
+test('with talking mouths off the build skips the faces step without calling it', async () => {
+  world();
+  let called = false;
+  defineCommand({ name: 'faces', usage: 'faces', async run() { called = true; } });
+  process.env.DIORAMA_FACES = 'off';
+  try { await registry.get('build')!.run(['w', '--from', 'faces', '--to', 'faces']); }
+  finally { process.env.DIORAMA_FACES = 'on'; }
+  expect(called).toBe(false);
 });

@@ -11,6 +11,7 @@ import { lipSyncData } from '../sound/lipsync.ts';
 import { agentBlocked } from '../studio/locks.ts';
 import { ActionError, defineAction } from './registry.ts';
 import { placeTrouble } from '../studio/trouble.ts';
+import { facesState } from '../scene/faces-settings.ts';
 import { FaceWorkId, FaceRevision, MouthName, LipBox, readFaceWork, faceWorkList, faceWorkAtlas, faceWorkReference, workRevision } from '../scene/face-work.ts';
 import { MOUTHS } from '../play/lipsync.ts';
 
@@ -79,6 +80,7 @@ defineAction({
  */
 export function placesFirst(files: WorldFiles, slug: string, ctx: { by: string; jobs: { list(world?: string): Array<{ state: string; args: string[] }> } }): string | null {
   if (ctx.by !== 'agent') return null;
+  if (!facesState().enabled) return 'Talking mouths are off in Setup: characters speak with voice and gestures. Do not prepare or repair faces; if the person wants moving lips, they turn it on in Setup.';
   const world = fs.existsSync(files.path('world.json')) ? files.readJson(files.path('world.json')) as { places?: Array<{ key: string; title?: string }> } : {};
   const waiting = (world.places ?? []).filter((p) => !fs.existsSync(files.path('places', p.key, 'painting.png')) || placeTrouble(files.dir, p.key)).map((p) => p.title ?? p.key);
   const building = ctx.jobs.list(slug).some((j) => (j.state === 'queued' || j.state === 'running') && j.args[0] !== 'faces');

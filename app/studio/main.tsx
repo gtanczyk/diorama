@@ -8,6 +8,7 @@ import { AgentPanel } from './agent.tsx';
 import { CastView } from './cast.tsx';
 import { AudioSetup } from './audio-setup.tsx';
 import { BlenderSetup } from './blender-setup.tsx';
+import { FacesSetup } from './faces-setup.tsx';
 import { VideoInput, type VideoResult } from './video.tsx';
 import { IdeaReview, type ReviewInput } from './idea-review.tsx';
 import { CreatorIdea, useCreatorBrief } from './creator-idea.tsx';
@@ -258,6 +259,7 @@ function Setup() {
         <DefaultAgent />
         <AudioSetup />
         <BlenderSetup />
+        <FacesSetup />
         <BudgetBox />
         </div>
         <ol class="checks">

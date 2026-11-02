@@ -1,5 +1,6 @@
 // diorama build <slug> ["<idea>"]: runs the steps, each as soon as what it needs is made (src/world/schedule.ts):
 // every place on its own, the cast, voices and sound alongside. Keeps a build.json of what happened.
+import { facesState } from '../scene/faces-settings.ts';
 import { inStep } from '../meta/step.ts';
 import fs from 'node:fs';
 import { defineCommand, emit, registry, takeOption } from '../registry.ts';
@@ -204,6 +205,10 @@ defineCommand({
     const worldStep = async (step: Step, args: string[]) => {
       await Promise.all(needs(step).map(ready));
       const since = begin(step);
+      if (step === 'faces' && !facesState().enabled) {
+        console.log('Talking mouths are off (Setup): characters speak with voice and gestures.');
+        finish(step, since); return;
+      }
       try {
         await inStep(step, () => registry.get(step)!.run(args));
       } catch (error) {
