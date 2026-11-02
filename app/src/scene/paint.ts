@@ -16,6 +16,12 @@ const noAnimals = (brief?: Brief) => {
   return keep.length ? `no animals other than the ${keep.join(', ')} listed above (paint ${keep.length > 1 ? 'those' : 'that'} in, at rest)` : 'no animals';
 };
 
+/** The place's cast is drawn by the game: the place's words may put one in the scene ("a basket where a cat curls up"). */
+const castNote = (place: Place) => {
+  const cast = place.things.filter((t) => t.role === 'npc').map((t) => t.key.replace(/-/g, ' '));
+  return cast.length ? ` The game draws ${cast.join(', ')} over the picture itself: do not paint ${cast.length > 1 ? 'them' : 'it'}, even where the place's words say ${cast.length > 1 ? 'they are' : 'it is'} there; leave that spot empty.` : '';
+};
+
 const NOUN: Record<Shape, string> = { block: 'box', low: 'low wide box', post: 'thin post', tree: 'tree shape', arch: 'arch', round: 'round shape', steps: 'steps', flat: 'flat oval on the floor' };
 
 /** Where a mass is, in the words a painter uses: across (fifths) and how far back it stands. */
@@ -45,7 +51,7 @@ ${[...masses, ...floors].join('\n')}
 
 ${layoutContract(place, layout)}
 
-Seen a little from above, like a stage. Keep the floor areas clear to walk on. No people, ${noAnimals(brief)}, no text or letters, no border.${fallsIn(`${place.shows} ${place.mood}`) ? '\nThe rain or snow itself is animated over the picture later: paint no falling streaks, drops or flakes in the air, only what the weather leaves (wet sheen, puddles, snow lying on the ground).' : ''}`;
+Seen a little from above, like a stage. Keep the floor areas clear to walk on. No people, ${noAnimals(brief)}, no text or letters, no border.${castNote(place)}${fallsIn(`${place.shows} ${place.mood}`) ? '\nThe rain or snow itself is animated over the picture later: paint no falling streaks, drops or flakes in the air, only what the weather leaves (wet sheen, puddles, snow lying on the ground).' : ''}`;
 }
 
 function whereFloor(layout: Layout, f: Layout['floors'][number]): string {

@@ -68,7 +68,8 @@ type Figure = { img: HTMLImageElement; face?: PaintedFace; faceInfo?: FaceDefini
 /** Things that float and ride the swell, by their names. */
 const FLOATS = /\b(boat|rowboat|dinghy|skiff|canoe|kayak|raft|ship|barge|punt|gondola|sampan|junk|ferry|trawler|yacht|sailboat)s?\b/i;
 
-type Cut = { occ: Occluder; canvas: HTMLCanvasElement; x0: number; y0: number; y: number };
+/** canvas: the card as the place looks now (story changes on it); base: as painted, whose alpha is the card's shape. */
+type Cut = { occ: Occluder; canvas: HTMLCanvasElement; base: HTMLCanvasElement; x0: number; y0: number; y: number };
 
 type Place = {
   key: string;
@@ -103,6 +104,8 @@ type Place = {
   depth?: Depth;
   /** The cards' pixels at the depth map's size: there the cards, not the depth map, decide who is hidden (made on first use). */
   carded?: Uint8Array;
+  /** The story changes the cards were last cut with (see Game.recut). */
+  cutWith?: string;
   /** How far every pixel is for focus and separation: the depth map, or the floor plane with the cards stood on it. */
   focus?: Depth;
   /** The water's soft mask over the frame, 0..255: a shadow barely shows on water. */
@@ -536,7 +539,7 @@ class Game {
       }
       cx.putImageData(img, 0, 0);
     }
-    return { occ, canvas: c, x0, y0, y: occ.baseY };
+    return { occ, canvas: c, base: c, x0, y0, y: occ.baseY };
   }
 
   /** Enters a place, at the thing that leads back to where the hero came from, or at its start. */
@@ -914,6 +917,33 @@ class Game {
       if (img) out.push({ img, i });
     }
     return out;
+  }
+
+  /**
+   * Cards cut again from the painting with the story's changes on it. A card is put back over whoever stands
+   * behind it: cut from the painting as first painted, a changed thing (a basket with a rope across) would show
+   * its old look over them, a hard-edged patch where they stand. The card keeps its shape (base's alpha).
+   */
+  private recut() {
+    const { cuts, bg } = this.place;
+    const held = this.changed();
+    const key = held.map((h) => h.i).join(',');
+    if (!bg || (this.place.cutWith ?? '') === key) return;
+    this.place.cutWith = key;
+    for (const cut of cuts) {
+      if (!held.length) {
+        cut.canvas = cut.base;
+        continue;
+      }
+      const { width: w, height: h } = cut.base;
+      const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
+      const cx = c.getContext('2d')!;
+      cx.drawImage(bg, cut.x0, cut.y0, w, h, 0, 0, w, h);
+      for (const { img } of held) cx.drawImage(img, cut.x0, cut.y0, w, h, 0, 0, w, h);
+      cx.globalCompositeOperation = 'destination-in';
+      cx.drawImage(cut.base, 0, 0);
+      cut.canvas = c;
+    }
   }
 
   /** Things of this place the story has carried off: drawn from their clean plate, not clickable, hiding no one. */
@@ -1517,6 +1547,7 @@ class Game {
     ctx.fillRect(0, 0, W, H);
     ctx.setTransform(z, 0, 0, z, W / 2 - z * (this.viewX || W / 2), H / 2 - z * (this.viewY || H / 2));
     const gone = this.gone();
+    this.recut();
     const npcs = this.hots().filter((h) => (h.spec?.role ?? h.thing.role) === 'npc' && !h.mask);
     const people: Who[] = [...npcs.map((h) => ({ npc: h, y: h.npc?.body.y ?? h.thing.box[3] })), ...[this.hero, ...this.party].map((body) => ({ body, y: body.y }))].sort((a, b) => a.y - b.y);
     const fire = this.fireOf(gone);

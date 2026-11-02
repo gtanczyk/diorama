@@ -49,7 +49,12 @@ defineCommand({
           return;
         }
         const mask = await maskFromPng(fs.readFileSync(at('masks', `${c.thing}.png`)));
-        files.write(at('changes', `${c.i}.png`), await changePlate(files.memo, place, { key: c.thing, phrase: notes[c.thing].phrase, mask }, around(mask), c.looks));
+        // What the hero can take keeps its own pixels: Muse redraws all it sees, and a ticket it moved would lie
+        // beside the one the player clicks (its outline off), and stay when the hero takes it. Props may be
+        // overgrown: a basket that grew a rope may reach over the door beside it.
+        const others = await Promise.all(keys.filter((k) => k !== c.thing && fs.existsSync(at('masks', `${k}.png`)))
+          .map(async (k) => maskFromPng(fs.readFileSync(at('masks', `${k}.png`)))));
+        files.write(at('changes', `${c.i}.png`), await changePlate(files.memo, place, { key: c.thing, phrase: notes[c.thing].phrase, mask }, around(mask), c.looks, others));
         console.log(`${place.key}: ${c.thing} once ${c.when.join(', ')}: ${c.looks}`);
       }));
       if (!keys.length) {

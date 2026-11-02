@@ -194,13 +194,31 @@ export async function plateFor(memo: Memo, place: Place, thing: { key: string; p
   return { thing: thing.key, png, iou, ringError, stain, stillThere: iou > 0.4 || left > 0.4 * maskArea(thing.mask) };
 }
 
+/** How far around a takeable thing a change keeps off: Muse shifts what it redraws by a few dozen px. */
+export const CHANGE_KEEP_OFF = 24;
+
+/**
+ * Where a change plate shows: the thing grown wide (light spills), soft-edged, but never over the `others`
+ * (things the hero can take, grown by CHANGE_KEEP_OFF) outside the changed thing itself. They keep the
+ * painting's pixels, so their hover outline and their plate still match what is seen.
+ */
+export async function changeAlpha(mask: Mask, others: Mask[]): Promise<Buffer> {
+  const alpha = await sharp(await maskToPng(dilate(mask, 48))).blur(14).extractChannel(0).raw().toBuffer();
+  if (!others.length) return alpha;
+  let keep: Mask | undefined;
+  for (const o of others) keep = keep ? union(keep, o) : o;
+  const off = await sharp(await maskToPng(dilate(keep!, CHANGE_KEEP_OFF))).blur(6).extractChannel(0).raw().toBuffer();
+  for (let i = 0; i < alpha.length; i++) if (!mask.bits[i]) alpha[i] = Math.round((alpha[i] * (255 - off[i])) / 255);
+  return alpha;
+}
+
 /** For a thing the story changes (a beacon lit): the thing as it looks after, transparent elsewhere, so several
  * changes in one place stack. Light may spill, so the area is wide. */
-export async function changePlate(memo: Memo, place: Place, thing: { key: string; phrase: string; mask: Mask }, painting: Buffer, looks: string): Promise<Buffer> {
-  const prompt = `Change only the ${thing.phrase} in this painting: it is now ${looks}. Add the light it casts on what is right around it. Leave everything else exactly as it is, same style. No people, no text.`;
+export async function changePlate(memo: Memo, place: Place, thing: { key: string; phrase: string; mask: Mask }, painting: Buffer, looks: string, others: Mask[] = []): Promise<Buffer> {
+  const prompt = `Change only the ${thing.phrase} in this painting: it is now ${looks}. Add the light it casts on what is right around it. Leave everything else exactly as it is and where it is, same style. No people, no animals, no text.`;
   const edited = await museEdit(memo, { label: `change:${place.key}/${thing.key}:${looks}`, prompt, images: [painting] });
   const { width: W, height: H } = FRAME;
-  const alpha = await sharp(await maskToPng(dilate(thing.mask, 48))).blur(14).extractChannel(0).raw().toBuffer();
+  const alpha = await changeAlpha(thing.mask, others);
   const rgba = await sharp(edited).resize(W, H, { fit: 'fill' }).ensureAlpha().raw().toBuffer();
   for (let i = 0; i < W * H; i++) rgba[i * 4 + 3] = alpha[i];
   return sharp(rgba, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer();

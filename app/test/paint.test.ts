@@ -31,3 +31,15 @@ test('a brief look replaces the short one, and a missing look is an issue', asyn
   expect(paintPrompt(world, place, layout, brief)).toContain('flaking blue paint');
   expect(briefIssues(brief, place, layout)).toEqual(['no look for planks']);
 });
+
+test('a cast member painted into a thing is a double, unless the place named it there', async () => {
+  const { castInLooks } = await import('../src/scene/brief.ts');
+  const withCat: Place = { ...place, things: [{ key: 'cat-basket', role: 'prop', looks: 'round basket with a blanket' }, { key: 'harbour-cat', role: 'npc', looks: 'fluffy cat' }] };
+  expect(castInLooks({ looks: { 'cat-basket': 'a wicker basket holding a curled-up ginger cat' }, alive: [] }, withCat)).toHaveLength(1);
+  const named: Place = { ...withCat, things: [{ key: 'cat-basket', role: 'prop', looks: 'basket with a sleeping cat' }, withCat.things[1]] };
+  expect(castInLooks({ looks: { 'cat-basket': 'a wicker basket holding a curled-up ginger cat' }, alive: [] }, named)).toEqual([]);
+  const basket: Place = { ...withCat, things: [{ key: 'basket', role: 'prop', looks: 'round basket with a blanket' }, withCat.things[1]] };
+  expect(castInLooks({ looks: { basket: 'a wicker basket holding a curled-up ginger cat' }, alive: [] }, basket)).toHaveLength(1);
+  expect(castInLooks({ looks: { basket: 'a wicker basket with a faded blanket' }, alive: [] }, basket)).toEqual([]);
+  expect(paintPrompt(world, basket, { ...layout, things: [{ ...layout.things[0], key: 'basket' }] })).toContain('The game draws harbour cat over the picture itself');
+});
