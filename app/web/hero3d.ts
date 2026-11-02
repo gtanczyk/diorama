@@ -65,6 +65,57 @@ function meanColour(image: CanvasImageSource): [number, number, number] | undefi
   return sum[3] ? [sum[0] / sum[3], sum[1] / sum[3], sum[2] / sum[3]] : undefined;
 }
 
+/**
+ * The UV texture's colours brought to the paintings' (linear light). TRELLIS bakes its texture pale, grey and
+ * soft: a teal paper coat came out powder blue, and the front painting laid on the face showed as a lighter
+ * patch. Every surface point a painted view sees head-on gives a pair (texture colour, painting colour); each
+ * channel's mean and spread over those points is matched, so the whole texture takes the paintings' hues,
+ * saturation and contrast, and the painted face sits in the same tones. Undefined with too few pairs.
+ */
+function matchColours(texture: CanvasImageSource, uv: THREE.BufferAttribute | undefined, rest: Float32Array, restN: Float32Array, vis: THREE.BufferAttribute,
+  views: Record<string, { image: HTMLImageElement; fit: { u: [number, number]; v: [number, number]; bands?: Array<[number, number]> }; bg: number[] }>) {
+  if (!uv) return undefined;
+  const read = (image: CanvasImageSource, w: number, h: number) => {
+    const c = Object.assign(document.createElement('canvas'), { width: w, height: h }).getContext('2d', { willReadFrequently: true })!;
+    c.drawImage(image, 0, 0, w, h);
+    return c.getImageData(0, 0, w, h).data;
+  };
+  const T = 512, tex = read(texture, T, T);
+  const lin = (v: number) => (v / 255) ** 2.2;
+  const X: number[][] = [], Y: number[][] = [];
+  VIEWS.forEach(([name, ax, sx, nax, ns], k) => {
+    const view = views[name];
+    if (!view) return;
+    const W = 256, H = 256, px = read(view.image, W, H);
+    const [a, n] = [{ x: 0, y: 1, z: 2 }[ax], { x: 0, y: 1, z: 2 }[nax]];
+    const bands = view.fit.bands?.length === BANDS ? view.fit.bands : Array(BANDS).fill(view.fit.u);
+    for (let i = 0; i < uv.count; i += 2) {
+      if (vis.getComponent(i, k) < 0.9 || ns * restN[i * 3 + n] < 0.7) continue;
+      const y = rest[i * 3 + 1];
+      const at = Math.min(BANDS - 1, Math.max(0, y * BANDS - 0.5)), b0 = Math.floor(at), b1 = Math.min(b0 + 1, BANDS - 1), t = at - b0;
+      const ab = [0, 1].map((j) => bands[b0][j] * (1 - t) + bands[b1][j] * t);
+      const vx = Math.floor((ab[0] * sx * rest[i * 3 + a] + ab[1]) * W), vy = Math.floor((view.fit.v[0] * y + view.fit.v[1]) * H);
+      if (vx < 0 || vy < 0 || vx >= W || vy >= H) continue;
+      const p = (vy * W + vx) * 4;
+      if (Math.abs(px[p] - view.bg[0]) + Math.abs(px[p + 1] - view.bg[1]) + Math.abs(px[p + 2] - view.bg[2]) < 60) continue;
+      const tx = Math.floor((((uv.getX(i) % 1) + 1) % 1) * T), ty = Math.floor((((uv.getY(i) % 1) + 1) % 1) * T), q = (ty * T + tx) * 4;
+      if (tex[q + 3] < 128) continue;
+      X.push([lin(tex[q]), lin(tex[q + 1]), lin(tex[q + 2]), 1]);
+      Y.push([lin(px[p]), lin(px[p + 1]), lin(px[p + 2])]);
+    }
+  });
+  if (X.length < 300) return undefined;
+  // Moments, not least squares: noisy pairs (a fit a few pixels off at an edge) make a regression shrink every
+  // slope, a greyer result. Matching each channel's mean and spread over the same surface keeps the contrast.
+  const moments = (rows: number[][], ch: number) => {
+    const mean = rows.reduce((s, r) => s + r[ch], 0) / rows.length;
+    return [mean, Math.sqrt(rows.reduce((s, r) => s + (r[ch] - mean) ** 2, 0) / rows.length)];
+  };
+  const gain = [0, 1, 2].map((ch) => { const [mu, su] = moments(X, ch), [mp, sp] = moments(Y, ch); const k = Math.min(2.5, Math.max(0.5, sp / Math.max(1e-4, su))); return [k, mp - k * mu]; });
+  const m = new THREE.Matrix3().set(gain[0][0], 0, 0, 0, gain[1][0], 0, 0, 0, gain[2][0]);
+  return { m, o: new THREE.Vector3(gain[0][1], gain[1][1], gain[2][1]), pairs: X.length };
+}
+
 function footAt(p: number, step: number) {
   p = ((p % 1) + 1) % 1;
   if (p < STANCE) return { dx: step / 2 - (step * p) / STANCE, lift: 0, stance: true, u: p / STANCE };
@@ -411,6 +462,7 @@ export class Figure3D {
     g.setAttribute('restVis', new THREE.BufferAttribute(visibility(rest, g.index ? Array.from(g.index.array) : [...Array(pos.count).keys()]), 4));
     const uniforms: Record<string, THREE.IUniform> = {};
     const painted = [0, 0, 0, 0];
+    const seen: Record<string, { image: HTMLImageElement; fit: { u: [number, number]; v: [number, number]; bands?: Array<[number, number]> }; bg: number[] }> = {};
     await Promise.all(VIEWS.map(async ([name]) => {
       const img = new Image();
       img.src = url(info.views[name].image);
@@ -435,6 +487,7 @@ export class Figure3D {
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.needsUpdate = true;
       const f = info.views[name];
+      seen[name] = { image: img, fit: f, bg };
       uniforms[`p_${name}`] = { value: tex };
       this.surfaceSources.push({name,file:f.image,image:img,texture:tex});
       uniforms[`f_${name}`] = { value: new THREE.Vector4(f.u[0], f.u[1], f.v[0], f.v[1]) };
@@ -443,11 +496,16 @@ export class Figure3D {
     uniforms.camDir = this.camDir;
     uniforms.headOnly = { value: headOnly ? 1 : 0 };
     uniforms.faceFromViews = { value: info.face === 'views' ? 1 : 0 };
-    uniforms.uvGain = { value: new THREE.Vector3(1, 1, 1) };
+    uniforms.uvMat = { value: new THREE.Matrix3() };
+    uniforms.uvOff = { value: new THREE.Vector3() };
     const map = (skinned.material as THREE.MeshStandardMaterial).map;
     if (headOnly && map?.image && painted[3]) {
-      const uv = meanColour(map.image as CanvasImageSource);
-      if (uv) (uniforms.uvGain.value as THREE.Vector3).set(...[0, 1, 2].map((ch) => Math.min(2.5, Math.max(0.8, painted[ch] / painted[3] / uv[ch]))) as [number, number, number]);
+      const fit = matchColours(map.image as CanvasImageSource, g.attributes.uv as THREE.BufferAttribute, rest, restN, g.attributes.restVis as THREE.BufferAttribute, seen);
+      if (fit) { (uniforms.uvMat.value as THREE.Matrix3).copy(fit.m); (uniforms.uvOff.value as THREE.Vector3).copy(fit.o); }
+      else {
+        const uv = meanColour(map.image as CanvasImageSource);
+        if (uv) (uniforms.uvMat.value as THREE.Matrix3).set(...([0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => (r === c ? Math.min(2.5, Math.max(0.8, painted[r] / painted[3] / uv[r])) : 0)))) as [number, number, number, number, number, number, number, number, number]);
+      }
     }
     const decl = VIEWS.map(([k]) => `uniform sampler2D p_${k}; uniform vec4 f_${k}; uniform vec2 b_${k}[${BANDS}]; uniform vec3 bg_${k};`).join('\n');
     // Which painted view a surface wears: the one nearest the camera, wherever that view sees the surface at
@@ -468,7 +526,7 @@ export class Figure3D {
       sh.vertexShader = 'attribute vec3 restPos; attribute vec3 restNrm; attribute vec4 restVis; varying vec3 vRest; varying vec3 vRestN; varying vec4 vVis;\n'
         + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vRest = restPos; vRestN = restNrm; vVis = restVis;');
       sh.fragmentShader = `${decl}
-uniform vec3 camDir; uniform float headOnly; uniform float faceFromViews; uniform vec3 uvGain; varying vec3 vRest; varying vec3 vRestN; varying vec4 vVis;
+uniform vec3 camDir; uniform float headOnly; uniform float faceFromViews; uniform mat3 uvMat; uniform vec3 uvOff; varying vec3 vRest; varying vec3 vRestN; varying vec4 vVis;
 // Two views blend only in a narrow band where they claim a surface about equally.
 #define SHARP 28.
 float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + abs(c.g - bg.g) + abs(c.b - bg.b)); }
@@ -493,7 +551,7 @@ float notBg(vec3 c, vec3 bg) { return smoothstep(0.14, 0.32, abs(c.r - bg.r) + a
   // Only where the front painting sees the surface (vVis.x): a ponytail or bun behind the head faces forward
   // too, and wore a second face. And it fades as the camera goes round to the side: seen edge-on, the front
   // painting smears across the profile, while the model's own texture there is a clean cheek.
-  if (headOnly > 0.5) diffuseColor.rgb = mix(diffuseColor.rgb * uvGain, c[0], faceFromViews * head * paint[0] * smoothstep(0.4, 0.7, facing[0])
+  if (headOnly > 0.5) diffuseColor.rgb = mix(max(vec3(0.), uvMat * diffuseColor.rgb + uvOff), c[0], faceFromViews * head * paint[0] * smoothstep(0.4, 0.7, facing[0])
     * vVis[0] * smoothstep(0.3, 0.65, camDir.z));
   else if (wsum > 0.) diffuseColor.rgb = acc / wsum;`);
     };
