@@ -2,7 +2,7 @@ import { exitOutline } from '../src/play/exit-outline.ts';
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
 import { hashSeed } from '../src/play/weather.ts';
 import { FLAME_GLOW, FLAME_SWAY_M, flameAt, depthStretch, flicker, floorYAt, hiddenRuns, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
-import { backdropTransforms, backEdge, cardY, flatDisparities, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
+import { backdropTransforms, backEdge, cardY, flatDisparities, flatsUnderFloats, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, RIM_ALPHA, RIM_COLOUR, RIM_WIDTH, SEPARATE_ALPHA, SEPARATE_BLUR, SEPARATE_SHIFT } from '../src/play/focus.ts';
 import { frontMask } from '../src/play/depth-occlusion.ts';
@@ -91,7 +91,7 @@ type Place = {
   /** Painted smoke curling: each plume's feathered copy of the painting and where it sits. */
   smoke?: Array<{ img: HTMLImageElement; box: [number, number, number, number] }>;
   /** Painted boats rocking on the water. */
-  floats?: Array<{ img: HTMLImageElement; box: [number, number, number, number] }>;
+  floats?: Array<{ img: HTMLImageElement; box: [number, number, number, number]; under?: HTMLCanvasElement }>;
   far?: { sky?: HTMLImageElement; flats: Array<{ img: HTMLImageElement; box: [number, number, number, number]; d: number }> };
   hots: Hot[];
   cuts: Cut[];
@@ -454,9 +454,21 @@ class Game {
     const smoke = backdrop && entry.layers?.smoke?.length && !params.has('still')
       ? (await Promise.all(entry.layers.smoke.map(async (sm) => ({ img: await loadImage(files(sm.file)).catch(() => undefined), box: sm.box })))).filter((sm): sm is { img: HTMLImageElement; box: [number, number, number, number] } => !!sm.img)
       : undefined;
-    const floats = backdrop && entry.layers?.floats?.length && !params.has('still')
+    const floats: Place['floats'] = backdrop && entry.layers?.floats?.length && !params.has('still')
       ? (await Promise.all(entry.layers.floats.map(async (f) => ({ img: await loadImage(files(f.file)).catch(() => undefined), box: f.box })))).filter((f): f is { img: HTMLImageElement; box: [number, number, number, number] } => !!f.img)
       : undefined;
+    // A flat cut around a rocking boat would hold a still copy of it under the float: the float alone carries it.
+    if (far && floats?.length) far = { ...far, flats: flatsUnderFloats(far.flats, floats) };
+    // The backdrop holds the boat too: under each float lies the sky it was painted out of, in the float's shape.
+    if (far?.sky) for (const f of floats ?? []) {
+      const [x0, y0, x1, y1] = f.box;
+      const under = Object.assign(document.createElement('canvas'), { width: x1 - x0, height: y1 - y0 });
+      const u = under.getContext('2d')!;
+      u.drawImage(far.sky, x0, y0, x1 - x0, y1 - y0, 0, 0, x1 - x0, y1 - y0);
+      u.globalCompositeOperation = 'destination-in';
+      u.drawImage(f.img, 0, 0, x1 - x0, y1 - y0);
+      f.under = under;
+    }
     let mist: Place['mist'];
     const m = entry.layers?.mist;
     if (backdrop && m && !params.has('still')) {
@@ -1454,9 +1466,11 @@ class Game {
 
   /** Painted boats (not cards) rock on the swell: rise and sink a pixel or two and roll about the waterline. */
   private drawFloats(p: Parallax) {
-    for (const [k, { img, box }] of (this.place.floats ?? []).entries()) {
+    for (const [k, { img, box, under }] of (this.place.floats ?? []).entries()) {
       const [x0, y0, x1, y1] = box;
       const [sx, sy] = shiftAt(this.place.g, p, y1);
+      // Cover the boat still standing in the backdrop, so the rocking one is the only boat there.
+      if (under) ctx.drawImage(under, x0 + sx, y0 + sy);
       const t = this.time + k * 1.7;
       const [px, py] = [(x0 + x1) / 2 + sx, y1 - (y1 - y0) * 0.2 + sy];
       ctx.save();

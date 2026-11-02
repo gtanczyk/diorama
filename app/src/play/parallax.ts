@@ -155,6 +155,21 @@ export function flatDisparities(g: Geometry, edge: Float32Array, count: number):
   return Array.from({ length: count }, (_, k) => (0.85 * nearest * (k + 1)) / (count + 1));
 }
 
+/**
+ * The far flats left to draw once boats rock: a flat cut around the same boat as a float (most of its box
+ * inside the float's) would stay still under it, so the eye sees the painted boat stand and only a ghost
+ * of its edges move. The float carries the boat; the sky under it already has the boat painted out.
+ */
+export function flatsUnderFloats<F extends { box: [number, number, number, number] }>(
+  flats: F[], floats: Array<{ box: [number, number, number, number] }> | undefined,
+): F[] {
+  if (!floats?.length) return flats;
+  const area = (b: number[]) => Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
+  const inside = (a: number[], b: number[]) =>
+    area([Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.min(a[2], b[2]), Math.min(a[3], b[3])]) / Math.max(1, area(a));
+  return flats.filter((f) => !floats.some((fl) => inside(f.box, fl.box) > 0.6));
+}
+
 /** The shift of something at disparity d (see shiftAt, which takes a floor row). */
 export function shiftAtDisparity(p: Parallax, d: number): [number, number] {
   return [p.cam.x * p.px * (d - p.pivot), p.cam.y * p.px * VERTICAL * (d - p.pivot)];
