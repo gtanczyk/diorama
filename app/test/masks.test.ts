@@ -73,3 +73,40 @@ test('walkable exit masks retain small distant treads near the frame edge',()=>{
   expect(ordinary.bits[1]).toBe(0);
   expect(passage.bits[1]).toBe(1);
 });
+
+test('a doorway frame: the opening it holds is the way out, even with one post cut short', async () => {
+  const { openingOf } = await import('../src/scene/masks.ts');
+  // Lintel 300..820 x 80..140, left post down to 330 (SAM cut it short), right post down to 440.
+  const frame = union(union(rectMask(W, H, [300, 80, 820, 140]), rectMask(W, H, [300, 80, 350, 330])), rectMask(W, H, [770, 80, 820, 440]));
+  const gap = openingOf(frame)!;
+  expect(gap).toBeDefined();
+  const { maskBox } = await import('../src/image/raster.ts');
+  expect(maskBox(gap)).toEqual([350, 140, 770, 440]);
+  // A solid thing holds no opening.
+  expect(openingOf(rectMask(W, H, [300, 80, 820, 440]))).toBeUndefined();
+});
+
+test('a shelf SAM cut to its boards becomes the whole shelf Spark boxed, not the wall above it', async () => {
+  const { wholeThing } = await import('../src/scene/masks.ts');
+  const { maskBox } = await import('../src/image/raster.ts');
+  const boards = union(union(rectMask(W, H, [1000, 370, 1110, 400]), rectMask(W, H, [1000, 480, 1110, 530])), rectMask(W, H, [1000, 600, 1110, 660]));
+  // The whole box gives the shelf with its tins and frame, plus a patch of wall well above it.
+  const boxed = union(rectMask(W, H, [990, 250, 1180, 720]), rectMask(W, H, [990, 90, 1180, 250]));
+  const empty = rectMask(W, H, [0, 0, 0, 0]);
+  expect(wholeThing(boards, boxed, empty).added).toBe(0);
+  const whole = wholeThing(boards, boxed, empty, [996, 242, 1178, 716]);
+  expect(whole.added).toBeGreaterThan(0);
+  expect(maskBox(whole.mask)![1]).toBeGreaterThan(190);
+});
+
+test('a floor keeps what lies on it: small closed holes fill, big ones and edges stay', async () => {
+  const { solidFloor } = await import('../src/scene/masks.ts');
+  const { subtract } = await import('../src/image/raster.ts');
+  const floor = rectMask(W, H, [0, 500, W, H]);
+  const shaving = rectMask(W, H, [200, 700, 240, 730]);
+  const table = rectMask(W, H, [500, 560, 900, 760]);
+  const edge = rectMask(W, H, [0, 860, 60, H]);
+  const cut = subtract(subtract(subtract(floor, shaving), table), edge);
+  const solid = solidFloor(cut);
+  expect(maskArea(solid) - maskArea(cut)).toBe(maskArea(shaving));
+});

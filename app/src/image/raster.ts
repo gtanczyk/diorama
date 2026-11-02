@@ -163,3 +163,62 @@ export function bottomRows(m: Mask): Int32Array {
   }
   return rows;
 }
+
+/**
+ * Fills the holes of a mask: unset regions it closes on every side (they never reach the frame's edge) of at most
+ * `maxPx` each. Bigger holes are real gaps (the floor around a wide table), smaller ones are what lies on the surface.
+ */
+export function fillHoles(m: Mask, maxPx = Infinity): Mask {
+  const { width: W, height: H } = m;
+  const bits = m.bits.slice();
+  const seen = new Uint8Array(W * H);
+  const stack: number[] = [];
+  for (let start = 0; start < bits.length; start++) {
+    if (bits[start] || seen[start]) continue;
+    const pixels: number[] = [];
+    let open = false;
+    seen[start] = 1;
+    stack.push(start);
+    while (stack.length) {
+      const i = stack.pop()!;
+      pixels.push(i);
+      const x = i % W;
+      const y = (i - x) / W;
+      if (x === 0 || y === 0 || x === W - 1 || y === H - 1) open = true;
+      for (const n of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) {
+        if (n >= 0 && !bits[n] && !seen[n]) {
+          seen[n] = 1;
+          stack.push(n);
+        }
+      }
+    }
+    if (!open && pixels.length <= maxPx) for (const i of pixels) bits[i] = 1;
+  }
+  return { width: W, height: H, bits };
+}
+
+/**
+ * What a frame holds: the opening of a doorway, an arch or a gate, whose posts stand at the sides of its box and whose
+ * lintel spans the top. Row by row below the lintel, the gap between the inner edge of the left post and that of the
+ * right one; a post SAM cut short keeps its last edge down to the box's bottom, where the floor runs through.
+ */
+export function framedOpening(frame: Mask, box: Rect): Mask {
+  const { width: W, height: H } = frame;
+  const [x0, y0, x1, y1] = clampRect(box, W, H);
+  const out = emptyMask(W, H);
+  const third = Math.max(1, Math.floor((x1 - x0) / 3));
+  const mid = [x0 + third, x1 - third];
+  // The lintel: the lowest frame row in the top half of the box's middle third.
+  let top = -1;
+  for (let y = y0; y < y0 + (y1 - y0) / 2; y++) for (let x = mid[0]; x < mid[1]; x++) if (frame.bits[y * W + x]) top = y;
+  if (top < 0) return out;
+  let left = -1;
+  let right = -1;
+  for (let y = top + 1; y < y1; y++) {
+    for (let x = mid[0] - 1; x >= x0; x--) if (frame.bits[y * W + x]) { left = x; break; }
+    for (let x = mid[1]; x < x1; x++) if (frame.bits[y * W + x]) { right = x; break; }
+    if (left < 0 || right < 0) continue;
+    for (let x = left + 1; x < right; x++) if (!frame.bits[y * W + x]) out.bits[y * W + x] = 1;
+  }
+  return out;
+}

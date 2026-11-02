@@ -5,7 +5,7 @@
 // cells wins; with none close enough the cells are the floor, marked coarse.
 import sharp from 'sharp';
 import { emptyMask, maskArea, type Mask } from '../image/mask.ts';
-import { clampRect, components, dilate, intersect, subtract, maskBox, maskIou, polygonMask, rectArea, rectIou, rectMask, unionAll, withoutSpecks, type Rect } from '../image/raster.ts';
+import { clampRect, components, dilate, fillHoles, framedOpening, growRect, intersect, union, subtract, maskBox, maskIou, polygonMask, rectArea, rectIou, rectMask, unionAll, withoutSpecks, type Rect } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import { SAM_MAX_BOXES, samFind, type Box, type Found } from '../meta/sam.ts';
 import type { Place } from '../world/schema.ts';
@@ -51,6 +51,21 @@ export function hollowFault(mask: Mask, [x0, y0, x1, y1]: Rect): string | undefi
   const area = maskArea(middle);
   const covered = area > 0 ? maskArea(intersect(mask, middle)) / area : 1;
   if (covered < 0.25) return `covers only ${Math.round(covered * 100)}% of the middle of its box`;
+}
+
+/**
+ * A way out set in a wall (a doorway, an arch, a gate) asked of SAM often comes back as its frame: posts and lintel,
+ * the middle empty (hollowFault). The way out is the gap the frame holds, open at the bottom where the floor runs
+ * through. Undefined when the frame holds no gap worth the name (a closed door, a wall).
+ */
+export function openingOf(frame: Mask): Mask | undefined {
+  const box = maskBox(frame);
+  if (!box) return undefined;
+  // Slivers where a post was cut ragged are not the opening.
+  const gap = components(dilate(dilate(framedOpening(frame, box), -3), 3))[0];
+  if (!gap) return undefined;
+  const filled = fillHoles(gap);
+  return maskArea(filled) >= 0.2 * rectArea(box) && !hollowFault(filled, maskBox(filled)!) ? filled : undefined;
 }
 
 /**
@@ -147,18 +162,23 @@ export function wholeBox(mask: Rect, spark: Rect | undefined): Rect {
  * (it adds over twice the thing itself); `others` (the other things) are never taken. Specks and slivers along the
  * outline are not parts. Returns the mask and the px it gained (0: as it was).
  */
-export function wholeThing(named: Mask, boxed: Mask | undefined, others: Mask): { mask: Mask; added: number; why?: string } {
+export function wholeThing(named: Mask, boxed: Mask | undefined, others: Mask, spark?: Rect): { mask: Mask; added: number; why?: string } {
   const px = maskArea(named);
   if (!boxed || px === 0) return { mask: named, added: 0 };
   const cover = maskArea(intersect(boxed, named)) / px;
   if (cover < 0.6) return { mask: named, added: 0, why: `the box found something else (covers ${Math.round(cover * 100)}% of it)` };
-  const extra = subtract(subtract(boxed, dilate(named, 2)), others);
+  // Spark boxed the whole thing as it saw it: what SAM's grown box finds past that (wall, ceiling) is not the thing.
+  const within = spark ? intersect(boxed, rectMask(named.width, named.height, clampRect(growRect(spark, 1.1), named.width, named.height))) : boxed;
+  const extra = subtract(subtract(within, dilate(named, 2)), others);
   const touch = dilate(named, 4);
   const parts = components(extra).filter((c) => maskArea(c) >= Math.max(80, 0.01 * px) && maskArea(intersect(c, touch)) > 0);
   const added = parts.reduce((n, c) => n + maskArea(c), 0);
   if (added < 0.03 * px) return { mask: named, added: 0 };
-  // Contents can be as big as their container (a heap of fish over a small bucket), not much bigger.
-  if (added > 2 * px) return { mask: named, added: 0, why: `the box took in ${added} px around it, over twice the thing` };
+  // Contents can be as big as their container (a heap of fish over a small bucket), not much bigger. SAM by name can
+  // also take a sliver of the thing (the boards of a shelf without its frame and tins): then Spark's box says how big
+  // the thing is, and what fills it is the thing.
+  const size = spark ? Math.max(px, 0.5 * rectArea(spark)) : px;
+  if (added > 2 * size) return { mask: named, added: 0, why: `the box took in ${added} px around it, over twice the thing` };
   // The 2 px seam left between the mask and its parts closes with them.
   const joined = unionAll(named.width, named.height, [named, ...parts]);
   const closed = subtract(dilate(dilate(joined, 3), -3), others);
@@ -199,8 +219,16 @@ export async function maskThings(memo: Memo, place: Place, layout: Layout, spots
       mask = withoutSpecks(lone.mask, Math.max(60, maskArea(lone.mask) * 0.03));
       prior = fromBox(lone.box);
     }
+    const opening = t.role === 'exit' && spot.kind === 'wall';
+    if (mask && opening && hollowFault(mask, maskBox(mask)!)) {
+      const gap = openingOf(mask);
+      if (gap) {
+        log(`${t.key}: SAM by name gave the frame of the way out; took the opening it holds`);
+        mask = gap;
+      }
+    }
     const fault = mask ? thingMaskFault(mask, prior) : `SAM found no "${phrases.join('" or "')}"`;
-    return { t, spot, prior, fromSpark: !!sparkBox && prior !== layoutBox(layout, t.key), mask, fault };
+    return { t, spot, prior, opening, fromSpark: !!sparkBox && prior !== layoutBox(layout, t.key), mask, fault };
   }));
 
   const retry = tried.filter((r) => r.fault);
@@ -212,7 +240,13 @@ export async function maskThings(memo: Memo, place: Place, layout: Layout, spots
     let source: MaskSource = 'sam-text';
     if (r.fault) {
       log(`${r.t.key}: ${r.fault}, asking SAM with the box`);
-      const byBox = boxed[retry.indexOf(r)];
+      let byBox = boxed[retry.indexOf(r)];
+      // The box around a doorway brings back its frame; the opening it holds is the way out.
+      const gap = r.opening && byBox && hollowFault(byBox, r.prior) ? openingOf(byBox) : undefined;
+      if (gap) {
+        log(`${r.t.key}: SAM by the box gave the frame of the way out; took the opening it holds`);
+        byBox = gap;
+      }
       const boxFault = byBox ? thingMaskFault(byBox, r.prior) ?? hollowFault(byBox, r.prior) : 'SAM box found nothing';
       if (byBox && !boxFault) {
         mask = withoutSpecks(byBox, Math.max(60, maskArea(byBox) * 0.03));
@@ -251,7 +285,7 @@ async function wholeThings(memo: Memo, place: Place, painting: Buffer, masked: A
   // A way out set in a wall (a door, an arch, a gate) has nothing in or on it: SAM by its grown box finds the house
   // around it, and the door, joined with part of the house, then reads far taller than a person can pass.
   const opening = (t: ThingMask) => t.kind === 'wall' && place.things.find((p) => p.key === t.key)?.role === 'exit';
-  let asked = masked.filter((t) => t.source === 'sam-text' && t.kind !== 'walk-on' && t.kind !== 'flat' && !opening(t)).map((t) => ({ key: t.key, box: wholeBox(t.box, t.prior) }));
+  let asked: { key: string; box: Rect; spark?: Rect }[] = masked.filter((t) => t.source === 'sam-text' && t.kind !== 'walk-on' && t.kind !== 'flat' && !opening(t)).map((t) => ({ key: t.key, box: wholeBox(t.box, t.prior), spark: t.prior }));
   for (let round = 0; round < 2 && asked.length; round++) {
     const boxed = await samBoxes(memo, `mask-whole${round ? round + 1 : ''}:${place.key}`, painting, asked.map((a) => a.box));
     const again: typeof asked = [];
@@ -259,17 +293,28 @@ async function wholeThings(memo: Memo, place: Place, painting: Buffer, masked: A
       const k = out.findIndex((t) => t.key === a.key);
       const t = out[k];
       const others = unionAll(W, H, out.filter((o) => o.key !== t.key).map((o) => o.mask));
-      const whole = wholeThing(t.mask, boxed[i], others);
+      const whole = wholeThing(t.mask, boxed[i], others, a.spark);
       if (whole.why) console.log(`  ${place.key}: ${t.key}: kept its mask, ${whole.why}`);
       if (!whole.added) return;
       const box = maskBox(whole.mask)!;
       out[k] = { ...t, mask: whole.mask, px: maskArea(whole.mask), box, whole: (t.whole ?? 0) + whole.added };
-      if (reachesEdge(box, a.box)) again.push({ key: t.key, box: wholeBox(box, undefined) });
+      if (reachesEdge(box, a.box)) again.push({ key: t.key, box: wholeBox(box, undefined), spark: undefined });
     });
     asked = again;
   }
   for (const t of out) if (t.whole) log(`${t.key}: SAM by name left parts of it out (what is in or on it); ${t.whole} px joined from SAM by its whole box`);
   return out;
+}
+
+/**
+ * A floor as one surface: SAM cuts around everything lying on it (wood shavings, pebbles, leaves) and frays where
+ * the floor fades into fog or shadow. Gaps of a few px close, and holes it closes on every side up to 1.5% of the
+ * frame are filled: what lies there is walked over. Bigger holes stay (a pond, the floor under a wide table);
+ * standing things are cut out of the walk by their own masks later.
+ */
+export function solidFloor(m: Mask): Mask {
+  const closed = union(m, dilate(dilate(m, 3), -3));
+  return withoutSpecks(fillHoles(closed, 0.015 * m.width * m.height), 200);
 }
 
 /** Keeps a floor candidate to within one grid cell of Spark's marking and scores the agreement. */
@@ -297,7 +342,7 @@ export async function maskFloors(memo: Memo, place: Place, layout: Layout, marke
     ];
     const boxed = byBox[withBox.findIndex((b) => b.i === i)];
     if (boxed) candidates.push({ source: 'sam-box', mask: boxed });
-    const scored = candidates.map((c) => ({ ...c, ...scoreFloor(c.mask, cells) })).sort((a, b) => b.iou - a.iou);
+    const scored = candidates.map((c) => ({ ...c, ...scoreFloor(solidFloor(c.mask), cells) })).sort((a, b) => b.iou - a.iou);
     const best = scored[0];
     if (best && best.iou >= 0.3) {
       return { key: floor.key, source: best.source, coarse: false, px: maskArea(best.mask), iouCells: best.iou, iouLayout: maskIou(best.mask, planned), mask: best.mask };
