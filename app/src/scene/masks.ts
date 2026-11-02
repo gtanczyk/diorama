@@ -122,6 +122,39 @@ export function colourCut(rgb: Buffer, box: Rect, ring = 12): Mask | undefined {
   return share > 0.15 && share < 0.92 ? filled : undefined;
 }
 
+/**
+ * After the colour cut, before a plain box: inside the box, the pixels of the hue the layout gave the thing (the
+ * sketch Muse painted over), as they lie: walls, a hedge, a row of shelves, not one solid blob. A box as the mask
+ * draws its hover outline as a rectangle over everything in it. Undefined when that hue is not the thing's: too
+ * little or nearly all of the box has it.
+ */
+export function layoutColourCut(rgb: Buffer, box: Rect, colour: string): Mask | undefined {
+  const hex = /^#?([0-9a-f]{6})$/i.exec(colour.trim())?.[1];
+  if (!hex) return undefined;
+  const want = hsv(...([0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number]));
+  // A grey or cream sketch colour names no hue to find.
+  if (want.s < 0.25) return undefined;
+  const near = (i: number) => {
+    const c = hsv(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
+    // Painted light and shadow change brightness and some saturation, not hue.
+    return c.s > 0.18 && c.v > 0.12 && Math.min(Math.abs(c.h - want.h), 360 - Math.abs(c.h - want.h)) < 16;
+  };
+  const [x0, y0, x1, y1] = clampRect(box, W, H);
+  const raw = emptyMask(W, H);
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (near(y * W + x)) raw.bits[y * W + x] = 1;
+  const area = rectArea([x0, y0, x1, y1]);
+  const kept = withoutSpecks(dilate(dilate(raw, 2), -2), Math.max(80, area * 0.002));
+  const share = maskArea(kept) / Math.max(1, area);
+  return share > 0.05 && share < 0.85 ? kept : undefined;
+}
+
+function hsv(r: number, g: number, b: number): { h: number; s: number; v: number } {
+  const max = Math.max(r, g, b);
+  const d = max - Math.min(r, g, b);
+  const h = d === 0 ? 0 : max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: h * 60, s: max ? d / max : 0, v: max / 255 };
+}
+
 /** A single SAM match near a misplaced box: similar size, centre within twice the box's size. */
 export function loneMatch(found: Rect, box: Rect): boolean {
   const ratio = rectArea(found) / Math.max(1, rectArea(box));
@@ -254,10 +287,16 @@ export async function maskThings(memo: Memo, place: Place, layout: Layout, spots
       } else {
         const cut = colourCut(pixels, r.prior);
         const cutFault = cut ? thingMaskFault(cut, r.prior) ?? hollowFault(cut, r.prior) : 'nothing stands out from its surroundings';
+        const planned = layout.things.find((b) => b.key === r.t.key)?.colour;
+        const byColour = cut && !cutFault ? undefined : planned ? layoutColourCut(pixels, r.prior, planned) : undefined;
         if (cut && !cutFault) {
           mask = cut;
           source = 'colour-cut';
           log(`${r.t.key}: ${boxFault}; cut it out of its box by colour`);
+        } else if (byColour) {
+          mask = byColour;
+          source = 'colour-cut';
+          log(`${r.t.key}: ${boxFault}; colour cut: ${cutFault}; took the pixels of its sketch colour ${planned} in its box`);
         } else {
           mask = rectMask(W, H, r.prior);
           source = r.fromSpark ? 'spark-box' : 'layout-box';
