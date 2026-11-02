@@ -101,21 +101,33 @@ async function askClaude(model: string, { label, prompt, images = [], schema }: 
   if (!key) throw new Error('DIORAMA_SPARK_VIA=claude needs DIORAMA_ANTHROPIC_API_KEY, ANTHROPIC_API_KEY or CLAUDE_API_KEY; openrouter:anthropic/claude-sonnet-5.5 goes without');
   const content = [...(await Promise.all(images.map(async (i) => ({ type: 'image', source: await claudeImage(i) })))), { type: 'text', text: prompt }];
   let format = heldTo(schema);
-  for (let n = 1; ; n++) {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      signal: AbortSignal.timeout(240_000),
-      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        max_tokens: 32000,
-        system: CLAUDE_SYSTEM,
-        messages: [{ role: 'user', content }],
-        ...(format ? { output_config: { format: { type: 'json_schema', schema: format } } } : {}),
-      }),
-    });
-    if (res.ok) {
-      const body = (await res.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string };
+  for (let n = 1, dropped = 0; ; n++) {
+    let res: Response;
+    let body: { content?: { type: string; text?: string }[]; stop_reason?: string } | undefined;
+    try {
+      res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        signal: AbortSignal.timeout(240_000),
+        headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          max_tokens: 32000,
+          system: CLAUDE_SYSTEM,
+          messages: [{ role: 'user', content }],
+          ...(format ? { output_config: { format: { type: 'json_schema', schema: format } } } : {}),
+        }),
+      });
+      if (res.ok) body = (await res.json()) as typeof body;
+    } catch (error) {
+      // A dropped or stalled connection ("fetch failed": a busy uplink, Wi-Fi gone) is asked again, like metaPost
+      // does for Meta, instead of failing the whole step: up to ~3 min of backoff in all.
+      if (++dropped >= 6) throw error;
+      console.log(`  spark ${label} (claude): ${error instanceof Error && error.name === 'TimeoutError' ? 'no answer in 240 s' : error instanceof Error ? error.message.slice(0, 120) : error}; trying again (${dropped + 1}/6)`);
+      await new Promise((r) => setTimeout(r, Math.min(30_000, 2000 * 2 ** dropped)));
+      n--;
+      continue;
+    }
+    if (body) {
       if (body.stop_reason === 'max_tokens') throw new Error(`spark ${label} (claude): the answer ran past ${32000} tokens and was cut off`);
       const text = (body.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
       if (!text.trim()) throw new Error(`spark ${label} (claude): empty answer`);
