@@ -96,6 +96,7 @@ export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates:
       else flags.push({ code: 'MASK_DOUBT', key: thing.key, detail: `Spark sees ${seen} in its mask` });
     }
     if (notes.things[thing.key]?.source === 'colour-cut') flags.push({ code: 'COLOUR_CUT', key: thing.key, detail: 'SAM missed it; its mask was cut out of its box by colour' });
+    if (notes.things[thing.key]?.source === 'sketch-colour') flags.push({ code: 'COLOUR_CUT', key: thing.key, detail: 'SAM missed it; its mask is the pixels of its sketch colour in its box' });
     if (t.coarse && thing.role !== 'npc') flags.push({ code: 'COARSE_MASK', key: thing.key, detail: `mask is a ${notes.things[thing.key]?.source ?? 'box'}, so it hides no one` });
   }
 

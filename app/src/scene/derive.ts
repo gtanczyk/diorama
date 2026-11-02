@@ -118,9 +118,11 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   // A coarse box wider than a third of the picture is a row or a group (mooring posts along a quay, a line of
   // stalls), not one thing to walk round: as a box it would wall the place in two. It stays a thing to click, but
   // only sharp masks and narrower boxes stand in the way.
-  // A sharp mask over a quarter of the picture is no prop either: SAM took the quay with the posts on it.
+  // A sharp mask over a quarter of the picture is no prop either: SAM took the quay with the posts on it. Nor is a
+  // wide thing found only by its sketch colour (maze walls, a hedge round a yard): its pixels draw its outline, the
+  // floors drawn for the place say where to walk.
   const sprawling = (t: ThingIn) => t.kind !== 'walk-on' && t.kind !== 'flat'
-    && ((t.coarse && (() => { const b = maskBox(t.mask); return !!b && b[2] - b[0] > W / 3; })()) || maskArea(t.mask) > (W * H) / 4);
+    && (((t.coarse || t.source === 'sketch-colour') && (() => { const b = maskBox(t.mask); return !!b && b[2] - b[0] > W / 3; })()) || maskArea(t.mask) > (W * H) / 4);
   const inTheWay = unionAll(W, H, things.filter((t) => t.kind !== 'walk-on' && !sprawling(t)).map((t) => t.mask));
   const ground = union(floorAny, walkOn);
 

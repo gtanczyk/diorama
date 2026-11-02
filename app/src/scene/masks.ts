@@ -12,7 +12,7 @@ import type { Place } from '../world/schema.ts';
 import { FRAME, type Layout } from './layout.ts';
 import { cellsBox, cellsMask, GRID, type Kind, type Spots } from './locate.ts';
 
-export type MaskSource = 'sam-text' | 'sam-box' | 'colour-cut' | 'spark-box' | 'layout-box' | 'spark-cells' | 'layout';
+export type MaskSource = 'sam-text' | 'sam-box' | 'colour-cut' | 'sketch-colour' | 'spark-box' | 'layout-box' | 'spark-cells' | 'layout';
 
 /** whole: px added by the whole-thing pass (parts SAM by name left out: what sits in or on it). */
 export type ThingMask = { key: string; kind: Kind; phrase: string; source: MaskSource; coarse: boolean; px: number; box: Rect; mask: Mask; whole?: number };
@@ -295,7 +295,7 @@ export async function maskThings(memo: Memo, place: Place, layout: Layout, spots
           log(`${r.t.key}: ${boxFault}; cut it out of its box by colour`);
         } else if (byColour) {
           mask = byColour;
-          source = 'colour-cut';
+          source = 'sketch-colour';
           log(`${r.t.key}: ${boxFault}; colour cut: ${cutFault}; took the pixels of its sketch colour ${planned} in its box`);
         } else {
           mask = rectMask(W, H, r.prior);
