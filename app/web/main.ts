@@ -1243,15 +1243,22 @@ class Game {
 
   /** Draws the card's columns [xa, xb) (frame x) in strips, each slid by the floor under it. */
   private drawCard(cut: Cut, xa = cut.x0, xb = cut.x0 + cut.canvas.width, ya = cut.y0, yb = cut.y0 + cut.canvas.height) {
-    // A boat on the water rides the swell: rises and sinks a little and rolls about its keel, slowly, each on its own phase.
-    if (this.afloat(cut) && !params.has('still')) {
+    // A boat on the water rides the swell: rises and sinks and rolls about its keel, each on its own phase, more in
+    // a storm. One moored at the quay (land on one side) swings about its tied end, so its rope stays on the post.
+    const float = this.afloat(cut);
+    if (float && !params.has('still')) {
       const t = this.time + (hashSeed(cut.occ.key) % 1000) / 160;
+      const storm = stormOf(this.place.weather?.w);
       const [w, hgt] = [cut.canvas.width, cut.canvas.height];
-      const [px, py] = [cut.x0 + w / 2, cut.y0 + hgt * 0.85];
+      const tied = float.tied;
+      const [px, py] = [tied ? (tied < 0 ? cut.x0 + w * 0.08 : cut.x0 + w * 0.92) : cut.x0 + w / 2, cut.y0 + hgt * (tied ? 0.45 : 0.85)];
+      const big = 1 + 1.2 * storm;
+      // Big enough to read at a glance: a few pixels of rise and fall and a clear roll, never a jitter.
+      const heave = Math.sin(t * 1.3) * Math.max(2, Math.min(7, hgt * 0.03)) * big;
+      const roll = (tied ? 0.045 : 0.04) * big * Math.sin(t * 0.9 + 1.1) + (tied ? heave * 0.004 * -tied : 0);
       ctx.save();
-      // Big enough to read at a glance: a few pixels of rise and fall and a visible roll, never a jitter.
-      ctx.translate(px + Math.sin(t * 0.55) * Math.min(3, hgt * 0.01), py + Math.sin(t * 1.3) * Math.max(2, Math.min(6, hgt * 0.025)));
-      ctx.rotate(0.035 * Math.sin(t * 0.9 + 1.1));
+      ctx.translate(px + (tied ? 0 : Math.sin(t * 0.55) * Math.min(4, hgt * 0.012) * big), py + (tied ? heave * 0.35 : heave));
+      ctx.rotate(roll);
       ctx.translate(-px, -py);
       this.drawStrips(cut, xa, xb, ya, yb);
       ctx.restore();
@@ -1260,18 +1267,27 @@ class Game {
     this.drawStrips(cut, xa, xb, ya, yb);
   }
 
-  private readonly floating = new WeakMap<Cut, boolean>();
+  private readonly floating = new WeakMap<Cut, { tied: number } | false>();
 
-  /** A boat whose hull meets water (beside it and under it), not one up on a stand on the quay. */
-  private afloat(cut: Cut): boolean {
+  /**
+   * A boat whose hull meets water (around and under it), not one up on a stand on the quay: most points a little way
+   * out from its hull are water. `tied`: -1 or 1 when the land is on that side only (moored at the quay), else 0.
+   */
+  private afloat(cut: Cut): { tied: number } | false {
     let known = this.floating.get(cut);
     if (known !== undefined) return known;
     const wet = this.place.wet;
     const { width: W, height: H } = this.place.g.frame;
     const [x0, y0, x1, y1] = cut.occ.box;
-    const at = (x: number, y: number) => (wet ? wet[Math.max(0, Math.min(H - 1, Math.round(y))) * W + Math.max(0, Math.min(W - 1, Math.round(x)))] > 100 : false);
-    const hy = y1 - 0.15 * (y1 - y0);
-    known = FLOATS.test(cut.occ.thing ?? cut.occ.key) && [at(x0 - 6, hy), at(x1 + 6, hy), at((x0 + x1) / 2, y1 + 6)].filter(Boolean).length >= 2;
+    const at = (x: number, y: number) => (wet ? wet[Math.max(0, Math.min(H - 1, Math.round(y))) * W + Math.max(0, Math.min(W - 1, Math.round(x)))] > 60 : false);
+    // Past the few px the water keeps off every card, and along the hull, not at one point (a neighbouring boat
+    // may stand right beside it).
+    const hull = [0.7, 0.85, 1].map((k) => y0 + k * (y1 - y0));
+    const left = hull.filter((y) => at(x0 - 16, y)).length;
+    const right = hull.filter((y) => at(x1 + 16, y)).length;
+    const under = [0.25, 0.5, 0.75].filter((k) => at(x0 + k * (x1 - x0), y1 + 12)).length;
+    const wetSides = left + right + under;
+    known = FLOATS.test(cut.occ.thing ?? cut.occ.key) && wetSides >= 4 ? { tied: !left && right >= 2 ? -1 : !right && left >= 2 ? 1 : 0 } : false;
     this.floating.set(cut, known);
     return known;
   }
