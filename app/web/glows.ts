@@ -156,22 +156,24 @@ export class GlowFx {
           const spread = 26 + 150 * Math.abs(across) * (0.5 + near);
           const strength = 0.6 + 0.4 * towards * towards;
           // A wide soft cone, and a narrow white-hot core inside it, both blurred: light, not a cut-out wedge.
-          ctx.filter = 'blur(10px)';
+          // Soft as light without a blur filter (a canvas blur every frame halves the frame rate): each cone is
+          // laid three times, a little wider and fainter each time, so its edge fades out.
           for (const [w, a0, a1, colour] of [[spread, 0.85, 0.34, c], [spread * 0.3, 0.8, 0.18, '255,250,235']] as const) {
-            const grad = ctx.createLinearGradient(x, y, end, y);
-            grad.addColorStop(0, `rgba(${colour},${a0 * strength})`);
-            grad.addColorStop(0.45, `rgba(${colour},${a1 * strength})`);
-            grad.addColorStop(1, `rgba(${colour},0)`);
-            ctx.fillStyle = grad;
-            ctx.beginPath();
-            ctx.moveTo(x, y - 5);
-            ctx.lineTo(end, y - w);
-            ctx.lineTo(end, y + w);
-            ctx.lineTo(x, y + 5);
-            ctx.closePath();
-            ctx.fill();
+            for (const [grow, share] of [[1.35, 0.25], [1.15, 0.3], [0.9, 0.45]] as const) {
+              const grad = ctx.createLinearGradient(x, y, end, y);
+              grad.addColorStop(0, `rgba(${colour},${a0 * strength * share})`);
+              grad.addColorStop(0.45, `rgba(${colour},${a1 * strength * share})`);
+              grad.addColorStop(1, `rgba(${colour},0)`);
+              ctx.fillStyle = grad;
+              ctx.beginPath();
+              ctx.moveTo(x, y - 5 * grow);
+              ctx.lineTo(end, y - w * grow);
+              ctx.lineTo(end, y + w * grow);
+              ctx.lineTo(x, y + 5 * grow);
+              ctx.closePath();
+              ctx.fill();
+            }
           }
-          ctx.filter = 'none';
           for (let k = 1; k <= 6; k++) pools.push({ x: x + ((end - x) * k) / 6, y, r: 60 + (spread * k) / 4, c, a: 0.5 * (1 - k / 8) });
         }
         const flare = towards > 0 ? Math.pow(Math.max(0, 1 - Math.abs(across) * 2.5), 2) : 0;
