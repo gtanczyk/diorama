@@ -486,6 +486,13 @@ export const lineId = (line: Line) => `line-${inputHash(line.speaker, line.text)
 /** Close enough: 90% of the letters, or at most two letters off, so a short line is not failed for one misheard word ("a" for "of"). */
 export const heardOk = (line: string, match: number) => match >= 0.9 || (match >= 0.7 && (1 - match) * letters(line).length <= 2.01);
 
+/** Laughs, sighs and calls: no word a transcriber writes down the way the line spells it. */
+const SOUND = /^(?:(?:h+[aeiouy]+h*)+|(?:[aeiouy]+h+)+|a+w+|o+w+|u+g+h+|e+w+|h+m+|m+h*m*|m+|u+h*m+|e+r+m*|h+u+h+|h+e+h+|p+s+t+|s+h+|t+s+k+|z+|w+h+e+e+|y+a+y+|w+o+w+|o+o+h*|a+r+g+h+|o+j+(?:e+j+)?|a+c+h+|o+c+h+|e+c+h+|u+f+|h+y+h+y+)$/;
+export function soundsOnly(text: string): boolean {
+  const words = text.normalize('NFC').toLowerCase().split(/[^\p{L}]+/u).filter(Boolean);
+  return words.length > 0 && words.every((w) => SOUND.test(w));
+}
+
 /** Reads one line, listens back, and reads it again (up to 3 takes, 2 in draft) until the transcript matches. */
 export async function voiceLine(memo: Memo, line: Line, voice: Cast[string], write: (id: string, mp3: Buffer) => string, designed?: DesignedVoices, opts: { retryRejected?: boolean } = {}): Promise<z.infer<typeof VoiceLine>> {
   const id = lineId(line);
@@ -505,18 +512,22 @@ export async function voiceLine(memo: Memo, line: Line, voice: Cast[string], wri
     fs.renameSync(tmp, retryFile);
   }
   const spoken = spokenText(line.text, voice.profile?.language);
+  // A laugh or a sigh ("hee hee", "hmm") is no words to transcribe: the transcriber hears nothing or something else,
+  // and three takes of it were rejected. The first clean take is used, flagged.
+  const sound = soundsOnly(spoken);
   let best: { pcm: Pcm; heard: string; match: number; take: number } | undefined;
   const takes = lineTakes();
   for (let take = 1; take <= takes; take++) {
     const pcm = pitchShift(trim(decode(await speak(memo, `${id}-${take}`, line, voice, take, designed, retrySeed)), 0.005), voice.pitch ?? 0);
     if (audioProblem(pcm)) continue;
+    if (sound) { best = { pcm, heard: '', match: 0, take }; break; }
     const heard = await transcribe(memo, `${id}-${take}`, pcm24k(pcm));
     const match = spokenMatch(line.text, heard, voice.profile?.language);
     if (!best || match > best.match) best = { pcm, heard, match, take };
     if (heardOk(spoken, match)) break;
   }
-  if (!best || !heardOk(spoken, best.match)) throw new Error(`speech rejected after ${takes} takes: ${best ? `heard ${Math.round(best.match * 100)}% of the line: "${best.heard}"` : 'no clean audible recording'}`);
-  const flags = best.take > 1 ? [`take ${best.take} used`] : [];
+  if (!best || !(sound || heardOk(spoken, best.match))) throw new Error(`speech rejected after ${takes} takes: ${best ? `heard ${Math.round(best.match * 100)}% of the line: "${best.heard}"` : 'no clean audible recording'}`);
+  const flags = [...(best.take > 1 ? [`take ${best.take} used`] : []), ...(sound ? ['a sound, not words: not checked by transcript'] : [])];
   const pcm = normalise(best!.pcm, -18);
   return { speaker: line.speaker, text: line.text, file: write(id, encodeMp3(pcm, 128)), seconds: Math.round(seconds(pcm) * 100) / 100, heard: best!.heard, match: Math.round(best!.match * 100) / 100, flags };
 }

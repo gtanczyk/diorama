@@ -9,19 +9,21 @@ const FRAME = 3840;
 
 // One active ASR stream per process, including the retry cooldown. Voice Design and speech share it.
 let queue: Promise<unknown> = Promise.resolve();
-const transient = (error: unknown) => /backlog|busy|overload|socket error|timed out|closed 10(06|11|13)/i.test(String(error));
+// "Ingress audio slower than real-time": the server drops a stream that falls behind the clock (a busy event loop
+// while a build paints and masks). It is the pace, not the audio: the same take goes again, on the clock.
+const transient = (error: unknown) => /backlog|busy|overload|socket error|timed out|closed 10(06|11|13)|slower than real-?time|real-?time/i.test(String(error));
 
 /** `pcm24k`: 16-bit mono PCM at 24 kHz. Never send faster than real time, even for legacy callers. */
 export function transcribe(memo: Memo, label: string, pcm24k: Buffer, pace = 1): Promise<string> {
   return memo.remember('voice', label, inputHash(VOICE_TRANSCRIBE, pcm24k), 'txt', () => {
     const run = queue.then(async () => {
-      let rate = Number.isFinite(pace) ? Math.max(0.25, Math.min(1, pace)) : 1;
+      // Real time exactly: the server refuses audio slower than real time (halving the pace on a retry turned every
+      // backlog into a sure "slower than real-time"), and faster than real time is never sent either.
+      const rate = Number.isFinite(pace) ? Math.max(0.25, Math.min(1, pace)) : 1;
       for (let attempt = 0; ; attempt++) {
         try { return await listen(label, pcm24k, rate); }
         catch (error) {
           if (!transient(error) || attempt === 3) throw error;
-          // Retrying the same overloaded stream at the same speed only recreates the backlog.
-          rate = Math.max(0.25, rate / 2);
           await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
         }
       }
@@ -54,13 +56,18 @@ async function listen(label: string, pcm24k: Buffer, pace: number): Promise<Buff
     const fail = (reason: string) => finish(new Error(`transcribe ${label}: ${reason}`));
     const timer = setTimeout(() => fail('timed out'), Math.max(60000, audio.length / 48000 / pace * 1000 + 30000));
     const sendAudio = async () => {
+      // Each frame goes when the clock says, counted from the first: waiting a frame's length after each send added
+      // the timer's lateness every 80 ms, and a busy moment never caught up, so the stream drifted behind real time.
+      const t0 = Date.now();
       for (let at = 0; at < audio.length; at += FRAME) {
         while (!stopped && ws.bufferedAmount > FRAME * 4) await wait(20);
         if (stopped || ws.readyState !== 1) return;
         const frame = audio.subarray(at, at + FRAME);
         ws.send(frame);
         if (stopped) return;
-        await wait(frame.length / 48000 / pace * 1000);
+        const due = t0 + ((at + frame.length) / 48000 / pace) * 1000;
+        const ahead = due - Date.now();
+        if (ahead > 0) await wait(ahead);
       }
       if (!stopped && ws.readyState === 1) {
         ended = true;

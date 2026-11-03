@@ -95,6 +95,15 @@ defineCommand({
         await Promise.all(Array.from({ length: 4 }, async () => {
           while (next < group.length) await read(group[next++]);
         }));
+        // A line the transcriber dropped (its stream failed, not the take) is listened to again once, after the
+        // group: the take is paid and cached, so this asks nothing of ElevenLabs. 42 lines of one world failed so.
+        const dropped = group.filter((i) => failures.some((f) => f.speaker === lines[i].speaker && f.text === lines[i].text && /^transcribe /.test(f.reason)));
+        if (dropped.length) console.log(`  listening again to ${dropped.length} line(s) the transcriber dropped`);
+        for (const i of dropped) {
+          failures.splice(failures.findIndex((f) => f.speaker === lines[i].speaker && f.text === lines[i].text), 1);
+          completed--;
+          await read(i);
+        }
         await designed.close();
       }
     } finally {

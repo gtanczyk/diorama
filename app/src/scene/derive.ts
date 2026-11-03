@@ -28,7 +28,12 @@ export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors
   /** Where the person wants the hero to begin (hero_start_set): the nearest roomy cell of the main floor. */
   start?: [number, number];
   /** Where the painting stands upright (depthmap.ts uprightTest): no joining path is laid across it. */
-  upright?: (x: number, y: number) => boolean };
+  upright?: (x: number, y: number) => boolean;
+  /**
+   * Floor someone said is floor: brush strokes that add to a floor (the person's, the agent's, the free bridge's)
+   * and floor cells the person added. It is walked on whatever thing's mask lies over it.
+   */
+  said?: Mask };
 export type Derived = { geometry: Geometry; grid: Grid; blobs: Blob[]; footprint: Mask; probes: Sample[]; shadows: Shadows };
 
 const { width: W, height: H } = FRAME;
@@ -110,6 +115,27 @@ function anchorSamples(blobs: Blob[], layout: Layout): Sample[] {
   });
 }
 
+/**
+ * What stands in the way of walking, and what is walked on anyway. A thing's mask blocks the floor, but not where
+ * someone brushed floor over it (the free bridge across a rock, the person's stroke up a slope), and not over a
+ * smaller walk-on thing inside it: stairs cut into a rock, a jetty running under a boathouse's mask. A thing smaller
+ * than the walk-on thing it stands on (a barrel on the jetty) still blocks it.
+ */
+export function wayClear(things: ThingIn[], blocking: ThingIn[], said: Mask | undefined): { inTheWay: Mask; walkedAnyway: Mask } {
+  const walkOns = things.filter((t) => t.kind === 'walk-on').map((t) => ({ mask: t.mask, px: maskArea(t.mask) }));
+  const masks = blocking.map((t) => {
+    const px = maskArea(t.mask);
+    const under = walkOns.filter((w) => w.px > 0 && w.px < px).map((w) => w.mask);
+    return under.length ? subtract(t.mask, unionAll(W, H, under)) : t.mask;
+  });
+  const raw = unionAll(W, H, blocking.map((t) => t.mask));
+  let inTheWay = unionAll(W, H, masks);
+  if (said) inTheWay = subtract(inTheWay, said);
+  // Pixels some thing's mask covers that are walked on all the same: the footprints there are lifted too.
+  const walkedAnyway = subtract(raw, inTheWay);
+  return { inTheWay, walkedAnyway };
+}
+
 export async function derive(memo: Memo, input: DeriveIn, log: (line: string) => void): Promise<Derived> {
   const { place, layout, things, floors, painting, carry } = input;
   const role = new Map(place.things.map((t) => [t.key, t.role]));
@@ -123,8 +149,9 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   // floors drawn for the place say where to walk.
   const sprawling = (t: ThingIn) => t.kind !== 'walk-on' && t.kind !== 'flat'
     && (((t.coarse || t.source === 'sketch-colour') && (() => { const b = maskBox(t.mask); return !!b && b[2] - b[0] > W / 3; })()) || maskArea(t.mask) > (W * H) / 4);
-  const inTheWay = unionAll(W, H, things.filter((t) => t.kind !== 'walk-on' && !sprawling(t)).map((t) => t.mask));
-  const ground = union(floorAny, walkOn);
+  const { inTheWay, walkedAnyway } = wayClear(things, things.filter((t) => t.kind !== 'walk-on' && !sprawling(t)), input.said);
+  const ground = input.said ? unionAll(W, H, [floorAny, walkOn, input.said]) : union(floorAny, walkOn);
+  if (maskArea(walkedAnyway) > 0) log(`${maskArea(walkedAnyway)} px of things' masks walked on anyway (brushed floor, or stairs and walk-on things inside them)`);
 
   // Standing things (and things on top of nothing) meet the floor; coarse masks still block it.
   const standing = things.filter((t) => (t.kind === 'standing' || t.kind === 'on-top') && !sprawling(t));
@@ -132,7 +159,8 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   const onFloor = blobs.filter((b) => things.find((t) => t.key === b.thing)!.kind === 'standing');
   // A coarse mask is a box, not a silhouette: nobody walks behind it, and all of it is in the way.
   const isCoarse = (b: Blob) => things.find((t) => t.key === b.thing)!.coarse;
-  const footprint = union(footprintMask(onFloor), unionAll(W, H, onFloor.filter(isCoarse).map((b) => b.mask)));
+  // No footprint where the floor is walked on anyway: a rock's foot line must not cut the stairs cut into it.
+  const footprint = subtract(union(footprintMask(onFloor), unionAll(W, H, onFloor.filter(isCoarse).map((b) => b.mask))), input.said ? union(walkedAnyway, input.said) : walkedAnyway);
   const behind = unionAll(W, H, onFloor.filter((b) => !isCoarse(b)).map((b) => hiddenFloor(b, ground)));
   const walkPx = subtract(union(subtract(ground, inTheWay), behind), footprint);
 

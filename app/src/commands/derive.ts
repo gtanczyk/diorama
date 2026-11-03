@@ -4,7 +4,8 @@ import { maskArea, maskFromPng, maskToPng, emptyMask } from '../image/mask.ts';
 import { PALETTE, svgLabel, tintOver } from '../image/overlay.ts';
 import { Geometry, personPx } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
-import { placeNpcs, readCorrections } from '../scene/corrections.ts';
+import { brush, placeNpcs, readCorrections, type Corrections } from '../scene/corrections.ts';
+import { cellsMask } from '../scene/locate.ts';
 import { derive, type ThingIn } from '../scene/derive.ts';
 import { depthMap, uprightTest } from '../scene/depthmap.ts';
 import { paintedGlows } from '../scene/glows.ts';
@@ -70,6 +71,19 @@ async function walkPicture(painting: Buffer, g: Geometry, footprint: ThingIn['ma
   return tintOver(painting, tints, svg.join(''));
 }
 
+/**
+ * The floor someone said is floor: each floor's strokes that add (the person's, the agent's, the free bridge's)
+ * and the cells the person added. Erase strokes after them take back what they cover.
+ */
+export function saidFloor(c: Corrections): ThingIn['mask'] | undefined {
+  const floors = Object.values(c.floors);
+  const strokes = floors.flatMap((f) => f.strokes);
+  const cells = floors.flatMap((f) => f.add);
+  if (!cells.length && !strokes.some((s) => s.mode === 'add')) return undefined;
+  const said = brush(cells.length ? cellsMask(cells) : emptyMask(FRAME.width, FRAME.height), strokes);
+  return maskArea(said) ? said : undefined;
+}
+
 defineCommand({
   name: 'derive',
   usage: 'derive <slug> [place...] measure walk grid, scale and occluders from the masks (geometry.json)',
@@ -93,6 +107,7 @@ defineCommand({
       const previousScale = before && { ...before, source: before.source ?? ('spark' as const) };
       const lastScale = carry ? previousScale : undefined;
       const start = readCorrections(at()).start;
+      const said = saidFloor(readCorrections(at()));
       // The lights as painted: the layout's points are guesses made before the painting (a lighthouse lamp drawn
       // 170 px above its point). The runtime glows sit on them, and the lamp that lights the ground is found by them.
       const holders = things.filter((t) => t.kind !== 'walk-on' && t.kind !== 'flat').map((t) => t.mask);
@@ -104,7 +119,7 @@ defineCommand({
         console.log(`  ${place.key}: no depth model for walls (${e.message})`);
         return undefined;
       });
-      const out = await derive(files.memo, { place, layout: asPainted, things, floors, painting, plates, carry, lastScale, previousScale, ...(start && { start }), ...(upright && { upright }) }, (line) => console.log(`  ${place.key}: ${line}`));
+      const out = await derive(files.memo, { place, layout: asPainted, things, floors, painting, plates, carry, lastScale, previousScale, ...(start && { start }), ...(upright && { upright }), ...(said && { said }) }, (line) => console.log(`  ${place.key}: ${line}`));
       // Shadows only with a light: without one the runtime has nothing to darken by.
       const lit = out.shadows.light && maskArea(out.shadows.mask) > 0;
       if (lit) files.write(at('masks', 'shadows.png'), await maskToPng(out.shadows.mask));

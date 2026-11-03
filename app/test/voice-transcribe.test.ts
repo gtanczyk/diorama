@@ -6,7 +6,7 @@ import { Memo } from '../src/meta/memo.ts';
 import { transcribe } from '../src/meta/voice.ts';
 
 vi.mock('../src/meta/http.ts', () => ({ apiKey: () => 'test' }));
-type Outcome = 'ok' | 'backlog' | 'unauthorized' | 'silent' | 'early-close' | 'malformed' | 'buffered';
+type Outcome = 'ok' | 'slow' | 'backlog' | 'unauthorized' | 'silent' | 'early-close' | 'malformed' | 'buffered';
 let root: string, memo: Memo, plan: Outcome[], sockets: FakeSocket[], active: number, maxActive: number;
 class FakeSocket {
   readyState = 0;
@@ -43,6 +43,7 @@ class FakeSocket {
         this.bufferedAmount = 3840 * 8;
         setTimeout(() => { this.bufferedAmount = 0; }, 300);
       }
+      if (this.frames.length === 2 && this.outcome === 'slow') this.message({ type: 'error', message: 'Ingress audio slower than real-time' });
       if (this.frames.length === 2 && this.outcome === 'backlog') this.message({ type: 'error', message: 'Audio processing backlog too large' });
       if (this.frames.length === 2 && this.outcome === 'early-close') this.close(1000);
     }
@@ -67,14 +68,15 @@ afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('backlog slows the next stream, clamps legacy 10x callers, and cancels the failed sender', async () => {
+test('backlog retries on the clock, clamps legacy 10x callers, and cancels the failed sender', async () => {
   plan = ['backlog', 'ok'];
   const result = transcribe(memo, 'preview', Buffer.alloc(3840 * 3), 10);
   await vi.runAllTimersAsync();
   expect(await result).toBe('Cześć!');
   expect(sockets).toHaveLength(2);
   expect(sockets[0].frames[1] - sockets[0].frames[0]).toBe(80);
-  expect(sockets[1].frames[1] - sockets[1].frames[0]).toBe(160);
+  // Never slower than real time on a retry: the server drops a stream that falls behind.
+  expect(sockets[1].frames[1] - sockets[1].frames[0]).toBe(80);
   expect(sockets[0].frames).toHaveLength(2);
   expect(maxActive).toBe(1);
 });
@@ -87,12 +89,29 @@ test('preview and line validation share one stream slot, which is released after
   expect(await good).toBe('Cześć!'); expect(maxActive).toBe(1); expect(sockets).toHaveLength(2);
 });
 
-test('persistent backlog is bounded to four attempts with decreasing rates', async () => {
+test('persistent backlog is bounded to four attempts, each at real time', async () => {
   plan = Array(4).fill('backlog');
   const failed = expect(transcribe(memo, 'preview', Buffer.alloc(7680))).rejects.toThrow('backlog');
   await vi.runAllTimersAsync(); await failed;
   expect(sockets).toHaveLength(4);
-  expect(sockets.map((s) => s.frames[1] - s.frames[0])).toEqual([80, 160, 320, 320]);
+  expect(sockets.map((s) => s.frames[1] - s.frames[0])).toEqual([80, 80, 80, 80]);
+});
+
+test('"Ingress audio slower than real-time" is retried, not a failed line', async () => {
+  plan = ['slow', 'slow', 'ok'];
+  const good = transcribe(memo, 'slow', Buffer.alloc(7680));
+  await vi.runAllTimersAsync();
+  expect(await good).toBe('Cześć!'); expect(sockets).toHaveLength(3);
+});
+
+test('frames go by the clock from the first: a late timer does not push the rest behind real time', async () => {
+  plan = ['buffered'];
+  // The socket holds the second frame back 300 ms: the frames after it catch up instead of drifting 300 ms late.
+  const good = transcribe(memo, 'catch-up', Buffer.alloc(3840 * 10));
+  await vi.runAllTimersAsync(); await good;
+  const f = sockets[0].frames;
+  expect(f[9] - f[0]).toBeLessThanOrEqual(9 * 80 + 20);
+  expect(f.at(-1)! - f[0]).toBeLessThanOrEqual((10 + 12) * 80 + 20);
 });
 
 test('a long preview has enough time to finish real-time transmission', async () => {

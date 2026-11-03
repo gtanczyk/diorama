@@ -38,6 +38,16 @@ ${floors.join('\n')}
 Keep the connected walking surfaces, their joins and their frame-edge exits in these positions. A floor must remain solid usable ground, never water, a drop, a railing or an obstacle. Leave an approach on connected ground beside every item and exit. Do not replace a nearby interactive object with a distant decorative copy. Do not invent extra bridges to compensate for moving objects. The first image controls composition; other references control appearance only.`;
 }
 
+/**
+ * Spark's yes/no and its note disagree now and then: approach=false with "Continuous planks lead to it" rejected a
+ * pier six times over. A no counts when its note names what is in the way; a no whose note names nothing in the way
+ * is kept as drift (soft), and derive and verify measure the reach on the painting itself (SPOT_UNREACHABLE,
+ * FLOOR_UNREACHABLE) and send real breaks to repair.
+ */
+const BLOCKED = /\b(no|not|never|without|cannot|can't|cant|isn't|doesn't|don't|nothing)\b|\bn't\b|water|sea\b|river|gap|drop|cliff|ledge|railing|fence|wall|barrier|block|obstruct|cut off|cut-off|sever|broken|break|missing|absent|unreach|inaccessib|isolat|separat|float|detach|disconnect|across|beyond|away from|moved|shifted|displaced|only (by|via|through)|too (steep|far|high|small|narrow)/i;
+export const CONTRADICTED = "(Spark's note names nothing in the way)";
+const saysBlocked = (why: string) => BLOCKED.test(why);
+
 /** Fail closed on incomplete observations: an omitted floor is not evidence that it is connected. */
 export function paintedLayoutIssues(place: Place, layout: Layout, seen: PaintedLayout): string[] {
   const issues: string[] = [];
@@ -55,16 +65,16 @@ export function paintedLayoutIssues(place: Place, layout: Layout, seen: PaintedL
       || Math.abs(bottom - planned.footY) > Math.max(55, planned.height * 0.4)) issues.push(`${t.key}: moved from its planned box to [${s.box.join(', ')}]; ${s.why}`);
     const w = (r - l) / planned.width, h = (bottom - top) / planned.height;
     if (w < 0.45 || w > 2.2 || h < 0.45 || h > 2.2) issues.push(`${t.key}: painted size differs too much from its planned box; ${s.why}`);
-    if (t.role !== 'prop' && !s.approach) issues.push(`${t.key}: no usable approach on connected ground; ${s.why}`);
+    if (t.role !== 'prop' && !s.approach) issues.push(`${t.key}: no usable approach on connected ground; ${s.why}${saysBlocked(s.why) ? '' : ` ${CONTRADICTED}`}`);
   }
   for (const f of layout.floors) {
     const matches = seen.floors.filter((s) => s.key === f.key);
     if (matches.length !== 1) { issues.push(`${f.key}: comparison must inspect this floor exactly once`); continue; }
     const s = matches[0];
     if (s.coverage < 0.6) issues.push(`${f.key}: only ${Math.round(s.coverage * 100)}% of its planned area is walkable ground; ${s.why}`);
-    if (!s.connected) issues.push(`${f.key}: its planned connection to the main floor is broken; ${s.why}`);
+    if (!s.connected) issues.push(`${f.key}: its planned connection to the main floor is broken; ${s.why}${saysBlocked(s.why) ? '' : ` ${CONTRADICTED}`}`);
     const edge = f.outline.some(([x, y]) => x <= 1 || x >= FRAME.width - 1 || y <= 1 || y >= FRAME.height - 1);
-    if (edge && !s.reachesEdges) issues.push(`${f.key}: the planned route no longer reaches its frame edge; ${s.why}`);
+    if (edge && !s.reachesEdges) issues.push(`${f.key}: the planned route no longer reaches its frame edge; ${s.why}${saysBlocked(s.why) ? '' : ` ${CONTRADICTED}`}`);
   }
   return issues;
 }
@@ -88,7 +98,7 @@ const REPAIRS = 1;
  * every painting; failing on it left new worlds with no painting at all). What breaks play still repaints: a
  * floor gone, cut off or not reaching its exit, a story thing missing or out of reach, people painted in.
  */
-export const softIssue = (issue: string) => /^camera horizon moved|: moved from its planned box|: painted size differs too much/.test(issue);
+export const softIssue = (issue: string) => /^camera horizon moved|: moved from its planned box|: painted size differs too much/.test(issue) || issue.endsWith(CONTRADICTED);
 
 export type LayoutAttempt = { seen: PaintedLayout; issues: string[] };
 export class PaintingLayoutError extends Error {

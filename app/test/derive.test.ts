@@ -144,3 +144,23 @@ test('scale takes: each point gets the median of what Spark said, skipped points
   const takes = [[{ x: 100, y: 500, px: 100 }, { x: 300, y: 800, px: 300 }], [{ x: 101, y: 500, px: 140 }], [{ x: 100, y: 500, px: 120 }, { x: 300, y: 800, px: 260 }]];
   expect(medianPeople(points, takes)).toEqual([{ x: 100, y: 500, px: 120 }, { x: 300, y: 800, px: 280 }]);
 });
+
+test('star-keeper island: brushed floor and stairs cut into a rock are walked on; a barrel on a jetty still blocks it', async () => {
+  const { wayClear } = await import('../src/scene/derive.ts');
+  const { saidFloor } = await import('../src/commands/derive.ts');
+  const { Corrections } = await import('../src/scene/corrections.ts');
+  const thing = (key: string, kind: 'standing' | 'walk-on', mask: ReturnType<typeof rectMask>) => ({ key, kind, source: 'sam-text' as const, coarse: false, mask });
+  const rock = thing('rock', 'standing', rectMask(W, H, [400, 200, 800, 600]));
+  const stairs = thing('stairs', 'walk-on', rectMask(W, H, [560, 300, 640, 600]));
+  const jetty = thing('jetty', 'walk-on', rectMask(W, H, [0, 700, 400, 800]));
+  const barrel = thing('barrel', 'standing', rectMask(W, H, [100, 700, 140, 760]));
+  const said = saidFloor(Corrections.parse({ floors: { top: { strokes: [{ mode: 'add', radius: 14, points: [[420, 220], [780, 220]] }] } } }))!;
+  const { inTheWay, walkedAnyway } = wayClear([rock, stairs, jetty, barrel], [rock, barrel], said);
+  const at = (m: typeof inTheWay, x: number, y: number) => m.bits[y * W + x];
+  expect(at(inTheWay, 600, 450)).toBe(0); // the stairs inside the rock
+  expect(at(inTheWay, 500, 220)).toBe(0); // the brushed rock top
+  expect(at(inTheWay, 500, 450)).toBe(1); // the rest of the rock
+  expect(at(inTheWay, 120, 730)).toBe(1); // the barrel on the jetty
+  expect(at(walkedAnyway, 600, 450)).toBe(1);
+  expect(saidFloor(Corrections.parse({}))).toBeUndefined();
+});

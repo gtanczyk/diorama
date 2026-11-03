@@ -10,7 +10,7 @@ vi.mock('../src/scene/brief.ts', async (importOriginal) => ({ ...await importOri
 import { askSparkJson } from '../src/meta/spark.ts';
 import { museEdit } from '../src/meta/muse.ts';
 import { Memo } from '../src/meta/memo.ts';
-import { alignPainting, PaintedLayout, PaintingLayoutError, paintedLayoutIssues, paintingLayoutHash, type PaintedLayout as Seen } from '../src/scene/paint-layout.ts';
+import { alignPainting, PaintedLayout, PaintingLayoutError, paintedLayoutIssues, paintingLayoutHash, softIssue, type PaintedLayout as Seen } from '../src/scene/paint-layout.ts';
 import { Layout } from '../src/scene/layout.ts';
 import { Place } from '../src/world/schema.ts';
 import { registry } from '../src/registry.ts';
@@ -152,4 +152,17 @@ test('drift alone (camera, a moved or resized thing) is kept without a repaint; 
   const result = await alignPainting(new Memo(dir), place, layout, plan, original, brief, 0);
   expect(result.painting).toEqual(original); expect(museEdit).not.toHaveBeenCalled();
   expect(result.attempts[0].issues.length).toBeGreaterThan(0);
+});
+
+test('star-keeper pier: a no whose own note says the way is clear is drift, a no naming what blocks it repairs', () => {
+  const s = passing();
+  s.things[1] = { ...s.things[1], approach: false, why: 'Continuous planks lead to it from the main pier' };
+  const soft = paintedLayoutIssues(place, layout, s);
+  expect(soft).toHaveLength(1);
+  expect(soft.every(softIssue)).toBe(true);
+  s.things[1] = { ...s.things[1], why: 'it sits on a boat beyond open water' };
+  s.floors[1] = { ...s.floors[1], connected: false, why: 'the stairs end at a sheer drop' };
+  const hard = paintedLayoutIssues(place, layout, s);
+  expect(hard).toHaveLength(2);
+  expect(hard.some(softIssue)).toBe(false);
 });

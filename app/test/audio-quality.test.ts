@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Memo } from '../src/meta/memo.ts';
 import { transcribe } from '../src/meta/voice.ts';
-import { Cast, designVoice, heardMatch, heardOk, previewText, profileKey, reusableDesign, speechRequest, stockVoices, storyLines, voiceCandidates, voiceLine } from '../src/sound/voices.ts';
+import { Cast, designVoice, heardMatch, heardOk, previewText, profileKey, reusableDesign, soundsOnly, speechRequest, stockVoices, storyLines, voiceCandidates, voiceLine } from '../src/sound/voices.ts';
 import { soundQuality, ttsModel } from '../src/sound/cost.ts';
 import { decode, encodeMp3, RATE, type Pcm } from '../src/sound/pcm.ts';
 import { forgetEffect, soundEffect } from '../src/sound/sources.ts';
@@ -208,4 +208,17 @@ test('game data excludes old mismatched effects and rejected loops while preserv
   expect(data.shots.ending).toBeUndefined();
   expect(data.lines).not.toHaveProperty('Cześć!');
   expect(spokenLine(data, 'Cześć!', 'owl')?.file).toBe('owl.mp3');
+});
+
+test('a laugh is no words to transcribe: its first clean take is used, flagged, without listening back', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response('audio')));
+  vi.mocked(transcribe).mockResolvedValue('');
+  const done = await voiceLine(memo, { speaker: 'hero', text: 'Hee hee!' }, actor(), () => 'out.mp3');
+  expect(done.flags).toContain('a sound, not words: not checked by transcript');
+  expect(transcribe).not.toHaveBeenCalled();
+  expect(soundsOnly('Hee hee!')).toBe(true);
+  expect(soundsOnly('Hahaha... hmm.')).toBe(true);
+  expect(soundsOnly('Hihi, och!')).toBe(true);
+  expect(soundsOnly('Hee hee, got you!')).toBe(false);
+  expect(soundsOnly('Do widzenia.')).toBe(false);
 });
