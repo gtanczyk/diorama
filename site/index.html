@@ -144,6 +144,28 @@ footer.day a { color: var(--paper-ink); }
   .sticky { position: relative; height: 100vh; }
 }
 
+
+/* the beach after the storm: torn paper bands, three waves washing up the sand, the paper boat on shore */
+.beach { position: relative; height: clamp(420px, 78vh, 760px); overflow: hidden; background: linear-gradient(180deg, var(--day) 0%, #fbe6c8 45%, #f6d9b4 60%); color: var(--paper-ink); }
+.beach-art { position: absolute; inset: 0; width: 100%; height: 100%; }
+.beach .wave { animation: wash 8s cubic-bezier(.45,0,.35,1) infinite; }
+.beach .w2 { animation-delay: -2.7s; animation-duration: 8.6s; }
+.beach .w3 { animation-delay: -5.3s; animation-duration: 9.2s; }
+@keyframes wash { 0%, 100% { transform: translateY(-34px); } 55% { transform: translateY(26px); } }
+.beach .wet { animation: wet 8s ease-in-out infinite; opacity: .5; }
+@keyframes wet { 0%, 100% { opacity: .25; } 60% { opacity: .65; } }
+.beach .gulls { animation: glide 16s ease-in-out infinite alternate; }
+@media (max-width: 640px) { .beach .gulls { display: none; } }
+  .beach .rip { animation: rip 11s ease-in-out infinite alternate; }
+.beach .rip.r2 { animation-duration: 7s; }
+@keyframes rip { to { transform: translateX(-40px); } }
+@keyframes glide { to { transform: translate(140px, -14px); } }
+.beach .boat { animation: rock 5s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: 50% 100%; }
+@keyframes rock { to { rotate: 3deg; } }
+.beach-copy { position: relative; padding-block: 56px 0; display: grid; gap: 10px; }
+.beach-copy .label { color: #8a6a3a; }
+.hand-note { font-family: var(--hand); font-size: 28px; color: var(--paper-ink); margin-top: 4px; }
+
 /* torn band dividers */
 .band { position: relative; }
 .band.paper { background: var(--paper); color: var(--paper-ink); }
@@ -388,6 +410,33 @@ footer a { color: var(--foam); }
         <source src="media/storm-720.mp4" type="video/mp4">
       </video>
     </div>
+  </div>
+</section>
+
+<section class="beach" id="beach" data-sound="dawn" aria-labelledby="beach-title">
+  <svg class="beach-art" viewBox="0 0 1200 560" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <defs>
+      <filter id="paper" x="-5%" y="-20%" width="110%" height="140%"><feDropShadow dx="0" dy="-3" stdDeviation="3" flood-color="#5b3d1f" flood-opacity=".22"/></filter>
+      <filter id="lift" x="-10%" y="-10%" width="120%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#5b3d1f" flood-opacity=".3"/></filter>
+    </defs>
+    <g class="pl" data-d="0.15"><circle cx="880" cy="96" r="54" fill="#ffd77a"/><circle cx="880" cy="96" r="80" fill="#ffd77a" opacity=".25"/></g>
+    <g class="pl" data-d="0.25"><path id="b-cloud1" fill="#fff7ea" filter="url(#paper)"/><path id="b-cloud2" fill="#fff2df" filter="url(#paper)"/></g>
+    <g class="pl gulls" data-d="0.3" fill="none" stroke="#3b4a68" stroke-width="3" stroke-linecap="round"><path d="M640 120 q10-10 20 0 q10-10 20 0"/><path d="M700 96 q8-8 16 0 q8-8 16 0"/></g>
+    <g class="pl" data-d="0.35"><path id="b-far" fill="#4f86b3" filter="url(#paper)"/><path id="b-rip1" class="rip" fill="#6b9cc4"/></g>
+    <g class="pl" data-d="0.45"><path id="b-mid" fill="#5f9cc4" filter="url(#paper)"/><path id="b-rip2" class="rip" fill="#7aaed2"/><path id="b-rip3" class="rip r2" fill="#86b9d9"/></g>
+    <g class="pl" data-d="0.55"><path id="b-sand" fill="#e9cf9f" filter="url(#paper)"/><path id="b-wet" class="wet" fill="#d4b47f"/></g>
+    <g class="wave w1"><path id="b-w1" fill="#7fb7d3" filter="url(#paper)"/><path id="b-f1" fill="#fffaf0"/></g>
+    <g class="wave w2"><path id="b-w2" fill="#94c6dc" filter="url(#paper)"/><path id="b-f2" fill="#fffaf0"/></g>
+    <g class="wave w3"><path id="b-w3" fill="#a9d3e3" filter="url(#paper)"/><path id="b-f3" fill="#fffdf6"/></g>
+    <g class="pl" data-d="0.8"><path id="b-front" fill="#f2ddb5" filter="url(#paper)"/>
+      <g class="boat" filter="url(#lift)" transform="translate(560 482) rotate(-6) scale(1.15)"><path d="M-70 0 L70 0 L44 26 L-44 26 Z" fill="#fffdf8"/><path d="M-70 0 L0 -58 L0 0 Z" fill="#f3efe6"/><path d="M0 -58 L70 0 L0 0 Z" fill="#e4ddcf"/><path d="M-70 0 L70 0 L44 26 L-44 26 Z" fill="none" stroke="#cfc4b0" stroke-width="1.5"/></g>
+      <path d="M660 520 q6-10 14 0 M694 532 q6-10 14 0" fill="none" stroke="#c9a96f" stroke-width="3" stroke-linecap="round"/>
+    </g>
+  </svg>
+  <div class="wrap beach-copy">
+    <span class="label">The next morning</span>
+    <h2 id="beach-title">The sea is calm again.</h2>
+    <p class="hand-note">and the paper boat made it ↘</p>
   </div>
 </section>
 
@@ -650,6 +699,44 @@ npx -y @gtanczyk/diorama setup</code></li>
   if (clip && 'IntersectionObserver' in window && !reduce) {
     new IntersectionObserver(function (e) { if (e[0].isIntersecting) clip.play().catch(function () {}); else clip.pause(); }, { threshold: 0.4 }).observe(clip);
   } else if (clip) clip.controls = true;
+
+
+  /* the beach: seeded torn edges for each paper band, and a little parallax as it scrolls by */
+  (function () {
+    var r = rnd(42);
+    function torn(y0, amp, step, closeY, wave) {
+      var d = 'M-20 ' + closeY + ' L-20 ' + y0, x = -20;
+      while (x < 1220) { x += step * (0.6 + r() * 0.8); var y = y0 + (wave ? Math.sin(x / wave) * amp * 1.6 : 0) + (r() - 0.5) * amp; d += ' L' + x.toFixed(1) + ' ' + y.toFixed(1); }
+      return d + ' L1220 ' + closeY + ' Z';
+    }
+    function cloud(cx, cy, w) { var d = 'M' + (cx - w) + ' ' + cy, x = cx - w; while (x < cx + w) { x += 14 + r() * 18; var t = (x - (cx - w)) / (2 * w); d += ' L' + x.toFixed(1) + ' ' + (cy - Math.sin(t * Math.PI) * w * 0.32 - r() * 8).toFixed(1); } return d + ' Z'; }
+    function set(id, d) { var el = document.getElementById(id); if (el) el.setAttribute('d', d); }
+    set('b-cloud1', cloud(760, 200, 110)); set('b-cloud2', cloud(1080, 160, 80));
+    set('b-rip1', torn(268, 3, 30, 274, 60)); set('b-rip2', torn(300, 3, 28, 306, 80)); set('b-rip3', torn(330, 3, 26, 336, 50));
+    set('b-far', torn(250, 6, 26, 560, 0)); set('b-mid', torn(290, 8, 22, 560, 90));
+    set('b-sand', torn(360, 10, 24, 560, 140)); set('b-wet', torn(372, 10, 24, 430, 140));
+    // a wave sheet: from the far sea down to a frothy leading edge; the foam is a thin torn band along that edge
+    function sheet(id, foam, edge, amp, wl) {
+      var top = edge - 46 - r() * 10, pts = [], x = -20, tops = [];
+      while (x < 1220) { x += 18 * (0.6 + r() * 0.8); pts.push([x, edge + Math.sin(x / wl) * amp + (r() - 0.5) * 6]); }
+      var d = 'M-20 ' + top + ' L-20 ' + edge; pts.forEach(function (p) { d += ' L' + p[0].toFixed(1) + ' ' + p[1].toFixed(1); });
+      for (var j = pts.length - 1; j >= 0; j--) d += ' L' + pts[j][0].toFixed(1) + ' ' + (top + Math.sin(pts[j][0] / (wl * 0.7)) * 6 + (r() - 0.5) * 5).toFixed(1);
+      d += ' Z';
+      var f = 'M-20 ' + (edge - 4); pts.forEach(function (p) { f += ' L' + p[0].toFixed(1) + ' ' + (p[1] - 6 - r() * 4).toFixed(1); });
+      for (var i = pts.length - 1; i >= 0; i--) f += ' L' + pts[i][0].toFixed(1) + ' ' + (pts[i][1] + 3 + r() * 3).toFixed(1);
+      set(id, d); set(foam, f + ' Z');
+    }
+    sheet('b-w1', 'b-f1', 352, 10, 110); sheet('b-w2', 'b-f2', 392, 12, 140); sheet('b-w3', 'b-f3', 428, 9, 170);
+    set('b-front', torn(468, 12, 30, 600, 200));
+    var beach = document.getElementById('beach'), pls = beach ? [].slice.call(beach.querySelectorAll('.pl')) : [];
+    function para() {
+      if (!beach || reduce) return;
+      var b = beach.getBoundingClientRect(); if (b.bottom < 0 || b.top > innerHeight) return;
+      var k = (b.top + b.height / 2 - innerHeight / 2) / innerHeight;
+      pls.forEach(function (g) { g.setAttribute('transform', 'translate(0 ' + (k * 60 * (1 - +g.dataset.d)).toFixed(1) + ')'); });
+    }
+    addEventListener('scroll', para, { passive: true }); para();
+  })();
 
   /* sound: one loop per mood, crossfaded to the section in the middle of the screen */
   var SOUNDS = { storm: ['media/snd/storm.mp3', 0.9, 'Rain on the quay'], paper: ['media/snd/paper.mp3', 0.7, 'Paper'], mill: ['media/snd/mill.mp3', 0.8, 'The waterfall'], sea: ['media/snd/sea.mp3', 0.75, 'Sea at the rock'], dawn: ['media/snd/dawn.mp3', 0.8, 'Morning'] };
