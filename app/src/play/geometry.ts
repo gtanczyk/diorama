@@ -52,8 +52,10 @@ export const Geometry = z.object({
    * The light the painting is lit by. dir/length: how shadows run on screen per height (the sun). With `at`
    * the light is a fire or a lamp standing on the floor there: shadows run away from it, each its own way.
    * flame: that light is a living flame (a fire, a torch, a candle): it flickers, and the shadows with it.
+   * also: where its twins stand (a row of the same lamp posts): no one of them is the key light, so a person
+   * casts no long shadow one way, only the soft one under the feet; the nearest lamp still rims them.
    */
-  light: z.object({ dir: XY, length: z.number().nonnegative(), strength: z.number().min(0).max(1), at: XY.optional(), flame: z.boolean().optional() }).optional(),
+  light: z.object({ dir: XY, length: z.number().nonnegative(), strength: z.number().min(0).max(1), at: XY.optional(), flame: z.boolean().optional(), also: z.array(XY).optional() }).optional(),
   /** Mask (relative to the place folder) of painted shadows on floors: a person standing in one is darkened. */
   shadows: z.string().optional(),
   /**
@@ -227,7 +229,17 @@ export function stepRestY(g: Geometry, x: number, y: number, dir = 1): number {
 export function lightFor(g: Geometry, x: number, y: number, px: number, t?: number): Geometry['light'] {
   const light = g.light;
   if (!light?.at) return light;
-  const at = flameAt(g, t);
+  // A row of alike lamps: the one lighting this person most.
+  return [flameAt(g, t), ...(light.also ?? [])].map((at) => lampLight(light, at, x, y, px, t)).reduce((a, b) => (!a || (b && b.strength > a.strength) ? b : a), undefined);
+}
+
+/** Whether a person's shadow is cast one way: not under a row of alike lamps, where no one of them is the key light. */
+export function castsShadow(g: Geometry): boolean {
+  return !!g.light && !g.light.also?.length;
+}
+
+/** The light of a lamp or a fire standing at `at` on a person at (x, y), px tall; undefined out of its reach. */
+function lampLight(light: NonNullable<Geometry['light']>, at: [number, number], x: number, y: number, px: number, t?: number): Geometry['light'] {
   const [dx, dy] = [x - at[0], y - at[1]];
   const d = Math.hypot(dx, dy);
   const reach = 4 * px;

@@ -453,8 +453,8 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   // The questions about shadows, lights and steps were asked alongside the scale's.
   const [shadows, fire, steps] = await Promise.all([shadowsAsked, fireAsked, stepsAsked]);
   if (fire) {
-    shadows.light = { dir: [0, 1], length: 1.5, strength: shadows.light?.strength ?? 0.45, at: fire.at, ...(fire.flame && { flame: true }) };
-    log(`light from ${fire.key} at ${fire.at.join(', ')}${fire.flame ? ' (a flame)' : ''}`);
+    shadows.light = { dir: [0, 1], length: 1.5, strength: shadows.light?.strength ?? 0.45, at: fire.at, ...(fire.flame && { flame: true }), ...(fire.also && { also: fire.also }) };
+    log(`light from ${fire.key} at ${fire.at.join(', ')}${fire.flame ? ' (a flame)' : ''}${fire.also ? `, and ${fire.also.length} alike at ${fire.also.map((a) => a.join(', ')).join('; ')}` : ''}`);
   }
   if (shadows.light && !shadows.light.at) log(`light ${shadows.light.dir.join(', ')} x${shadows.light.length}, strength ${shadows.light.strength} (${shadows.source})`);
 

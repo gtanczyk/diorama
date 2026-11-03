@@ -1,7 +1,7 @@
 import { exitOutline } from '../src/play/exit-outline.ts';
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
 import { hashSeed } from '../src/play/weather.ts';
-import { FLAME_GLOW, FLAME_SWAY_M, flameAt, depthStretch, flicker, floorYAt, hiddenRuns, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
+import { FLAME_GLOW, FLAME_SWAY_M, flameAt, depthStretch, flicker, floorYAt, hiddenRuns, castsShadow, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { backdropTransforms, backEdge, cardY, flatDisparities, flatsUnderFloats, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, RIM_ALPHA, RIM_COLOUR, RIM_WIDTH, SEPARATE_ALPHA, SEPARATE_BLUR, SEPARATE_SHIFT } from '../src/play/focus.ts';
@@ -2124,9 +2124,10 @@ class Game {
     // One shadow per person. Under the sun the cast shadow is it, so the soft blob around the feet gives way to
     // it (two shadows read as two lights) and only a thin dark contact under the soles stays. In shade, fog or
     // no measured light, the blob is the whole shadow.
-    // The sun, or a fire's light on this person (its own way, fading with distance).
+    // The sun, or a fire's light on this person (its own way, fading with distance). Under a row of alike lamps
+    // (two lamp posts on a quay) no shadow runs one way: only the soft blob under the feet.
     const light = lightFor(g, x, y, unit, this.time);
-    const cast = light && light.length > 0 && light.strength > 0.02 && shaded < 0.98 ? 1 - shaded : 0;
+    const cast = castsShadow(g) && light && light.length > 0 && light.strength > 0.02 && shaded < 0.98 ? 1 - shaded : 0;
     const blob = (0.12 + 0.4 * strength) * (1 - cast);
     // Shadows lie on the floor: every one is drawn before the things and the people (the shadow layer), so a
     // near person's long shadow never darkens someone farther away or a fire behind them.
@@ -2366,7 +2367,8 @@ class Game {
     const tall = own && own.box[3] - own.box[1] > 1.5 * (own.box[2] - own.box[0]);
     const up = tall ? (0.9 * (own.box[3] - own.box[1]) * 1.62) / px : 1;
     const shadows: Fire['shadows'] = [];
-    if (depth) {
+    // Under a row of alike lamps no thing's shadow runs from one of them either.
+    if (depth && castsShadow(g)) {
       const S = DEPTH_SCALE;
       const owner = ownerMap(depth, cuts.filter((c) => !c.occ.front && !holds(c.occ.box) && !(c.occ.thing && (gone.has(c.occ.thing) || c.occ.thing === own?.key))));
       for (const side of g.light!.flame ? [-1, 0, 1] : [0]) {

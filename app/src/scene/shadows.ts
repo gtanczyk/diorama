@@ -17,7 +17,7 @@ const { width: W, height: H } = FRAME;
 
 /** Light as the runtime takes it: where shadows fall on screen (+y toward the viewer), how long they are
  * per px of the caster's height, and how much darker the floor is in shadow (0 none, 1 black). */
-export type Light = { dir: [number, number]; length: number; strength: number; at?: [number, number] };
+export type Light = { dir: [number, number]; length: number; strength: number; at?: [number, number]; also?: Array<[number, number]> };
 export type CasterShadow = { thing: string; px: number; dir?: [number, number]; length?: number };
 export type Shadows = { mask: Mask; light?: Light; casters: CasterShadow[]; source: 'casters' | 'spark' | 'none' };
 
@@ -174,7 +174,7 @@ const SparkSource = z.object({ source: z.string(), flame: z.boolean().optional()
  * names the main light among the place's own `lights`. Asked only where the layout has lights. The light
  * stands where its thing does: the foot of a tall one (a lamp post), the middle of a low one (a fire ring).
  */
-export async function localLight(memo: Memo, label: string, painting: Buffer, lights: Array<{ key: string; box?: [number, number, number, number] }>): Promise<{ key: string; at: [number, number]; flame: boolean } | undefined> {
+export async function localLight(memo: Memo, label: string, painting: Buffer, lights: Array<{ key: string; box?: [number, number, number, number] }>): Promise<{ key: string; at: [number, number]; flame: boolean; also?: Array<[number, number]> } | undefined> {
   const placed = lights.filter((l) => l.box);
   if (!placed.length) return undefined;
   const prompt = `This is a painted background for a 2D adventure game (${W}x${H} px). It shows these light sources: ${placed.map((l) => `"${l.key}"`).join(', ')}.
@@ -183,7 +183,25 @@ Reply with JSON only: {"source": "sun"} or {"source": "<one of the names above>"
   const a = SparkSource.parse(await askSparkJson(memo, { schema: SparkSource, label, prompt, images: [painting] }));
   const hit = placed.find((l) => l.key === a.source);
   if (!hit?.box) return undefined;
-  const [x0, y0, x1, y1] = hit.box;
+  const also = placed.filter((l) => l !== hit && alikeLights(l.key, hit.key)).map((l) => lightAt(l.box!));
+  return { key: hit.key, at: lightAt(hit.box), flame: a.flame === true, ...(also.length && { also }) };
+}
+
+/** Where a light stands: the foot of a tall one (a lamp post), the middle of a low one (a fire ring). */
+function lightAt([x0, y0, x1, y1]: [number, number, number, number]): [number, number] {
   const tall = y1 - y0 > 1.5 * (x1 - x0);
-  return { key: hit.key, at: [Math.round((x0 + x1) / 2), Math.round(tall ? y1 : (y0 + y1) / 2)], flame: a.flame === true };
+  return [Math.round((x0 + x1) / 2), Math.round(tall ? y1 : (y0 + y1) / 2)];
+}
+
+/** Words that tell twins apart, not what they are. */
+const WHERE = new Set(['near', 'far', 'left', 'right', 'front', 'back', 'middle', 'centre', 'center', 'big', 'small', 'one', 'two', 'other', 'first', 'second']);
+
+/**
+ * Whether two lights are the same kind of thing (lamp-post-near and lamp-post-far): they share a word that
+ * says what they are. Two alike lamps around the walk area leave no single key light.
+ */
+export function alikeLights(a: string, b: string): boolean {
+  const words = (k: string) => k.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 2 && !WHERE.has(w));
+  const theirs = words(b);
+  return words(a).some((w) => theirs.includes(w));
 }

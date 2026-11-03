@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { depthStretch, floorYAt, hiddenRuns, hides, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, type Geometry, type Occluder } from '../src/play/geometry.ts';
+import { castsShadow, depthStretch, floorYAt, hiddenRuns, hides, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, type Geometry, type Occluder } from '../src/play/geometry.ts';
 import { WalkGrid } from '../src/play/path.ts';
 import { previewGeometry } from '../src/play/preview.ts';
 import type { Layout } from '../src/scene/layout.ts';
@@ -141,6 +141,16 @@ test('a fire throws each shadow straight away from itself, fading a few heights 
   // The sun is the same for everyone.
   const sun = { light: { dir: [1, 0], length: 1, strength: 0.4 } } as unknown as Geometry;
   expect(lightFor(sun, 10, 10, 100)).toEqual(sun.light);
+});
+
+test('under twin lamps no shadow runs one way; the nearest lamp lights the person', () => {
+  const g = { scale: { horizonY: 200, pxPerY: 0.5 }, light: { dir: [0, 1], length: 1.5, strength: 0.5, at: [200, 800], also: [[700, 600]] } } as unknown as Geometry;
+  expect(castsShadow(g)).toBe(false);
+  expect(lightFor(g, 650, 650, 200)!.at).toEqual([700, 600]);
+  expect(lightFor(g, 250, 780, 200)!.at).toEqual([200, 800]);
+  const one = { ...g, light: { ...g.light!, also: undefined } } as Geometry;
+  expect(castsShadow(one)).toBe(true);
+  expect(lightFor(one, 650, 650, 200)!.at).toEqual([200, 800]);
 });
 
 test('a flame sways and breathes; a lamp stays put', () => {

@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { maskArea } from '../src/image/mask.ts';
 import { rectMask } from '../src/image/raster.ts';
-import { darkFloor, litFloor, measure } from '../src/scene/shadows.ts';
+import { alikeLights, darkFloor, litFloor, measure } from '../src/scene/shadows.ts';
 
 const W = 1200, H = 896;
 
@@ -26,4 +26,12 @@ test('dark floor: a darker patch counts, thin cracks and things off the floor do
   for (let y = 400; y < H; y++) for (let x = 800; x < 802; x++) luma[y * W + x] = 60; // a crack between planks
   const dark = darkFloor(luma, litFloor(luma, floor), floor);
   expect(maskArea(dark)).toBe(200 * 40);
+});
+
+test('twin lamps are alike by what they are, not where they stand', () => {
+  expect(alikeLights('lamp-post-near', 'lamp-post-far')).toBe(true);
+  expect(alikeLights('street-lamp-left', 'street-lamp-right')).toBe(true);
+  expect(alikeLights('lamp-post-near', 'lighthouse')).toBe(false);
+  expect(alikeLights('lamp-near', 'lighthouse-windows')).toBe(false);
+  expect(alikeLights('campfire', 'oil-lantern')).toBe(false);
 });
