@@ -4,6 +4,11 @@ import type { Geometry } from './geometry.ts';
 
 export type Point = [number, number];
 
+/** Cells in from the floor's edge that count as roomy: a walk keeps this far in where the floor allows. */
+const ROOMY = 3;
+/** The extra cost of a step onto a cell 0, 1, 2... cells in from the edge. */
+const RIM_COST = [0, 2, 0.6, 0];
+
 export class WalkGrid {
   readonly cols: number;
   readonly rows: number;
@@ -95,12 +100,59 @@ export class WalkGrid {
     return undefined;
   }
 
-  /** A* over 8 neighbours without cutting corners, then string-pulled. Empty when unreachable. */
+  private edges: Uint8Array | undefined;
+
+  /** Per cell, how many cells it is from the floor's edge (1 on the edge), up to ROOMY. */
+  private edge(): Uint8Array {
+    if (this.edges) return this.edges;
+    const out = new Uint8Array(this.cols * this.rows);
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        if (!this.isOpen(c, r)) continue;
+        let d = 1;
+        for (; d < ROOMY; d++) {
+          let shut = false;
+          for (let k = -d; k <= d && !shut; k++) shut = !this.isOpen(c + k, r - d) || !this.isOpen(c + k, r + d) || !this.isOpen(c - d, r + k) || !this.isOpen(c + d, r + k);
+          if (shut) break;
+        }
+        out[r * this.cols + c] = d;
+      }
+    }
+    return (this.edges = out);
+  }
+
+  private edgeAt(x: number, y: number): number {
+    const c = Math.floor(x / this.cell);
+    const r = Math.floor(y / this.cell);
+    return this.isOpen(c, r) ? this.edge()[r * this.cols + c] : 0;
+  }
+
+  /**
+   * True when the segment is on the floor and, but within a cell or two of `ends`, `need` cells or more in from its
+   * edge: a walk across a bridge keeps to the middle of the deck, not its rim over the water.
+   */
+  private roomyLine(a: Point, b: Point, need: number, ends: Point[]): boolean {
+    const steps = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (this.cell / 3));
+    for (let i = 0; i <= steps; i++) {
+      const t = steps ? i / steps : 0;
+      const [x, y] = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+      const e = this.edgeAt(x, y);
+      if (!e) return false;
+      if (e < need && !ends.some(([ex, ey]) => Math.hypot(ex - x, ey - y) <= 2.5 * this.cell)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * A* over 8 neighbours without cutting corners, then string-pulled. Empty when unreachable. Cells on the floor's
+   * edge cost more, so the walk keeps off the rim of a deck or a bank, and straightening keeps the room it found.
+   */
   route(from: Point, to: Point): Point[] {
     const a = this.snap(...from);
     const b = this.snap(...to);
     if (!a || !b) return [];
-    if (this.clear(a, b)) return [b];
+    if (this.roomyLine(a, b, ROOMY, [a, b])) return [b];
+    const edge = this.edge();
     const cols = this.cols;
     const start = Math.floor(a[1] / this.cell) * cols + Math.floor(a[0] / this.cell);
     const goal = Math.floor(b[1] / this.cell) * cols + Math.floor(b[0] / this.cell);
@@ -123,7 +175,7 @@ export class WalkGrid {
           if ((!dr && !dc) || !this.isOpen(c + dc, r + dr)) continue;
           if (dr && dc && (!this.isOpen(c + dc, r) || !this.isOpen(c, r + dr))) continue;
           const j = (r + dr) * cols + c + dc;
-          const cost = g[i] + (dr && dc ? Math.SQRT2 : 1);
+          const cost = g[i] + (dr && dc ? Math.SQRT2 : 1) * (1 + RIM_COST[edge[j]]);
           if (cost < g[j]) {
             g[j] = cost;
             came[j] = i;
@@ -140,15 +192,19 @@ export class WalkGrid {
     return this.pull(a, cells);
   }
 
-  /** Drops every waypoint the walker can skip in a straight line. */
+  /** Drops every waypoint the walker can skip in a straight line that keeps as far in from the edge as the route did. */
   private pull(from: Point, points: Point[]): Point[] {
     const out: Point[] = [];
+    const ends = [from, points[points.length - 1]];
+    const room = points.map(([x, y]) => (ends.some(([ex, ey]) => Math.hypot(ex - x, ey - y) <= 2.5 * this.cell) ? ROOMY : this.edgeAt(x, y)));
     let at = from;
     let i = 0;
     while (i < points.length) {
       let far = i;
       for (let j = points.length - 1; j > i; j--) {
-        if (this.clear(at, points[j])) {
+        let need = ROOMY;
+        for (let k = i; k <= j; k++) need = Math.min(need, room[k]);
+        if (this.roomyLine(at, points[j], need, ends)) {
           far = j;
           break;
         }

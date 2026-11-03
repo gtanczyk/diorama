@@ -17,6 +17,26 @@ test('route goes around a wall through its gap and is straightened', () => {
   expect(Math.max(...path.map(([, y]) => y))).toBeGreaterThanOrEqual(50);
 });
 
+test('a walk along a bridge keeps to the middle of the deck, off its rim over the water', () => {
+  // A deck 7 cells deep and 40 long, the water above and below it.
+  const deck = ['.'.repeat(40), ...Array.from({ length: 7 }, () => '#'.repeat(40)), '.'.repeat(40)];
+  const grid = new WalkGrid({ cell: 10, walk: deck });
+  // From one end of the back rim to the other: a straight line would walk the rim all the way.
+  const path = grid.route([15, 15], [385, 15]);
+  const pts: Array<[number, number]> = [[15, 15], ...path];
+  const mid = (x: number) => {
+    for (let k = 1; k < pts.length; k++) {
+      const [[x0, y0], [x1, y1]] = [pts[k - 1], pts[k]];
+      if (x >= x0 && x <= x1) return y0 + ((y1 - y0) * (x - x0)) / Math.max(1, x1 - x0);
+    }
+    return NaN;
+  };
+  expect(path.at(-1)).toEqual([385, 15]);
+  for (const x of [100, 200, 300]) expect(mid(x)).toBeGreaterThanOrEqual(35);
+  // Across a roomy floor the walk is still one straight line.
+  expect(grid.route([60, 45], [300, 45])).toEqual([[300, 45]]);
+});
+
 test('a click off the floor snaps to the nearest walkable cell', () => {
   const grid = new WalkGrid({ cell: 10, walk });
   expect(grid.snap(45, 25)).toEqual([35, 25]);
