@@ -155,8 +155,9 @@ export class GlowFx {
           const end = x + Math.sign(across) * reach;
           const spread = 26 + 150 * Math.abs(across) * (0.5 + near);
           const strength = 0.6 + 0.4 * towards * towards;
-          // A wide soft cone, and a narrow white-hot core inside it.
-          for (const [w, a0, a1, colour] of [[spread, 0.62, 0.26, c], [spread * 0.3, 0.55, 0.12, '255,250,235']] as const) {
+          // A wide soft cone, and a narrow white-hot core inside it, both blurred: light, not a cut-out wedge.
+          ctx.filter = 'blur(10px)';
+          for (const [w, a0, a1, colour] of [[spread, 0.85, 0.34, c], [spread * 0.3, 0.8, 0.18, '255,250,235']] as const) {
             const grad = ctx.createLinearGradient(x, y, end, y);
             grad.addColorStop(0, `rgba(${colour},${a0 * strength})`);
             grad.addColorStop(0.45, `rgba(${colour},${a1 * strength})`);
@@ -170,6 +171,7 @@ export class GlowFx {
             ctx.closePath();
             ctx.fill();
           }
+          ctx.filter = 'none';
           for (let k = 1; k <= 6; k++) pools.push({ x: x + ((end - x) * k) / 6, y, r: 60 + (spread * k) / 4, c, a: 0.5 * (1 - k / 8) });
         }
         const flare = towards > 0 ? Math.pow(Math.max(0, 1 - Math.abs(across) * 2.5), 2) : 0;

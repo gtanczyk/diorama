@@ -48,7 +48,7 @@ export function glowLevel(g: Glow, t: number): number {
 }
 
 /** A turning beam: its angle at time t (one turn per BEAM_TURN s, from the light's own phase). */
-export const BEAM_TURN = 9;
+export const BEAM_TURN = 3.6;
 export function beamAngle(g: Glow, t: number): number {
   return ((hashSeed(g.key) % 360) * Math.PI) / 180 + (t / BEAM_TURN) * Math.PI * 2;
 }
