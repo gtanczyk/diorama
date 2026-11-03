@@ -36,6 +36,11 @@ export async function exportWorld(slug: string, out: string): Promise<void> {
         entry.layers.mist.mask = await copy(entry.layers.mist.mask);
       }
       for (const f of entry.layers.flats) f.file = await copy(f.file); // transparent around the flat, so PNG
+      for (const f of [...(entry.layers.smoke ?? []), ...(entry.layers.floats ?? []), ...(entry.layers.falls ?? []), ...(entry.layers.critters ?? []), ...(entry.layers.clouds?.bands ?? [])]) f.file = await copy(f.file);
+      if (entry.layers.clouds) {
+        entry.layers.clouds.clip = await copy(entry.layers.clouds.clip);
+        if (entry.layers.clouds.keep) entry.layers.clouds.keep = await copy(entry.layers.clouds.keep);
+      }
     }
     for (const thing of entry.geometry?.things ?? []) {
       if (thing.mask) await copy(`places/${key}/${thing.mask}`);

@@ -27,7 +27,8 @@ import { Story } from '../story/schema.ts';
 import { players } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
 
-type Flats = { sky: string | null; flats: Array<{ file: string; box: [number, number, number, number] }>; water?: { tex: string; mask: string; box: [number, number, number, number]; flow?: [number, number] }; mist?: { tex: string; mask: string; box: [number, number, number, number]; drift?: -1 | 0 | 1 | null; speed?: number } };
+/** layers.json as the backdrop step writes it: the same shape the page reads, its files relative to the place. */
+type Flats = Layers;
 
 export const WEB = fileURLToPath(new URL('../../web/', import.meta.url));
 const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.mp3': 'audio/mpeg' };
@@ -60,6 +61,12 @@ export function worldData(files: WorldFiles) {
       flats: flats.flats.map((f) => ({ file: rel(f.file), box: f.box })),
       ...(flats.water && { water: { tex: rel(flats.water.tex), mask: rel(flats.water.mask), box: flats.water.box, flow: flats.water.flow } }),
       ...(flats.mist && { mist: { ...flats.mist, tex: rel(flats.mist.tex), mask: rel(flats.mist.mask) } }),
+      // Smoke, rocking boats, waterfalls, animals and clouds: each a file or a few beside the place.
+      ...(flats.smoke?.length && { smoke: flats.smoke.map((f) => ({ ...f, file: rel(f.file) })) }),
+      ...(flats.floats?.length && { floats: flats.floats.map((f) => ({ ...f, file: rel(f.file) })) }),
+      ...(flats.falls?.length && { falls: flats.falls.map((f) => ({ ...f, file: rel(f.file) })) }),
+      ...(flats.critters?.length && { critters: flats.critters.map((f) => ({ ...f, file: rel(f.file) })) }),
+      ...(flats.clouds && { clouds: { ...flats.clouds, clip: rel(flats.clouds.clip), ...(flats.clouds.keep && { keep: rel(flats.clouds.keep) }), bands: flats.clouds.bands.map((b) => ({ ...b, file: rel(b.file) })) } }),
     };
     // weather.json (diorama weather): what falls here and where water drips, for the page to animate.
     const weatherFile = files.place(place.key, 'weather.json');
