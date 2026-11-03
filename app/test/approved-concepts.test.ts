@@ -13,13 +13,15 @@ import { paintPhoto } from '../src/scene/photo.ts';
 import type { World } from '../src/world/schema.ts';
 import { layOut, type Layout } from '../src/scene/layout.ts';
 
+/** An oval figure, not a full box: a cut-out filling its whole box is painted again (cast.ts boxed). */
+const figureMask = (width: number, height: number) => ({ width, height, bits: Uint8Array.from({ length: width * height }, (_, i) => (((i % width) + 0.5 - width / 2) / (width / 2)) ** 2 + ((Math.floor(i / width) + 0.5 - height / 2) / (height / 2)) ** 2 <= 1 ? 1 : 0) });
 const world: World = { title: 'Home', pitch: 'An owl brings a letter home', style: 'Pencil lines on paper', start: 'home', hero: { key: 'owl', looks: 'A round owl with big eyes' }, places: [{ key: 'home', shows: 'A little wooden house', mood: 'sunny', things: [{ key: 'owl', role: 'npc', looks: 'A round owl' }], exits: [] }] };
 test('production painters receive approved references alongside original sources, while retaining layout constraints', async () => {
   const png = await sharp({ create: { width: 24, height: 32, channels: 4, background: '#aa88bb' } }).png().toBuffer();
   const source = await sharp(png).tint('green').png().toBuffer();
   const concept = await sharp(png).tint('red').png().toBuffer();
   vi.mocked(museEdit).mockReset().mockResolvedValue(png); vi.mocked(musePaint).mockReset();
-  vi.mocked(samFind).mockResolvedValue([{ mask: { width: 24, height: 32, bits: new Uint8Array(24 * 32).fill(1) }, score: 1 }] as any);
+  vi.mocked(samFind).mockResolvedValue([{ mask: figureMask(24, 32), score: 1 }] as any);
   const memo = new Memo('/tmp/unused-mocked-concepts');
   await paintFigure(memo, world, world.hero, 0, { drawing: source, concept });
   expect(vi.mocked(museEdit).mock.calls[0][1]).toMatchObject({ images: [source, concept], prompt: expect.stringContaining('creator-approved character') });
@@ -52,7 +54,7 @@ test('style references reach cast and backgrounds without taking over approved c
   const concept = await sharp(png).tint('green').png().toBuffer();
   const styleReference = await sharp(png).tint('red').png().toBuffer();
   vi.mocked(museEdit).mockReset().mockResolvedValue(png); vi.mocked(musePaint).mockReset();
-  vi.mocked(samFind).mockResolvedValue([{ mask: { width: 24, height: 32, bits: new Uint8Array(24 * 32).fill(1) }, score: 1 }] as any);
+  vi.mocked(samFind).mockResolvedValue([{ mask: figureMask(24, 32), score: 1 }] as any);
   const memo = new Memo('/tmp/unused-style-references');
   await paintFigure(memo, world, world.hero, 0, { concept, styleReference });
   expect(vi.mocked(museEdit).mock.calls[0][1]).toMatchObject({ images: [concept, styleReference], prompt: expect.stringContaining('second-to-last image is the creator-approved') });
