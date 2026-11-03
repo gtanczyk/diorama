@@ -1,10 +1,18 @@
 // The painted lights alive (src/play/glow.ts): a soft halo added over each light that breathes, flickers or
 // twinkles, and a lighthouse lamp's beam sweeping round, flaring when it turns towards us. Drawn with 'lighter'
-// over the painting and its cards, so it only ever adds light, never covers what is painted.
-import { beamAngle, glowLevel, type Glow } from '../src/play/glow.ts';
+// over the painting and its cards, so it only ever adds light, never covers what is painted. The one exception
+// is a lighthouse's own painted light paper (a burst of golden rays, a tissue beam): it is lifted off the painting
+// as a card, its place filled from the sky round it, and turned behind the cards (drawBehind), so the painted
+// light itself moves and no second beam is laid over a frozen one.
+import { beamAngle, beamPaper, fillUnder, glowLevel, paperPose, type Glow } from '../src/play/glow.ts';
 import { hashSeed } from '../src/play/weather.ts';
 
 type Shift = (y: number) => [number, number];
+type Painting = CanvasImageSource & { width: number; height: number };
+/** A lighthouse's light paper as a card: its paper, the fill under it, where it may show, and a canvas to turn it on. */
+type Paper = { card: HTMLCanvasElement; patch: HTMLCanvasElement; px: number; py: number; keep: HTMLCanvasElement; turned: HTMLCanvasElement; box: [number, number, number, number]; burst: boolean };
+/** Light thrown on the rain falling through it: a pool round a point, by brightness 0..1. */
+export type Pool = { x: number; y: number; r: number; c: string; a: number };
 
 /** #rrggbb as "r,g,b" for rgba() strings. */
 const rgb = (hex: string) => {
@@ -22,11 +30,18 @@ export class GlowFx {
   private readonly lit: Array<{ canvas: HTMLCanvasElement; x: number; y: number } | undefined>;
 
   private readonly glows: Glow[];
+  /** Each planned beam's lifted light paper, by glow index. */
+  private readonly papers: Array<Paper | undefined>;
+  /** Where the lights shine on the falling rain this frame (drawAir reads it). */
+  pools: Pool[] = [];
 
-  constructor(planned: Glow[], private readonly H: number, painting?: CanvasImageSource & { width: number; height: number }, wet?: Uint8Array, cards: number[][] = []) {
+  constructor(planned: Glow[], private readonly H: number, painting?: Painting, wet?: Uint8Array, cards: number[][] = []) {
+    const frame = painting && planned.some((g) => g.kind === 'beam') ? pixelsOf(painting) : undefined;
+    this.papers = planned.map((g) => (frame && g.kind === 'beam' ? liftPaper(painting!, frame, g, planned.filter((o) => o.kind !== 'beam' && Math.hypot(o.x - g.x, o.y - g.y) > 120)) : undefined));
+    const onPaper = (x: number, y: number) => this.papers.some((p) => p && x >= p.box[0] && y >= p.box[1] && x < p.box[2] && y < p.box[3] && p.keep.getContext('2d')!.getImageData(Math.floor(x - p.box[0]), Math.floor(y - p.box[1]), 1, 1).data[0] > 200);
     // The planned lights, then every other light Muse painted (a market's strings of lanterns, candle boats, lit
-    // windows), found in the painting itself: each flickers on its own phase too.
-    this.glows = painting ? [...planned, ...paintedLights(painting, planned, wet, cards)] : planned;
+    // windows), found in the painting itself: each flickers on its own phase too. Not on a lighthouse's rays.
+    this.glows = painting ? [...planned, ...paintedLights(painting, planned, wet, cards).filter((g) => !onPaper(g.x, g.y))] : planned;
     const glows = this.glows;
     this.lit = glows.map((g) => (painting && g.kind !== 'twinkle' && g.kind !== 'beam' ? brightPaint(painting, g, H) : undefined));
     this.sparks = glows.map((g) => {
@@ -40,8 +55,36 @@ export class GlowFx {
     this.time += dt;
   }
 
+  /** The lighthouse's light paper, turned: over the place's far paint, under its cards (the tower stands in front). */
+  drawBehind(ctx: CanvasRenderingContext2D, shift: Shift) {
+    this.papers.forEach((p, i) => {
+      if (!p?.burst) return;
+      const g = this.glows[i];
+      const pose = paperPose(g, p.burst, this.time);
+      const [sx, sy] = shift(g.y);
+      ctx.drawImage(p.patch, p.px + sx, p.py + sy);
+      const c = p.turned.getContext('2d')!;
+      const [lx, ly] = [g.x - p.box[0], g.y - p.box[1]];
+      c.clearRect(0, 0, p.turned.width, p.turned.height);
+      c.save();
+      c.globalAlpha = pose.alpha;
+      c.translate(lx, ly);
+      c.rotate(pose.turn);
+      c.scale(pose.scale, pose.scale);
+      c.translate(-lx, -ly);
+      c.drawImage(p.card, 0, 0);
+      c.restore();
+      // Only over the sky, the sea and where the paper was: never over a boat's sail or the tower.
+      c.globalCompositeOperation = 'destination-in';
+      c.drawImage(p.keep, 0, 0);
+      c.globalCompositeOperation = 'source-over';
+      ctx.drawImage(p.turned, p.box[0] + sx, p.box[1] + sy);
+    });
+  }
+
   draw(ctx: CanvasRenderingContext2D, shift: Shift) {
     const t = this.time;
+    const pools: Pool[] = [];
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     this.glows.forEach((g, i) => {
@@ -59,19 +102,62 @@ export class GlowFx {
         }
         return;
       }
+      const paper = this.papers[i];
+      if (g.kind === 'beam' && paper) {
+        // The painted paper is the beam (drawBehind); here only its glow: the paper lit up again, brighter as it
+        // breathes or turns to us, and the lamp flaring.
+        const pose = paperPose(g, paper.burst, t);
+        const [sx2, sy2] = shift(g.y);
+        if (paper.burst) {
+          ctx.globalAlpha = Math.min(1, 0.22 + 0.35 * pose.flare + 0.2 * (level - 0.5));
+          ctx.drawImage(paper.turned, paper.box[0] + sx2, paper.box[1] + sy2);
+          ctx.globalAlpha = 1;
+          pools.push({ x, y, r: 260, c, a: 0.35 + 0.3 * pose.flare });
+        } else {
+          // The painted beam lit by a wave running out of the lamp along it: its own paper, brightest at the wave.
+          const dir = (paper.box[0] + paper.box[2]) / 2 < g.x ? -1 : 1;
+          const far = dir < 0 ? g.x - paper.box[0] : paper.box[2] - g.x;
+          const tc = paper.turned.getContext('2d')!;
+          const lx = g.x - paper.box[0];
+          tc.clearRect(0, 0, paper.turned.width, paper.turned.height);
+          tc.globalCompositeOperation = 'source-over';
+          tc.drawImage(paper.card, 0, 0);
+          const band = tc.createLinearGradient(lx, 0, lx + dir * far, 0);
+          const at = (u: number) => Math.max(0, Math.min(1, u));
+          band.addColorStop(0, 'rgba(255,255,255,0.35)');
+          band.addColorStop(at(pose.wave - 0.16), 'rgba(255,255,255,0.3)');
+          band.addColorStop(at(pose.wave), 'rgba(255,255,255,1)');
+          band.addColorStop(at(pose.wave + 0.12), 'rgba(255,255,255,0.3)');
+          band.addColorStop(1, 'rgba(255,255,255,0.25)');
+          tc.globalCompositeOperation = 'destination-in';
+          tc.fillStyle = band;
+          tc.fillRect(0, 0, paper.turned.width, paper.turned.height);
+          tc.globalCompositeOperation = 'source-over';
+          ctx.globalAlpha = 0.6 + 0.3 * level;
+          ctx.drawImage(paper.turned, paper.box[0] + sx2, paper.box[1] + sy2);
+          ctx.globalAlpha = 1;
+          if (pose.wave <= 1) pools.push({ x: x + dir * far * pose.wave, y, r: 200, c, a: 0.7 });
+          for (let k = 1; k <= 4; k++) pools.push({ x: x + (dir * far * k) / 5, y, r: 120, c, a: 0.25 });
+        }
+        halo(ctx, x, y, (60 + 60 * near) * (1 + 1.6 * pose.flare), c, 0.35 + 0.25 * level + 0.5 * pose.flare);
+        halo(ctx, x, y, (14 + 10 * near) * (1 + pose.flare), '255,250,235', 0.5 + 0.4 * pose.flare);
+        pools.push({ x, y, r: 160 * (1 + pose.flare), c, a: 0.3 + 0.6 * pose.flare });
+        return;
+      }
       if (g.kind === 'beam') {
         const a = beamAngle(g, t);
         // Seen from the side, the turning beam swings left and right; pointing at us it flares, away it is gone.
         const across = Math.cos(a);
         const towards = Math.sin(a);
-        const reach = (260 + 520 * near) * Math.abs(across);
+        const reach = (420 + 600 * near) * Math.abs(across);
         if (reach > 8) {
           const end = x + Math.sign(across) * reach;
-          const spread = 14 + 120 * Math.abs(across) * (0.4 + near);
+          const spread = 18 + 130 * Math.abs(across) * (0.4 + near);
           const grad = ctx.createLinearGradient(x, y, end, y);
-          grad.addColorStop(0, `rgba(${c},${0.3 * (0.6 + 0.4 * towards * towards)})`);
-          grad.addColorStop(0.5, `rgba(${c},${0.12 * (0.6 + 0.4 * towards * towards)})`);
+          grad.addColorStop(0, `rgba(${c},${0.42 * (0.6 + 0.4 * towards * towards)})`);
+          grad.addColorStop(0.5, `rgba(${c},${0.16 * (0.6 + 0.4 * towards * towards)})`);
           grad.addColorStop(1, `rgba(${c},0)`);
+          for (let k = 1; k <= 5; k++) pools.push({ x: x + ((end - x) * k) / 5, y, r: 50 + (spread * k) / 4, c, a: 0.4 * (1 - k / 7) });
           ctx.fillStyle = grad;
           ctx.beginPath();
           ctx.moveTo(x, y - 4);
@@ -83,26 +169,81 @@ export class GlowFx {
         }
         const flare = towards > 0 ? Math.pow(Math.max(0, 1 - Math.abs(across) * 2.5), 2) : 0;
         halo(ctx, x, y, (30 + 40 * near) * (1 + 1.4 * flare), c, 0.28 + 0.2 * level + 0.5 * flare);
+        pools.push({ x, y, r: 120 * (1 + flare), c, a: 0.3 + 0.5 * flare });
         return;
       }
       const r = g.kind === 'window' ? 16 + 34 * near : g.kind === 'flame' ? 26 + 44 * near : 22 + 40 * near;
       const a = g.kind === 'flame' ? 0.42 : g.kind === 'window' ? 0.34 : 0.3;
       // The light thrown round: a wide faint spill on the walls and the ground, rising and falling with the light.
       const found = g.key.startsWith('painted-');
+      const lamp = !found && g.kind !== 'window';
       if (!found) halo(ctx, x, y, r * (2.6 + 0.5 * level), c, (g.kind === 'window' ? 0.07 : 0.11) * (0.3 + level));
+      // A lamp or a flame blooms: a wide soft light breathing round it, as if the wet air glowed.
+      if (lamp) halo(ctx, x, y, r * (3.4 + 1.4 * level), c, 0.03 + 0.32 * level);
       const lit = this.lit[i];
       if (lit) {
-        // The lamp's own paint over itself: brighter on a flare, gone back to the painting on a dip. A flame's
-        // tongue leans a little with its flicker.
+        // The lamp's own paint over itself (its glass, a scribbled halo round it): brighter on a flare, gone back
+        // to the painting on a dip, and a lamp's halo swelling and turning a little as it breathes, so its painted
+        // rays shimmer. A flame's tongue leans a little with its flicker.
         const lean = g.kind === 'flame' ? (level - 0.5) * 3 * (0.5 + near) : 0;
-        ctx.globalAlpha = Math.max(0, Math.min(1, (g.kind === 'window' ? 0.45 : found ? 0.5 : 0.7) * (level - 0.25)));
-        ctx.drawImage(lit.canvas, lit.x + sx + lean, lit.y + sy);
+        ctx.globalAlpha = Math.max(0, Math.min(1, (g.kind === 'window' ? 0.45 : found ? 0.5 : 1.1) * (level - 0.15)));
+        if (lamp) {
+          const ph = (hashSeed(g.key) % 628) / 100;
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(0.035 * Math.sin(t * 0.9 + ph));
+          ctx.scale(1 + 0.09 * (level - 0.5), 1 + 0.09 * (level - 0.5));
+          ctx.translate(-x, -y);
+          ctx.drawImage(lit.canvas, lit.x + sx + lean, lit.y + sy);
+          ctx.restore();
+        } else ctx.drawImage(lit.canvas, lit.x + sx + lean, lit.y + sy);
         ctx.globalAlpha = 1;
       }
       halo(ctx, x, y, r * (found ? 0.45 : 1) * (0.85 + 0.3 * level), c, a * (found ? 0.6 : 1) * (0.4 + level));
+      // A white-hot heart for a lamp, and its light on the rain round it.
+      if (lamp) halo(ctx, x, y, r * 0.35 * (0.8 + 0.4 * level), '255,248,225', 0.2 + 0.35 * level);
+      if (!found && g.kind !== 'window') pools.push({ x, y, r: r * (4.5 + 1.5 * level), c, a: 0.3 + 0.8 * level });
     });
     ctx.restore();
+    this.pools = pools;
   }
+}
+
+/** The painting's pixels at full size. */
+function pixelsOf(painting: Painting): ImageData {
+  const c = Object.assign(document.createElement('canvas'), { width: painting.width, height: painting.height }).getContext('2d', { willReadFrequently: true })!;
+  c.drawImage(painting, 0, 0);
+  return c.getImageData(0, 0, painting.width, painting.height);
+}
+
+/**
+ * A beam's light paper lifted off the painting (beamPaper): the paper as a card, and what goes under it
+ * (fillUnder), so turned paper never leaves its painted twin behind.
+ */
+function liftPaper(painting: Painting, frame: ImageData, g: Glow, others: Glow[]): Paper | undefined {
+  const found = beamPaper(frame.data, frame.width, frame.height, g, others);
+  if (!found) return undefined;
+  const [x0, y0, x1, y1] = found.box;
+  const [w, h, W] = [x1 - x0, y1 - y0, frame.width];
+  const canvas = (cw: number, ch: number) => Object.assign(document.createElement('canvas'), { width: cw, height: ch });
+  const card = canvas(w, h);
+  const keep = canvas(w, h);
+  const cardImg = new ImageData(w, h);
+  const keepImg = new ImageData(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const [o, i] = [(y * w + x) * 4, ((y + y0) * W + x + x0) * 4];
+    const al = found.alpha[y * w + x];
+    cardImg.data.set([frame.data[i], frame.data[i + 1], frame.data[i + 2], Math.round(255 * al)], o);
+    // Where turned paper may show: where paper was, and the blue of the sky and the sea.
+    const open = al > 0.05 || frame.data[i + 2] > frame.data[i] + 8;
+    keepImg.data.set([255, 255, 255, open ? 255 : 0], o);
+  }
+  card.getContext('2d')!.putImageData(cardImg, 0, 0);
+  keep.getContext('2d', { willReadFrequently: true })!.putImageData(keepImg, 0, 0);
+  // The fill under it: the paint round it, carried in across the paper (fillUnder).
+  const patch = canvas(w, h);
+  patch.getContext('2d')!.putImageData(new ImageData(fillUnder(frame.data, W, g, found) as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0);
+  return { card, patch, px: x0, py: y0, keep, turned: canvas(w, h), box: found.box, burst: found.burst };
 }
 
 /**
@@ -111,7 +252,8 @@ export class GlowFx {
  */
 function brightPaint(painting: CanvasImageSource & { width: number; height: number }, g: Glow, H: number) {
   const near = Math.max(0, Math.min(1, g.y / H));
-  const R = Math.round(g.key.startsWith('painted-') ? 12 + 22 * near : g.kind === 'window' ? 22 + 40 * near : 30 + 50 * near);
+  // A lamp's reach takes in the halo painted round it (a crayon scribble, painted rays), so that breathes too.
+  const R = Math.round(g.key.startsWith('painted-') ? 12 + 22 * near : g.kind === 'window' ? 22 + 40 * near : g.kind === 'lamp' ? 60 + 100 * near : 30 + 50 * near);
   const x0 = Math.max(0, Math.round(g.x - R));
   const y0 = Math.max(0, Math.round(g.y - R));
   const w = Math.min(painting.width, Math.round(g.x + R)) - x0;
@@ -168,16 +310,20 @@ function paintedLights(painting: CanvasImageSource & { width: number; height: nu
     const stack = [start];
     seen[start] = 1;
     let [n, sx, sy, sr, sg, sb] = [0, 0, 0, 0, 0, 0];
+    let [x0, y0, x1, y1] = [w, h, 0, 0];
     while (stack.length) {
       const i = stack.pop()!;
       const [x, y] = [i % w, Math.floor(i / w)];
       n++; sx += x; sy += y; sr += px[i * 4]; sg += px[i * 4 + 1]; sb += px[i * 4 + 2];
+      [x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x + 1), Math.max(y1, y + 1)];
       for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
         if (j >= 0 && hot[j] && !seen[j]) { seen[j] = 1; stack.push(j); }
       }
     }
     // A lantern or a pane, not a speck and not a whole sunset.
     if (n < 2 || n > 150) continue;
+    // Nor a thin painted ray or streak: a light is round-ish, not a line.
+    if (Math.max(x1 - x0, y1 - y0) > 4 && n / ((x1 - x0) * (y1 - y0)) < 0.3) continue;
     const [x, y] = [(sx / n + 0.5) * S, (sy / n + 0.5) * S];
     // A light shines out of darker paint round it; a sunlit yellow wall does not.
     const r0 = Math.ceil(Math.sqrt(n)) + 3;

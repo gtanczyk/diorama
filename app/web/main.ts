@@ -1643,6 +1643,7 @@ class Game {
       this.drawSmoke(p);
       this.drawMist(p);
       this.place.weather?.drawGround(ctx, (y) => this.shift(y));
+      this.place.glows?.drawBehind(ctx, (y) => this.shift(y));
       const carded = new Set(this.place.cuts.map((c) => c.occ.thing ?? c.occ.key));
       for (const hot of this.hots()) {
         // A carried-off card is simply not drawn; a flat thing gets its clean plate, on the floor it lies on.
@@ -1665,6 +1666,7 @@ class Game {
       // What the story has changed here (a beacon lit): each change is the thing as it looks after, transparent elsewhere.
       for (const { img } of this.changed()) ctx.drawImage(img, 0, 0, W, H);
       this.place.weather?.drawGround(ctx, () => [0, 0]);
+      this.place.glows?.drawBehind(ctx, () => [0, 0]);
       for (const hot of this.hots()) {
         if (!hot.plate || !gone.has(hot.thing.key)) continue;
         // The plate differs from the painting only near the thing, so its grown box is enough.
@@ -1727,7 +1729,7 @@ class Game {
     burn();
     drawReactions(Infinity);
     // The rain falls in front of everyone; the speech bubble stays over it.
-    this.place.weather?.drawAir(ctx);
+    this.place.weather?.drawAir(ctx, this.place.glows?.pools);
     if (this.grid) {
       ctx.save();
       if (p) ctx.transform(...(backdropTransforms(g, p).below as [number, number, number, number, number, number]));

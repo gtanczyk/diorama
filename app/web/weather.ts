@@ -4,6 +4,7 @@
 // run rains the same every time.
 import { personPx, type Geometry } from '../src/play/geometry.ts';
 import { hashSeed, seeded, type Weather } from '../src/play/weather.ts';
+import type { Pool } from './glows.ts';
 
 type Shift = (y: number) => [number, number];
 type Mark = { x: number; y: number; t: number; size: number; ring: boolean };
@@ -217,8 +218,9 @@ export class WeatherFx {
     ctx.restore();
   }
 
-  /** The rain or snow itself, over everything: three depths, far ones thin, faint and short. */
-  drawAir(ctx: CanvasRenderingContext2D) {
+  /** The rain or snow itself, over everything: three depths, far ones thin, faint and short. Drops falling through
+   * a light's pool (a lamp, a lighthouse beam: GlowFx.pools) catch it and shine in its colour. */
+  drawAir(ctx: CanvasRenderingContext2D, lights: Pool[] = []) {
     this.drawFog(ctx);
     const n = this.px.length;
     if (!n) return;
@@ -242,6 +244,7 @@ export class WeatherFx {
         }
         ctx.stroke();
       }
+      if (lights.length) this.drawLitRain(ctx, lights, norm);
     } else {
       ctx.fillStyle = 'rgba(245,248,252,0.85)';
       for (let i = 0; i < n; i++) {
@@ -254,6 +257,30 @@ export class WeatherFx {
       }
     }
     ctx.restore();
+  }
+
+  private drawLitRain(ctx: CanvasRenderingContext2D, lights: Pool[], norm: number) {
+    const { wind } = this.w;
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < this.px.length; i++) {
+      const [x, y, z] = [this.px[i], this.py[i], this.pz[i]];
+      let [best, c] = [0, ''];
+      for (const l of lights) {
+        const d = Math.hypot(x - l.x, y - l.y);
+        if (d >= l.r) continue;
+        const a = l.a * (1 - d / l.r) ** 1.5;
+        if (a > best) [best, c] = [a, l.c];
+      }
+      if (best < 0.04) continue;
+      const len = (10 + 38 * z) * (this.H / 900);
+      ctx.strokeStyle = `rgba(${c},${Math.min(1, best * (0.6 + 0.6 * z))})`;
+      ctx.lineWidth = 1 + 1.4 * z;
+      ctx.beginPath();
+      ctx.moveTo(x - wind * len * norm, y - len * norm);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   /** Mist over the place: each bank a soft white blob, breathing a little as it drifts. */
