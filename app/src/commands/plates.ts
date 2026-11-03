@@ -1,12 +1,12 @@
 // diorama plates <slug> [place...]: plates/<thing>.png for every thing the story lets the hero carry off.
 import fs from 'node:fs';
-import { maskFromPng, maskArea, type Mask } from '../image/mask.ts';
+import { maskFromPng, maskArea, maskToPng, type Mask } from '../image/mask.ts';
 import { dilate, intersect } from '../image/raster.ts';
 import { defineCommand } from '../registry.ts';
 import { Brief } from '../scene/brief.ts';
 import { Layout } from '../scene/layout.ts';
 import { carryFrom, paintingFor, ran } from '../scene/carry.ts';
-import { changePlate, plateFor } from '../scene/plates.ts';
+import { changePlate, changeShape, plateFor } from '../scene/plates.ts';
 import { removableThings } from '../story/engine.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
@@ -54,7 +54,15 @@ defineCommand({
         // overgrown: a basket that grew a rope may reach over the door beside it.
         const others = await Promise.all(keys.filter((k) => k !== c.thing && fs.existsSync(at('masks', `${k}.png`)))
           .map(async (k) => maskFromPng(fs.readFileSync(at('masks', `${k}.png`)))));
-        files.write(at('changes', `${c.i}.png`), await changePlate(files.memo, place, { key: c.thing, phrase: notes[c.thing].phrase, mask }, around(mask), c.looks, others));
+        const plate = await changePlate(files.memo, place, { key: c.thing, phrase: notes[c.thing].phrase, mask }, around(mask), c.looks, others);
+        files.write(at('changes', `${c.i}.png`), plate);
+        // changes/<i>-shape.png: the thing as the plate draws it, for its hover outline while the change holds.
+        const shape = await changeShape(files.memo, place, { key: c.thing, mask }, plate, c.looks).catch((error) => {
+          console.log(`  ${place.key}: ${c.thing}: no shape for its change (${error instanceof Error ? error.message : error})`);
+          return undefined;
+        });
+        if (shape) files.write(at('changes', `${c.i}-shape.png`), await maskToPng(shape));
+        else console.log(`  ${place.key}: ${c.thing}: SAM found no clear shape in its change plate; the outline keeps the painted one`);
         console.log(`${place.key}: ${c.thing} once ${c.when.join(', ')}: ${c.looks}`);
       }));
       if (!keys.length) {

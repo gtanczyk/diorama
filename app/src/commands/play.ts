@@ -123,9 +123,13 @@ export function worldData(files: WorldFiles) {
   const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
   // changes/<i>.png per place: how story.changes[i] looks once it holds.
   const changes: Record<string, string> = {};
+  // changes/<i>-shape.png: the changed thing's shape in it, which its hover outline follows while the change holds.
+  const changeShapes: Record<string, string> = {};
   (story?.changes ?? []).forEach((c, i) => {
     const file = `places/${c.place}/changes/${i}.png`;
     if (fs.existsSync(files.path(file))) changes[i] = file;
+    const shape = `places/${c.place}/changes/${i}-shape.png`;
+    if (changes[i] && fs.existsSync(files.path(shape))) changeShapes[i] = shape;
   });
   // sound.json + sound/: what the world sounds like (diorama sound); absent, the page plays silent.
   const sound = soundData(files);
@@ -136,7 +140,7 @@ export function worldData(files: WorldFiles) {
     : undefined;
   // The heroes of more gamepads (drawings marked player), in drawing order: pad 2 plays the first.
   const others = players(files).map((p) => p.key).filter((k) => cast[k]);
-  return { slug: files.slug, world, places, cast, story, changes, ...(sound && { sound }), ...(items && { items }), ...(others.length && { players: others }) };
+  return { slug: files.slug, world, places, cast, story, changes, changeShapes, ...(sound && { sound }), ...(items && { items }), ...(others.length && { players: others }) };
 }
 
 export async function bundle(forShip = false): Promise<string> {

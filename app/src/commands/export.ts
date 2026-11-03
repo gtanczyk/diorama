@@ -53,6 +53,7 @@ export async function exportWorld(slug: string, out: string): Promise<void> {
     if (entry.weather?.ripples) entry.weather.ripples = await copy(entry.weather.ripples);
   }
   for (const [i, rel] of Object.entries(data.changes)) data.changes[i] = await copy(rel); // transparent around the thing, so PNG
+  for (const [i, rel] of Object.entries(data.changeShapes)) data.changeShapes[i] = await copy(rel);
   for (const figure of Object.values(data.cast)) {
     await copy(figure.image);
     if (figure.face) await copy(`${figure.face.dir}/${figure.face.info.image}`);

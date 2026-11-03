@@ -3,7 +3,7 @@
 // SAM then looks for the thing again on the plate: if it is still there, the plate is flagged.
 import sharp from 'sharp';
 import { emptyMask, maskArea, maskToPng, type Mask } from '../image/mask.ts';
-import { components, dilate, intersect, maskBox, maskIou, subtract, union, unionAll } from '../image/raster.ts';
+import { clampRect, components, dilate, growRect, intersect, maskBox, maskIou, rectMask, subtract, union, unionAll } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import { museEdit } from '../meta/muse.ts';
 import { samFind } from '../meta/sam.ts';
@@ -210,6 +210,37 @@ export async function changeAlpha(mask: Mask, others: Mask[]): Promise<Buffer> {
   const off = await sharp(await maskToPng(dilate(keep!, CHANGE_KEEP_OFF))).blur(6).extractChannel(0).raw().toBuffer();
   for (let i = 0; i < alpha.length; i++) if (!mask.bits[i]) alpha[i] = Math.round((alpha[i] * (255 - off[i])) / 255);
   return alpha;
+}
+
+/**
+ * The changed thing's own shape in its change plate: Muse redraws all it sees, and a boat that gets a lantern may come
+ * back longer or lower than the one painted, with the lantern standing up out of it. SAM by how it looks now
+ * (`looks`: what was found near the painted thing, all of it), else by its box grown for that, on the plate; undefined
+ * when what it finds is not the thing (little of the painted one, or far bigger). The runtime outlines this while
+ * the change holds, so the hover line follows the thing as it is drawn then.
+ */
+export async function changeShape(memo: Memo, place: Place, thing: { key: string; mask: Mask }, plate: Buffer, looks: string): Promise<Mask | undefined> {
+  const { width: W, height: H } = FRAME;
+  const box = maskBox(thing.mask);
+  if (!box) return undefined;
+  const near = clampRect(growRect(box, 1.6), W, H);
+  const rgba = await sharp(plate).ensureAlpha().raw().toBuffer();
+  const flat = await sharp(rgba, { raw: { width: W, height: H, channels: 4 } }).removeAlpha().png().toBuffer();
+  const px = maskArea(thing.mask);
+  // Only where the plate shows: elsewhere the painting is drawn, not the change.
+  const shown = (m: Mask): Mask => ({ ...m, bits: m.bits.map((b, i) => (b && rgba[i * 4 + 3] > 96 ? 1 : 0)) });
+  const fits = (m: Mask) => maskArea(intersect(m, thing.mask)) >= 0.6 * px && maskArea(m) <= 3 * px;
+  const nearBox = rectMask(W, H, near);
+  const named = await samFind(memo, { label: `change-shape:${place.key}/${thing.key}:${looks}`, image: flat, prompt: looks });
+  const parts = named.filter((f) => maskArea(intersect(f.mask, nearBox)) >= 0.5 * maskArea(f.mask)).map((f) => f.mask);
+  if (parts.length) {
+    const shape = shown(unionAll(W, H, parts));
+    if (fits(shape)) return shape;
+  }
+  const [left, top, right, bottom] = near;
+  const [boxed] = await samFind(memo, { label: `change-shape-box:${place.key}/${thing.key}`, image: flat, prompt: [{ left, top, right, bottom }] });
+  const shape = boxed && shown(boxed.mask);
+  return shape && fits(shape) ? shape : undefined;
 }
 
 /** For a thing the story changes (a beacon lit): the thing as it looks after, transparent elsewhere, so several
