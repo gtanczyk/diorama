@@ -323,6 +323,7 @@ class Game {
   data!: Data;
   place!: Place;
   private cache = new Map<string, Place>();
+  private loads = new Map<string, Promise<Place>>();
   private figures = new Map<string, Figure>();
   /** Bodies keep their positions when the hero leaves a place. Off-screen patrols pause. */
   private npcs = new Map<string, Npc>();
@@ -365,6 +366,10 @@ class Game {
     this.data = await (await fetch('world-data.json')).json();
     useLanguage(this.data.world.language);
     if (loading) loading.querySelector('.what')!.textContent = `Unfolding ${this.data.world.title}…`;
+    const at = params.get('place');
+    // The first place loads beside the cast, not after it: the two are most of the wait.
+    const first = this.load(at ?? startState(this.data.world).place);
+    first.catch(() => undefined);
     await Promise.all(Object.entries(this.data.cast).map(async ([key, cast]) => {
       const img = await loadImage(files(cast.image)).catch(() => undefined);
       if (!img) return;
@@ -405,12 +410,24 @@ class Game {
       this.figures.set(key, figure);
     }));
     this.hero.figure = this.figures.get(this.data.world.hero.key);
+    // NPCs of the first place were made while their figures still loaded.
+    await first.catch(() => undefined);
+    for (const n of this.npcs.values()) n.body.figure ??= this.figures.get(n.key);
     this.state = startState(this.data.world);
-    const at = params.get('place');
     if (at) this.state.place = at;
     await this.enter(this.state.place);
     this.ui();
+    if (!capture) void this.preload();
     if (this.data.story && !at) await this.say(this.data.story.intro);
+  }
+
+  /** The other places, one by one in the background, so walking into one does not wait on its files. */
+  private async preload() {
+    for (const p of this.data.world.places) {
+      if (!this.data.places[p.key]?.geometry) continue;
+      await new Promise((r) => setTimeout(r, 300));
+      await this.load(p.key).catch(() => undefined);
+    }
   }
 
   on(fn: (event: Events, detail: object) => void) {
@@ -481,7 +498,18 @@ class Game {
     return { falls, critters, clouds };
   }
 
-  async load(key: string): Promise<Place> {
+  /** A place, loaded once: a second ask while it loads (the preload, an NPC's walk) waits on the same files. */
+  load(key: string): Promise<Place> {
+    let p = this.loads.get(key);
+    if (!p) {
+      p = this.loadPlace(key);
+      this.loads.set(key, p);
+      p.catch(() => this.loads.delete(key));
+    }
+    return p;
+  }
+
+  private async loadPlace(key: string): Promise<Place> {
     if (this.cache.has(key)) return this.cache.get(key)!;
     const spec = this.data.world.places.find((p) => p.key === key);
     const entry = this.data.places[key];
