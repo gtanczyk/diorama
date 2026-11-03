@@ -273,6 +273,17 @@ function drawTriangle(dst: Float32Array, W: number, H: number, src: Float32Array
   }
 }
 
+/**
+ * Whether ink of `area` px is what the figure stands in, not theirs: a framed scene painted behind them (a cardboard
+ * box of stormy sea) touches them and is compact like a lantern, but it is bigger than they are, or a solid patch
+ * holding their whole outline. A bubble they float in holds them too, but only as a thin ring.
+ */
+function standsIn(c: Mask, area: number, figure: number, [fx0, fy0, fx1, fy1]: [number, number, number, number]): boolean {
+  const [x0, y0, x1, y1] = maskBox(c)!;
+  const holds = x0 <= fx0 && y0 <= fy0 && x1 >= fx1 && y1 >= fy1;
+  return area > 0.6 * figure || (holds && area / ((x1 - x0 + 1) * (y1 - y0 + 1)) > 0.35);
+}
+
 /** The figure's whole outline: SAM's person, plus what it holds (a lantern, a net) that stands out from the plain ground, holes filled. */
 export function silhouette(rgba: Buffer, person: Mask, tolerance = 64): Mask {
   const { width: W, height: H } = person;
@@ -287,7 +298,14 @@ export function silhouette(rgba: Buffer, person: Mask, tolerance = 64): Mask {
   const out = { width: W, height: H, bits: person.bits.slice() };
   person.bits.forEach((b, i) => b && (ink.bits[i] = 0));
   const rim = dilate(person, 4);
-  for (const c of components(ink)) {
+  const size = maskArea(person);
+  const [px0, py0, px1, py1] = maskBox(person) ?? [0, 0, 0, 0];
+  const parts = components(ink);
+  const behind = parts.filter((c) => standsIn(c, maskArea(c), size, [px0, py0, px1, py1]));
+  // Standing in a painted scene, what shows through a gap in the figure (between the legs) is that scene too.
+  const holes = behind.length ? fillHoles(person) : undefined;
+  for (const c of parts) {
+    if (behind.includes(c) || (holes && c.bits.every((b, i) => !b || holes.bits[i]))) continue;
     let touches = false;
     let outside = 0;
     let area = 0;
@@ -305,7 +323,10 @@ export function silhouette(rgba: Buffer, person: Mask, tolerance = 64): Mask {
     if (outside < 50 || compact) c.bits.forEach((b, i) => b && (out.bits[i] = 1));
     else c.bits.forEach((b, i) => b && rim.bits[i] && (out.bits[i] = 1));
   }
-  return fillHoles(out);
+  // ... and the gaps fillHoles would close stay open.
+  const filled = fillHoles(out);
+  if (holes) ink.bits.forEach((b, i) => b && !out.bits[i] && (filled.bits[i] = 0));
+  return filled;
 }
 
 /**
@@ -334,7 +355,7 @@ export function companions(rgba: Buffer, figure: Mask, tolerance = 64): Mask {
     const near = b[0] < x1 + reach && b[2] > x0 - reach && b[1] < y1 + reach && b[3] > y0 - reach;
     // Not the picture's frame or a strip along its edge: that is the painting, not the figure.
     const edge = b[0] <= 1 || b[1] <= 1 || b[2] >= W - 1 || b[3] >= H - 1;
-    if (near && !edge && maskArea(c) >= 0.04 * area) c.bits.forEach((v, i) => v && (out.bits[i] = 1));
+    if (near && !edge && maskArea(c) >= 0.04 * area && !standsIn(c, maskArea(c), area, box)) c.bits.forEach((v, i) => v && (out.bits[i] = 1));
   }
   return out;
 }
