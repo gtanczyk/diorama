@@ -5,6 +5,7 @@ import type { Geometry } from '../play/geometry.ts';
 import { personPx } from '../play/geometry.ts';
 import type { Place } from '../world/schema.ts';
 import { Grid, reach, roomy } from './walk.ts';
+import { rectIou } from '../image/raster.ts';
 
 export type Finding = { code: string; key?: string; detail: string; /** Where the thing really is, when a check found it elsewhere. */ box?: [number, number, number, number] };
 export type Verdict = { ok: boolean; errors: Finding[]; flags: Finding[] };
@@ -88,8 +89,12 @@ export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates:
     const check = notes.things[thing.key]?.check;
     if (check && !check.ok) {
       const seen = check.seen ?? 'something else';
+      // Spark points to where the thing really is, and it is where the mask is, and what it sees there is that kind
+      // of thing: a doubt about details ("but no long rays in its mask", when the painting has none), not a wrong
+      // mask. Brushing a disc of sky onto the mask to please it only gave the thing a round outline.
+      if (check.box && check.seen && rectIou(check.box, t.box) >= 0.6 && sameKind(check.seen, thing.key, thing.looks)) flags.push({ code: 'MASK_DOUBT', key: thing.key, detail: `Spark sees ${seen} in its mask, where the mask is` });
       // Spark points to where the thing really is: the mask is wrong for sure, whatever the thing's role.
-      if (check.box) errors.push({ code: 'MASK_WRONG', key: thing.key, detail: `Spark sees ${seen} in its mask; it is at [${check.box.join(', ')}]`, box: check.box });
+      else if (check.box) errors.push({ code: 'MASK_WRONG', key: thing.key, detail: `Spark sees ${seen} in its mask; it is at [${check.box.join(', ')}]`, box: check.box });
       // Spark sees no such thing anywhere, and what it sees is not even the same kind of thing: it was never
       // painted. A doubt about details ("a bronze bell" for "a small brass bell") stays a flag to look at.
       else if (check.seen && !sameKind(check.seen, thing.key, thing.looks)) errors.push({ code: 'THING_NOT_PAINTED', key: thing.key, detail: `Spark sees ${seen} where it should be, and no ${thing.key} anywhere` });

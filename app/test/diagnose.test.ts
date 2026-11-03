@@ -124,3 +124,14 @@ test('a floor cut off after derive shut rows too near the camera gets the close-
   expect(withPlay(err, near).play!.last).toMatch(/relayout/);
   expect(withPlay({ code: 'SCALE_NEAR', detail: 'x' }).play!.last).toMatch(/relayout/);
 });
+
+test('Spark seeing the thing where its mask is, only missing a detail, is a doubt, not a wrong mask', async () => {
+  const { verifyPlace } = await import('../src/scene/verify.ts');
+  const g = geometry([0, 0]);
+  g.things[0] = { ...g.things[0], key: 'lighthouse', role: 'prop', box: [954, 54, 1057, 366], stand: [120, 500], mask: 'masks/lighthouse.png' };
+  const place = { key: 'quay', shows: 'a quay', mood: 'calm', exits: [], things: [{ key: 'lighthouse', role: 'prop', looks: 'tall brown lighthouse with long yellow rays' }] } as never;
+  const seen = 'a lighthouse with a glowing lantern room and small windows, but no long rays in its mask';
+  const v = verifyPlace(place, g, { things: { lighthouse: { coarse: false, source: 'sam-text', check: { ok: false, seen, box: [955, 54, 1043, 366] } } }, floors: {} });
+  expect(v.errors.map((e) => e.code)).not.toContain('MASK_WRONG');
+  expect(v.flags).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'MASK_DOUBT', key: 'lighthouse' })]));
+});
