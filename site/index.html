@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Diorama</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Diorama turns a sketch or a sentence into a paper diorama world you can walk around in, built with Meta's Muse and SAM models.">
+<meta name="theme-color" content="#0f1a2e">
+<meta property="og:title" content="Diorama: draw it, walk into it">
+<meta property="og:description" content="A sketch or one sentence in, a playable paper diorama world out. Built at the Meta AI Global Hackathon.">
+<meta property="og:image" content="https://grzegorz.tanczyk.pl/diorama/media/og.jpg">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Commissioner:wght@400;500;650&family=Martian+Mono:wght@400;500&family=Gaegu:wght@700&display=swap">
+<style>
+/* Layout: a night paper theatre. Torn paper sheets float over a stormy navy stage; the hero is the clip on a paper stage, then sketch→world wipes, the layers coming apart, the build steps, the worlds shelf. */
+:root {
+  --night: #0f1a2e;
+  --stage: #172540;
+  --slate: #24365a;
+  --paper: #efe6d6;
+  --paper-ink: #1f2b45;
+  --lamp: #f4b54a;
+  --coat: #ffd23a;
+  --foam: #e3ebf3;
+  --muted: #98a8c2;
+  --line: #2c3f63;
+  --display: "Young Serif", "Iowan Old Style", Georgia, serif;
+  --body: "Commissioner", "Segoe UI", system-ui, sans-serif;
+  --mono: "Martian Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --hand: "Gaegu", "Comic Sans MS", cursive;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--night); }
+body { margin: 0; background: var(--night); color: var(--foam); font-family: var(--body); font-size: 17px; line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+img, video { max-width: 100%; display: block; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--coat); outline-offset: 3px; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* type scale: 13 / 17 / 22 / 34 / clamp hero */
+h1, h2, h3 { font-family: var(--display); font-weight: 400; margin: 0; text-wrap: balance; line-height: 1.05; }
+h1 { font-size: clamp(52px, 9vw, 116px); letter-spacing: -0.01em; }
+h2 { font-size: clamp(34px, 5vw, 56px); }
+h3 { font-size: 22px; line-height: 1.2; }
+p { margin: 0; }
+.label { font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.lede { font-size: clamp(18px, 2vw, 21px); color: var(--foam); max-width: 34ch; }
+.prose { max-width: 62ch; color: var(--muted); }
+.prose strong { color: var(--foam); font-weight: 650; }
+
+/* top bar */
+.top { position: relative; z-index: 3; }
+.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 18px; flex-wrap: wrap; }
+.mark { font-family: var(--display); font-size: 26px; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; }
+.mark svg { width: 30px; height: 30px; }
+.top nav { display: flex; gap: 20px; flex-wrap: wrap; }
+.top nav a { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; text-decoration: none; color: var(--muted); }
+.top nav a:hover { color: var(--coat); }
+
+/* hero */
+.hero { position: relative; isolation: isolate; overflow: hidden; }
+#rain { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
+.hero .wrap { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(24px, 4vw, 56px); align-items: center; padding-block: 24px 72px; }
+.hero-copy { display: grid; gap: 22px; min-width: 0; }
+.hero h1 em { font-style: normal; color: var(--coat); display: block; }
+.ctas { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.btn { font-family: var(--body); font-weight: 650; font-size: 16px; border: 0; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; padding: 14px 22px; color: var(--paper-ink); background: var(--coat); clip-path: var(--tear-btn); transition: transform .15s ease, background .15s ease; }
+.btn:hover { transform: translateY(-2px) rotate(-1deg); background: #ffe170; }
+.btn.ghost { background: var(--paper); }
+.btn.ghost:hover { background: #fff6e6; }
+.btn svg { width: 18px; height: 18px; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 22px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.facts b { color: var(--lamp); font-weight: 500; }
+
+/* paper stage around the clip */
+.stage { position: relative; min-width: 0; }
+.stage .sheet { position: absolute; inset: 0; background: var(--slate); }
+.stage .sheet.s1 { transform: rotate(-2.2deg) translate(-10px, 14px); background: #2a3d63; }
+.stage .sheet.s2 { transform: rotate(1.6deg) translate(12px, -8px); background: var(--paper); opacity: .92; }
+.stage .frame { position: relative; background: #000; padding: 0; box-shadow: 0 30px 60px -20px rgba(0,0,0,.7); }
+.stage video { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #000; }
+.stage .sound { position: absolute; right: 12px; bottom: 12px; font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; background: rgba(15,26,46,.82); color: var(--foam); border: 1px solid rgba(227,235,243,.3); padding: 8px 12px; cursor: pointer; }
+.stage .sound:hover { border-color: var(--coat); color: var(--coat); }
+.stage .tag { position: absolute; left: -8px; top: -18px; font-family: var(--hand); font-size: 26px; color: var(--paper-ink); background: var(--coat); padding: 2px 14px 0; transform: rotate(-4deg); clip-path: var(--tear-btn); z-index: 2; }
+
+/* torn band dividers */
+.band { position: relative; }
+.band.paper { background: var(--paper); color: var(--paper-ink); }
+.band.paper .label, .band.paper .prose { color: #56607a; }
+.band.paper .prose strong { color: var(--paper-ink); }
+.band.deep { background: var(--stage); }
+.edge { display: block; width: 100%; height: 28px; }
+.section { padding-block: 72px 80px; display: grid; gap: 36px; }
+.section-head { display: grid; gap: 14px; max-width: 760px; }
+
+/* sketch → world wipes */
+.wipes { display: grid; gap: 28px; }
+.wipe-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 28px; align-items: center; }
+.wipe-row:nth-child(even) { grid-template-columns: minmax(0, 300px) minmax(0, 1fr); }
+.wipe-row:nth-child(even) .wipe { order: 2; }
+.wipe { position: relative; aspect-ratio: 1100 / 826; max-width: 100%; overflow: hidden; background: #ddd; box-shadow: 0 18px 40px -18px rgba(31,43,69,.55); cursor: ew-resize; touch-action: pan-y; user-select: none; --x: 50%; }
+.wipe img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.wipe .over { clip-path: inset(0 calc(100% - var(--x)) 0 0); }
+.wipe .seam { position: absolute; top: 0; bottom: 0; left: var(--x); width: 0; pointer-events: none; }
+.wipe .seam::before { content: ""; position: absolute; top: 0; bottom: 0; left: -2px; width: 4px; background: var(--coat); box-shadow: 0 0 0 1px rgba(31,43,69,.35); }
+.wipe .knob { position: absolute; top: 50%; left: 0; transform: translate(-50%, -50%); width: 46px; height: 46px; border-radius: 50%; background: var(--coat); display: grid; place-items: center; box-shadow: 0 6px 16px rgba(0,0,0,.35); }
+.wipe .knob svg { width: 24px; height: 24px; color: var(--paper-ink); }
+.wipe .hand { position: absolute; top: 12px; font-family: var(--hand); font-size: 24px; line-height: 1; padding: 4px 10px 2px; background: rgba(239,230,214,.92); color: var(--paper-ink); pointer-events: none; }
+.wipe .hand.l { left: 12px; transform: rotate(-3deg); }
+.wipe .hand.r { right: 12px; transform: rotate(2deg); background: rgba(15,26,46,.85); color: var(--coat); }
+.wipe input[type=range] { position: absolute; inset: auto 0 0 0; width: 100%; opacity: 0; height: 100%; margin: 0; cursor: ew-resize; }
+.wipe:focus-within .knob { outline: 3px solid var(--paper-ink); outline-offset: 2px; }
+.wipe-text { display: grid; gap: 10px; min-width: 0; }
+.wipe-text .num { font-family: var(--display); font-size: 56px; line-height: 1; color: #c9b99c; }
+.wipe-text p { color: #56607a; }
+
+/* explode */
+.explode { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(24px, 4vw, 56px); align-items: center; }
+.layers { position: relative; aspect-ratio: 16 / 10; max-width: 100%; perspective: 1400px; }
+.layers img { position: absolute; width: 78%; aspect-ratio: 16 / 9; object-fit: cover; box-shadow: 0 24px 50px -16px rgba(0,0,0,.75); transition: transform .9s cubic-bezier(.2,.8,.2,1); }
+.layers img:nth-child(1) { left: 0; top: 0; transform: rotate(-3deg); z-index: 1; }
+.layers img:nth-child(2) { left: 22%; top: 18%; transform: rotate(2deg); z-index: 2; }
+.layers img:nth-child(3) { left: 8%; top: 40%; transform: rotate(-1deg); z-index: 3; }
+.layers:hover img:nth-child(1) { transform: rotate(-6deg) translate(-4%, -6%); }
+.layers:hover img:nth-child(2) { transform: rotate(4deg) translate(5%, -2%); }
+.layers:hover img:nth-child(3) { transform: rotate(-2deg) translate(-2%, 6%); }
+.ticks { display: grid; gap: 16px; padding: 0; margin: 0; list-style: none; }
+.ticks li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; color: var(--muted); }
+.ticks li strong { color: var(--foam); font-weight: 650; }
+.ticks svg { width: 22px; height: 22px; color: var(--lamp); margin-top: 3px; }
+
+/* build steps: real order of the pipeline */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 18px; counter-reset: step; }
+.step { counter-increment: step; background: var(--paper); color: var(--paper-ink); padding: 22px 22px 24px; display: grid; gap: 8px; align-content: start; clip-path: var(--tear-card); position: relative; }
+.step::before { content: counter(step); font-family: var(--display); font-size: 40px; line-height: 1; color: #c9b99c; }
+.step:nth-child(odd) { transform: rotate(-.6deg); }
+.step:nth-child(even) { transform: rotate(.5deg); }
+.step p { color: #56607a; font-size: 15px; }
+.step .who { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #8a6a2a; }
+
+/* models */
+.models { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 0; border-top: 1px solid var(--line); }
+.model { padding: 22px 20px 26px 0; border-bottom: 1px solid var(--line); display: grid; gap: 8px; align-content: start; min-width: 0; }
+.model h3 { color: var(--coat); }
+.model p { color: var(--muted); font-size: 15px; }
+.also { color: var(--muted); font-size: 15px; max-width: 80ch; }
+
+/* worlds shelf */
+.shelf { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: 24px; align-items: stretch; }
+.world { position: relative; display: grid; grid-template-rows: auto 1fr; background: var(--slate); text-decoration: none; color: var(--foam); overflow: hidden; box-shadow: 0 24px 50px -24px rgba(0,0,0,.8); transition: transform .2s ease; }
+.world:hover { transform: translateY(-4px) rotate(-.4deg); }
+.world .thumb { position: relative; aspect-ratio: 16 / 9; overflow: hidden; }
+.world .thumb img { width: 100%; height: 100%; object-fit: cover; transition: transform 1.2s ease; }
+.world:hover .thumb img { transform: scale(1.04); }
+.world .play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 84px; height: 84px; border-radius: 50%; background: var(--coat); display: grid; place-items: center; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+.world .play svg { width: 34px; height: 34px; color: var(--paper-ink); margin-left: 5px; }
+.world .meta { padding: 20px 22px 24px; display: grid; gap: 8px; }
+.world .meta p { color: var(--muted); font-size: 15px; }
+.world .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 4px 8px; border: 1px solid var(--line); color: var(--muted); }
+.chip.live { border-color: var(--coat); color: var(--coat); }
+.yours { display: grid; align-content: center; justify-items: start; gap: 14px; padding: 28px 24px; background: var(--paper); color: var(--paper-ink); clip-path: var(--tear-card); }
+.yours .hand { font-family: var(--hand); font-size: 34px; line-height: 1; color: var(--paper-ink); }
+.yours p { color: #56607a; font-size: 15px; }
+.yours .btn { background: var(--paper-ink); color: var(--paper); }
+.yours .btn:hover { background: #2e3d60; }
+
+/* note + footer */
+.note { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; }
+.note p { color: var(--muted); font-size: 15px; }
+footer { border-top: 1px solid var(--line); }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: space-between; padding-block: 28px 40px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+footer a { color: var(--foam); }
+
+@media (max-width: 900px) {
+  .hero .wrap, .explode, .shelf, .note { grid-template-columns: minmax(0, 1fr); }
+  .wipe-row, .wipe-row:nth-child(even) { grid-template-columns: minmax(0, 1fr); }
+  .wipe-row:nth-child(even) .wipe { order: 0; }
+  .stage { margin-top: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="./" aria-label="Diorama home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 27 L3 12 L16 4 L29 12 L29 27 Z" fill="#24365a"/><path d="M3 27 L9 18 L14 22 L20 14 L29 27 Z" fill="#efe6d6"/><path d="M3 27 L12 23 L19 26 L29 21 L29 27 Z" fill="#5b8fd6"/><circle cx="22" cy="10" r="2.6" fill="#ffd23a"/></svg>
+      Diorama
+    </a>
+    <nav aria-label="Sections">
+      <a href="#sketch">Sketch to world</a>
+      <a href="#how">How it works</a>
+      <a href="#worlds">Worlds</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero" aria-labelledby="hero-title">
+  <canvas id="rain" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <div class="hero-copy">
+      <span class="label">Meta AI Global Hackathon · 2026</span>
+      <h1 id="hero-title">Draw it. <em>Walk into it.</em></h1>
+      <p class="lede">Diorama turns a sketch or a single sentence into a small paper diorama world you can play in the browser. Painted places cut into layers, a hero who walks and talks, things to pick up, sound, and endings checked to be reachable.</p>
+      <div class="ctas">
+        <a class="btn" href="./paper-boat-storm/">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></svg>
+          Play Paper Boat Storm
+        </a>
+        <a class="btn ghost" href="#sketch">See the sketches</a>
+      </div>
+      <div class="facts" aria-label="Paper Boat Storm in numbers">
+        <span><b>3</b> sketches</span><span><b>3</b> places</span><span><b>1</b> paragraph of story</span><span>plays in any browser</span>
+      </div>
+    </div>
+    <div class="stage">
+      <div class="sheet s1" aria-hidden="true"></div>
+      <div class="sheet s2" aria-hidden="true"></div>
+      <span class="tag" aria-hidden="true">made from 3 sketches</span>
+      <div class="frame">
+        <video id="clip" autoplay muted loop playsinline preload="auto" poster="media/poster.jpg" aria-label="Paper Boat Storm: a girl in a yellow raincoat crosses a stormy paper harbour, a mill with a waterfall and a lighthouse rock; each place comes apart into its paper layers">
+          <source src="media/storm-720.mp4" type="video/mp4">
+        </video>
+        <button class="sound" id="sound" type="button" aria-pressed="false">Sound on</button>
+      </div>
+    </div>
+  </div>
+  <svg class="edge" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true"><path id="edge1" fill="#efe6d6" d=""/></svg>
+</section>
+
+<section class="band paper" id="sketch" aria-labelledby="sketch-title">
+  <div class="wrap section">
+    <div class="section-head">
+      <span class="label">Sketch → world</span>
+      <h2 id="sketch-title">One drawing becomes one place.</h2>
+      <p class="prose">Drag across each picture. On the left, the crayon sketch Diorama got as input. On the right, the place it built and you can walk in. <strong>Muse Spark</strong> reads what is on the sheet, plans the place around it, and <strong>Muse Image</strong> paints it in cut paper and cardboard.</p>
+    </div>
+    <div class="wipes">
+      <div class="wipe-row">
+        <div class="wipe" style="--x:50%">
+          <img src="media/scene-1.jpg" alt="The built place: a wooden quay at night with two lamp posts, rocking paper boats and a lighthouse far out" loading="lazy">
+          <img class="over" src="media/sketch-1.jpg" alt="Crayon sketch: a girl in a yellow coat, lamp posts, boats on zigzag waves and a lighthouse" loading="lazy">
+          <span class="hand l">sketch</span><span class="hand r">world</span>
+          <div class="seam"><div class="knob"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l-6 6 6 6M15 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+          <input type="range" min="0" max="100" value="50" id="wipe-1" aria-label="Compare sketch and world: the stormy quay">
+        </div>
+        <div class="wipe-text"><span class="num">1</span><h3>The stormy quay</h3><p>Lamp posts become glowing paper lamps, the zigzag waves become folded paper sea, and the three little boats bob on it.</p></div>
+      </div>
+      <div class="wipe-row">
+        <div class="wipe" style="--x:50%">
+          <img src="media/scene-2.jpg" alt="The built place: a waterfall, a rope bridge, a mill wheel and a little house, with fish in the sea below" loading="lazy">
+          <img class="over" src="media/sketch-2.jpg" alt="Crayon sketch labelled waterfall, mil wheel, house, wind and sea, with a girl on a rope bridge" loading="lazy">
+          <span class="hand l">sketch</span><span class="hand r">world</span>
+          <div class="seam"><div class="knob"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l-6 6 6 6M15 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+          <input type="range" min="0" max="100" value="50" id="wipe-2" aria-label="Compare sketch and world: the mill and the waterfall">
+        </div>
+        <div class="wipe-text"><span class="num">2</span><h3>The mill and the waterfall</h3><p>Even the misspelt “mil wheel” made it. The rope bridge is walkable, the waterfall pours, and every fish is its own cut-out that swims.</p></div>
+      </div>
+      <div class="wipe-row">
+        <div class="wipe" style="--x:50%">
+          <img src="media/scene-3.jpg" alt="The built place: a red lighthouse on a rock in rough sea, the keeper in the doorway, a paper boat on the shore" loading="lazy">
+          <img class="over" src="media/sketch-3.jpg" alt="Crayon sketch: a red lighthouse with a yellow beam, a keeper in the door and a girl holding a paper boat" loading="lazy">
+          <span class="hand l">sketch</span><span class="hand r">world</span>
+          <div class="seam"><div class="knob"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l-6 6 6 6M15 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+          <input type="range" min="0" max="100" value="50" id="wipe-3" aria-label="Compare sketch and world: the lighthouse rock">
+        </div>
+        <div class="wipe-text"><span class="num">3</span><h3>The lighthouse rock</h3><p>The keeper waits in the doorway, as drawn. The yellow crayon beam is now a real beam that sweeps over the storm.</p></div>
+      </div>
+    </div>
+  </div>
+  <svg class="edge" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" style="background:#efe6d6"><path id="edge2" fill="#0f1a2e" d=""/></svg>
+</section>
+
+<section aria-labelledby="layers-title">
+  <div class="wrap section">
+    <div class="explode">
+      <div class="layers" aria-label="Three places taken apart into their paper layers">
+        <img src="media/explode-1.jpg" alt="The quay pulled apart into separate paper layers" loading="lazy">
+        <img src="media/explode-2.jpg" alt="The mill pulled apart into separate paper layers" loading="lazy">
+        <img src="media/explode-3.jpg" alt="The lighthouse rock pulled apart into separate paper layers" loading="lazy">
+      </div>
+      <div class="section-head">
+        <span class="label">Not a flat picture</span>
+        <h2 id="layers-title">Every painting comes apart into a stage.</h2>
+        <ul class="ticks">
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h12M4 17h8" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg><span><strong>SAM 3.1 cuts out</strong> every thing, floor, stair and patch of water. The cut-outs become paper cards that stand at their own depth.</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18c3-6 6-6 9 0s6 6 9 0" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg><span><strong>A depth map gives parallax and shadows.</strong> The hero walks behind the lamp post and in front of the boat.</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20l4-8 3 4 3-6 4 10" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><span><strong>Code measures the walk grid</strong> from the masks, so the floor is where the painting says it is, and stairs are climbed step by step.</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span><strong>Then the place comes alive:</strong> waves roll, rain slants, lamps breathe, the lighthouse beam sweeps round.</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band deep" id="how" aria-labelledby="how-title">
+  <div class="wrap section">
+    <div class="section-head">
+      <span class="label">How a world is built</span>
+      <h2 id="how-title">Meta's models make it. Code checks it is playable.</h2>
+      <p class="prose">Models do the creative work. Code measures and checks every result, so what comes out can be played, not only looked at. Each step writes plain files, and a typical four-place world takes about 17 minutes and some 200 Meta model calls.</p>
+    </div>
+    <ol class="steps">
+      <li class="step"><span class="who">Muse Spark</span><h3>World and story</h3><p>Places, a cast, items, locks and endings, with every ending checked to be reachable.</p></li>
+      <li class="step"><span class="who">Muse Spark · Muse Image</span><h3>Layout and paint</h3><p>A shaded plan sketch for each place, painted over by Muse. A critic marks what is wrong and only those regions get repainted.</p></li>
+      <li class="step"><span class="who">SAM 3.1</span><h3>Cut-outs</h3><p>Every thing and floor cut out of the painting. Things the hero can take are painted out of a clean plate.</p></li>
+      <li class="step"><span class="who">Code · depth</span><h3>The stage</h3><p>Floor, scale, occlusion, stairs and light measured from masks and depth. Cards, far flats, water, rain.</p></li>
+      <li class="step"><span class="who">Muse Image · 3D</span><h3>Cast</h3><p>The hero and characters painted, cut out, turned into 3D models and drawn back as sprites in the world's style.</p></li>
+      <li class="step"><span class="who">Sound</span><h3>Sound and voices</h3><p>Ambience, footsteps, music, and a fitting voice for every character.</p></li>
+      <li class="step"><span class="who">Code · bots</span><h3>Verify</h3><p>Every place is walked and used by a bot. A place that fails is repaired automatically or handed to the agent.</p></li>
+    </ol>
+
+    <div class="section-head" style="margin-top:24px">
+      <span class="label">Meta models at work</span>
+    </div>
+    <div class="models">
+      <div class="model"><h3>Muse Spark</h3><p>Designs the world and story, reads the sketches, lays out each place, critiques paintings, names what to cut out, judges playthroughs.</p></div>
+      <div class="model"><h3>Muse Image</h3><p>Paints each place over its plan sketch, repaints flagged regions, paints the cast, their walk and talk sheets, and the item icons.</p></div>
+      <div class="model"><h3>SAM 3.1</h3><p>Cuts the painting into things, floors, stairs and water. The masks become the walk grid, occlusion and pick-ups.</p></div>
+      <div class="model"><h3>Muse Voice Transcribe</h3><p>Hears an idea said aloud, and listens to every voiced line to catch a take that does not say it.</p></div>
+      <div class="model"><h3>Muse Code</h3><p>The Studio's agent. Click a thing on the stage, say what should change, and it fixes the world with you.</p></div>
+    </div>
+    <p class="also">Also used: Depth Anything V2 for shadows and parallax, ElevenLabs for voices and effects, MusicGen for music, TRELLIS for the characters' 3D models.</p>
+  </div>
+</section>
+
+<section id="worlds" aria-labelledby="worlds-title">
+  <div class="wrap section">
+    <div class="section-head">
+      <span class="label">Worlds</span>
+      <h2 id="worlds-title">Walk in. No install, no sign-up.</h2>
+      <p class="prose">Worlds built with Diorama, playable in the browser on a computer or a phone. Click to walk, click things to look, take and use them, talk to people.</p>
+    </div>
+    <div class="shelf">
+      <a class="world" href="./paper-boat-storm/">
+        <div class="thumb">
+          <img src="media/world-storm.jpg" alt="Paper Boat Storm: the stormy quay at night" loading="lazy">
+          <span class="play" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 4v16l14-8z" fill="currentColor"/></svg></span>
+        </div>
+        <div class="meta">
+          <div class="chips"><span class="chip live">Play now</span><span class="chip">3 places</span><span class="chip">cut paper</span><span class="chip">sound on</span></div>
+          <h3>Paper Boat Storm</h3>
+          <p>A stormy night by the sea. A girl in a yellow raincoat has folded a letter into a paper boat and must bring it to the old lighthouse keeper before the storm gets worse.</p>
+        </div>
+      </a>
+      <div class="yours">
+        <span class="hand">your world next?</span>
+        <p>Send a sketch or a story on X and I'll build it with Diorama. New worlds land on this shelf.</p>
+        <a class="btn" href="https://x.com/gtanczyk" rel="noopener">Send it on X</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band deep" aria-labelledby="notes-title">
+  <div class="wrap section">
+    <h2 id="notes-title" class="label" style="font-family:var(--mono);font-size:12px">Notes</h2>
+    <div class="note">
+      <p><strong style="color:var(--foam)">About the sketches.</strong> No child drew the three storm sketches. They were generated with Muse Image to look like crayon drawings, then given to Diorama as input together with one paragraph of story. After the build, a few spots in the world were touched up by hand for the clip.</p>
+      <p><strong style="color:var(--foam)">About the project.</strong> Diorama was written during the Meta AI Global Hackathon, from the kickoff on 26 October 2026. It runs locally as a command-line tool and a Studio app, and exports each world as a static web page.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>Diorama · made by <a href="https://grzegorz.tanczyk.pl/">Grzegorz Tańczyk</a></span>
+    <span><a href="https://x.com/gtanczyk" rel="noopener">x.com/gtanczyk</a> · <a href="https://github.com/gtanczyk" rel="noopener">github.com/gtanczyk</a></span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* torn paper edges: one random jagged path per divider, and clip-path tears for buttons and cards */
+  function rnd(seed) { return function () { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; }; }
+  function edgePath(seed) {
+    var r = rnd(seed), d = 'M0 0 L0 12', x = 0;
+    while (x < 1200) { x += 10 + r() * 26; d += ' L' + Math.min(x, 1200).toFixed(1) + ' ' + (6 + r() * 16).toFixed(1); }
+    return d + ' L1200 0 Z';
+  }
+  var e1 = document.getElementById('edge1'), e2 = document.getElementById('edge2');
+  if (e1) { e1.setAttribute('d', edgePath(7).replace('M0 0', 'M0 28').replace('L1200 0 Z', 'L1200 28 Z')); }
+  if (e2) { e2.setAttribute('d', edgePath(19).replace('M0 0', 'M0 28').replace('L1200 0 Z', 'L1200 28 Z')); }
+  function tear(seed, amp) {
+    var r = rnd(seed), pts = [], i;
+    for (i = 0; i <= 10; i++) pts.push((i * 10) + '% ' + (r() * amp).toFixed(2) + '%');
+    for (i = 0; i <= 6; i++) pts.push((100 - r() * amp * 0.6).toFixed(2) + '% ' + (i * 16.6).toFixed(1) + '%');
+    for (i = 10; i >= 0; i--) pts.push((i * 10) + '% ' + (100 - r() * amp).toFixed(2) + '%');
+    for (i = 6; i >= 0; i--) pts.push((r() * amp * 0.6).toFixed(2) + '% ' + (i * 16.6).toFixed(1) + '%');
+    return 'polygon(' + pts.join(',') + ')';
+  }
+  document.documentElement.style.setProperty('--tear-btn', tear(3, 7));
+  document.documentElement.style.setProperty('--tear-card', tear(11, 2.2));
+
+  /* sound toggle for the hero clip */
+  var clip = document.getElementById('clip'), snd = document.getElementById('sound');
+  if (clip && snd) {
+    snd.addEventListener('click', function () {
+      clip.muted = !clip.muted;
+      if (!clip.muted) { try { clip.currentTime = 0; } catch (e) {} clip.play().catch(function () {}); }
+      snd.textContent = clip.muted ? 'Sound on' : 'Sound off';
+      snd.setAttribute('aria-pressed', String(!clip.muted));
+    });
+    if (reduce) { clip.removeAttribute('autoplay'); clip.pause(); clip.controls = true; }
+  }
+
+  /* sketch → world wipes */
+  document.querySelectorAll('.wipe').forEach(function (w) {
+    var input = w.querySelector('input');
+    function set(v) { w.style.setProperty('--x', v + '%'); input.value = v; }
+    input.addEventListener('input', function () { set(+input.value); });
+    var dragging = false;
+    function at(ev) { var b = w.getBoundingClientRect(); return Math.max(0, Math.min(100, (ev.clientX - b.left) / b.width * 100)); }
+    w.addEventListener('pointerdown', function (ev) { dragging = true; set(at(ev)); });
+    window.addEventListener('pointermove', function (ev) { if (dragging) set(at(ev)); });
+    window.addEventListener('pointerup', function () { dragging = false; });
+    if (!reduce && 'IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (ents) {
+        ents.forEach(function (en) {
+          if (!en.isIntersecting) return; io.disconnect();
+          var t0 = performance.now();
+          (function tick(t) {
+            if (dragging) return;
+            var k = Math.min(1, (t - t0) / 2200), v = 50 + Math.sin(k * Math.PI * 2) * 38 * (1 - k);
+            set(v); if (k < 1) requestAnimationFrame(tick);
+          })(t0);
+        });
+      }, { threshold: 0.6 });
+      io.observe(w);
+    }
+  });
+
+  /* rain over the hero */
+  var cv = document.getElementById('rain');
+  if (cv && !reduce) {
+    var ctx = cv.getContext('2d'), drops = [], W = 0, H = 0, dpr = Math.min(2, window.devicePixelRatio || 1);
+    function size() { var b = cv.getBoundingClientRect(); W = b.width; H = b.height; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+    size(); window.addEventListener('resize', size);
+    for (var i = 0; i < 140; i++) drops.push({ x: Math.random() * 1.2, y: Math.random(), l: 10 + Math.random() * 22, s: 0.5 + Math.random() * 0.9, a: 0.06 + Math.random() * 0.16 });
+    var visible = true;
+    if ('IntersectionObserver' in window) new IntersectionObserver(function (e) { visible = e[0].isIntersecting; }).observe(cv);
+    (function frame() {
+      if (visible) {
+        ctx.clearRect(0, 0, W, H);
+        ctx.lineWidth = 1.2; ctx.lineCap = 'round';
+        drops.forEach(function (d) {
+          d.y += d.s * 0.012; d.x -= d.s * 0.003;
+          if (d.y > 1.05) { d.y = -0.05; d.x = Math.random() * 1.2; }
+          var x = d.x * W, y = d.y * H;
+          ctx.strokeStyle = 'rgba(227,235,243,' + d.a + ')';
+          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - d.l * 0.3, y + d.l); ctx.stroke();
+        });
+      }
+      requestAnimationFrame(frame);
+    })();
+  }
+})();
+</script>
+</body>
+</html>
