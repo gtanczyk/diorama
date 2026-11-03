@@ -143,3 +143,18 @@ test('lamps, signs and ticket machines get no loop; a lantern the brief sets on 
   const kept = withoutSilentLoops(plan, { stop: { brief: { alive: [{ key: 'oil-lantern', as: 'fire' }] } } } as never);
   expect(kept.places.stop.loops.map((l) => l.thing)).toEqual(['fountain', 'oil-lantern']);
 });
+
+test('a loop on a waterfall or the surf may be hiss, a bed or a mill wheel may not; a boat bobbing on the water needs no loop', async () => {
+  const { hissProblem } = await import('../src/sound/make.ts');
+  const { RATE } = await import('../src/sound/pcm.ts');
+  const n = RATE;
+  const noise = { left: new Float32Array(n).map(() => Math.random() - 0.5), right: new Float32Array(n).map(() => Math.random() - 0.5) };
+  expect(hissProblem(noise, 'loop', 'Tall waterfall pouring onto rocks, thick constant roar')).toBe('');
+  expect(hissProblem(noise, 'loop', 'Waves breaking over a big rock')).toBe('');
+  expect(hissProblem(noise, 'loop', 'Large wooden mill wheel turning slowly')).toBe('mostly hiss');
+  expect(hissProblem(noise, 'bed', 'steady rain on water')).toBe('mostly hiss');
+  const plan = { music: { prompt: 'm' }, steps: {}, shots: [], places: { quay: { bed: 'b', floors: {}, loops: [] } } } as unknown as SoundPlan;
+  const world = { places: [{ key: 'quay', things: [{ key: 'bobbing-boats' }, { key: 'waterfall' }] }] } as unknown as World;
+  const issues = planIssues(plan, world, { quay: { brief: { alive: [{ key: 'bobbing-boats', as: 'water' }, { key: 'waterfall', as: 'water' }] } } } as never);
+  expect(issues).toEqual(['quay: waterfall is water but makes no sound']);
+});

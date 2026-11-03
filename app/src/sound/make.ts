@@ -45,6 +45,10 @@ export const HISS = 0.4;
 const NO_HISS = '. Not wind, not rustling, no hiss or air noise: soft distant life and warm low tones';
 /** Mostly hiss: high-frequency energy that is noise. Crickets, birdsong and other tones are not hiss, however bright. */
 export const hissy = (pcm: Pcm) => hiss(pcm) > HISS && tonalShare(pcm) < 0.3;
+/** Sounds that are hiss by nature (a waterfall's roar, rain, surf): three takes of one were all "mostly hiss" and it stayed silent. */
+export const HISS_BY_NATURE = /\b(waterfalls?|cascades?|rain|downpour|drizzle|sea|ocean|surf|waves?|breakers|rapids|river|torrent|spray|shower|sizzl\w*|steam)\b/i;
+/** What is wrong with a bed or loop being hiss: nothing for a loop on a thing that hisses by nature. A bed under the whole game still may not. */
+export const hissProblem = (pcm: Pcm, kind: Kind, prompt: string) => (!(kind === 'loop' && HISS_BY_NATURE.test(prompt)) && hissy(pcm) ? 'mostly hiss' : '');
 /**
  * What the next take asks for, from what was wrong with the last one: only a hissy take is asked for no hiss. Asking
  * a quiet one to be "gentle and quiet" (or even "clearly audible": the level does not follow the words) does not help.
@@ -136,7 +140,7 @@ async function makeOne(memo: Memo, job: Job, music: { python?: string }): Promis
       const prompt = retakePrompt(job.prompt, take, problem);
       const ask: EffectAsk = { label: `${job.id}-${round + take}`, prompt, seconds: job.seconds, loop: true, take: round + take };
       const pcm = decode(await soundEffect(memo, ask));
-      problem = audioProblem(pcm) ?? loopProblem(pcm, { beats: job.kind === 'loop' }) ?? (hissy(pcm) ? 'mostly hiss' : '');
+      problem = audioProblem(pcm) ?? loopProblem(pcm, { beats: job.kind === 'loop' }) ?? hissProblem(pcm, job.kind, job.prompt);
       if (problem) forgetEffect(memo, ask);
       if (!problem) return entry(normalise(seamless(pcm, job.kind === 'bed' ? 1.5 : 0.8), TARGET_DB[job.kind]), 'elevenlabs', { mix: MIX });
     }

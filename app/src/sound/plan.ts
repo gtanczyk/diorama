@@ -66,12 +66,16 @@ export function planIssues(plan: SoundPlan, world: World, sources: Record<string
     }
     // Every thing the brief animates should be heard too, unless it is silent by nature (a light, cloth).
     // A moving floor (water under a quay) has nothing to pan to; the bed carries it.
+    // A boat the brief sets bobbing on the water ("water") is heard in the water's bed, not on its own.
     for (const alive of sources[place.key]?.brief?.alive ?? []) {
-      if (things.has(alive.key) && ['water', 'fire', 'smoke'].includes(alive.as) && !p.loops.some((l) => l.thing === alive.key)) issues.push(`${place.key}: ${alive.key} is ${alive.as} but makes no sound`);
+      if (things.has(alive.key) && ['water', 'fire', 'smoke'].includes(alive.as) && !(alive.as === 'water' && AFLOAT.test(alive.key)) && !p.loops.some((l) => l.thing === alive.key)) issues.push(`${place.key}: ${alive.key} is ${alive.as} but makes no sound`);
     }
   }
   return issues;
 }
+
+/** Things that ride the water rather than being it. */
+const AFLOAT = /(^|-)(boats?|rowboat|dinghy|skiff|canoe|kayak|raft|ship|barge|ferry|yacht|sailboats?|buoy|[łl][óo]d[źz]|[łl]odzie|[łl][óo]dka|statek|tratwa)(-|$)/;
 
 /** Drops loops on keys that are not things of their place (a floor, say): nothing in the page to pan them to. */
 export function withoutStrayLoops(plan: SoundPlan, world: World): SoundPlan {
