@@ -1861,7 +1861,14 @@ class Game {
     } else {
       if (bg) ctx.drawImage(bg, 0, 0, W, H);
       // What the story has changed here (a beacon lit): each change is the thing as it looks after, transparent elsewhere.
-      for (const { img } of this.changed()) ctx.drawImage(img, 0, 0, W, H);
+      // A carded thing's change rides the card's swell with it, as in the diorama.
+      for (const { img, i } of this.changed()) {
+        const cut = this.place.cuts.find((c) => (c.occ.thing ?? c.occ.key) === this.data.story!.changes[i].thing);
+        ctx.save();
+        if (cut) this.poseCard(cut);
+        ctx.drawImage(img, 0, 0, W, H);
+        ctx.restore();
+      }
       this.place.weather?.drawGround(ctx, () => [0, 0]);
       this.place.glows?.drawBehind(ctx, () => [0, 0]);
       for (const hot of this.hots()) {
