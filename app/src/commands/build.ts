@@ -390,8 +390,9 @@ defineCommand({
     /**
      * A card whose mask leaves out a painted part of its thing (CARD_CUT: the boat's bow, a lamp on its post) leaves
      * that part smeared on the backdrop when the card slides. The flag's box says where; the thing's box is widened
-     * to take it in: the cut part is brushed onto the thing's mask (as mask_brush does), so the card carries it and the
-     * backdrop is made again without it. Once per cut.
+     * to take it in (as mask_fix box does), so masks asks SAM by the wider box and joins what it finds there that
+     * touches the thing; the card carries it and the backdrop is made again without it. Once per cut. A round dab
+     * brushed over the part instead took the sky round it too: a disc on the card, and a hover outline looping round it.
      */
     async function recutCards(place: string, r: Report | null): Promise<Report | null> {
       if (!r || r.from || repair === 'off') return r;
@@ -402,17 +403,16 @@ defineCommand({
       const dir = files.place(place);
       const before = readCorrections(dir);
       const after = Corrections.parse(JSON.parse(JSON.stringify(before)));
+      const geometry = fs.existsSync(files.place(place, 'geometry.json')) ? Geometry.parse(files.readJson(files.place(place, 'geometry.json'))) : undefined;
       const what: string[] = [];
       for (const f of cuts) {
-        // The cut part is brushed onto the thing's mask (a lantern standing on a boat's gunwale): a little of what is
-        // round it comes along, which the backdrop has behind it anyway. Asking SAM again by a wider box found
-        // something else and kept the old mask.
+        const was = after.things[f.key!]?.box ?? geometry?.things.find((t) => t.key === f.key)?.box;
+        if (!was) continue;
         const [x0, y0, x1, y1] = f.box!;
-        const stroke = { mode: 'add' as const, radius: Math.round(Math.max(x1 - x0, y1 - y0) / 2 + 8), points: [[Math.round((x0 + x1) / 2), Math.round((y0 + y1) / 2)] as [number, number]] };
-        const t = (after.things[f.key!] ??= { strokes: [] });
-        if (t.strokes.some((x) => JSON.stringify(x) === JSON.stringify(stroke))) continue;
-        t.strokes.push(stroke);
-        what.push(`brushed the part of ${f.key} its card cut through onto its mask at [${f.box!.join(', ')}]`);
+        const box: [number, number, number, number] = [Math.min(was[0], x0), Math.min(was[1], y0), Math.max(was[2], x1), Math.max(was[3], y1)].map(Math.round) as [number, number, number, number];
+        if (box.every((v, i) => v === Math.round(was[i]))) continue;
+        (after.things[f.key!] ??= { strokes: [] }).box = box;
+        what.push(`widened ${f.key}'s box to [${box.join(', ')}] to take in the part its card cut through at [${f.box!.join(', ')}]`);
       }
       if (!what.length) return r;
       writeCorrections(dir, after);
