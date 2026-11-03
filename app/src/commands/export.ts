@@ -7,8 +7,8 @@ import { defineCommand } from '../registry.ts';
 import { WorldFiles } from '../world/files.ts';
 import { bundle, WEB, worldData } from './play.ts';
 
-/** Writes the playable copy of world `slug` to `out`, replacing whatever was there. */
-export async function exportWorld(slug: string, out: string): Promise<void> {
+/** Writes the playable copy of world `slug` to `out`, replacing whatever was there; `home` adds a link back to the page it is shared from. */
+export async function exportWorld(slug: string, out: string, home?: string): Promise<void> {
   const files = new WorldFiles(slug);
   const data = worldData(files);
   fs.rmSync(out, { recursive: true, force: true });
@@ -68,18 +68,26 @@ export async function exportWorld(slug: string, out: string): Promise<void> {
   for (const file of audioFiles) await copy(file);
   fs.writeFileSync(path.join(out, 'world-data.json'), JSON.stringify(data));
   fs.writeFileSync(path.join(out, 'main.js'), await bundle(true));
-  fs.copyFileSync(path.join(WEB, 'index.html'), path.join(out, 'index.html'));
+  let page = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
+  if (home) {
+    const href = home.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    page = page.replace('<div id="soundless"', `<a id="home" href="${href}">← Diorama</a>\n<div id="soundless"`);
+  }
+  fs.writeFileSync(path.join(out, 'index.html'), page);
 }
 
 defineCommand({
   name: 'export',
-  usage: 'export <slug> [dir] [--zip]   write a static, playable copy of the world (default exports/<slug>); --zip also packs it for itch.io or e-mail',
+  usage: 'export <slug> [dir] [--zip] [--home <url>]   write a static, playable copy of the world (default exports/<slug>); --zip also packs it for itch.io or e-mail; --home puts a "← Diorama" link to <url> in the corner',
   async run(args) {
     const zip = args.includes('--zip');
-    const [slug, dir = path.join('exports', slug ?? '')] = args.filter((a) => a !== '--zip');
-    if (!slug) throw new Error('usage: diorama export <slug> [dir] [--zip]');
+    const h = args.indexOf('--home');
+    const home = h >= 0 ? args[h + 1] : undefined;
+    if (h >= 0 && !home) throw new Error('--home needs a url');
+    const [slug, dir = path.join('exports', slug ?? '')] = args.filter((a, i) => a !== '--zip' && (h < 0 || (i !== h && i !== h + 1)));
+    if (!slug) throw new Error('usage: diorama export <slug> [dir] [--zip] [--home <url>]');
     const out = path.resolve(dir);
-    await exportWorld(slug, out);
+    await exportWorld(slug, out, home);
     console.log(`export ${slug}: ${out}`);
     if (zip) {
       // index.html at the zip's root, which is what itch.io wants for an HTML5 upload.

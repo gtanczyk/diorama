@@ -238,11 +238,22 @@ const LONG_PRESS_MS = 500;
 // Relative paths, so the same page runs from `diorama play` and from an exported folder.
 const files = (p: string) => `files/${p}`;
 
+// The loading card counts the pictures asked for and in, until the first place is drawn.
+const loading = document.getElementById('loading');
+const pieces = { asked: 0, in: 0 };
+const countPiece = () => {
+  pieces.in++;
+  if (!loading || loading.classList.contains('done')) return;
+  loading.querySelector<HTMLElement>('.bar i')!.style.width = `${Math.round((100 * pieces.in) / Math.max(pieces.asked, 1))}%`;
+  loading.querySelector('.count')!.textContent = `${pieces.in} / ${pieces.asked} pieces`;
+};
+
 const loadImage = (src: string) =>
   new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`cannot load ${src}`));
+    pieces.asked++;
+    img.onload = () => (countPiece(), resolve(img));
+    img.onerror = () => (countPiece(), reject(new Error(`cannot load ${src}`)));
     img.src = src;
   });
 
@@ -353,6 +364,7 @@ class Game {
   async start() {
     this.data = await (await fetch('world-data.json')).json();
     useLanguage(this.data.world.language);
+    if (loading) loading.querySelector('.what')!.textContent = `Unfolding ${this.data.world.title}…`;
     await Promise.all(Object.entries(this.data.cast).map(async ([key, cast]) => {
       const img = await loadImage(files(cast.image)).catch(() => undefined);
       if (!img) return;
@@ -3462,6 +3474,7 @@ const frame = (now: number) => {
   requestAnimationFrame(frame);
   fitHud(canvas);
   if (!game.place) return;
+  if (loading && !loading.classList.contains('done')) loading.classList.add('done');
   // Capture mode steps a fixed 1/60 s per frame so a recorded run is the same every time.
   const dt = capture ? 1 / 60 : Math.min(0.05, (now - last) / 1000);
   last = now;
@@ -3476,7 +3489,11 @@ const frame = (now: number) => {
   game.render();
 };
 requestAnimationFrame(frame);
-await game.start();
+await game.start().catch((e: unknown) => {
+  loading?.classList.add('failed');
+  if (loading) loading.querySelector('.what')!.textContent = 'This world could not be loaded. Try reloading the page.';
+  throw e;
+});
 
 /** Turns angle `a` toward `b` by at most `step` radians, the short way round. */
 function turnToward(a: number, b: number, step: number): number {

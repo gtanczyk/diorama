@@ -79,6 +79,25 @@
   #ending .carried { display: flex; justify-content: center; gap: 8px; margin-bottom: 18px; }
   #ending .carried img { width: 52px; height: 52px; object-fit: contain; padding: 4px; background: #e7d8b6; border-radius: 12px; }
   #ending .again { padding: 9px 20px; background: var(--glow); border: 2.5px solid var(--clay); border-radius: 12px; box-shadow: 0 4px 0 #2b211840; color: var(--ink); font-size: 17px; text-align: center; }
+  /* While the world's pictures come in: three paper sheets fold up into a little stage, with a count of the pieces under it. */
+  #loading { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; align-content: center; gap: 22px; background: radial-gradient(ellipse at 50% 40%, #1b2236, #0b0b0e 70%); text-align: center; transition: opacity .6s; }
+  #loading.done { opacity: 0; pointer-events: none; }
+  #loading .stage { position: relative; width: 150px; height: 104px; perspective: 500px; }
+  #loading .sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 74px; border: 2.5px solid #2b2118; border-radius: 10px 10px 4px 4px; transform-origin: 50% 100%; animation: unfold 2.4s ease-in-out infinite; }
+  #loading .sheet:nth-child(1) { background: #3d5a8a; clip-path: polygon(0 40%, 18% 18%, 34% 34%, 52% 6%, 70% 30%, 86% 14%, 100% 32%, 100% 100%, 0 100%); }
+  #loading .sheet:nth-child(2) { background: #6c90b8; height: 52px; left: 10px; right: 10px; clip-path: polygon(0 30%, 25% 0, 50% 30%, 75% 0, 100% 30%, 100% 100%, 0 100%); animation-delay: .15s; }
+  #loading .sheet:nth-child(3) { background: #c99a5b; height: 28px; left: 20px; right: 20px; border-radius: 6px 6px 4px 4px; animation-delay: .3s; }
+  #loading .lamp { position: absolute; right: 26px; top: 6px; width: 14px; height: 14px; border-radius: 50%; background: #ffe7a8; box-shadow: 0 0 18px 6px #ffd37a88; animation: lamp 1.2s ease-in-out infinite alternate; }
+  @keyframes unfold { 0%, 12% { transform: rotateX(-88deg); } 38%, 78% { transform: rotateX(0); } 100% { transform: rotateX(-88deg); } }
+  @keyframes lamp { from { opacity: .45; } to { opacity: 1; } }
+  #loading .what { font-size: 22px; color: #f3e8cf; }
+  #loading .count { font: 12px/1 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; color: #e8e2d699; }
+  #loading .bar { width: 180px; height: 4px; border-radius: 2px; background: #e8e2d622; overflow: hidden; }
+  #loading .bar i { display: block; height: 100%; width: 0; background: #e9c46a; transition: width .3s; }
+  #loading.failed .stage, #loading.failed .bar { display: none; }
+  /* A way back to the page the world was shared from (diorama export --home <url>). */
+  #home { position: fixed; top: 12px; right: 12px; z-index: 7; padding: 5px 12px; color: #f3e8cf; background: #0b0b0e99; border: 1.5px solid #e8e2d644; border-radius: 999px; font-size: 14px; text-decoration: none; opacity: .7; transition: opacity .2s; }
+  #home:hover { opacity: 1; border-color: #e9c46a; }
 </style>
 </head>
 <body>
@@ -86,6 +105,7 @@
 <div id="hud"><div id="inventory" hidden></div><div id="talk" hidden></div><div id="player" hidden></div><div id="handover" hidden></div><div id="ending" hidden></div></div>
 <div id="turn"><svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true"><rect x="20" y="8" width="24" height="42" rx="4" fill="none" stroke="#e8e2d6" stroke-width="3"/><path d="M14 52 a22 22 0 0 0 36 0" fill="none" stroke="#e9c46a" stroke-width="3"/><path d="M46 46 l4 6 l-7 1" fill="none" stroke="#e9c46a" stroke-width="3" stroke-linejoin="round"/></svg><div>Turn your phone sideways to play.</div><button type="button" onclick="this.parentElement.hidden = true">Play upright anyway</button></div>
 <div id="soundless" hidden></div>
+<div id="loading" role="status"><div class="stage" aria-hidden="true"><div class="sheet"></div><div class="sheet"></div><div class="sheet"></div><div class="lamp"></div></div><div class="what">Unfolding the diorama…</div><div class="bar"><i></i></div><div class="count"></div></div>
 <div id="bar"><span id="where"></span><span id="hover"></span><span class="hint">click to walk or use, double click to hurry · right click or long press to look or put back · WASD or arrows walk (Shift hurries), E uses · 1-9 items · g grid · m sound</span></div>
 <script type="module" src="main.js"></script>
 </body>

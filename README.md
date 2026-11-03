@@ -8,6 +8,8 @@
 
 Diorama is a local tool that turns a story idea into a small point-and-click adventure: painted places, a hero and characters who walk and talk, things to pick up and use, sound and voices, and endings that are checked to be reachable. Meta's models do the creative work; code measures and checks every result, so what comes out is playable, not only pretty. Every step writes plain files, and every fix you make survives the next rebuild.
 
+**[See it on grzegorz.tanczyk.pl/diorama](https://grzegorz.tanczyk.pl/diorama/)**: the one-pager, and [Paper Boat Storm](https://grzegorz.tanczyk.pl/diorama/paper-boat-storm/), a world built from three sketches that you can play in the browser.
+
 ## Quick start
 
 You need Node 22+, `ffmpeg` and a Meta Model API key. Make an empty folder and run Diorama there with `npx`. Nothing to clone; your worlds are saved in `./worlds`.
