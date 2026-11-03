@@ -6,7 +6,7 @@
 import sharp from 'sharp';
 import { z } from 'zod';
 import { maskArea, maskToPng, emptyMask, type Mask } from '../image/mask.ts';
-import { components, dilate, intersect, subtract, union, unionAll } from '../image/raster.ts';
+import { components, dilate, intersect, polygonMask, subtract, union, unionAll } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import { samFind } from '../meta/sam.ts';
 import { askSparkJson } from '../meta/spark.ts';
@@ -227,11 +227,13 @@ export function waterMask(found: Mask, cards: Mask, floors: Array<{ key: string;
     if (takes) swallowed.push(key);
     return !takes;
   });
-  let mask = subtract(found, dilate(unionAll(W, H, [...dry.map((f) => f.mask), cards]), 6));
+  const dryLand = dilate(unionAll(W, H, [...dry.map((f) => f.mask), cards]), 6);
+  let mask = subtract(found, dryLand);
   for (const cell of depth.waterAdd) {
     const at = cellsMask([cell]);
     const seen = intersect(found, at);
-    mask = union(mask, maskArea(seen) >= ADDED_SEEN * maskArea(at) ? seen : at);
+    // A whole cell on the shore takes in a corner of the quay too: the floors and cards stay dry in it.
+    mask = union(mask, maskArea(seen) >= ADDED_SEEN * maskArea(at) ? seen : subtract(at, dryLand));
   }
   if (depth.waterRemove.length) mask = subtract(mask, cellsMask(depth.waterRemove));
   return { mask, swallowed };
@@ -249,30 +251,65 @@ export function mayBeWet(place: Place): boolean {
   return WET.test([place.key, place.shows, place.mood, ...place.things.map((t) => JSON.stringify(t))].join(' '));
 }
 
-export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer, cards: Mask, floors: Array<{ key: string; mask: Mask }>, depth: Depth = Depth.parse({})): Promise<Water | undefined> {
+const WaterOutlines = z.object({ areas: z.array(z.object({ what: z.string().optional(), outline: z.array(z.tuple([z.number(), z.number()])).min(3) })).max(4) });
+
+/**
+ * Water SAM does not know: a sea of torn blue paper with crumpled white foam, felt waves, a woodcut river. Spark
+ * outlines each body of water; the floors, cards and painted things are taken out of it after (see waterMask),
+ * so a rough outline that runs over the quay still leaves the quay dry.
+ */
+export async function waterOutlines(memo: Memo, place: Place, backdrop: Buffer): Promise<{ mask: Mask; phrase: string } | undefined> {
+  const [W, H]: [number, number] = [FRAME.width, FRAME.height];
+  const prompt = `This is a painted game scene, ${W}x${H} px. Is there water in it (the sea, a river, a lake, a harbour, a pond), painted in any style: torn or folded paper waves with crumpled white foam, felt, cardboard, a woodcut?
+Answer with JSON only: {"areas": [{"what": "stormy sea", "outline": [[x, y], ...]}]}, 8 to 20 points in px around the visible surface of each body of water (its waves and foam included; not the sky, a quay, a beach, rocks, boats or a waterfall), at most 4 areas; or {"areas": []} when there is none.`;
+  const { areas } = WaterOutlines.parse(await askSparkJson(memo, { schema: WaterOutlines, label: `water-outline:${place.key}`, prompt, images: [backdrop] }));
+  if (!areas.length) return undefined;
+  return { mask: unionAll(W, H, areas.map((a) => polygonMask(W, H, a.outline))), phrase: areas.map((a) => a.what ?? 'water').join(' · ') };
+}
+
+export async function waterSheet(memo: Memo, place: Place, backdrop: Buffer, cards: Mask, floors: Array<{ key: string; mask: Mask }>, depth: Depth = Depth.parse({}), under?: Mask): Promise<Water | undefined> {
   const [W, H]: [number, number] = [FRAME.width, FRAME.height];
   let mask: Mask | undefined;
   let phrase = '';
   let swallowed: string[] = [];
   // SAM is asked about water only where the place could have some (its description, its things), or the author
   // marked it: a clockmaker's workshop paid three asks, one after another, to hear there is no sea in it.
+  // What SAM finds must be water by itself: the author's cells (water_area) alone used to pass for it, and a paper
+  // sea SAM never saw was left to them, still and blocky.
+  const own = Depth.parse({});
+  let found: Mask | undefined;
   for (const p of mayBeWet(place) ? ['water', 'river', 'sea'] : []) {
     const hits = await samFind(memo, { label: `water:${place.key}/${p}`, image: backdrop, prompt: p });
-    const m = waterMask(unionAll(W, H, hits.map((f) => f.mask)), cards, floors, depth);
-    if (maskArea(m.mask) >= 8000) [mask, phrase, swallowed] = [m.mask, p, m.swallowed];
-    if (mask) break;
+    const all = unionAll(W, H, hits.map((f) => f.mask));
+    if (maskArea(waterMask(all, cards, floors, own).mask) >= 8000) [found, phrase] = [all, p];
+    if (found) break;
   }
-  // Water SAM did not see at all, only where the author marked it.
-  if (!mask && depth.waterAdd.length) {
-    const m = waterMask(emptyMask(W, H), cards, floors, depth);
-    if (maskArea(m.mask) > 0) [mask, phrase] = [m.mask, 'water'];
+  // SAM saw no water where there may be some: a stylised sea (paper, felt) it does not call water. Spark outlines it.
+  if (!found && mayBeWet(place)) {
+    const drawn = await waterOutlines(memo, place, backdrop).catch((error) => {
+      console.log(`  ${place.key}: no water outlined (${error instanceof Error ? error.message.slice(0, 120) : error})`);
+      return undefined;
+    });
+    if (drawn && maskArea(waterMask(drawn.mask, cards, floors, own).mask) >= 8000) {
+      [found, phrase] = [drawn.mask, drawn.phrase];
+      console.log(`  ${place.key}: SAM saw no water; Spark outlined ${drawn.phrase}`);
+    }
+  }
+  // Then the author's cells: added where SAM or Spark missed water, taken out where it is none.
+  if (found || depth.waterAdd.length) {
+    const m = waterMask(found ?? emptyMask(W, H), cards, floors, depth);
+    if (maskArea(m.mask) > 0) [mask, swallowed, phrase] = [m.mask, m.swallowed, phrase || 'water'];
   }
   if (mask && swallowed.length) console.log(`  ${place.key}: the floor ${swallowed.join(', ')} took in the ${phrase}: it flows there anyway`);
   if (!mask) return undefined;
   const [mx0, my0, mx1, my1] = boxOf(mask);
   // Carried past the edges on all sides: water running into the depth also moves up and down the frame.
   const box: [number, number, number, number] = [Math.max(0, mx0 - WATER_PAD), Math.max(0, my0 - WATER_PAD), Math.min(W, mx1 + WATER_PAD), Math.min(H, my1 + WATER_PAD)];
-  const rgb = new Uint8Array(await sharp(backdrop).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer());
+  const raw = new Uint8Array(await sharp(backdrop).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer());
+  // What swims in the water (fish set swimming as cards of their own) is painted out of it: the water beside them copied over them.
+  const swum = under && intersect(dilate(under, 3), dilate(mask, 24));
+  const rgb = swum && maskArea(swum) ? cloneFill(raw, W, H, swum) : raw;
+  if (swum) mask = union(mask, swum);
   // Everything in the box that is not water gets the water's colours, row by row from the nearest water.
   const reach = emptyMask(W, H);
   for (let y = box[1]; y < box[3]; y++) reach.bits.fill(1, y * W + box[0], y * W + box[2]);
@@ -491,4 +528,295 @@ export async function floatSheet(memo: Memo, place: Place, backdrop: Buffer, not
     if (out.length >= 24) break;
   }
   return out;
+}
+
+/**
+ * Fills `hole` with paint copied from beside it: each piece of the hole takes the patch one hole-width (and a
+ * little) to its left, else to its right, further out if that is hole too, as one piece, so the fill keeps the
+ * paper's grain, the waves and the streaks around it instead of a blur or row-by-row smears. What no copy reaches
+ * is smeared. Only `pieces` are filled; the rest of `hole` is only never copied from.
+ */
+export function cloneFill(rgb: Uint8Array, W: number, H: number, hole: Mask, pieces: Mask = hole): Uint8Array {
+  const out = rgb.slice();
+  const left = emptyMask(W, H);
+  for (const piece of components(pieces)) {
+    const [x0, , x1] = boxOf(piece);
+    const step = x1 - x0 + 6;
+    const tries = [-step, step, -2 * step, 2 * step, -3 * step, 3 * step];
+    for (let i = 0; i < piece.bits.length; i++) {
+      if (!piece.bits[i]) continue;
+      const [x, y] = [i % W, (i / W) | 0];
+      const dx = tries.find((d) => x + d >= 0 && x + d < W && !hole.bits[y * W + x + d]);
+      if (dx === undefined) left.bits[i] = 1;
+      else for (let c = 0; c < 3; c++) out[i * 3 + c] = rgb[(i + dx) * 3 + c];
+    }
+  }
+  return maskArea(left) ? smearFill(out, W, H, left, subtract(emptyMaskAll(W, H), hole)) : out;
+}
+
+/**
+ * Fills `hole` row by row with the paint mirrored across its edge (from the left of it, else the right): for a wide
+ * hole beside a picture's part (the cliffs beside the clouds), whose edge runs much the same way down the rows, so
+ * the mirror is one coherent reflection. What no row reaches is smeared.
+ */
+export function mirrorFill(rgb: Uint8Array, W: number, H: number, hole: Mask): Uint8Array {
+  const out = rgb.slice();
+  const left = emptyMask(W, H);
+  for (let y = 0; y < H; y++) {
+    const row = y * W;
+    for (let x = 0; x < W; x++) {
+      if (!hole.bits[row + x]) continue;
+      const a = x;
+      while (x < W && hole.bits[row + x]) x++;
+      const b = x;
+      // The paint beside the run, on whichever side there is more of it.
+      let [l, r] = [0, 0];
+      while (a - 1 - l >= 0 && !hole.bits[row + a - 1 - l]) l++;
+      while (b + r < W && !hole.bits[row + b + r]) r++;
+      const onLeft = l >= r;
+      const span = onLeft ? l : r;
+      for (let k = a; k < b; k++) {
+        if (!span) {
+          left.bits[row + k] = 1;
+          continue;
+        }
+        // Mirrored back and forth over that paint, however wide the run is.
+        const m = (onLeft ? k - a : b - 1 - k) % (2 * span);
+        const off = m < span ? m : 2 * span - 1 - m;
+        const src = onLeft ? a - 1 - off : b + off;
+        for (let c = 0; c < 3; c++) out[(row + k) * 3 + c] = rgb[(row + src) * 3 + c];
+      }
+    }
+  }
+  return maskArea(left) ? smearFill(out, W, H, left, subtract(emptyMaskAll(W, H), hole)) : out;
+}
+
+/** A painted waterfall (any thing named so): the page sets its water falling. */
+export const FALLING = /\b(water ?falls?|cascades?|falls|weir|spillway|wodospad\w*|kaskad\w*)\b/i;
+/** Painted animals the page sets swimming or flying as small cards of their own. */
+export const CRITTER = /\b(fish(es)?|goldfish|carp|trout|salmon|koi|eels?|dolphins?|whales?|seals?|ducks?|ducklings?|swans?|geese|goose|frogs?|birds?|gulls?|seagulls?|sparrows?|crows?|ravens?|pigeons?|doves?|swallows?|owls?|bats?|butterfl(y|ies)|dragonfl(y|ies)|jellyfish|ryb\w*|ptak\w*|mew\w*|kacz\w*|łabęd\w*|wron\w*|motyl\w*)\b/i;
+
+export type Fall = { png: Buffer; box: [number, number, number, number] };
+
+/**
+ * A painted waterfall for the page to set pouring: its pixels (from the backdrop) under its mask, feathered, over
+ * its box. The page scrolls its ribbons down and churns foam at its foot, so only paint inside the fall moves.
+ */
+export async function fallSheet(backdrop: Buffer, mask: Mask): Promise<Fall | undefined> {
+  const [W, H]: [number, number] = [FRAME.width, FRAME.height];
+  if (maskArea(mask) < 1500) return undefined;
+  const [x0, y0, x1, y1] = boxOf(mask);
+  const region = { left: x0, top: y0, width: x1 - x0, height: y1 - y0 };
+  const rgba = await sharp(backdrop).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer();
+  const alpha = await sharp(await maskToPng(dilate(mask, -1))).blur(1.5).extract(region).extractChannel(0).raw().toBuffer();
+  const png = await sharp(rgba, { raw: { width: W, height: H, channels: 3 } }).extract(region).joinChannel(alpha, { raw: { width: region.width, height: region.height, channels: 1 } }).png().toBuffer();
+  return { png, box: [x0, y0, x1, y1] };
+}
+
+export type Critter = { png: Buffer; box: [number, number, number, number]; medium: 'water' | 'air'; facing: 1 | -1 };
+
+/** Which way a painted animal looks: its eye (the brightest small spot) lies toward its head. Right when unsure. */
+export function facingOf(rgb: Uint8Array, W: number, m: Mask): 1 | -1 {
+  const [x0, y0, x1, y1] = boxOf(m);
+  const lumas: number[] = [];
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (m.bits[y * W + x]) lumas.push(0.3 * rgb[(y * W + x) * 3] + 0.59 * rgb[(y * W + x) * 3 + 1] + 0.11 * rgb[(y * W + x) * 3 + 2]);
+  lumas.sort((a, b) => a - b);
+  const bright = Math.max(170, lumas[Math.floor(lumas.length * 0.97)] ?? 255);
+  let [sx, n] = [0, 0];
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    const i = y * W + x;
+    if (m.bits[i] && 0.3 * rgb[i * 3] + 0.59 * rgb[i * 3 + 1] + 0.11 * rgb[i * 3 + 2] >= bright) [sx, n] = [sx + x, n + 1];
+  }
+  if (n < 4) return 1;
+  return sx / n < (x0 + x1) / 2 - 0.08 * (x1 - x0) ? -1 : 1;
+}
+
+/**
+ * Painted animals (fish in the river, gulls over the sea) as small cards of their own: each piece of the thing's
+ * mask a feathered copy of the painting, in the water or the air, and the way it faces. The page sets them
+ * swimming or flying; the backdrop and the water have them painted out (see cloneFill).
+ */
+export async function critterSheet(painting: Buffer, mask: Mask, water?: Mask): Promise<Critter[]> {
+  const [W, H]: [number, number] = [FRAME.width, FRAME.height];
+  const rgb = new Uint8Array(await sharp(painting).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer());
+  const wetAround = water && dilate(water, 20);
+  const out: Critter[] = [];
+  for (const one of components(mask)) {
+    const px = maskArea(one);
+    if (px < 150 || px > 0.05 * W * H) continue;
+    const reach = dilate(one, 2);
+    const [x0, y0, x1, y1] = boxOf(reach);
+    const region = { left: x0, top: y0, width: x1 - x0, height: y1 - y0 };
+    const alpha = await sharp(await maskToPng(reach)).blur(1).extract(region).extractChannel(0).raw().toBuffer();
+    const png = await sharp(Buffer.from(rgb), { raw: { width: W, height: H, channels: 3 } }).extract(region).joinChannel(alpha, { raw: { width: region.width, height: region.height, channels: 1 } }).png().toBuffer();
+    const medium = wetAround && maskArea(intersect(one, wetAround)) >= 0.3 * px ? 'water' : 'air';
+    out.push({ png, box: [x0, y0, x1, y1], medium, facing: facingOf(rgb, W, one) });
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+/** How fast each cloud band drifts against the one above it: the top band is nearest the eye and drifts fastest. */
+const CLOUD_SPEEDS = [1, 0.74, 0.55, 0.42];
+/** A band's rim (its torn bottom edge) is looked for this far above and below the row picked for it. */
+const RIM_SEARCH = 28;
+/** A rim is a real torn edge when its light-over-dark step averages this much luma along the way. */
+export const RIM_MIN = 14;
+
+/**
+ * The path across the picture, one row per column between rows lo and hi, a row up or down per column at most,
+ * along which `edge` (W wide) sums highest, and how strong it is on average along the way.
+ */
+export function rimPath(edge: Float32Array, W: number, lo: number, hi: number): { path: Float32Array; strength: number } {
+  const n = hi - lo + 1;
+  const score = new Float32Array(n * W);
+  const from = new Int8Array(n * W);
+  for (let r = 0; r < n; r++) score[r] = edge[(lo + r) * W];
+  for (let x = 1; x < W; x++) {
+    for (let r = 0; r < n; r++) {
+      let [best, step] = [score[r * W + x - 1], 0];
+      if (r > 0 && score[(r - 1) * W + x - 1] > best) [best, step] = [score[(r - 1) * W + x - 1], -1];
+      if (r < n - 1 && score[(r + 1) * W + x - 1] > best) [best, step] = [score[(r + 1) * W + x - 1], 1];
+      score[r * W + x] = best + edge[(lo + r) * W + x];
+      from[r * W + x] = step;
+    }
+  }
+  let r = 0;
+  for (let k = 1; k < n; k++) if (score[k * W + W - 1] > score[r * W + W - 1]) r = k;
+  const strength = score[r * W + W - 1] / W;
+  const path = new Float32Array(W);
+  for (let x = W - 1; x >= 0; x--) {
+    path[x] = lo + r;
+    r += from[r * W + x];
+  }
+  return { path, strength };
+}
+
+export type CloudBand = { png: Buffer; box: [number, number, number, number]; speed: number };
+export type Clouds = { bands: CloudBand[]; clip: Buffer; keep?: Buffer; box: [number, number, number, number] };
+
+const CloudArea = z.object({ areas: z.array(z.object({ outline: z.array(z.tuple([z.number(), z.number()])).min(3) })).max(3) });
+
+/** Warm, saturated paint (a lamp's glow, a lighthouse's rays, the sun): light drawn over the sky, which stays put. */
+function warm(r: number, g: number, b: number): boolean {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  return max > 110 && (max - min) / max > 0.35 && r >= b + 30 && g >= b;
+}
+
+/**
+ * Where to cut the sky into bands: rows where many columns step from a light rim down to darker paper (the torn
+ * white edge at the foot of a sheet of cloud), the strongest first, far enough apart. Row scores per y.
+ */
+export function bandCuts(score: Float32Array, y0: number, y1: number, most = 3): number[] {
+  const span = y1 - y0;
+  const gap = Math.max(50, span / 6);
+  const smooth = new Float32Array(score.length);
+  for (let y = 0; y < score.length; y++) {
+    let [s, n] = [0, 0];
+    for (let k = Math.max(0, y - 4); k <= Math.min(score.length - 1, y + 4); k++) [s, n] = [s + score[k], n + 1];
+    smooth[y] = s / n;
+  }
+  const inside = [...smooth.slice(y0, y1)].sort((a, b) => a - b);
+  const floor = 1.4 * (inside[Math.floor(inside.length / 2)] ?? 0) + 1e-6;
+  const order = Array.from({ length: span }, (_, k) => y0 + k).filter((y) => y - y0 >= 40 && y1 - y >= 30 && smooth[y] > floor).sort((a, b) => smooth[b] - smooth[a]);
+  const cuts: number[] = [];
+  for (const y of order) {
+    if (cuts.length >= most) break;
+    if (cuts.every((c) => Math.abs(c - y) >= gap)) cuts.push(y);
+  }
+  return cuts.sort((a, b) => a - b);
+}
+
+/**
+ * The painted clouds as bands, one behind another, for the page to drift with the wind at their own speeds,
+ * like torn-paper flats on a stage. Spark outlines where the clouds are (SAM knows no paper cloud); the bands are
+ * cut along the torn rims read from the pixels, each band's own rim its silhouette, and filled above it (mirrored
+ * from its own paper) so a band never shows a gap under the one over it. `keep`: painted things in the sky
+ * (wind swirls) that stay put; warm light (rays, glows) stays too. Cards (a lighthouse) are already out of the backdrop.
+ */
+export async function cloudSheet(memo: Memo, place: Place, backdrop: Buffer, notCloud: Mask, keep: Mask): Promise<Clouds | undefined> {
+  const [W, H]: [number, number] = [FRAME.width, FRAME.height];
+  const prompt = `This is a painted game scene, ${W}x${H} px. Are there clouds painted in its sky (soft, painted, or layered torn-paper clouds)?
+Answer with JSON only: {"areas": [{"outline": [[x, y], ...]}]}, 8 to 20 points in px around the part of the picture that is clouds and sky (not hills, cliffs, rocks, trees, buildings, the sea or the ground), at most 3 areas; or {"areas": []} when no clouds are painted.`;
+  const { areas } = CloudArea.parse(await askSparkJson(memo, { schema: CloudArea, label: `clouds:${place.key}`, prompt, images: [backdrop] }));
+  if (!areas.length) return undefined;
+  const area = subtract(unionAll(W, H, areas.map((a) => polygonMask(W, H, a.outline))), notCloud);
+  if (maskArea(area) < 0.04 * W * H) return undefined;
+  const [, sy0, , sy1] = boxOf(area);
+  const rgb0 = new Uint8Array(await sharp(backdrop).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer());
+  // What stays put in the sky: painted things there and warm light, a hair wider.
+  const lit = emptyMask(W, H);
+  for (let i = 0; i < W * H; i++) if (area.bits[i] && warm(rgb0[i * 3], rgb0[i * 3 + 1], rgb0[i * 3 + 2])) lit.bits[i] = 1;
+  const pinned = intersect(dilate(unionAll(W, H, [keep, lit]), 3), area);
+  // The band paper: the sky with what stays put, and all that is not cloud in the sky's rows, copied over from the clouds beside.
+  const rows = emptyMask(W, H);
+  rows.bits.fill(1, sy0 * W, sy1 * W);
+  // A band drifts across the picture, so what lies beside the clouds in its rows (a cliff) slides into view too.
+  const outside = subtract(rows, area);
+  const rgb = mirrorFill(cloneFill(rgb0, W, H, union(pinned, outside), pinned), W, H, outside);
+  const L = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) L[i] = 0.3 * rgb[i * 3] + 0.59 * rgb[i * 3 + 1] + 0.11 * rgb[i * 3 + 2];
+  // A torn rim: light just above, darker paper just below.
+  const edge = new Float32Array(W * H);
+  const score = new Float32Array(H);
+  for (let y = Math.max(2, sy0); y < Math.min(H - 3, sy1); y++) {
+    let [s, n] = [0, 0];
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (!area.bits[i]) continue;
+      edge[i] = Math.max(0, L[i - 2 * W] - L[i + 3 * W]);
+      [s, n] = [s + edge[i], n + 1];
+    }
+    score[y] = n > W * 0.2 ? s / n : 0;
+  }
+  const cuts = bandCuts(score, sy0, sy1);
+  // Each cut follows its rim across the picture: the path of strongest light-over-dark steps near the cut's row,
+  // a pixel up or down per column at most, so the band's edge is the paper's torn edge and never a notch. A cut
+  // whose path finds no rim along most of the way (it runs through one sheet of paper) would tear it: none there.
+  const paths = cuts.map((c) => rimPath(edge, W, Math.max(sy0 + 1, c - RIM_SEARCH), Math.min(sy1 - 2, c + RIM_SEARCH)));
+  const rims = paths.filter((r) => r.strength >= RIM_MIN).map((r) => r.path.map((y) => y + 2));
+  if (process.env.DIORAMA_DEBUG_CLOUDS) console.log(`  ${place.key}: cloud cuts ${cuts.join(', ')} rims ${paths.map((p) => p.strength.toFixed(1)).join(', ')}`);
+  const tops = [new Float32Array(W).fill(sy0), ...rims];
+  const bottoms = [...rims, new Float32Array(W).fill(sy1)];
+  const bands: CloudBand[] = [];
+  for (let k = 0; k < tops.length; k++) {
+    const [top, bottom] = [tops[k], bottoms[k]];
+    const yEnd = Math.min(H, Math.ceil(Math.max(...bottom)) + 2);
+    const h = yEnd - sy0;
+    if (h < 8) continue;
+    const rgba = Buffer.alloc(W * h * 4);
+    for (let x = 0; x < W; x++) {
+      const [t, b] = [Math.round(top[x]), Math.round(bottom[x])];
+      const tall = Math.max(1, b - t);
+      for (let y = sy0; y < yEnd; y++) {
+        // Above its top the band goes on in its own paper, mirrored back and forth, under the band above.
+        let yy = y;
+        if (y < t) {
+          const m = (t - y) % (2 * tall);
+          yy = m < tall ? t + m : b - 1 - (m - tall);
+        }
+        yy = Math.max(0, Math.min(H - 1, yy));
+        const o = ((y - sy0) * W + x) * 4;
+        rgba[o] = rgb[(yy * W + x) * 3];
+        rgba[o + 1] = rgb[(yy * W + x) * 3 + 1];
+        rgba[o + 2] = rgb[(yy * W + x) * 3 + 2];
+        rgba[o + 3] = y < b ? 255 : y < b + 2 ? 120 : 0;
+      }
+    }
+    bands.push({ png: await sharp(rgba, { raw: { width: W, height: h, channels: 4 } }).png().toBuffer(), box: [0, sy0, W, yEnd], speed: CLOUD_SPEEDS[Math.min(k, CLOUD_SPEEDS.length - 1)] });
+  }
+  // One band only (no rim found) still drifts as a whole.
+  if (!bands.length) return undefined;
+  const region = { left: 0, top: sy0, width: W, height: sy1 - sy0 };
+  // Where the clouds may show (the page cuts with its alpha): not over the hills, cliffs or sea in front of them.
+  const clipAlpha = await sharp(await maskToPng(area)).blur(1.5).extract(region).extractChannel(0).raw().toBuffer();
+  const clipPng = await sharp({ create: { width: W, height: region.height, channels: 3, background: '#ffffff' } }).joinChannel(clipAlpha, { raw: { width: W, height: region.height, channels: 1 } }).png().toBuffer();
+  let keepPng: Buffer | undefined;
+  if (maskArea(pinned)) {
+    const a = await sharp(await maskToPng(pinned)).blur(1.5).extract(region).extractChannel(0).raw().toBuffer();
+    keepPng = await sharp(Buffer.from(rgb0), { raw: { width: W, height: H, channels: 3 } }).extract(region).joinChannel(a, { raw: { width: W, height: region.height, channels: 1 } }).png().toBuffer();
+  }
+  // Bottom band first: each band above lies over the one below it.
+  return { bands: bands.reverse(), clip: clipPng, keep: keepPng, box: [0, sy0, W, sy1] };
 }

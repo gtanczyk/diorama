@@ -54,3 +54,11 @@ test('the author adds cells SAM missed and removes cells that are not water (wat
   expect(at(mask, 330, 390)).toBe(0);
   expect(at(mask, 100, 390)).toBe(1);
 });
+
+test('a whole cell the author adds on the shore leaves the quay boards in it dry', () => {
+  // N9 (x 780..840, y 480..540): the quay's corner reaches into it, SAM saw no water there.
+  const quay = rect(0, 480, 800, H);
+  const { mask } = waterMask(emptyMask(W, H), emptyMask(W, H), [{ key: 'quay', mask: quay }], Depth.parse({ waterAdd: ['N9'] }));
+  expect(at(mask, 830, 510)).toBe(1);
+  expect(at(mask, 790, 510)).toBe(0);
+});

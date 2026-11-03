@@ -144,6 +144,12 @@ export type Layers = {
   smoke?: Array<{ file: string; box: [number, number, number, number] }>;
   /** Boats painted on the water (not cards), each a feathered copy of the painting over `box`, to rock on the swell. */
   floats?: Array<{ file: string; box: [number, number, number, number] }>;
+  /** Painted waterfalls to set pouring: each a feathered copy of the fall over `box`. */
+  falls?: Array<{ file: string; box: [number, number, number, number] }>;
+  /** Painted animals as small cards to swim (in the water) or fly (in the air), and which way each faces (1 right). */
+  critters?: Array<{ file: string; box: [number, number, number, number]; medium: 'water' | 'air'; facing: 1 | -1 }>;
+  /** The painted clouds as bands (bottom first) to drift with the wind at their own speeds, cut to `clip` over `box`; `keep`: what stays put in the sky. */
+  clouds?: { box: [number, number, number, number]; clip: string; keep?: string; bands: Array<{ file: string; box: [number, number, number, number]; speed: number }> };
 };
 
 /**

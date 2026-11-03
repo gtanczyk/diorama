@@ -3,13 +3,13 @@ import sharp from 'sharp';
 // slide the cards against it (parallax). Cards are the sharp occluders of geometry.json, so run it after derive.
 import fs from 'node:fs';
 import { maskFromPng } from '../image/mask.ts';
-import { dilate, unionAll } from '../image/raster.ts';
+import { dilate, subtract, unionAll } from '../image/raster.ts';
 import { FRAME } from '../scene/layout.ts';
 import { Geometry } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
 import { BACKDROP_GROW, backdropFor, smearedBackdrop, type Card } from '../scene/backdrop.ts';
 import { carryBetween, carryFrom, paintingFor, ran, remakes, tilesLine, withChange } from '../scene/carry.ts';
-import { Depth, farFlats, floatSheet, mistSheet, smokeSheet, waterSheet } from '../scene/layers.ts';
+import { cloudSheet, CRITTER, critterSheet, Depth, FALLING, fallSheet, farFlats, floatSheet, cloneFill, mistSheet, smokeSheet, waterSheet } from '../scene/layers.ts';
 import { maskFromPng as waterMaskOf } from '../image/mask.ts';
 import { WorldFiles } from '../world/files.ts';
 
@@ -70,6 +70,19 @@ defineCommand({
         for (const [k, r] of Object.entries(report)) if (r.cut) console.log(`  ${place.key}: ${k}: its card cuts through a painted part of it at [${r.cut.box?.join(', ')}] (its mask leaves that part out, so it stays on the backdrop and slides apart)`);
         console.log(`${place.key}: backdrop behind ${keys.join(', ')}${stuck.length ? ` (Muse left ${stuck.join(', ')}: smeared there)` : ''}${ghosts.length ? ` (a silhouette of ${ghosts.join(', ')} was left: painted over again)` : ''}`);
       }
+      // Painted animals (fish, gulls) swim and fly as small cards of their own: painted out of the backdrop here.
+      const alive = (fs.existsSync(at('brief.json')) ? (files.readJson(at('brief.json')) as { alive?: Array<{ key: string; as: string }> }).alive : undefined) ?? [];
+      const critterKeys = Object.keys(notes).filter((k) => !keys.includes(k) && fs.existsSync(at('masks', `${k}.png`)) && (CRITTER.test(`${k} ${notes[k].phrase}`) || alive.some((a) => a.key === k && a.as === 'animal')));
+      const critterMask = unionAll(FRAME.width, FRAME.height, await Promise.all(critterKeys.map(async (k) => maskFromPng(fs.readFileSync(at('masks', `${k}.png`))))));
+      const withCritters = png;
+      if (critterKeys.length) {
+        const raw = new Uint8Array(await sharp(png).resize(FRAME.width, FRAME.height, { fit: 'fill' }).removeAlpha().raw().toBuffer());
+        png = await sharp(cloneFill(raw, FRAME.width, FRAME.height, dilate(critterMask, 3)), { raw: { width: FRAME.width, height: FRAME.height, channels: 3 } }).png().toBuffer();
+        files.write(at('backdrop.png'), png);
+      }
+      // Painted waterfalls pour (layers/fall-<i>.png); they stay out of the flat water below them.
+      const fallKeys = Object.keys(notes).filter((k) => !keys.includes(k) && FALLING.test(`${k} ${notes[k].phrase}`) && fs.existsSync(at('masks', `${k}.png`)));
+      const fallMasks = await Promise.all(fallKeys.map(async (k) => maskFromPng(fs.readFileSync(at('masks', `${k}.png`)))));
       // The far view as flats one behind another (layers/), so it has depth of its own.
       fs.rmSync(at('layers'), { recursive: true, force: true });
       fs.rmSync(at('layers.json'), { force: true });
@@ -91,13 +104,13 @@ defineCommand({
       const depth = Depth.parse(fs.existsSync(at('depth.json')) ? files.readJson(at('depth.json')) : {});
       // Every painted thing stays dry, not only the cards: a mooring post or a jetty that is no card would
       // otherwise get the swell drawn over it. Only a thing that is the water itself (a pond, the river) flows.
-      const dryThings = await Promise.all(Object.keys(notes).filter((k) => !WET_THING.test(`${k} ${notes[k].phrase}`) && !keys.includes(k) && fs.existsSync(at('masks', `${k}.png`)))
+      const dryThings = await Promise.all(Object.keys(notes).filter((k) => !WET_THING.test(`${k} ${notes[k].phrase}`) && !keys.includes(k) && !critterKeys.includes(k) && fs.existsSync(at('masks', `${k}.png`)))
         .map(async (k) => maskFromPng(fs.readFileSync(at('masks', `${k}.png`)))));
       // Painted fog to set drifting (layers/mist.jpg and its mask), found by SAM on the backdrop too.
       const things = dilate(unionAll(FRAME.width, FRAME.height, cards.map((c) => c.mask)), 4);
       const [far, water, mist, smoke] = await Promise.all([
         farAsked,
-        waterSheet(files.memo, place, paintingFor(moved || undefined, png, lastWater ?? []), unionAll(FRAME.width, FRAME.height, [...cards.map((c) => c.mask), ...dryThings]), floors, depth).catch((error) => {
+        waterSheet(files.memo, place, paintingFor(moved || undefined, png, lastWater ?? []), unionAll(FRAME.width, FRAME.height, [...cards.map((c) => c.mask), ...dryThings]), floors, depth, critterKeys.length ? critterMask : undefined).catch((error) => {
           console.log(`  ${place.key}: no flowing water (${error instanceof Error ? error.message.slice(0, 120) : error})`);
           return undefined;
         }),
@@ -112,10 +125,29 @@ defineCommand({
         }),
       ]);
       // Boats painted on the water (not cards) to rock on the swell: layers/float-<i>.png, inside the water found above.
-      const floats = water ? await floatSheet(files.memo, place, png, things, await waterMaskOf(await sharp({ create: { width: FRAME.width, height: FRAME.height, channels: 3, background: '#000' } }).composite([{ input: water.mask, left: water.box[0], top: water.box[1] }]).png().toBuffer())).catch((error) => {
+      const wetMask = water && await waterMaskOf(await sharp({ create: { width: FRAME.width, height: FRAME.height, channels: 3, background: '#000' } }).composite([{ input: water.mask, left: water.box[0], top: water.box[1] }]).png().toBuffer());
+      const floats = wetMask ? await floatSheet(files.memo, place, png, things, wetMask).catch((error) => {
         console.log(`  ${place.key}: no rocking boats (${error instanceof Error ? error.message.slice(0, 120) : error})`);
         return [];
       }) : [];
+      const falls = (await Promise.all(fallMasks.map((m) => fallSheet(png, m)))).filter((f) => !!f);
+      falls.forEach((f, i) => files.write(at('layers', `fall-${i}.png`), f.png));
+      if (falls.length) console.log(`  ${place.key}: ${falls.length} waterfall(s) pouring`);
+      const critters = critterKeys.length ? await critterSheet(withCritters, critterMask, wetMask) : [];
+      critters.forEach((c, i) => files.write(at('layers', `critter-${i}.png`), c.png));
+      if (critters.length) console.log(`  ${place.key}: ${critters.length} painted animal(s) ${critters.some((c) => c.medium === 'air') ? 'flying and ' : ''}swimming (${critterKeys.join(', ')})`);
+      // The painted clouds drift as bands (layers/cloud-<i>.png); painted things in the sky and its light stay put.
+      const keepInSky = unionAll(FRAME.width, FRAME.height, dryThings);
+      const clouds = await cloudSheet(files.memo, place, png, unionAll(FRAME.width, FRAME.height, [...(wetMask ? [wetMask] : []), ...floors.map((f) => f.mask), ...fallMasks]), subtract(keepInSky, unionAll(FRAME.width, FRAME.height, fallMasks))).catch((error) => {
+        console.log(`  ${place.key}: no drifting clouds (${error instanceof Error ? error.message.slice(0, 120) : error})`);
+        return undefined;
+      });
+      clouds?.bands.forEach((b, i) => files.write(at('layers', `cloud-${i}.png`), b.png));
+      if (clouds) {
+        files.write(at('layers', 'cloud-clip.png'), clouds.clip);
+        if (clouds.keep) files.write(at('layers', 'cloud-keep.png'), clouds.keep);
+        console.log(`  ${place.key}: ${clouds.bands.length} cloud band(s) drifting`);
+      }
       floats.forEach((s, i) => files.write(at('layers', `float-${i}.png`), s.png));
       if (floats.length) console.log(`  ${place.key}: ${floats.length} painted boat(s) rocking on the water`);
       smoke.forEach((s, i) => files.write(at('layers', `smoke-${i}.png`), s.png));
@@ -130,7 +162,7 @@ defineCommand({
         files.write(at('layers', 'mist-mask.png'), mist.mask);
         console.log(`  ${place.key}: painted ${mist.phrase} drifting ${mist.drift === null ? 'with the wind' : mist.drift < 0 ? 'left' : 'right'}${mist.speed !== 1 ? ` x${mist.speed}` : ''}`);
       }
-      if (far || water || mist || smoke.length) {
+      if (far || water || mist || smoke.length || falls.length || critters.length || clouds) {
         if (far) {
           files.write(at('layers', 'sky.png'), far.sky);
           far.flats.forEach((f, i) => files.write(at('layers', `${i}.png`), f.png));
@@ -143,6 +175,9 @@ defineCommand({
           ...(mist && { mist: { tex: 'layers/mist.png', mask: 'layers/mist-mask.png', box: mist.box, drift: mist.drift, speed: mist.speed } }),
           ...(smoke.length && { smoke: smoke.map((s, i) => ({ file: `layers/smoke-${i}.png`, box: s.box })) }),
           ...(floats.length && { floats: floats.map((s, i) => ({ file: `layers/float-${i}.png`, box: s.box })) }),
+          ...(falls.length && { falls: falls.map((f, i) => ({ file: `layers/fall-${i}.png`, box: f.box })) }),
+          ...(critters.length && { critters: critters.map((c, i) => ({ file: `layers/critter-${i}.png`, box: c.box, medium: c.medium, facing: c.facing })) }),
+          ...(clouds && { clouds: { box: clouds.box, clip: 'layers/cloud-clip.png', ...(clouds.keep && { keep: 'layers/cloud-keep.png' }), bands: clouds.bands.map((b, i) => ({ file: `layers/cloud-${i}.png`, box: b.box, speed: b.speed })) } }),
         });
       }
       ran(at(), 'backdrop', carry?.old ?? painting);
