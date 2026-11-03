@@ -44,7 +44,7 @@ defineAction({
       // The place fades in and the hero lands: let it settle first.
       await page.waitForTimeout(1500);
       // What the game loaded to move here: a 0% with no layer means the layer never reached the game.
-      shows = await page.evaluate<Record<string, unknown>>('(() => { const p = window.diorama.place; return { water: p.water ? `flowing ${p.water.flow.join(",") === "0,0" ? "still (swells)" : p.water.flow.join(",")}` : "none", mist: p.mist ? "drifting" : "none", weather: (() => { const w = window.diorama.data && window.diorama.data.places[p.key] && window.diorama.data.places[p.key].weather; return w ? `${w.fall}${w.fall !== "none" ? ` ${w.strength}` : ""}, fog ${w.fog}` : "none"; })() }; })()');
+      shows = await page.evaluate<Record<string, unknown>>('(() => { const p = window.diorama.place; return { water: p.water ? `flowing ${p.water.flow.join(",") === "0,0" ? "still (swells)" : p.water.flow.join(",")}` : "none", mist: p.mist ? "drifting" : "none", clouds: p.clouds ? "drifting" : "none", waterfalls: (p.falls || []).length ? `${p.falls.length} pouring` : "none", animals: (p.critters || []).length ? `${p.critters.length} swimming or flying` : "none", weather: (() => { const w = window.diorama.data && window.diorama.data.places[p.key] && window.diorama.data.places[p.key].weather; return w ? `${w.fall}${w.fall !== "none" ? ` ${w.strength}` : ""}, fog ${w.fog}` : "none"; })() }; })()');
       // Frames EVERY_MS of game time apart, not wall time: a headless browser draws ~12 frames a second, and capture
       // mode steps 1/60 s per frame, so 2 s of waiting showed 0.4 s of the game and slow swells or drifting mist
       // looked still.
