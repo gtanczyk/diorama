@@ -103,5 +103,45 @@ No people, no animals the fixes don't ask for, no text or letters.`;
 
 /** `patched` over `painting` inside the regions only (feathered), everything else untouched. */
 export async function pasteRegions(painting: Buffer, patched: Buffer, regions: [number, number, number, number][]): Promise<Buffer> {
-  return pasteAlpha(painting, patched, await regionAlpha(regions));
+  return pasteAlpha(painting, patched, await regionAlpha(await wholeRegions(painting, patched, regions)));
+}
+
+/** How far a region may grow to take in the rest of what Muse painted across its edge. */
+const REGION_REACH = 160;
+const REGION_STEP = 12;
+
+/**
+ * The regions grown, side by side, while what Muse painted runs on across that side: a boat it moved a little to
+ * the right was cut at the region's edge and faded into the sea. A side grows while the change just outside it is
+ * well above the change Muse made everywhere (it redraws the whole picture a little), up to REGION_REACH px.
+ */
+export async function wholeRegions(painting: Buffer, patched: Buffer, regions: [number, number, number, number][]): Promise<[number, number, number, number][]> {
+  const { width: W, height: H } = FRAME;
+  const read = (b: Buffer) => sharp(b).resize(W, H, { fit: 'fill' }).removeAlpha().blur(3).raw().toBuffer();
+  const [a, b] = await Promise.all([read(painting), read(patched)]);
+  const diff = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) diff[i] = Math.abs(a[i * 3] - b[i * 3]) + Math.abs(a[i * 3 + 1] - b[i * 3 + 1]) + Math.abs(a[i * 3 + 2] - b[i * 3 + 2]);
+  const sorted = Float32Array.from(diff).sort();
+  const enough = Math.max(70, 3 * sorted[Math.floor(sorted.length / 2)]);
+  // The mean change over a strip of the frame.
+  const strip = (x0: number, y0: number, x1: number, y1: number) => {
+    let [s, n] = [0, 0];
+    for (let y = Math.max(0, y0); y < Math.min(H, y1); y++) for (let x = Math.max(0, x0); x < Math.min(W, x1); x++) [s, n] = [s + diff[y * W + x], n + 1];
+    return n ? s / n : 0;
+  };
+  return regions.map((r) => {
+    let [x0, y0, x1, y1] = [Math.min(r[0], r[2]), Math.min(r[1], r[3]), Math.max(r[0], r[2]), Math.max(r[1], r[3])];
+    const [l, t, rr, bb] = [x0, y0, x1, y1];
+    // Only a side the change crosses: changed just inside the region's own edge, and just outside it.
+    const crosses = { r: strip(x1 - REGION_STEP, y0, x1, y1) > enough, l: strip(x0, y0, x0 + REGION_STEP, y1) > enough, b: strip(x0, y1 - REGION_STEP, x1, y1) > enough, t: strip(x0, y0, x1, y0 + REGION_STEP) > enough };
+    for (let k = 0; k < REGION_REACH / REGION_STEP; k++) {
+      let grew = false;
+      if (crosses.r && x1 < W && x1 - rr < REGION_REACH && strip(x1, y0, x1 + REGION_STEP, y1) > enough) [x1, grew] = [x1 + REGION_STEP, true];
+      if (crosses.l && x0 > 0 && l - x0 < REGION_REACH && strip(x0 - REGION_STEP, y0, x0, y1) > enough) [x0, grew] = [x0 - REGION_STEP, true];
+      if (crosses.b && y1 < H && y1 - bb < REGION_REACH && strip(x0, y1, x1, y1 + REGION_STEP) > enough) [y1, grew] = [y1 + REGION_STEP, true];
+      if (crosses.t && y0 > 0 && t - y0 < REGION_REACH && strip(x0, y0 - REGION_STEP, x1, y0) > enough) [y0, grew] = [y0 - REGION_STEP, true];
+      if (!grew) break;
+    }
+    return [Math.max(0, x0), Math.max(0, y0), Math.min(W, x1), Math.min(H, y1)];
+  });
 }

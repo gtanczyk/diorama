@@ -40,3 +40,18 @@ test('a part SAM left out of the mask (a rope off a bucket) joins the patch when
   expect(grown.bits[110 * W + 110]).toBe(0);
   expect(maskArea(grown)).toBeLessThan(maskArea(area) + 60 * 14 + 400);
 });
+
+test('a boat Muse painted on past its region is pasted whole, not cut at the region edge into the sea', async () => {
+  const { wholeRegions } = await import('../src/scene/critic.ts');
+  const sea = await solid('#20407a');
+  // Muse moved the boat right: it runs from x 700 to 1090, the region asked for ends at 960.
+  const boat = await sharp(await solid('#20407a')).composite([{ input: await solid('#7a5a3a', 390, 100), left: 700, top: 680 }]).png().toBuffer();
+  const [grown] = await wholeRegions(sea, boat, [[690, 665, 960, 800]]);
+  expect(grown[2]).toBeGreaterThanOrEqual(1090);
+  expect(grown[2]).toBeLessThanOrEqual(1130);
+  // The sea above and below changed nowhere: those sides stay.
+  expect(grown[1]).toBe(665);
+  expect(grown[3]).toBe(800);
+  const pasted = await sharp(await pasteRegions(sea, boat, [[690, 665, 960, 800]])).ensureAlpha().raw().toBuffer();
+  expect(red(pasted, 1060, 730)).toBeGreaterThan(110);
+});
