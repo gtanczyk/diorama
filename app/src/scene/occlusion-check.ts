@@ -3,12 +3,13 @@
 // things can hide anyone; floor cells on an upright face put people behind it; a spot where the painting
 // covers nearly all of a person means they vanish there.
 import type { Geometry } from '../play/geometry.ts';
-import { personPx } from '../play/geometry.ts';
+import { personPx, stepAt } from '../play/geometry.ts';
 import { contactRows, depthAt, frontMask, hiddenShare, MAX_HIDDEN, PERSON_WIDTH } from '../play/depth-occlusion.ts';
 import { UPRIGHT_SHARE } from './depthmap.ts';
 import type { Depth } from '../play/shadow.ts';
 import type { Finding } from './verify.ts';
 import { gridOf } from './verify.ts';
+import { nearestRoomy, reach, roomy } from './walk.ts';
 
 /** Every how many walk cells (each way) a person is stood to check. */
 const STRIDE = 2;
@@ -26,6 +27,53 @@ const boxOf = (pts: Array<[number, number]>): [number, number, number, number] =
   Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1])),
 ];
 
+/**
+ * Feet at (x, y) on an upright face: under most of their width the depth hardly changes down the screen (a floor's
+ * changes a row per row): the side of a bridge, the wall down to an underpass, a floor mask or a joining path laid on
+ * them. A card's thing in front of the feet is left out, and a post or a can in front of one foot is not most of it.
+ */
+export function onFace(g: Geometry, d: Depth, x: number, y: number, owned?: Uint8Array): boolean {
+  const h = personPx(g, y);
+  const w = Math.max(4, Math.round(h * PERSON_WIDTH));
+  let face = 0;
+  let feet = 0;
+  const span = Math.max(16, 0.25 * h);
+  for (let fx = x - w / 2; fx <= x + w / 2; fx += 2) {
+    const k = Math.min(d.w - 1, Math.max(0, Math.floor(fx / 2))) + Math.min(d.h - 1, Math.floor((y - 1) / 2)) * d.w;
+    if (owned?.[k]) continue;
+    feet++;
+    if ((depthAt(d, fx, y + span / 2) - depthAt(d, fx, y - span / 2)) / span < UPRIGHT_SHARE) face++;
+  }
+  return feet > 0 && face > 0.6 * feet;
+}
+
+/** Floor cut off by more than this share of the walk cells stays: a big part means the face test is wrong there. */
+const FACE_CUT_MAX = 0.15;
+
+/**
+ * The walk with its cells on an upright face closed (the front of a bridge's planks, a bank's edge down to a ledge),
+ * and the floor only they led to (a ledge of rock plates under the bridge's end): feet there stood over thin air.
+ * Stairs are upright by nature, risers and all, and keep their cells. Undefined when nothing closes, when no floor is
+ * near the start, or when it would cut off a big part of the place.
+ */
+export function closeFaces(g: Geometry, d: Depth, owned?: Uint8Array): { walk: string[]; zone: string[]; start: [number, number]; closed: number; beyond: number } | undefined {
+  const grid = gridOf(g);
+  const all = grid.count();
+  const faces = [...grid.open.keys()].filter((i) => grid.open[i] && !stepAt(g, ...grid.centre(i)) && onFace(g, d, ...grid.centre(i), owned));
+  if (!faces.length) return undefined;
+  faces.forEach((i) => (grid.open[i] = 0));
+  // A start on the face (the front of the planks) steps back onto the floor.
+  const cells = roomy(grid);
+  const start = nearestRoomy(grid, ...g.start, cells);
+  if (start === undefined || Math.hypot(...grid.centre(start).map((v, k) => v - g.start[k]) as [number, number]) > 8 * g.cell) return undefined;
+  const keep = reach(grid, start, cells);
+  for (const i of [...keep.keys()].filter((k) => keep[k])) for (const n of grid.neighbours(i)) if (grid.open[n] && !cells[n]) keep[n] = 1;
+  const beyond = [...grid.open.keys()].filter((i) => grid.open[i] && !keep[i]);
+  if (beyond.length > FACE_CUT_MAX * all) return undefined;
+  for (const i of [...faces, ...beyond]) [grid.open[i], grid.zone[i]] = [0, -1];
+  return { ...grid.rowsOut(), start: cells[grid.cellOf(...g.start)] ? g.start : grid.centre(start), closed: faces.length, beyond: beyond.length };
+}
+
 export function checkOcclusion(g: Geometry, d: Depth, owned?: Uint8Array): OcclusionCheck {
   const grid = gridOf(g);
   const out: OcclusionCheck = { checked: 0, onFace: [], unsure: [], hiddenByUnmasked: 0 };
@@ -37,19 +85,7 @@ export function checkOcclusion(g: Geometry, d: Depth, owned?: Uint8Array): Occlu
     out.checked++;
     const h = personPx(g, y);
     const w = Math.max(4, Math.round(h * PERSON_WIDTH));
-    // Upright face: under most of the feet's width the depth hardly changes down the screen (a floor's changes a row
-    // per row): the side of a bridge, the wall down to an underpass, a floor mask or a joining path laid on them.
-    // A card's thing in front of the feet is left out, and a post or a can in front of one foot is not most of it.
-    let face = 0;
-    let feet = 0;
-    const span = Math.max(16, 0.25 * h);
-    for (let fx = x - w / 2; fx <= x + w / 2; fx += 2) {
-      const k = Math.min(d.w - 1, Math.max(0, Math.floor(fx / 2))) + Math.min(d.h - 1, Math.floor((y - 1) / 2)) * d.w;
-      if (owned?.[k]) continue;
-      feet++;
-      if ((depthAt(d, fx, y + span / 2) - depthAt(d, fx, y - span / 2)) / span < UPRIGHT_SHARE) face++;
-    }
-    if (feet && face > 0.6 * feet) out.onFace.push([x, y]);
+    if (onFace(g, d, x, y, owned)) out.onFace.push([x, y]);
     if (hiddenShare(g, d, x, y, owned) > MAX_HIDDEN) {
       out.unsure.push([x, y]);
       continue;
@@ -76,6 +112,12 @@ export function occlusionFindings(g: Geometry, check: OcclusionCheck | null): Fi
 
 /** Reads depth.png and the cards' masks of a place folder (node only), and runs the check. Null without a depth map. */
 export async function checkPlaceOcclusion(dir: string, g: Geometry): Promise<OcclusionCheck | null> {
+  const read = await placeDepth(dir, g);
+  return read && checkOcclusion(g, read.d, read.owned);
+}
+
+/** depth.png of a place folder and, at its size, the pixels the cards look after (node only). Null without a depth map. */
+export async function placeDepth(dir: string, g: Geometry): Promise<{ d: Depth; owned: Uint8Array } | null> {
   if (!g.depth) return null;
   const fs = await import('node:fs');
   const path = await import('node:path');
@@ -92,5 +134,5 @@ export async function checkPlaceOcclusion(dir: string, g: Geometry): Promise<Occ
     const m = await sharp(at).resize(d.w, d.h, { fit: 'fill' }).greyscale().raw().toBuffer();
     for (let i = 0; i < m.length; i++) if (m[i] > 127) owned[i] = 1;
   }
-  return checkOcclusion(g, d, owned);
+  return { d, owned };
 }

@@ -11,7 +11,9 @@ import { depthMap, uprightTest } from '../scene/depthmap.ts';
 import { paintedGlows } from '../scene/glows.ts';
 import { carryFrom, ran, tilesLine } from '../scene/carry.ts';
 import { Layout, FRAME } from '../scene/layout.ts';
-import { CELL } from '../scene/walk.ts';
+import { CELL, nearestRoomy, reach, roomy } from '../scene/walk.ts';
+import { closeFaces, placeDepth } from '../scene/occlusion-check.ts';
+import { gridOf } from '../scene/verify.ts';
 import { unionAll } from '../image/raster.ts';
 import { WorldFiles } from '../world/files.ts';
 
@@ -138,6 +140,22 @@ defineCommand({
         measured.flagged = [...(measured.flagged ?? []), `depth: ${depth.reason}, shadows stay flat`];
       }
       const geometry = Geometry.parse({ ...measured, ...('png' in depth && { depth: 'depth.png' }), ...(layout.lights.length && { glows: glows.glows }) });
+      // Walk cells on an upright face (the front of a bridge's planks) close, with the floor only they led to.
+      const read = await placeDepth(at(), geometry);
+      const faced = read && closeFaces(geometry, read.d, read.owned);
+      if (faced) {
+        Object.assign(geometry, { walk: faced.walk, zone: faced.zone, start: faced.start });
+        // A stand the closing left out of reach (on the face, or on a fringe too narrow to walk) moves to the nearest
+        // floor the start reaches.
+        const grid = gridOf(geometry);
+        const reached = reach(grid, grid.cellOf(...geometry.start), roomy(grid));
+        geometry.things = geometry.things.map((t) => {
+          if (reached[grid.cellOf(...t.stand)]) return t;
+          const i = nearestRoomy(grid, ...t.stand, reached);
+          return i === undefined ? t : { ...t, stand: grid.centre(i) };
+        });
+        console.log(`  ${place.key}: closed ${faced.closed} walk cells on an upright face (feet over thin air)${faced.beyond ? ` and ${faced.beyond} only they led to` : ''}`);
+      }
       files.write(at('geometry.json'), geometry);
       files.write(at('walk.png'), await walkPicture(painting, geometry, out.footprint));
       ran(at(), 'derive', carry?.old ?? painting);

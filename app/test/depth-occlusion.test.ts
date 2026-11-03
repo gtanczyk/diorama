@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Geometry } from '../src/play/geometry.ts';
 import { DEPTH_SCALE, type Depth } from '../src/play/shadow.ts';
 import { frontMask, hiddenShare, standRow } from '../src/play/depth-occlusion.ts';
-import { checkOcclusion, occlusionFindings } from '../src/scene/occlusion-check.ts';
+import { checkOcclusion, closeFaces, occlusionFindings } from '../src/scene/occlusion-check.ts';
 
 const H0 = 200;
 const g = Geometry.parse({
@@ -61,6 +61,22 @@ describe('depth occlusion', () => {
     const check = checkOcclusion({ ...g, cell: 8, walk: Array.from({ length: 112 }, (_, r) => (r * 8 >= 400 && r * 8 < 432 ? '.'.repeat(55) + '#'.repeat(40) + '.'.repeat(55) : '.'.repeat(150))) }, d);
     expect(check.onFace.length).toBeGreaterThan(0);
     expect(occlusionFindings(g, check).map((f) => f.code)).toContain('WALK_ON_FACE');
+  });
+
+  it('walk cells on a bridge side close, and so does the ledge only they led to; the deck stays', () => {
+    // A deck (floor) from y 300 to 640, its front face 640-720, a ledge (floor again) below it to 736.
+    const d = scene((x, y) => (y >= 640 && y < 720 && x >= 300 && x < 900 ? 640 - H0 : undefined));
+    const walk = Array.from({ length: 112 }, (_, r) => (r * 8 >= 300 && r * 8 < 736 ? '.'.repeat(38) + '#'.repeat(74) + '.'.repeat(38) : '.'.repeat(150)));
+    const out = closeFaces({ ...g, walk, zone: walk.map((row) => row.replace(/#/g, '0')), start: [600, 670] }, d)!;
+    expect(out.closed).toBeGreaterThan(0);
+    expect(out.beyond).toBeGreaterThan(0);
+    const open = (x: number, y: number) => out.walk[Math.floor(y / 8)][Math.floor(x / 8)] === '#';
+    expect(open(600, 520)).toBe(true);
+    expect(open(600, 680)).toBe(false);
+    expect(open(600, 724)).toBe(false);
+    // The start on the face steps back onto the deck.
+    expect(out.start[1]).toBeLessThan(680);
+    expect(open(...out.start)).toBe(true);
   });
 
   it('stairs read from the painting are a floor: their risers hide no one on them', () => {
