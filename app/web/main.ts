@@ -19,6 +19,8 @@ import { spokenLine, type SoundData } from '../src/play/sound.ts';
 import type { Figure3D, ModelInfo } from './hero3d.ts';
 import type { Weather } from '../src/play/weather.ts';
 import { WeatherFx } from './weather.ts';
+import { Clouds, Critter, drawSwell, Fall, Surf } from './living.ts';
+import { stormOf } from '../src/play/living.ts';
 import type { Reactions } from '../src/play/reactions.ts';
 import { ReactionFx } from './reactions.ts';
 import { GlowFx } from './glows.ts';
@@ -92,6 +94,12 @@ type Place = {
   smoke?: Array<{ img: HTMLImageElement; box: [number, number, number, number] }>;
   /** Painted boats rocking on the water. */
   floats?: Array<{ img: HTMLImageElement; box: [number, number, number, number]; under?: HTMLCanvasElement }>;
+  /** The water's foam and its surf on the shore (see living.ts). */
+  surf?: Surf;
+  /** Painted waterfalls pouring, painted animals swimming and flying, cloud bands drifting (see living.ts). */
+  falls?: Fall[];
+  critters?: Critter[];
+  clouds?: Clouds;
   far?: { sky?: HTMLImageElement; flats: Array<{ img: HTMLImageElement; box: [number, number, number, number]; d: number }> };
   hots: Hot[];
   cuts: Cut[];
@@ -428,6 +436,26 @@ class Game {
     });
   }
 
+  /** The waterfalls, animals and cloud bands a place's layers set moving. */
+  private async living(layers: Layers): Promise<Pick<Place, 'falls' | 'critters' | 'clouds'>> {
+    const img = (p: string) => loadImage(files(p)).catch(() => undefined);
+    const falls = (await Promise.all((layers.falls ?? []).map(async (f) => {
+      const i = await img(f.file);
+      return i && new Fall(i, f.box);
+    }))).filter((f): f is Fall => !!f);
+    const critters = (await Promise.all((layers.critters ?? []).map(async (c, k) => {
+      const i = await img(c.file);
+      return i && new Critter(i, c.box, c.medium, c.facing, k);
+    }))).filter((c): c is Critter => !!c);
+    let clouds: Clouds | undefined;
+    const cl = layers.clouds;
+    if (cl) {
+      const [clip, keep, ...bands] = await Promise.all([img(cl.clip), cl.keep ? img(cl.keep) : Promise.resolve(undefined), ...cl.bands.map((b) => img(b.file))]);
+      if (clip && bands.every(Boolean)) clouds = new Clouds(cl.bands.map((b, i) => ({ img: bands[i]!, box: b.box, speed: b.speed })), clip, keep, cl.box);
+    }
+    return { falls, critters, clouds };
+  }
+
   async load(key: string): Promise<Place> {
     if (this.cache.has(key)) return this.cache.get(key)!;
     const spec = this.data.world.places.find((p) => p.key === key);
@@ -469,6 +497,7 @@ class Game {
       u.drawImage(f.img, 0, 0, x1 - x0, y1 - y0);
       f.under = under;
     }
+    const living = backdrop && entry.layers && !params.has('still') ? await this.living(entry.layers) : {};
     let mist: Place['mist'];
     const m = entry.layers?.mist;
     if (backdrop && m && !params.has('still')) {
@@ -509,7 +538,8 @@ class Game {
     // ?glow=0 (or ?still; capture unless ?glow=1) keeps the painted lights as painted, for pixel checks.
     const glows = (entry.glows?.length || bg) && !params.has('still') && (params.get('glow') ?? (capture ? '0' : '1')) !== '0' ? new GlowFx(entry.glows ?? [], g.frame.height, bg, wet, backdrop ? kept.map((c) => c.occ.box) : []) : undefined;
     const focus = focusScale > 0 || separateScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, smoke, floats, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
+    const surf = water && !params.has('still') ? new Surf(water.tex, water.mask, water.box, backdrop) : undefined;
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, smoke, floats, surf, ...living, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
     this.cache.set(key, place);
     for (const hot of hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc')) {
       const id = `${key}/${hot.thing.key}`;
@@ -1386,27 +1416,11 @@ class Game {
     const PERIOD = 6;
     const STRIP = 3;
     const phase = (this.time / PERIOD) % 1;
-    // Still water (the sea, a lake, a harbour basin) does not run, but it is never dead: rows sway in slow
-    // swells, small far off and wider near, so waves roll across it in place.
-    // On the crests the painted light (a moon's path, lit windows) glints: the strip is added over itself, brighter
-    // where its pixels already are bright, as the swell passes.
+    // Still water (the sea, a lake, a harbour basin) does not run, but it is never dead: it swells, waves rolling
+    // toward the viewer, small far off and heaving near, more in a storm (see drawSwell).
+    const storm = stormOf(this.place.weather?.w);
     if (!ux && !uy) {
-      for (let y = y0; y < y1; y += STRIP) {
-        const near = (y - y0) / Math.max(1, y1 - y0);
-        const dx = Math.sin(this.time * 0.9 + y * 0.09) * (1.2 + 6 * near) + Math.sin(this.time * 0.37 + y * 0.023) * (1 + 3.5 * near);
-        const dy = Math.sin(this.time * 0.6 + y * 0.05) * (0.6 + 2.2 * near);
-        const sy = Math.min(y1 - y0 - STRIP, Math.max(0, y - y0 + dy));
-        c.globalCompositeOperation = 'source-over';
-        c.globalAlpha = 1;
-        c.drawImage(water.tex, 0, sy, w, STRIP, dx, y - y0, w, STRIP);
-        const crest = Math.max(0, Math.sin(this.time * 1.3 - y * 0.06 + Math.sin(this.time * 0.4) * 2));
-        if (crest > 0.4) {
-          c.globalCompositeOperation = 'lighter';
-          c.globalAlpha = 0.22 * (crest - 0.4) * (0.5 + near);
-          c.drawImage(water.tex, 0, sy, w, STRIP, dx * 1.6, y - y0, w, STRIP);
-        }
-      }
-      c.globalCompositeOperation = 'source-over';
+      drawSwell(c, water.tex, w, y1 - y0, this.time, storm);
     } else for (const [k, alpha] of [[0, 1], [0.5, 1 - Math.abs(2 * ((phase + 0.5) % 1) - 1)]] as const) {
       const ph = (phase + k) % 1;
       c.globalAlpha = k === 0 ? 1 : alpha;
@@ -1420,6 +1434,8 @@ class Game {
         c.drawImage(water.tex, 0, sy, w, STRIP, ux * travel, y - y0, w, STRIP);
       }
     }
+    // The foam rides the swell on its own, churning over the paper under it.
+    this.place.surf?.churn(c, this.time, storm);
     // Glints: a few soft glimmers on the swell, each fading in and out on its own beat and drifting with the
     // water, so even a dark, smooth painted sea is seen to move. Few and soft: hard white dashes read as rain or
     // a broken picture. Seeded by index, the same every run.
@@ -1462,6 +1478,8 @@ class Game {
     ctx.globalAlpha = 0.9;
     ctx.drawImage(water.canvas, x0 + sx, y0 + sy);
     ctx.restore();
+    // Where it meets the shore, a rock or a hull, it breaks in foam and spray.
+    this.place.surf?.break(ctx, this.time, storm, () => [sx, sy]);
   }
 
   /** Painted boats (not cards) rock on the swell: rise and sink a pixel or two and roll about the waterline. */
@@ -1601,7 +1619,10 @@ class Game {
         const [sx, sy] = shiftAt(g, p, e);
         ctx.drawImage(backdrop, x0, top, w, e - top + 1, x0 + sx, top + sy, w, e - top + 1);
       }
+      this.place.clouds?.draw(ctx, this.time, this.place.weather?.w.wind ?? 0, (y) => shiftAt(g, p, y));
       this.drawWater(p);
+      for (const f of this.place.falls ?? []) f.draw(ctx, this.time, (y) => shiftAt(g, p, y));
+      for (const c of this.place.critters ?? []) c.draw(ctx, this.time, (y) => shiftAt(g, p, y));
       this.drawFloats(p);
       this.drawSmoke(p);
       this.drawMist(p);
