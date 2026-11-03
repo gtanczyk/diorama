@@ -2,7 +2,7 @@ import { exitOutline } from '../src/play/exit-outline.ts';
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
 import { hashSeed } from '../src/play/weather.ts';
 import { FLAME_GLOW, FLAME_SWAY_M, flameAt, depthStretch, flicker, floorYAt, hiddenRuns, castsShadow, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
-import { backdropTransforms, backEdge, cardY, flatDisparities, flatsUnderFloats, shiftAtDisparity, type Layers, floorPoint, overscan, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
+import { backdropTransforms, backEdge, cardY, flatDisparities, flatsUnderFloats, shiftAtDisparity, type Layers, floorPoint, overscan, panTo, PARALLAX_PX, pivot, shiftAt, STACK_GAP, stackCards, type Camera, type Parallax } from '../src/play/parallax.ts';
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, RIM_ALPHA, RIM_COLOUR, RIM_WIDTH, SEPARATE_ALPHA, SEPARATE_BLUR, SEPARATE_SHIFT } from '../src/play/focus.ts';
 import { frontMask } from '../src/play/depth-occlusion.ts';
@@ -334,6 +334,8 @@ class Game {
   /** The scene row at the middle of the view; H/2 unless tracking, which keeps the hero's feet in view. */
   viewY = 0;
   private pending: (() => void) | null = null;
+  /** The box of the thing the hero was sent to: a tracking camera keeps it in view until they are done with it. */
+  private sentTo: [number, number, number, number] | undefined;
   private listeners: Array<(event: Events, detail: object) => void> = [];
   frame = 0;
 
@@ -706,9 +708,11 @@ class Game {
   /** Walks to a thing, faces it and clicks it: through an exit, talk to someone, or the verb the story offers. */
   async use(key: string, verb?: Verb) {
     this.busy = true;
+    this.sentTo = this.hots().find((h) => h.thing.key === key)?.thing.box;
     try {
       await this.useNow(key, verb);
     } finally {
+      this.sentTo = undefined;
       this.busy = false;
     }
   }
@@ -1322,13 +1326,24 @@ class Game {
     this.viewY ||= H / 2;
     const room = this.panRoom();
     if (room > 0) {
-      // Tracking: the view pans after the hero; how far it has panned is the camera's swing.
-      const want = Math.max(W / 2 - room, Math.min(W / 2 + room, this.hero.x));
+      // Tracking: the view pans after the walking hero; how far it has panned is the camera's swing. Standing, it
+      // eases back to the middle, so things at the frame's edges (an exit at the very side) are there to click.
+      // Never so far that the hero, where they walk to or the thing they were sent to leaves the view.
+      const z = this.zoom();
+      const hero = this.hero;
+      const tall = personPx(this.place.g, hero.y);
+      const end = hero.path[hero.path.length - 1];
+      const keep: Array<[number, number, number, number]> = [[hero.x - tall / 4, hero.y - tall, hero.x + tall / 4, hero.y + 8]];
+      if (end) keep.push([end[0] - tall / 4, end[1] - personPx(this.place.g, end[1]), end[0] + tall / 4, end[1] + 8]);
+      if (this.sentTo) keep.push(this.sentTo);
+      const margin = Math.min(48, W / (16 * z));
+      const drift = sway ? Math.sin(this.time * 0.45) * room * 0.3 : 0;
+      const want = panTo((hero.path.length ? hero.x : W / 2) + drift, W / 2, room, W / (2 * z), margin, keep.map((b) => [b[0], b[2]]));
       this.viewX += (want - this.viewX) * (1 - Math.exp(-dt * 1.6));
       // Up and down only as far as the frame allows, and only as low as it takes to keep the feet in view:
       // the rest of the view goes to the skyline.
       const roomY = (room * H) / W;
-      const wantY = Math.max(H / 2 - roomY, Math.min(H / 2 + roomY, this.hero.y + 24 - H / (2 * this.zoom())));
+      const wantY = panTo(hero.y + 24 - H / (2 * z), H / 2, roomY, H / (2 * z), margin / 2, keep.map((b) => [b[1], b[3]]));
       this.viewY += (wantY - this.viewY) * (1 - Math.exp(-dt * 1.6));
       this.cam.x = -(this.viewX - W / 2) / room;
       const ty = sway ? Math.sin(this.time * 0.31 + 1) * 0.4 : 0;

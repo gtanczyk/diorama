@@ -70,6 +70,24 @@ export function overscan(g: Geometry, p: Parallax): number {
   return 1 + Math.max((2 * reach) / g.frame.width, (2 * reach * VERTICAL) / g.frame.height);
 }
 
+/**
+ * Where a panning camera's middle goes along one axis: `want`, moved as little as it takes to keep each span of
+ * `keep` ([from, to], the hero first, then where they walk and the thing they were sent to) inside the view, `half`
+ * either side of the middle, `margin` in from its edges, and never further than `room` from `centre`. A span that
+ * cannot fit with the ones before it is let go, and so are those after it: the hero is kept first.
+ */
+export function panTo(want: number, centre: number, room: number, half: number, margin: number, keep: Array<[number, number]>): number {
+  let lo = centre - room;
+  let hi = centre + room;
+  for (const [a, b] of keep) {
+    const l = Math.max(lo, b - half + margin);
+    const h = Math.min(hi, a + half - margin);
+    if (l > h) break;
+    [lo, hi] = [l, h];
+  }
+  return Math.max(lo, Math.min(hi, want));
+}
+
 /** Gaps up to this many px between stacked pieces of one thing are painted over by its card. */
 export const STACK_GAP = 48;
 

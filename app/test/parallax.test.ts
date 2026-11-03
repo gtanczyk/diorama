@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { Geometry } from '../src/play/geometry.ts';
-import { backdropTransforms, disparity, floorPoint, overscan, shiftAt, stackCards, type Parallax } from '../src/play/parallax.ts';
+import { backdropTransforms, disparity, floorPoint, overscan, shiftAt, stackCards, type Parallax, panTo } from '../src/play/parallax.ts';
 
 const g = { frame: { width: 1200, height: 896 }, cell: 8, walk: ['#'], scale: { horizonY: 200, pxPerY: 0.6 }, start: [10, 10], things: [], occluders: [] } as unknown as Geometry;
 const p: Parallax = { cam: { x: 0.7, y: -0.4 }, pivot: 0.5, px: 22 };
@@ -57,4 +57,15 @@ test('depth.json: flow and fog settings default to auto and reject unknown value
   expect(() => Depth.parse({ fogSpeed: 9 })).toThrow();
   expect(Depth.parse({ flow: 'reverse', flowHint: 'toward the bridge' }).flowHint).toBe('toward the bridge');
   expect(() => Depth.parse({ flow: 'sideways' })).toThrow();
+});
+
+test('the tracking camera pans after the hero but keeps the exit they were sent to in view', () => {
+  // A 1200 px frame seen 500 px either side of the middle, 100 px of room to pan.
+  expect(panTo(900, 600, 100, 500, 40, [[880, 920]])).toBe(700);
+  // Sent to the steps at the left edge (x 0-250): the view stays where both the hero and the steps show.
+  const at = panTo(900, 600, 100, 500, 40, [[880, 920], [0, 250]]);
+  expect(at - 500).toBeLessThanOrEqual(250 - 40);
+  expect(at + 500).toBeGreaterThanOrEqual(920 + 40);
+  // A target too far away to show with the hero is let go: the hero stays in view.
+  expect(panTo(1000, 600, 400, 300, 20, [[980, 1020], [0, 100]])).toBe(1000);
 });
