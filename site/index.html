@@ -179,7 +179,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: 
 footer a { color: var(--foam); }
 
 /* make your own */
-.cmd { display: block; margin-top: 4px; padding: 10px 12px; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; color: var(--foam); background: var(--stage); border-radius: 6px; overflow-x: auto; white-space: pre; }
+.cmd { display: block; margin-top: 4px; padding: 10px 12px; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; color: var(--foam); background: var(--stage); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .make-links { display: flex; flex-wrap: wrap; gap: 14px; }
 
 @media (max-width: 900px) {
@@ -376,11 +376,10 @@ footer a { color: var(--foam); }
       <p class="prose">Diorama runs on your computer: a command-line tool and a Studio app in the browser. You need <strong>Node 22+</strong>, <strong>ffmpeg</strong> and a <strong>Meta Model API key</strong>. ElevenLabs (sound) and Hugging Face (3D characters) keys are optional.</p>
     </div>
     <ol class="steps">
-      <li class="step"><h3>Get it</h3><p>Clone the repository and install.</p><code class="cmd">git clone https://github.com/gtanczyk/diorama
-cd diorama && npm install</code></li>
-      <li class="step"><h3>Set up</h3><p>Checks this machine and asks for your keys, typed hidden and stored encrypted.</p><code class="cmd">npm run setup</code></li>
-      <li class="step"><h3>Build in the Studio</h3><p>Describe a world in one sentence or drop in your sketches, watch it build place by place, then play it and fix what you want with the agent.</p><code class="cmd">npm run studio</code></li>
-      <li class="step"><h3>Share it</h3><p>Export the world as a static web page for GitHub Pages, itch.io or any host.</p><code class="cmd">npm run diorama -- export &lt;world&gt;</code></li>
+      <li class="step"><h3>Set up</h3><p>In an empty folder. Nothing to clone or install: it checks this machine and asks for your keys, typed hidden and stored encrypted.</p><code class="cmd">mkdir my-worlds &amp;&amp; cd my-worlds
+npx -y @gtanczyk/diorama setup</code></li>
+      <li class="step"><h3>Build in the Studio</h3><p>Describe a world in one sentence or drop in your sketches, watch it build place by place, then play it and fix what you want with the agent.</p><code class="cmd">npx -y @gtanczyk/diorama studio</code></li>
+      <li class="step"><h3>Share it</h3><p>Export the world as a static web page for GitHub Pages, itch.io or any host. Your worlds are saved in ./worlds.</p><code class="cmd">npx -y @gtanczyk/diorama export &lt;world&gt;</code></li>
     </ol>
     <div class="make-links">
       <a class="btn" href="https://github.com/gtanczyk/diorama" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>Diorama on GitHub</a>
