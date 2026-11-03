@@ -85,8 +85,19 @@ const warm = (hex: string) => {
   const n = parseInt(hex.replace('#', '').slice(0, 6).padEnd(6, 'f'), 16);
   return ((n >> 16) & 255) - (n & 255) >= 25;
 };
-/** A painted lamp, fire or lit window: warm and with a bright core. Moonlit white paint is neither. */
-const lamplike = (s: Spot) => s.rgb[0] - s.rgb[2] >= 25 && s.peak >= 210;
+/**
+ * A painted lamp, fire or lit window: warm, with a bright core, and compact. Moonlit white paint is not warm; pale
+ * foam is barely warm, and a sprawl of foam joined to painted golden rays (a lighthouse's burst over the waves) is
+ * bright and big but mostly empty inside its box: neither is a lamp.
+ */
+export const lamplike = (s: Spot) => {
+  const [bw, bh] = [s.box[2] - s.box[0], s.box[3] - s.box[1]];
+  const compact = Math.max(bw, bh) <= 48 || s.area / (bw * bh) >= 0.2;
+  return s.rgb[0] - s.rgb[2] >= 40 && s.peak >= 210 && compact;
+};
+
+/** How hot a spot's paint is: its mean lightness, 0 at 150 and about 1 at 230. */
+const heat = (s: Spot) => Math.max(0.05, (0.3 * s.rgb[0] + 0.59 * s.rgb[1] + 0.11 * s.rgb[2] - 150) / 80) ** 2;
 
 /**
  * Each light on its painted spot. A warm light (most are: lamps, fires, windows) takes the strongest warm spot
@@ -102,8 +113,9 @@ export function placeGlows(lights: Light[], spots: Spot[], holders: Mask[] = [],
   const pairs = lights.flatMap((l, li) => (warm(l.colour) ? lamps : []).flatMap(({ s, si }) => {
     const d = Math.hypot(s.x - l.x, s.y - l.y);
     if (d > GLOW_REACH) return [];
-    // Strength grows slowly with size (a big lit wall should not beat a lamp), falls with distance.
-    let score = Math.sqrt(s.energy) / (1 + (d / 120) ** 2);
+    // Strength grows slowly with size (a big lit wall should not beat a lamp), falls with distance, and rises with
+    // how white-hot the spot is: a lamp's core is near white, painted golden rays round it are only gold.
+    let score = Math.sqrt(s.energy) / (1 + (d / 120) ** 2) * heat(s);
     if (glowKind(l.key) === 'beam') score *= 1 + 3 * Math.max(0, 1 - s.y / frameH);
     return [{ li, si, score }];
   })).sort((a, b) => b.score - a.score);
@@ -119,7 +131,7 @@ export function placeGlows(lights: Light[], spots: Spot[], holders: Mask[] = [],
   lights.forEach((l, li) => {
     if (placed.has(li) || !warm(l.colour) || glowKind(l.key) !== 'beam') return;
     const best = lamps.filter(({ s, si }) => !taken.has(si) && s.y < frameH / 2)
-      .map(({ s, si }) => ({ si, score: Math.sqrt(s.energy) * (1 - s.y / frameH) }))
+      .map(({ s, si }) => ({ si, score: Math.sqrt(s.energy) * heat(s) * (1 - s.y / frameH) }))
       .sort((a, b) => b.score - a.score)[0];
     if (best) place(li, best.si);
   });

@@ -9,11 +9,15 @@ export type GlowKind = 'beam' | 'flame' | 'window' | 'twinkle' | 'lamp';
 export const Glow = z.object({ key: z.string(), x: z.number(), y: z.number(), colour: z.string(), kind: z.enum(['beam', 'flame', 'window', 'twinkle', 'lamp']) });
 export type Glow = z.infer<typeof Glow>;
 
+// First match wins, the most telling words first: a lighthouse's windows are windows, not its beam, and a far lamp
+// post is a lamp, not a town's twinkle.
 const KINDS: Array<[GlowKind, RegExp]> = [
-  ['beam', /\b(beam|beacon|lighthouse|searchlight)\b/],
-  ['twinkle', /\b(town|city|village|distant|far|stars?|lights)\b/],
-  ['flame', /\b(fire|flame|candles?|torch|campfire|hearth|oven|brazier|lantern|embers?)\b/],
+  ['beam', /\b(beam|beacon|searchlight)\b/],
   ['window', /\b(windows?|porthole|shopfront|doorway|glass)\b/],
+  ['beam', /\blighthouse\b/],
+  ['flame', /\b(fire|flame|candles?|torch|campfire|hearth|oven|brazier|lantern|embers?)\b/],
+  ['lamp', /\b(lamps?|lamppost|streetlamp|streetlight)\b/],
+  ['twinkle', /\b(town|city|village|distant|far|stars?|lights)\b/],
 ];
 
 /** What kind of light a layout light is, by the words of its key ("hut-window", "lighthouse-lamp"). */

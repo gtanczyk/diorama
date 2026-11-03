@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 import { emptyMask } from '../src/image/mask.ts';
+import { glowKind } from '../src/play/glow.ts';
 import { brightSpots, placeGlows } from '../src/scene/glows.ts';
 
 /** A dark night painting with a warm lamp high on a tower and a pale moonlit patch. */
@@ -38,5 +39,33 @@ describe('painted glows', () => {
     const g = placeGlows([{ key: 'cart-lamp', x: 620, y: 560, colour: '#ffb347' }, { key: 'cart-lamp-2', x: 600, y: 470, colour: '#ffb347' }], spots, [], height);
     expect(g).toHaveLength(1);
     expect(Math.hypot(g[0].x - 611, g[0].y - 515)).toBeLessThan(6);
+  });
+
+  it('puts a lighthouse lamp on its white-hot lamp room, not on the golden rays or the foam round it', async () => {
+    const rays = Array.from({ length: 16 }, (_, i) => {
+      const a = (i * Math.PI) / 8;
+      return `<line x1="${1000 + 40 * Math.cos(a)}" y1="${120 + 40 * Math.sin(a)}" x2="${1000 + 260 * Math.cos(a)}" y2="${120 + 260 * Math.sin(a)}" stroke="#e8c464" stroke-width="7"/>`;
+    }).join('');
+    const svg = `<svg width="1200" height="896" xmlns="http://www.w3.org/2000/svg">
+      <rect width="1200" height="896" fill="#1c2a44"/>
+      <rect x="985" y="140" width="30" height="230" fill="#6a5238"/>
+      ${rays}
+      <rect x="992" y="110" width="16" height="22" fill="#fff4b0"/>
+      <path d="M860 380 q60 -40 120 0 t120 0 t100 0 v20 h-340 z" fill="#e6e0d0"/>
+    </svg>`;
+    const { spots, height } = await brightSpots(await sharp(Buffer.from(svg)).png().toBuffer());
+    const g = placeGlows([{ key: 'lighthouse-beam', x: 1020, y: 55, colour: '#ffe27a' }], spots, [], height);
+    expect(Math.hypot(g[0].x - 1000, g[0].y - 121)).toBeLessThan(8);
+  });
+});
+
+describe('glow kinds', () => {
+  it('reads the most telling word of a light', () => {
+    expect(glowKind('lighthouse-beam')).toBe('beam');
+    expect(glowKind('lighthouse-lamp')).toBe('beam');
+    expect(glowKind('lighthouse-windows')).toBe('window');
+    expect(glowKind('lamp-far')).toBe('lamp');
+    expect(glowKind('boat-lantern')).toBe('flame');
+    expect(glowKind('distant-town')).toBe('twinkle');
   });
 });
