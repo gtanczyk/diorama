@@ -23,6 +23,8 @@ const rand = (i: number, salt = 0) => {
  */
 export class Surf {
   readonly foam: HTMLCanvasElement;
+  /** Warm light painted over the water (a lighthouse's rays, a lamp's glow): it stays put while the sea heaves under it. */
+  private readonly lit?: HTMLCanvasElement;
   private readonly shore: Array<{ x: number; y: number; nx: number; ny: number }>;
   private readonly colour: string;
 
@@ -50,6 +52,22 @@ export class Surf {
       const [X, Y] = [Math.max(0, Math.min(bg!.width - 1, Math.round(box[0] + x))), Math.max(0, Math.min(bg!.height - 1, Math.round(box[1] + y)))];
       return bg!.data.slice((Y * bg!.width + X) * 4, (Y * bg!.width + X) * 4 + 3);
     };
+    if (bg) {
+      const lit = new ImageData(w, h);
+      let any = 0;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const [r, g, b] = paint(x, y);
+        const max = Math.max(r, g, b);
+        const sat = max ? (max - Math.min(r, g, b)) / max : 0;
+        const a = max > 110 && r >= b + 30 && g >= b ? Math.max(0, Math.min(1, (sat - 0.3) / 0.15)) : 0;
+        if (a) any++;
+        lit.data.set([r, g, b, Math.round(255 * a)], (y * w + x) * 4);
+      }
+      if (any > 50) {
+        this.lit = canvasOf(w, h);
+        this.lit.getContext('2d')!.putImageData(lit, 0, 0);
+      }
+    }
     this.shore = shorePoints(pixelsOf(mask, w, h).data, w, h, 11, 4).filter((p) => {
       if (!bg) return true;
       const [a, b] = [paint(p.x - p.nx * 6, p.y - p.ny * 6), paint(p.x + p.nx * 14, p.y + p.ny * 14)];
@@ -78,6 +96,10 @@ export class Surf {
   break(ctx: CanvasRenderingContext2D, t: number, storm: number, shift: Shift) {
     const [x0, y0] = this.box;
     const h = this.box[3] - this.box[1];
+    if (this.lit) {
+      const [sx, sy] = shift(this.box[3]);
+      ctx.drawImage(this.lit, x0 + sx, y0 + sy);
+    }
     ctx.save();
     for (const [i, p] of this.shore.entries()) {
       const u = p.y / h;
