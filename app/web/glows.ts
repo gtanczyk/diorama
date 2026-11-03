@@ -37,7 +37,7 @@ export class GlowFx {
 
   constructor(planned: Glow[], private readonly H: number, painting?: Painting, wet?: Uint8Array, cards: number[][] = []) {
     const frame = painting && planned.some((g) => g.kind === 'beam') ? pixelsOf(painting) : undefined;
-    this.papers = planned.map((g) => (frame && g.kind === 'beam' ? liftPaper(painting!, frame, g, planned.filter((o) => o.kind !== 'beam' && Math.hypot(o.x - g.x, o.y - g.y) > 120)) : undefined));
+    this.papers = planned.map((g) => (frame && g.kind === 'beam' ? liftPaper(painting!, frame, g, planned.filter((o) => o.kind !== 'beam' && Math.hypot(o.x - g.x, o.y - g.y) > 120), wet) : undefined));
     const onPaper = (x: number, y: number) => this.papers.some((p) => p && x >= p.box[0] && y >= p.box[1] && x < p.box[2] && y < p.box[3] && p.keep.getContext('2d')!.getImageData(Math.floor(x - p.box[0]), Math.floor(y - p.box[1]), 1, 1).data[0] > 200);
     // The planned lights, then every other light Muse painted (a market's strings of lanterns, candle boats, lit
     // windows), found in the painting itself: each flickers on its own phase too. Not on a lighthouse's rays.
@@ -225,7 +225,7 @@ function pixelsOf(painting: Painting): ImageData {
  * A beam's light paper lifted off the painting (beamPaper): the paper as a card, and what goes under it
  * (fillUnder), so turned paper never leaves its painted twin behind.
  */
-function liftPaper(painting: Painting, frame: ImageData, g: Glow, others: Glow[]): Paper | undefined {
+function liftPaper(painting: Painting, frame: ImageData, g: Glow, others: Glow[], wet?: Uint8Array): Paper | undefined {
   const found = beamPaper(frame.data, frame.width, frame.height, g, others);
   if (!found) return undefined;
   const [x0, y0, x1, y1] = found.box;
@@ -237,8 +237,11 @@ function liftPaper(painting: Painting, frame: ImageData, g: Glow, others: Glow[]
   const keepImg = new ImageData(w, h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const [o, i] = [(y * w + x) * 4, ((y + y0) * W + x + x0) * 4];
-    const al = found.alpha[y * w + x];
-    cardImg.data.set([frame.data[i], frame.data[i + 1], frame.data[i + 2], Math.round(255 * al)], o);
+    // Only the light itself turns: warm paint, never the sea, foam or sky it was painted over.
+    const [r, gr, b] = [frame.data[i], frame.data[i + 1], frame.data[i + 2]];
+    const warm = Math.max(0, Math.min(1, (r - b - 45) / 45)) * Math.max(0, Math.min(1, (r + gr - 260) / 60));
+    const al = found.alpha[y * w + x] * warm;
+    cardImg.data.set([r, gr, b, Math.round(255 * al)], o);
     // Where turned paper may show: where paper was, and the blue of the sky and the sea.
     const open = al > 0.05 || frame.data[i + 2] > frame.data[i] + 8;
     keepImg.data.set([255, 255, 255, open ? 255 : 0], o);
@@ -247,7 +250,15 @@ function liftPaper(painting: Painting, frame: ImageData, g: Glow, others: Glow[]
   keep.getContext('2d', { willReadFrequently: true })!.putImageData(keepImg, 0, 0);
   // The fill under it: the paint round it, carried in across the paper (fillUnder). Only a burst is lifted.
   const patch = canvas(w, h);
-  if (found.burst) patch.getContext('2d')!.putImageData(new ImageData(fillUnder(frame.data, W, g, found) as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0);
+  if (found.burst) {
+    // The fill goes only where the light was painted, and not on water: the moving sea is drawn there already.
+    const fill = fillUnder(frame.data, W, g, found) as Uint8ClampedArray<ArrayBuffer>;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const o = (y * w + x) * 4;
+      if (cardImg.data[o + 3] < 8 || (wet && wet[(y + y0) * W + x + x0] > 100)) fill[o + 3] = 0;
+    }
+    patch.getContext('2d')!.putImageData(new ImageData(fill, w, h), 0, 0);
+  }
   return { card, patch, px: x0, py: y0, keep, turned: canvas(w, h), box: found.box, burst: found.burst };
 }
 
