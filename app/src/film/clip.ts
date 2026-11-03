@@ -55,6 +55,10 @@ const SHORTEST = 1.2;
 /** After 'enter' the page is still fading in from black. */
 const FADE_IN = 0.45;
 
+/** Flat, the orbit-popout explode shows the place's painting this many times its frame size, in the middle of a render of EXPLODE_RENDER. */
+export const EXPLODE_FLAT_SCALE = 1.06;
+export const EXPLODE_RENDER = { width: 1920, height: 1080 };
+
 export const shotSeconds = (s: Shot) => (s.to - s.from) / s.speed + (s.hold ?? 0);
 
 /** Clip start of each shot. */
