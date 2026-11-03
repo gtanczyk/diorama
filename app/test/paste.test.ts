@@ -2,7 +2,7 @@ import sharp from 'sharp';
 import { expect, test } from 'vitest';
 import { emptyMask, maskArea } from '../src/image/mask.ts';
 import { dilate, rectMask } from '../src/image/raster.ts';
-import { pasteRegions } from '../src/scene/critic.ts';
+import { pasteRegions, wholeRegions } from '../src/scene/critic.ts';
 import { FRAME } from '../src/scene/layout.ts';
 import { pasteInside, withAttached } from '../src/scene/plates.ts';
 
@@ -54,4 +54,23 @@ test('a boat Muse painted on past its region is pasted whole, not cut at the reg
   expect(grown[3]).toBe(800);
   const pasted = await sharp(await pasteRegions(sea, boat, [[690, 665, 960, 800]])).ensureAlpha().raw().toBuffer();
   expect(red(pasted, 1060, 730)).toBeGreaterThan(110);
+});
+
+test('a critic repaint Muse painted past its region is grown to take all of it, or left out when it runs far on', async () => {
+  const { critiqueRegions } = await import('../src/scene/critic.ts');
+  const painting = await solid('#404040');
+  const patch = async (w: number) => sharp(painting).composite([{ input: await solid('#d0a060', w, 100), left: 100, top: 100 }]).png().toBuffer();
+  const a = await patch(130);
+  // Steps painted 30 px past the box: the box grows to them, and they are pasted whole.
+  const near = await critiqueRegions(painting, a, [[100, 100, 200, 200]]);
+  expect(near.dropped).toEqual([]);
+  expect(near.kept[0][2]).toBeGreaterThanOrEqual(230);
+  expect(near.kept[0][2]).toBeLessThanOrEqual(248);
+  // A staircase 300 px past the box would be sliced at any edge: the painting keeps what it had.
+  const far = await critiqueRegions(painting, await patch(400), [[100, 100, 200, 200]]);
+  expect(far.kept).toEqual([]);
+  expect(far.dropped).toEqual([[100, 100, 200, 200]]);
+  // A repaint that stays inside its region is taken as asked.
+  const inside = await critiqueRegions(painting, await patch(90), [[96, 96, 200, 208]]);
+  expect(inside.kept).toEqual([[96, 96, 200, 208]]);
 });

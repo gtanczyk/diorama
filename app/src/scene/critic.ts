@@ -98,7 +98,22 @@ export async function repaint(memo: Memo, place: Place, painting: Buffer, found:
 ${fixes.join('\n')}
 No people, no animals the fixes don't ask for, no text or letters.`;
   const patched = await museEdit(memo, { label: `repaint:${place.key}`, prompt, images: [painting] });
-  return pasteRegions(painting, patched, found.issues.map((i) => i.region));
+  // A painting out (people, a border) and a person's own repaint are pasted as asked; the critic's other fixes are
+  // grown to all Muse painted for them, or left out when that runs on past REGION_REACH and would be sliced.
+  const asAsked = (i: Critique['issues'][number]) => i.problem === 'unwanted' || i.key === 'person';
+  const own = found.issues.filter((i) => !asAsked(i));
+  const { kept, dropped } = await critiqueRegions(painting, patched, own.map((i) => i.region));
+  for (const r of dropped) {
+    const i = own.find((o) => o.region === r);
+    console.log(`  ${place.key}: left out the repaint of ${i?.key} at [${r.join(', ')}]: Muse painted it far past its region, and pasted it would be sliced at the edge`);
+  }
+  return pasteAlpha(painting, patched, await regionAlpha([...found.issues.filter(asAsked).map((i) => i.region), ...kept]));
+}
+
+/** A critic's regions grown to all Muse painted for them; one still cut at REGION_REACH is dropped, as it was asked. */
+export async function critiqueRegions(painting: Buffer, patched: Buffer, regions: [number, number, number, number][]): Promise<{ kept: [number, number, number, number][]; dropped: [number, number, number, number][] }> {
+  const grown = await grownRegions(painting, patched, regions);
+  return { kept: grown.filter((g) => !g.cut).map((g) => g.region), dropped: regions.filter((_, i) => grown[i].cut) };
 }
 
 /** `patched` over `painting` inside the regions only (feathered), everything else untouched. */
@@ -116,6 +131,11 @@ const REGION_STEP = 12;
  * well above the change Muse made everywhere (it redraws the whole picture a little), up to REGION_REACH px.
  */
 export async function wholeRegions(painting: Buffer, patched: Buffer, regions: [number, number, number, number][]): Promise<[number, number, number, number][]> {
+  return (await grownRegions(painting, patched, regions)).map((g) => g.region);
+}
+
+/** Each region grown as wholeRegions does, and whether Muse's change still runs on across a side at REGION_REACH. */
+async function grownRegions(painting: Buffer, patched: Buffer, regions: [number, number, number, number][]): Promise<{ region: [number, number, number, number]; cut: boolean }[]> {
   const { width: W, height: H } = FRAME;
   const read = (b: Buffer) => sharp(b).resize(W, H, { fit: 'fill' }).removeAlpha().blur(3).raw().toBuffer();
   const [a, b] = await Promise.all([read(painting), read(patched)]);
@@ -142,6 +162,8 @@ export async function wholeRegions(painting: Buffer, patched: Buffer, regions: [
       if (crosses.t && y0 > 0 && t - y0 < REGION_REACH && strip(x0, y0 - REGION_STEP, x1, y0) > enough) [y0, grew] = [y0 - REGION_STEP, true];
       if (!grew) break;
     }
-    return [Math.max(0, x0), Math.max(0, y0), Math.min(W, x1), Math.min(H, y1)];
+    const cut = (crosses.r && x1 < W && strip(x1, y0, x1 + REGION_STEP, y1) > enough) || (crosses.l && x0 > 0 && strip(x0 - REGION_STEP, y0, x0, y1) > enough)
+      || (crosses.b && y1 < H && strip(x0, y1, x1, y1 + REGION_STEP) > enough) || (crosses.t && y0 > 0 && strip(x0, y0 - REGION_STEP, x1, y0) > enough);
+    return { region: [Math.max(0, x0), Math.max(0, y0), Math.min(W, x1), Math.min(H, y1)] as [number, number, number, number], cut };
   });
 }
