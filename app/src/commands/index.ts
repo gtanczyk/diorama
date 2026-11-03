@@ -28,6 +28,7 @@ import './play.ts';
 import './export.ts';
 import './publish.ts';
 import './reel.ts';
+import './clip.ts';
 import './setup.ts';
 import './browsers.ts';
 import './action.ts';
