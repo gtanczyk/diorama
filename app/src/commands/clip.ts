@@ -1,15 +1,19 @@
 // diorama clip <slug>: a short clip of the world for X, made with no hand editing. Plays the shortest ending route in
-// real Chrome (GPU, ~60 fps screencast, a gliding cursor), records the last place on its own in a taller frame, picks
-// the shots from the click log, cuts in the place coming apart into its layers (app/demo/explode-take.ts), lays the
-// world's own sound files under it (beds, loops, voices, music) and writes film/clip.mp4, film/clip-1080x1350.mp4
-// and film/clip-still-N.jpg. The page's own recorded audio drops out on a loaded machine, so it is never used.
+// real Chrome (GPU, ~60 fps screencast, a gliding cursor) at 1440x1080 with the camera still, so the whole 4:3
+// painting is in every shot, records the last place on its own, picks the shots from the click log, cuts in each
+// place orbiting and popping apart into its layers (app/demo/explode-take.ts --style orbit-popout) before its first
+// shot and again under the end card, lays the world's own sound files under it (beds, loops, voices, music) and
+// writes film/clip.mp4, film/clip-1080x1350.mp4 and film/clip-still-N.jpg. Both show the frame whole, the rest of the
+// clip's frame filled with the same scene blurred (fillFrame). --zoom records the old way: 1920x1080 with the camera
+// zoomed in and tracking the hero, the tall version a crop round the hero. The page's own recorded audio drops out
+// on a loaded machine, so it is never used.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from 'playwright';
-import { audioPlan, clipSound, LEVELS, pickShots, shotSeconds, shotStarts, type Cue, type Shot, type ShotSource, type Take, type TakeEvent } from '../film/clip.ts';
+import { audioPlan, clipSound, explodeFrame, fillFrame, LEVELS, pickShots, shotSeconds, shotStarts, type Cue, type Shot, type Take, type TakeEvent } from '../film/clip.ts';
 import { openRecorder, type Recorder } from '../film/screencast.ts';
 import { aimPoint, SETTLED, trackPending } from '../qa/route.ts';
 import { defineCommand, takeOption } from '../registry.ts';
@@ -23,8 +27,12 @@ import { serveWorld } from './play.ts';
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const FPS = 60;
 const FONTS = ['/System/Library/Fonts/Supplemental/Arial Black.ttf', '/Library/Fonts/Arial Black.ttf', '/usr/share/fonts/truetype/msttcorefonts/Arial_Black.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'];
-/** No words on screen but the game's own: the place name, the hover label and the controls hint go. */
-const QUIET_UI = '#bar, .held-cursor .label { display: none !important; }';
+/** No words on screen but the game's own: the place name, the hover label, the controls hint and the bag go. */
+const QUIET_UI = '#bar, #inventory, .held-cursor .label { display: none !important; }';
+/** The recorded page: whole (the camera still, the 4:3 painting in full) or, with --zoom, zoomed in and tracking. */
+const GAME_SIZE = { width: 1440, height: 1080 };
+const ZOOM_SIZE = { width: 1920, height: 1080 };
+const ZOOM_END_SIZE = { width: 1920, height: 1440 };
 
 /** Logs the page's events and where the hero is on the page, in wall-clock seconds. */
 const LOGGER = `(() => {
@@ -105,12 +113,13 @@ async function ready(rec: Recorder, url: string, css: string, log: (s: string) =
 const settled = (page: Page) => page.waitForFunction(SETTLED, undefined, { timeout: 120_000 });
 
 /** Plays `actions` in real time from the first place; the floor click first, so the hero is mid-stride. */
-async function gameTake(port: number, work: string, actions: Action[], log: (s: string) => void): Promise<{ take: Take; video: string }> {
-  const rec = await openRecorder(1920, 1080, work, log);
+async function gameTake(port: number, work: string, actions: Action[], zoom: boolean, log: (s: string) => void): Promise<{ take: Take; video: string }> {
+  const size = zoom ? ZOOM_SIZE : GAME_SIZE;
+  const rec = await openRecorder(size.width, size.height, work, log);
   const { page } = rec;
   try {
-    await ready(rec, `http://localhost:${port}/?parallax=1.5&track=1&sway=1&fill=1`, QUIET_UI, log);
-    await page.mouse.move(1100, 820);
+    await ready(rec, `http://localhost:${port}/?parallax=1.5&sway=1${zoom ? '&track=1&fill=1' : ''}`, QUIET_UI, log);
+    await page.mouse.move(size.width * 0.57, size.height * 0.76);
     await page.waitForTimeout(1500);
     // The narrator's intro is over before the clip starts.
     await settled(page);
@@ -141,12 +150,12 @@ async function gameTake(port: number, work: string, actions: Action[], log: (s: 
         continue;
       }
       const step: { use: string; verb?: string; with?: string } = a.kind === 'go' ? { use: a.via } : a.kind === 'talk' ? { use: a.npc } : { use: a.thing, verb: a.verb, ...(a.with ? { with: a.with } : {}) };
+      // The bag is hidden in the clip: the item is lifted from it unseen and rides the cursor to its target.
       const pick = async () => {
         if (!step.with) return;
-        const b = await page.locator(`#inventory button[data-item=${JSON.stringify(step.with)}]`).boundingBox();
-        if (!b) throw new Error(`${step.with} is not in the bag`);
-        await rec.click(b.x + b.width / 2, b.y + b.height / 2, { ms: 450, dwell: 130 });
-        rec.clicks.pop();
+        const slot = page.locator(`#inventory button[data-item=${JSON.stringify(step.with)}]`);
+        if (!(await slot.count())) throw new Error(`${step.with} is not in the bag`);
+        await slot.dispatchEvent('click');
         await page.waitForTimeout(250);
       };
       await pick();
@@ -174,16 +183,18 @@ async function gameTake(port: number, work: string, actions: Action[], log: (s: 
 }
 
 /**
- * The last place on its own, whole (no fill) at 1920x1440 so a tall thing stays in view, the hero setting off for
- * the next thing the route does there: really, when the fresh place allows it (a talk), else a walk to it.
+ * The last place on its own, whole (no fill; 1440x1080, or 1920x1440 with --zoom so a tall thing stays in view), the
+ * hero setting off for the next thing the route does there: really, when the fresh place allows it (a talk), else a
+ * walk to it.
  */
-async function endTake(port: number, work: string, place: string, next: Action | undefined, valid: boolean, log: (s: string) => void): Promise<{ take: Take; video: string }> {
-  const rec = await openRecorder(1920, 1440, work, log);
+async function endTake(port: number, work: string, place: string, next: Action | undefined, valid: boolean, zoom: boolean, log: (s: string) => void): Promise<{ take: Take; video: string }> {
+  const size = zoom ? ZOOM_END_SIZE : GAME_SIZE;
+  const rec = await openRecorder(size.width, size.height, work, log);
   const { page } = rec;
   try {
     await ready(rec, `http://localhost:${port}/?place=${encodeURIComponent(place)}&parallax=1.5&sway=1`, `${QUIET_UI} #talk { display: none !important; }`, log);
     await page.waitForFunction('!window.diorama.busy && !window.diorama.speech', undefined, { timeout: 60_000 }).catch(() => {});
-    await page.mouse.move(960, 900);
+    await page.mouse.move(size.width / 2, size.height * 0.62);
     await page.waitForTimeout(1200);
     const clicks: Array<{ wall: number; x: number; y: number; place: string; action?: Action }> = [];
     await rec.start();
@@ -212,7 +223,7 @@ async function endTake(port: number, work: string, place: string, next: Action |
   }
 }
 
-/** The place coming apart into its cards, rendered by app/demo/explode-take.ts; undefined when that is not there. */
+/** The place orbiting and popping apart into its layers (a 4 s take, app/demo/explode-take.ts); undefined when that is not there. */
 function explodeTake(slug: string, place: string, out: string, log: (s: string) => void): string | undefined {
   const script = path.join(ROOT, 'app/demo/explode-take.ts');
   const tsx = path.join(ROOT, 'node_modules/.bin/tsx');
@@ -221,7 +232,7 @@ function explodeTake(slug: string, place: string, out: string, log: (s: string) 
     return undefined;
   }
   try {
-    execFileSync(tsx, [script, slug, place, '--seconds', '6', '--out', out], { cwd: process.cwd(), stdio: ['ignore', 'ignore', 'inherit'] });
+    execFileSync(tsx, [script, slug, place, '--style', 'orbit-popout', '--seconds', '4', '--out', out], { cwd: process.cwd(), stdio: ['ignore', 'ignore', 'inherit'] });
   } catch (error) {
     log(`  explode of ${place} failed (${(error as Error).message.split('\n')[0]}); going on without it`);
     return undefined;
@@ -240,23 +251,36 @@ function caption(text: string | undefined, size: number, y: number): string {
   return `,drawtext=${font ? `fontfile='${font}':` : ''}text='${t}':fontsize=${size}:fontcolor=white:box=1:boxcolor=0x141a2e@0.88:boxborderw=${Math.round(size / 3)}:x=(w-tw)/2:y=h-th-${y}`;
 }
 
+type Sources = { game: string; end: string; explode: Record<string, string>; frames: Record<string, { width: number; height: number }> };
+
+/**
+ * How a shot sits in a w x h clip frame: a game or end frame whole with the blurred fill round it, an explode cut
+ * round its flat painting; with --zoom the old way (the end take's middle 16:9 band, the tall one a crop round the hero).
+ */
+function shotFrame(s: Shot, frames: Sources['frames'], w: number, h: number, zoom: boolean): string {
+  if (s.source === 'explode') return explodeFrame(frames[s.place], w, h);
+  if (!zoom) return fillFrame(GAME_SIZE, w, h);
+  const fit = s.source === 'end' ? `crop=${ZOOM_SIZE.width}:${ZOOM_SIZE.height}:0:${(ZOOM_END_SIZE.height - ZOOM_SIZE.height) / 2}` : `scale=${ZOOM_SIZE.width}:${ZOOM_SIZE.height}`;
+  return w >= h ? fit : `${fit},scale=2400:1350:flags=lanczos,crop=1080:1350:${s.cropX}:0`;
+}
+
 /** Each shot to a 16:9 and a 1080x1350 segment, then each list joined with a re-encode (a stream-copy join of mixed encodes shows colour garbage). */
-function renderVideo(shots: Shot[], sources: Record<ShotSource, string | undefined>, work: string): { wide: string; tall: string } {
+function renderVideo(shots: Shot[], sources: Sources, work: string, zoom: boolean): { wide: string; tall: string } {
   const wide: string[] = [], tall: string[] = [];
   shots.forEach((s, i) => {
-    const src = sources[s.source];
-    if (!src) throw new Error(`no ${s.source} take`);
-    // The ending is recorded at 1920x1440 (lamp to path in view); the clip takes its middle 16:9 band.
-    const fit = s.source === 'end' ? 'crop=1920:1080:0:180,' : 'scale=1920:1080,';
+    const src = s.source === 'explode' ? sources.explode[s.place] : sources[s.source];
+    if (!src) throw new Error(`no ${s.source} take for ${s.place}`);
     const d = (s.to - s.from) / s.speed, hold = s.hold ?? 0;
     const pts = s.speed !== 1 ? `setpts=(PTS-STARTPTS)/${s.speed},` : '';
     const tail = hold ? `,tpad=stop_mode=clone:stop_duration=${hold}` : '';
-    const w = path.join(work, `w${i}.mp4`), v = path.join(work, `v${i}.mp4`);
     const input = ['-ss', String(s.from), '-t', String(s.to - s.from), '-i', src, '-an'];
-    ff([...input, '-vf', `${fit}${pts}fps=${FPS},format=yuv420p${caption(s.caption, 76, 110)}${tail}`, '-t', (d + hold).toFixed(3), '-c:v', 'libx264', '-crf', '16', w]);
-    ff([...input, '-vf', `${fit}${pts}scale=2400:1350:flags=lanczos,crop=1080:1350:${s.cropX}:0,fps=${FPS},format=yuv420p${caption(s.caption, 62, 160)}${tail}`, '-t', (d + hold).toFixed(3), '-c:v', 'libx264', '-crf', '17', v]);
-    wide.push(w);
-    tall.push(v);
+    // The caption sits low in 16:9 and in the bar under the frame in 1080x1350.
+    for (const [w, h, size, y, crf, list, name] of [[1920, 1080, 76, 110, '16', wide, 'w'], [1080, 1350, 62, zoom ? 160 : 170, '17', tall, 'v']] as const) {
+      const out = path.join(work, `${name}${i}.mp4`);
+      ff([...input, '-filter_complex', `[0:v]${shotFrame(s, sources.frames, w, h, zoom)},${pts}fps=${FPS},format=yuv420p${caption(s.caption, size, y)}${tail}[v]`, '-map', '[v]',
+        '-t', (d + hold).toFixed(3), '-c:v', 'libx264', '-crf', crf, out]);
+      list.push(out);
+    }
   });
   const join = (name: string, parts: string[]) => {
     const list = path.join(work, `${name}.txt`);
@@ -292,16 +316,18 @@ export function renderAudio(cues: Cue[], total: number, out: string, dir: string
 
 defineCommand({
   name: 'clip',
-  usage: 'clip <slug>  a short clip for X: plays the shortest ending, cuts it round the clicks with the world\'s own sound (film/clip.mp4, film/clip-1080x1350.mp4, film/clip-still-N.jpg) [--seconds 25] [--music file] [--no-explode] [--caption "Send me your sketch."] [--port 4198] [--keep]',
+  usage: 'clip <slug>  a short clip for X: plays the shortest ending, cuts it round the clicks with each place coming apart and the world\'s own sound (film/clip.mp4, film/clip-1080x1350.mp4, film/clip-still-N.jpg) [--seconds 38] [--music file] [--no-explode] [--zoom] [--caption "Send me your sketch."] [--port 4198] [--keep]',
   async run(args) {
-    const seconds = Number(takeOption(args, 'seconds', '25'));
+    // The whole clip, explodes and end card included; the story shots get what those leave (never less than ~2.4 s a place).
+    const seconds = Number(takeOption(args, 'seconds', '38'));
     const musicArg = takeOption(args, 'music', '');
     const port = Number(takeOption(args, 'port', '4198'));
     const text = takeOption(args, 'caption', 'Send me your sketch.');
     const explode = !args.includes('--no-explode');
+    const zoom = args.includes('--zoom');
     const keep = args.includes('--keep');
     const [slug] = args.filter((a) => !a.startsWith('--'));
-    if (!slug) throw new Error('usage: diorama clip <slug> [--seconds 25] [--music file] [--no-explode] [--port N]');
+    if (!slug) throw new Error('usage: diorama clip <slug> [--seconds 38] [--music file] [--no-explode] [--zoom] [--port N]');
     if (!(seconds > 5)) throw new Error('--seconds must be more than 5');
     const files = new WorldFiles(slug);
     const world = files.world();
@@ -331,29 +357,31 @@ defineCommand({
     const work = path.join(os.tmpdir(), `diorama-clip-${slug}`);
     fs.rmSync(work, { recursive: true, force: true });
     fs.mkdirSync(work, { recursive: true });
-    const sources: Record<ShotSource, string | undefined> = { game: undefined, end: undefined, 'explode-first': undefined, 'explode-last': undefined };
+    // An explode for every place the clip shows: the places the played route passes through, and the last one.
+    const explodes: Record<string, string> = {};
     if (explode) {
-      log('explode takes (the place comes apart into its cards)');
-      sources['explode-first'] = explodeTake(slug, firstPlace, path.join(work, 'explode'), log);
-      sources['explode-last'] = lastPlace === firstPlace ? sources['explode-first'] : explodeTake(slug, lastPlace, path.join(work, 'explode'), log);
+      log('explode takes (each place orbits and pops apart into its layers)');
+      for (const place of new Set([...placeBefore.slice(0, played.length), lastPlace])) {
+        const mp4 = explodeTake(slug, place, path.join(work, 'explode'), log);
+        if (mp4) explodes[place] = mp4;
+      }
     }
+    const frames = Object.fromEntries(Object.keys(explodes).map((p) => [p, (files.readJson(files.path('places', p, 'geometry.json')) as { frame: { width: number; height: number } }).frame]));
     const server = await serveWorld(files, port);
     let game: Awaited<ReturnType<typeof gameTake>>, end: Awaited<ReturnType<typeof endTake>>;
     try {
       log(`game take at http://localhost:${port}`);
-      game = await gameTake(port, path.join(work, 'game'), played, log);
+      game = await gameTake(port, path.join(work, 'game'), played, zoom, log);
       log(`end take in ${lastPlace}`);
-      end = await endTake(port, path.join(work, 'end'), lastPlace, next, valid, log);
+      end = await endTake(port, path.join(work, 'end'), lastPlace, next, valid, zoom, log);
     } finally {
       server.close();
     }
-    sources.game = game.video;
-    sources.end = end.video;
+    const sources: Sources = { game: game.video, end: end.video, explode: explodes, frames };
 
     const shots = pickShots({
       game: game.take, end: end.take, seconds, firstPlace, lastPlace, caption: text,
-      explodeFirst: sources['explode-first'] ? duration(sources['explode-first']) : undefined,
-      explodeLast: sources['explode-last'] ? duration(sources['explode-last']) : undefined,
+      explodes: Object.fromEntries(Object.entries(explodes).map(([p, f]) => [p, duration(f)])),
     });
     const total = shots.reduce((n, s) => n + shotSeconds(s), 0);
     // What was made, even where the page now leaves a stale file out; only files that are there.
@@ -364,13 +392,13 @@ defineCommand({
     // Cue files are relative to the world (an outside --music file as a ../ path).
     const cues = audioPlan(shots, { game: game.take, end: end.take }, sound, music && path.relative(files.dir, music));
     const starts = shotStarts(shots);
-    shots.forEach((s, i) => log(`  ${starts[i].toFixed(2).padStart(6)}s  ${s.source.padEnd(13)} ${s.from.toFixed(2)}-${s.to.toFixed(2)}${s.speed !== 1 ? ` x${s.speed}` : ''}  ${s.why}`));
+    shots.forEach((s, i) => log(`  ${starts[i].toFixed(2).padStart(6)}s  ${s.source.padEnd(8)} ${s.from.toFixed(2)}-${s.to.toFixed(2)}${s.speed !== 1 ? ` x${s.speed}` : ''}  ${s.why}`));
     log(`${shots.length} shots, ${total.toFixed(1)} s; ${cues.filter((c) => c.kind === 'voice').length} voiced line(s)`);
 
     log('rendering');
     const cut = path.join(work, 'cut');
     fs.mkdirSync(cut, { recursive: true });
-    const video = renderVideo(shots, sources, cut);
+    const video = renderVideo(shots, sources, cut, zoom);
     const mix = path.join(cut, 'mix.wav');
     renderAudio(cues, total, mix, files.dir);
     const film = files.path('film');
@@ -379,7 +407,7 @@ defineCommand({
     for (const [src, out] of [[video.wide, outWide], [video.tall, outTall]]) {
       ff(['-i', src, '-i', mix, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', out]);
     }
-    // Stills: the first place apart (or the opening), a few story shots, the end card.
+    // Stills: the first place apart, a few story shots, the last place, the end card.
     for (const f of fs.readdirSync(film).filter((f) => /^clip-still-\d+\.jpg$/.test(f))) fs.rmSync(path.join(film, f));
     const picks = stillShots(shots);
     const stills = picks.map((i, n) => {
@@ -394,10 +422,10 @@ defineCommand({
   },
 });
 
-/** Up to five shots to take a still from: the explode, story shots spread over the clip, the last one. */
+/** Up to six shots to take a still from: the first explode, story shots spread over the clip, the end, the last one. */
 function stillShots(shots: Shot[]): number[] {
   const story = shots.map((s, i) => (s.source === 'game' && i > 0 ? i : -1)).filter((i) => i >= 0);
   const spread = [0, 1, 2].map((k) => story[Math.round((k * (story.length - 1)) / 2)]).filter((i) => i !== undefined);
-  const out = [shots.findIndex((s) => s.source === 'explode-first'), ...spread, shots.findIndex((s) => s.source === 'end'), shots.length - 1];
+  const out = [shots.findIndex((s) => s.source === 'explode'), ...spread, shots.findIndex((s) => s.source === 'end'), shots.length - 1];
   return [...new Set(out.filter((i) => i >= 0))].slice(0, 6);
 }

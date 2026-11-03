@@ -1,5 +1,5 @@
-// The X clip's edit as pure functions: which spans of the recorded takes become shots (from the click log), where
-// each shot sits in a 1080x1350 frame, and where the world's own sound files go under them. diorama clip records
+// The X clip's edit as pure functions: which spans of the recorded takes become shots (from the click log), how
+// each shot sits in a 16:9 and a 1080x1350 frame, and where the world's own sound files go under them. diorama clip records
 // the takes and renders what these plan (src/commands/clip.ts).
 import type { SoundData } from '../play/sound.ts';
 import { spokenLine } from '../play/sound.ts';
@@ -26,17 +26,18 @@ export type Take = {
   hero: Array<{ t: number; x: number }>;
 };
 
-export type ShotSource = 'game' | 'end' | 'explode-first' | 'explode-last';
+/** A recorded take, or a place coming apart into its layers (the explode of the shot's place). */
+export type ShotSource = 'game' | 'end' | 'explode';
 
 export type Shot = {
   source: ShotSource;
   /** Span of the source video, seconds. */
   from: number;
   to: number;
-  /** Playback speed (the explode takes run faster). */
+  /** Playback speed. */
   speed: number;
   place: string;
-  /** Left edge of the 1080 px wide crop of the 2400x1350 frame, for the 1080x1350 version. */
+  /** Left edge of the 1080 px wide crop of the 2400x1350 frame, for the 1080x1350 version of a --zoom clip. */
   cropX: number;
   caption?: string;
   /** Seconds the last frame is held at the end. */
@@ -45,9 +46,16 @@ export type Shot = {
 };
 
 export const TALL = { scaledWidth: 2400, width: 1080 };
-/** Seconds of the opening shot before the first click lands, and of the whole opening shot. */
+/** Seconds of the opening shot before the first click lands, and of the whole opening shot (the hero walks first). */
 export const OPEN_LEAD = 0.2;
-export const OPEN_SHOT = 0.8;
+export const OPEN_SHOT = 2.2;
+/** Seconds of each explode in the clip (the whole orbit-popout take, at speed 1), and the end card's last-frame hold. */
+export const EXPLODE = 4;
+export const END_HOLD = 0.5;
+/** Seconds of the last place before its closing explode. */
+const END_SHOT = 2.8;
+/** The least the story shots get, per place, however short --seconds is. */
+const LEAST_PER_PLACE = 2.4;
 const BEFORE = 0.5;
 const AFTER = 2.5;
 const LONGEST = 4;
@@ -58,6 +66,37 @@ const FADE_IN = 0.45;
 /** Flat, the orbit-popout explode shows the place's painting this many times its frame size, in the middle of a render of EXPLODE_RENDER. */
 export const EXPLODE_FLAT_SCALE = 1.06;
 export const EXPLODE_RENDER = { width: 1920, height: 1080 };
+/** The fill round a frame that does not cover the clip: the frame itself, scaled to cover, blurred and darkened. */
+export const FILL = { sigma: 45, brightness: -0.22, saturation: 0.8 };
+
+type Size = { width: number; height: number };
+
+/**
+ * An ffmpeg filter chain (one video in, one out) that shows a `src` frame whole and centred in w x h, at the full
+ * height (16:9 round a 4:3 frame) or the full width (1080x1350: 1080x810 with bars above and below), the rest filled
+ * with the same frame scaled to cover, blurred and darkened.
+ */
+export function fillFrame(src: Size, w: number, h: number): string {
+  const fit = w / h >= src.width / src.height ? `scale=-2:${h}` : `scale=${w}:-2`;
+  return `split[fill_a][fill_b];[fill_b]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},gblur=sigma=${FILL.sigma},`
+    + `eq=brightness=${FILL.brightness}:saturation=${FILL.saturation}[fill_bg];[fill_a]${fit}:flags=lanczos[fill_fg];[fill_bg][fill_fg]overlay=(W-w)/2:(H-h)/2`;
+}
+
+/**
+ * An ffmpeg filter chain that cuts an explode render round its flat painting (a place `frame` big), so the painting's
+ * flat state lands where a fillFrame'd game frame does and the cut into it does not jump in scale: 16:9 crops a 16:9
+ * box as tall as the painting; 1080x1350 crops the painting's width at the render's full height, scaled to 1080 wide
+ * on the render's own dark ground.
+ */
+export function explodeFrame(frame: Size, w: number, h: number): string {
+  const R = EXPLODE_RENDER;
+  const fw = Math.min(R.width, Math.round(frame.width * EXPLODE_FLAT_SCALE)), fh = Math.min(R.height, Math.round(frame.height * EXPLODE_FLAT_SCALE));
+  if (w >= h) {
+    const cw = Math.min(R.width, Math.floor((fh * w) / h / 2) * 2), ch = Math.min(fh, Math.round((cw * h) / w));
+    return `crop=${cw}:${ch}:${Math.round((R.width - cw) / 2)}:${Math.round((R.height - ch) / 2)},scale=${w}:${h}:flags=lanczos`;
+  }
+  return `crop=${fw}:${R.height}:${Math.round((R.width - fw) / 2)}:0,scale=${w}:-2:flags=lanczos,pad=${w}:${h}:0:(oh-ih)/2:color=0x090a10`;
+}
 
 export const shotSeconds = (s: Shot) => (s.to - s.from) / s.speed + (s.hold ?? 0);
 
@@ -118,57 +157,68 @@ type Candidate = { from: number; to: number; at: number; click?: number; priorit
 export type ClipPlanInput = {
   game: Take;
   end?: Take;
-  /** Target length in seconds. */
+  /** Target length in seconds; the story shots get what the opening, the explodes and the end leave. */
   seconds: number;
-  /** Lengths of the explode takes, when made. */
-  explodeFirst?: number;
-  explodeLast?: number;
+  /** Seconds of each place's explode take, for the places that have one. */
+  explodes?: Record<string, number>;
   firstPlace: string;
   lastPlace: string;
   caption: string;
 };
 
 /**
- * The shot list: the first click opens the clip 0.2 s in, the first place comes apart into its layers at ~0.8 s,
- * then a shot per story click (0.5 s before, 2-3 s after, or round its effect when the hero had far to walk), at
- * least one per place, trimmed to the target length, and the last place with its explode under the end card.
+ * The shot list: the first click opens the clip 0.2 s in and the hero walks for two seconds, then the first place
+ * comes apart into its layers; a shot per story click (0.5 s before, 2-3 s after, or round its effect when the hero
+ * had far to walk), at least one per place, each place's first shot after its own explode, trimmed to the target
+ * length; the last place's explode, the last place, and its explode again under the end card.
  */
 export function pickShots(input: ClipPlanInput): Shot[] {
   const { game } = input;
   const clicks = game.events.filter((e): e is Extract<TakeEvent, { kind: 'click' }> => e.kind === 'click');
   if (!clicks.length) throw new Error('the game take has no clicks');
   const first = clicks[0];
+  const from = round(Math.max(0, first.t - OPEN_LEAD));
   const open: Shot = {
-    source: 'game', from: round(Math.max(0, first.t - OPEN_LEAD)), to: round(Math.max(0, first.t - OPEN_LEAD) + OPEN_SHOT), speed: 1, place: placeAt(game, first.t),
-    cropX: cropFor(heroAt(game, first.t - OPEN_LEAD, first.t + OPEN_SHOT), first.x), why: 'opening click',
+    source: 'game', from, to: round(Math.min(game.duration, from + OPEN_SHOT)), speed: 1, place: placeAt(game, first.t),
+    cropX: cropFor(heroAt(game, from, from + OPEN_SHOT), first.x), why: 'opening click',
   };
-  const head: Shot[] = [open];
-  if (input.explodeFirst) {
-    const to = Math.min(input.explodeFirst, 2.6);
-    head.push({ source: 'explode-first', from: Math.min(0.3, to / 4), to, speed: 2, place: input.firstPlace, cropX: cropFor(undefined), why: 'the first place comes apart into its layers' });
-  }
-  const tail = endShots(input);
-  const fixed = [...head, ...tail].reduce((n, s) => n + shotSeconds(s), 0);
-  const budget = Math.max(0, input.seconds - fixed);
-  const dark = darkSpans(game);
+  const exploded = new Set<string>();
+  const explode = (place: string, why: string): Shot[] => {
+    const seconds = input.explodes?.[place];
+    if (!seconds) return [];
+    exploded.add(place);
+    return [{ source: 'explode', from: 0, to: round(Math.min(seconds, EXPLODE)), speed: 1, place, cropX: cropFor(undefined), why }];
+  };
+  const skip = input.end ? input.lastPlace : undefined;
+  // What the explodes will take: one per place the story shots visit, one before the last place, one under the card.
+  const places = new Set([open.place, ...game.events.flatMap((e) => (e.kind === 'enter' && e.place !== skip ? [e.place] : []))]);
+  const explodeSeconds = (place: string) => Math.min(input.explodes?.[place] ?? 0, EXPLODE);
+  const tailPlaces = input.end && !places.has(input.lastPlace) ? [input.lastPlace, input.lastPlace] : [input.lastPlace];
+  const fixed = shotSeconds(open) + [...places, ...tailPlaces].reduce((n, p) => n + explodeSeconds(p), 0) + (input.end ? END_SHOT : 0) + END_HOLD;
+  const budget = Math.max(input.seconds - fixed, LEAST_PER_PLACE * Math.max(1, places.size));
   // The last place is the end take's: the game take's few seconds there are left out.
-  const middle = middleShots(game, clicks.slice(1), open.to, dark, budget, input.end ? input.lastPlace : undefined);
-  return [...head, ...middle, ...tail];
+  const middle = middleShots(game, clicks.slice(1), open.to, darkSpans(game), budget, skip);
+  const shots: Shot[] = [open, ...explode(open.place, `${open.place} comes apart into its layers`)];
+  for (const s of middle) {
+    if (!exploded.has(s.place)) shots.push(...explode(s.place, `${s.place} comes apart into its layers`));
+    shots.push(s);
+  }
+  return [...shots, ...endShots(input, exploded, explode)];
 }
 
-function endShots(input: ClipPlanInput): Shot[] {
-  const { end } = input;
+function endShots(input: ClipPlanInput, exploded: Set<string>, explode: (place: string, why: string) => Shot[]): Shot[] {
+  const { end, lastPlace: place } = input;
   const out: Shot[] = [];
-  const endHold = input.explodeLast ? 0 : 1.6;
   if (end) {
+    if (!exploded.has(place)) out.push(...explode(place, `${place} comes apart into its layers`));
     const click = end.events.find((e): e is Extract<TakeEvent, { kind: 'click' }> => e.kind === 'click');
     const from = click ? Math.max(0, click.t - 0.3) : Math.min(1, end.duration / 4);
-    const to = Math.min(end.duration, from + 3.2 + endHold);
-    out.push({ source: 'end', from: round(from), to: round(to), speed: 1, place: input.lastPlace, cropX: cropFor(heroAt(end, from, to), click?.x), why: 'the last place', ...(!input.explodeLast && { caption: input.caption, hold: 0.4 }) });
+    const to = Math.min(end.duration, from + END_SHOT);
+    out.push({ source: 'end', from: round(from), to: round(to), speed: 1, place, cropX: cropFor(heroAt(end, from, to), click?.x), why: 'the last place' });
   }
-  if (input.explodeLast) {
-    out.push({ source: 'explode-last', from: 0, to: Math.min(input.explodeLast, 4.4), speed: 1.6, place: input.lastPlace, cropX: cropFor(undefined), caption: input.caption, hold: 0.4, why: 'the last place comes apart under the end card' });
-  }
+  const card = explode(place, `${place} comes apart under the end card`);
+  if (card.length) out.push({ ...card[0], caption: input.caption, hold: END_HOLD });
+  else if (out.length) Object.assign(out[out.length - 1], { caption: input.caption, hold: END_HOLD });
   return out;
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { audioPlan, clipSound, cropFor, pickShots, shotSeconds, shotStarts, type Take } from '../src/film/clip.ts';
+import { audioPlan, clipSound, cropFor, explodeFrame, fillFrame, pickShots, shotSeconds, shotStarts, type Take } from '../src/film/clip.ts';
 import type { SoundData } from '../src/play/sound.ts';
 
 // The paper-boat-storm run as the game take logged it: a floor click, then the route to the boat.
@@ -32,26 +32,40 @@ const game: Take = {
   ],
 };
 const end: Take = { duration: 12, place: 'rock', hero: [{ t: 1, x: 900 }], events: [{ kind: 'click', t: 1.2, x: 1300, y: 1150, place: 'rock' }] };
-const input = { game, end, seconds: 25, firstPlace: 'quay', lastPlace: 'rock', caption: 'Send me your sketch.', explodeFirst: 6, explodeLast: 6 };
+const input = { game, end, seconds: 38, firstPlace: 'quay', lastPlace: 'rock', caption: 'Send me your sketch.', explodes: { quay: 4, mill: 4, rock: 4 } };
 
 describe('pickShots', () => {
   const shots = pickShots(input);
   const total = shots.reduce((n, s) => n + shotSeconds(s), 0);
 
-  it('opens 0.2 s before the first click, with the first place coming apart next', () => {
-    expect(shots[0]).toMatchObject({ source: 'game', from: 0.8, to: 1.6 });
-    expect(shots[1]).toMatchObject({ source: 'explode-first', place: 'quay', speed: 2 });
-    expect(shotStarts(shots)[1]).toBeCloseTo(0.8, 5);
+  it('opens 0.2 s before the first click and lets the hero walk two seconds before the first place comes apart', () => {
+    expect(shots[0]).toMatchObject({ source: 'game', from: 0.8, to: 3.0, place: 'quay' });
+    expect(shots[1]).toMatchObject({ source: 'explode', place: 'quay', from: 0, to: 4, speed: 1 });
+    expect(shotStarts(shots)[1]).toBeCloseTo(2.2, 5);
+    expect(shots[2]).toMatchObject({ source: 'game', place: 'quay' });
   });
 
-  it('ends on the last place, then its explode under the end card', () => {
+  it('puts an explode before the first shot of each later place, once a place', () => {
+    const firstMill = shots.findIndex((s) => s.source === 'game' && s.place === 'mill');
+    expect(firstMill).toBeGreaterThan(0);
+    expect(shots[firstMill - 1]).toMatchObject({ source: 'explode', place: 'mill' });
+    const story = shots.filter((s) => s.source === 'explode' && s.place !== 'rock').map((s) => s.place);
+    expect(story).toEqual(['quay', 'mill']);
+    // Back on the quay: no second quay explode.
+    const back = shots.findIndex((s, i) => i > firstMill && s.source === 'game' && s.place === 'quay');
+    if (back > 0) expect(shots[back - 1].source).toBe('game');
+  });
+
+  it('ends on the last place after its explode, then its explode again under the end card', () => {
+    expect(shots.at(-3)).toMatchObject({ source: 'explode', place: 'rock' });
     expect(shots.at(-2)).toMatchObject({ source: 'end', place: 'rock' });
-    expect(shots.at(-1)).toMatchObject({ source: 'explode-last', place: 'rock', caption: 'Send me your sketch.', hold: 0.4 });
+    expect(shots.at(-1)).toMatchObject({ source: 'explode', place: 'rock', from: 0, to: 4, speed: 1, caption: 'Send me your sketch.', hold: 0.5 });
   });
 
-  it('keeps to the target length, with every place of the run in it', () => {
-    expect(total).toBeLessThanOrEqual(25.05);
-    expect(total).toBeGreaterThan(18);
+  it('keeps to the target length, explodes whole, with every place of the run in it', () => {
+    expect(total).toBeLessThanOrEqual(38.05);
+    expect(total).toBeGreaterThan(32);
+    for (const s of shots.filter((s) => s.source === 'explode')) expect(shotSeconds(s)).toBeGreaterThanOrEqual(4);
     expect(new Set(shots.map((s) => s.place))).toEqual(new Set(['quay', 'mill', 'rock']));
   });
 
@@ -62,7 +76,7 @@ describe('pickShots', () => {
       expect(s.to - s.from).toBeGreaterThanOrEqual(1.2);
       expect(s.to - s.from).toBeLessThanOrEqual(4.01);
       for (const [d0, d1] of [[6, 7.45], [20, 21.45], [43.8, 44.8 + 0.45]]) expect(s.to <= d0 || s.from >= d1).toBe(true);
-      if (i > 0) expect(s.from).toBeGreaterThanOrEqual(story[i - 1].to);
+      expect(s.from).toBeGreaterThanOrEqual(i > 0 ? story[i - 1].to : shots[0].to);
     }
     // The lamp: a long walk after the click, so the shot is round the hero using it, not the cursor.
     const lamp = story.find((s) => s.why.includes('lamp-post'));
@@ -72,16 +86,43 @@ describe('pickShots', () => {
     if (oar) expect(oar.from).toBeCloseTo(34.36, 2);
   });
 
-  it('drops the least telling shots first when the target is short', () => {
-    const short = pickShots({ ...input, seconds: 15 });
-    expect(short.reduce((n, s) => n + shotSeconds(s), 0)).toBeLessThanOrEqual(15.6);
+  it('drops the least telling story shots first when the target is short, never an explode', () => {
+    const short = pickShots({ ...input, seconds: 28 });
+    expect(short.reduce((n, s) => n + shotSeconds(s), 0)).toBeLessThanOrEqual(28.6);
     expect(short.filter((s) => s.source === 'game').length).toBeLessThan(shots.filter((s) => s.source === 'game').length);
+    expect(short.filter((s) => s.source === 'explode').length).toBe(4);
+    // Far too short: the story still gets a little of every place.
+    const tiny = pickShots({ ...input, seconds: 10 });
+    expect(new Set(tiny.filter((s) => s.source === 'game').map((s) => s.place))).toEqual(new Set(['quay', 'mill']));
   });
 
   it('works without the explode takes: the end shot carries the caption', () => {
-    const plain = pickShots({ ...input, explodeFirst: undefined, explodeLast: undefined });
-    expect(plain.some((s) => s.source.startsWith('explode'))).toBe(false);
-    expect(plain.at(-1)).toMatchObject({ source: 'end', caption: 'Send me your sketch.' });
+    const plain = pickShots({ ...input, explodes: undefined, seconds: 25 });
+    expect(plain.some((s) => s.source === 'explode')).toBe(false);
+    expect(plain.at(-1)).toMatchObject({ source: 'end', caption: 'Send me your sketch.', hold: 0.5 });
+    expect(plain.reduce((n, s) => n + shotSeconds(s), 0)).toBeLessThanOrEqual(25.05);
+  });
+});
+
+describe('fillFrame', () => {
+  it('shows a 4:3 frame whole at full height in 16:9, the sides the same frame blurred and darkened', () => {
+    const f = fillFrame({ width: 1440, height: 1080 }, 1920, 1080);
+    expect(f).toContain('scale=-2:1080');
+    expect(f).toContain('scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,gblur=sigma=45,eq=brightness=-0.22:saturation=0.8');
+    expect(f).toContain('overlay=(W-w)/2:(H-h)/2');
+  });
+
+  it('shows it at full width (1080x810) in 1080x1350, the fill above and below', () => {
+    const f = fillFrame({ width: 1440, height: 1080 }, 1080, 1350);
+    expect(f).toContain('scale=1080:-2');
+    expect(f).toContain('crop=1080:1350,gblur=sigma=45');
+  });
+});
+
+describe('explodeFrame', () => {
+  it('cuts the render round the flat painting (1200x896 shows 1272x950), as the approved cut does', () => {
+    expect(explodeFrame({ width: 1200, height: 896 }, 1920, 1080)).toBe('crop=1688:950:116:65,scale=1920:1080:flags=lanczos');
+    expect(explodeFrame({ width: 1200, height: 896 }, 1080, 1350)).toBe('crop=1272:1080:324:0,scale=1080:-2:flags=lanczos,pad=1080:1350:0:(oh-ih)/2:color=0x090a10');
   });
 });
 
