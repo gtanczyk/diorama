@@ -280,8 +280,6 @@ export class Critter {
     const [w, h] = [box[2] - box[0], box[3] - box[1]];
     const s = swimAt(t, k, this.facing, w, this.medium);
     const [sx, sy] = shift(box[3]);
-    const up = s.leap ? leapHeight(s.leap, h) : 0;
-    const [cx, cy] = [box[0] + w / 2 + s.dx + sx, box[1] + h / 2 + s.dy + sy - up];
     // The water rings where it leaves and where it lands.
     if (this.medium === 'water') {
       const dir = Math.sign(s.scaleX || 1) * this.facing;
@@ -301,6 +299,20 @@ export class Critter {
         ctx.restore();
       }
     }
+    this.drawPosed(ctx, t, shift, img, 0);
+  }
+
+  /**
+   * Draws `img` (the critter's card, or something cut to it with `pad` px of room on every side, such as its hover
+   * outline) where and how the critter is this moment: swum, leapt, turned, flapping, its tail wiggling.
+   */
+  drawPosed(ctx: CanvasRenderingContext2D, t: number, shift: Shift, img: CanvasImageSource, pad: number) {
+    const { box, k } = this;
+    const [w, h] = [box[2] - box[0], box[3] - box[1]];
+    const s = swimAt(t, k, this.facing, w, this.medium);
+    const [sx, sy] = shift(box[3]);
+    const up = s.leap ? leapHeight(s.leap, h) : 0;
+    const [cx, cy] = [box[0] + w / 2 + s.dx + sx, box[1] + h / 2 + s.dy + sy - up];
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(s.rot);
@@ -308,11 +320,13 @@ export class Critter {
     const flap = this.medium === 'air' ? 1 + 0.18 * Math.sin(t * 9 + k) : 1;
     ctx.scale(Math.abs(s.scaleX) < 0.06 ? 0.06 * Math.sign(s.scaleX || 1) : s.scaleX, flap);
     const STRIP = 4;
+    // Strips on the card's own grid; the padding beside it moves with the strip at that edge.
     for (let x = 0; x < w; x += STRIP) {
       // Painted facing right, the tail is at the left (x 0): it swings most.
       const tail = this.facing > 0 ? 1 - x / w : x / w;
       const dy = this.medium === 'water' ? Math.sin(t * 7 + k - x * 0.08) * 2.4 * tail * tail : 0;
-      ctx.drawImage(img, x, 0, STRIP + 1, h, x - w / 2, -h / 2 + dy, STRIP + 1, h);
+      const [a, b] = [x === 0 ? -pad : x, x + STRIP >= w ? w + pad : x + STRIP + (pad ? 0 : 1)];
+      ctx.drawImage(img, a + pad, 0, b - a, h + 2 * pad, a - w / 2, -h / 2 - pad + dy, b - a, h + 2 * pad);
     }
     ctx.restore();
   }

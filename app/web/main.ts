@@ -1,4 +1,5 @@
 import { exitOutline } from '../src/play/exit-outline.ts';
+import { outlineLoops, softAlpha } from '../src/play/outline-path.ts';
 // The browser runtime: a painted place, a hero who walks on its grid, hides behind things and uses them.
 import { hashSeed } from '../src/play/weather.ts';
 import { FLAME_GLOW, FLAME_SWAY_M, flameAt, depthStretch, flicker, floorYAt, hiddenRuns, castsShadow, lightFor, onStep, personPx, stepAt, stepFootY, stepRestY, treadY, type GeoThing, type Geometry, type Occluder } from '../src/play/geometry.ts';
@@ -38,6 +39,8 @@ type Data = {
   story: Story | null;
   /** Index into story.changes → the painting as it looks once that change holds. */
   changes?: Record<string, string>;
+  /** Index into story.changes → the changed thing's shape in it (a mask), which its hover outline follows. */
+  changeShapes?: Record<string, string>;
   /** Music, ambience, loops, footsteps and one-shots (diorama sound); without it the page is silent. */
   sound?: SoundData;
   /** An icon per story item (diorama icons); an item without one shows its name. */
@@ -48,7 +51,9 @@ type Data = {
 
 type Bits = { bits: Uint8Array; area: number };
 type Who = { npc?: Hot; body?: Body; y: number };
-type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement; outline?: HTMLCanvasElement; outlineBox?: Rect; npc?: Npc };
+type Hot = { thing: GeoThing; spec?: PlaceSpec['things'][number]; mask?: Bits; area: number; plate?: HTMLImageElement; outline?: Outline; npc?: Npc };
+/** A hover outline drawn into a canvas whose top-left corner is painting point (x0, y0); `cuts` is what it was made of. */
+type Outline = { canvas: HTMLCanvasElement; x0: number; y0: number; cuts?: string };
 type Rect = [number, number, number, number];
 /** sprites.json, written by `diorama sprites`: one walk cycle per facing, a cols x rows grid of frames per sheet. */
 export type SpriteInfo = {
@@ -999,6 +1004,25 @@ class Game {
     }
   }
 
+  private readonly shapeBits = new Map<number, Bits | null>();
+
+  /** The shapes of the story changes of `key` that hold now and have loaded (see Data.changeShapes). */
+  private changeShapes(key: string): Array<{ i: number; bits: Bits }> {
+    const story = this.data.story;
+    const paths = this.data.changeShapes;
+    if (!story || !paths) return [];
+    const { width: W, height: H } = this.place.g.frame;
+    return this.changed().flatMap(({ i }) => {
+      if (story.changes[i].thing !== key || !paths[i]) return [];
+      if (!this.shapeBits.has(i)) {
+        this.shapeBits.set(i, null);
+        void loadBits(files(paths[i]), W, H).then((b) => this.shapeBits.set(i, b)).catch(() => undefined);
+      }
+      const bits = this.shapeBits.get(i);
+      return bits ? [{ i, bits }] : [];
+    });
+  }
+
   /** Things of this place the story has carried off: drawn from their clean plate, not clickable, hiding no one. */
   gone(): Set<string> {
     const story = this.data.story;
@@ -1290,8 +1314,19 @@ class Game {
 
   /** Draws the card's columns [xa, xb) (frame x) in strips, each slid by the floor under it. */
   private drawCard(cut: Cut, xa = cut.x0, xb = cut.x0 + cut.canvas.width, ya = cut.y0, yb = cut.y0 + cut.canvas.height) {
-    // A boat on the water rides the swell: rises and sinks and rolls about its keel, each on its own phase, more in
-    // a storm. One moored at the quay (land on one side) swings about its tied end, so its rope stays on the post.
+    ctx.save();
+    this.poseCard(cut);
+    this.drawStrips(cut, xa, xb, ya, yb);
+    ctx.restore();
+  }
+
+  /**
+   * Moves ctx as the card's own motion this frame (before its strips slide with the floor). A boat on the water
+   * rides the swell: rises and sinks and rolls about its keel, each on its own phase, more in a storm. One moored at
+   * the quay (land on one side) swings about its tied end, so its rope stays on the post. Everything drawn with a
+   * card (its outline, its story change) goes through here, so it moves exactly as the card does.
+   */
+  private poseCard(cut: Cut) {
     const float = this.afloat(cut);
     if (float && !params.has('still')) {
       const t = this.time + (hashSeed(cut.occ.key) % 1000) / 160;
@@ -1303,15 +1338,10 @@ class Game {
       // Big enough to read at a glance: a few pixels of rise and fall and a clear roll, never a jitter.
       const heave = Math.sin(t * 1.3) * Math.max(2, Math.min(7, hgt * 0.03)) * big;
       const roll = (tied ? 0.045 : 0.04) * big * Math.sin(t * 0.9 + 1.1) + (tied ? heave * 0.004 * -tied : 0);
-      ctx.save();
       ctx.translate(px + (tied ? 0 : Math.sin(t * 0.55) * Math.min(4, hgt * 0.012) * big), py + (tied ? heave * 0.35 : heave));
       ctx.rotate(roll);
       ctx.translate(-px, -py);
-      this.drawStrips(cut, xa, xb, ya, yb);
-      ctx.restore();
-      return;
     }
-    this.drawStrips(cut, xa, xb, ya, yb);
   }
 
   private readonly floating = new WeakMap<Cut, { tied: number } | false>();
@@ -1442,37 +1472,121 @@ class Game {
     return [x - sx, y - sy];
   }
 
-  /** The hover outline, moved exactly as what it outlines: strip by strip with its card, or with the floor. */
+  /**
+   * The hover outline, moved exactly as what it outlines. A thing with a card: the line round the card's own
+   * cut-out, in the card's motion this frame (its swell) and slid strip by strip as the card's strips are. Anything
+   * else lies on the floor or the backdrop and moves with it.
+   */
   private drawLit(hot: Hot) {
-    const p = this.parallax();
-    if (!p) return this.drawOutline(hot);
     const key = hot.thing.key;
-    if (!this.cardOf(key, hot.thing.box[0])) {
-      const { above, below } = backdropTransforms(this.place.g, p);
-      const h = this.place.g.scale.horizonY;
-      const { width: W, height: H } = this.place.g.frame;
-      for (const [m, y0, y1] of [[above, 0, h], [below, h, H]] as const) {
+    const cuts = this.place.cuts.filter((c) => (c.occ.thing ?? c.occ.key) === key);
+    if (cuts.length) {
+      const o = this.cardOutline(hot, cuts);
+      for (const cut of cuts) {
         ctx.save();
-        ctx.transform(...(m as [number, number, number, number, number, number]));
-        ctx.beginPath();
-        ctx.rect(-W, y0, 3 * W, y1 - y0);
-        ctx.clip();
-        this.drawOutline(hot);
+        this.poseCard(cut);
+        this.outlineStrips(cut, o);
         ctx.restore();
       }
       return;
     }
-    const [bx0, , bx1] = hot.thing.box;
-    const STRIP = 6;
-    for (let x = Math.floor(bx0) - 4; x < bx1 + 4; x += STRIP) {
-      const [sx, sy] = this.cardShift(this.cardOf(key, x + STRIP / 2)!, x + STRIP / 2);
+    const p = this.parallax();
+    if (!p) return this.drawOutline(hot);
+    // A painted fish that swims (the living layer cut it out): its line swims with it.
+    const shift = (y: number) => shiftAt(this.place.g, p, y);
+    for (const c of this.crittersOf(hot)) c.drawPosed(ctx, this.time, shift, this.critterOutline(c), OUTLINE_PAD);
+    const { above, below } = backdropTransforms(this.place.g, p);
+    const h = this.place.g.scale.horizonY;
+    const { width: W, height: H } = this.place.g.frame;
+    for (const [m, y0, y1] of [[above, 0, h], [below, h, H]] as const) {
       ctx.save();
-      ctx.translate(sx, sy);
+      ctx.transform(...(m as [number, number, number, number, number, number]));
       ctx.beginPath();
-      ctx.rect(x - 1, -1e4, STRIP + 2, 2e4);
+      ctx.rect(-W, y0, 3 * W, y1 - y0);
       ctx.clip();
       this.drawOutline(hot);
       ctx.restore();
+    }
+  }
+
+  private readonly critterLines = new WeakMap<Critter, HTMLCanvasElement>();
+  private readonly critterThings = new WeakMap<Hot, Critter[]>();
+
+  /** The critters cut out of this thing's mask (their middle lies on it), drawn swimming instead of it. */
+  private crittersOf(hot: Hot): Critter[] {
+    let known = this.critterThings.get(hot);
+    if (known) return known;
+    const W = this.place.g.frame.width;
+    const mask = hot.mask;
+    known = !mask || !this.parallax() ? [] : (this.place.critters ?? []).filter((c) => {
+      const [x, y] = [Math.round((c.box[0] + c.box[2]) / 2), Math.round((c.box[1] + c.box[3]) / 2)];
+      return mask.bits[y * W + x] === 1;
+    });
+    this.critterThings.set(hot, known);
+    return known;
+  }
+
+  /** The outline of a critter's card, OUTLINE_PAD px bigger on every side, made once. */
+  private critterOutline(c: Critter): HTMLCanvasElement {
+    let line = this.critterLines.get(c);
+    if (line) return line;
+    const [w, h] = [c.box[2] - c.box[0] + 2 * OUTLINE_PAD, c.box[3] - c.box[1] + 2 * OUTLINE_PAD];
+    const cv = Object.assign(document.createElement('canvas'), { width: w, height: h });
+    const cx = cv.getContext('2d', { willReadFrequently: true })!;
+    cx.drawImage(c.img, OUTLINE_PAD, OUTLINE_PAD, w - 2 * OUTLINE_PAD, h - 2 * OUTLINE_PAD);
+    const rgba = cx.getImageData(0, 0, w, h).data;
+    const alpha = new Uint8Array(w * h);
+    for (let i = 0; i < alpha.length; i++) alpha[i] = rgba[i * 4 + 3];
+    line = outlineCanvas(alpha, w, h);
+    this.critterLines.set(c, line);
+    return line;
+  }
+
+  /**
+   * The line round all of a thing's cards, as cut out (their alpha), made once. While a story change of it holds,
+   * round the thing as the change draws it (its shape in the change plate: a boat redrawn with a lantern may be
+   * longer than the one painted), once that shape has loaded.
+   */
+  private cardOutline(hot: Hot, cuts: Cut[]): Outline {
+    const shapes = this.changeShapes(hot.thing.key);
+    const id = `${cuts.map((c) => c.occ.key).join(',')}|${shapes.map((s) => s.i).join(',')}`;
+    if (hot.outline?.cuts === id) return hot.outline;
+    if (shapes.length) {
+      const W = this.place.g.frame.width;
+      const bits = new Uint8Array(shapes[0].bits.bits.length);
+      for (const { bits: b } of shapes) for (let i = 0; i < bits.length; i++) bits[i] |= b.bits[i];
+      hot.outline = { ...bitsOutline({ bits, area: 0 }, W, hot.thing.box), cuts: id };
+      return hot.outline;
+    }
+    const x0 = Math.min(...cuts.map((c) => c.x0)) - OUTLINE_PAD;
+    const y0 = Math.min(...cuts.map((c) => c.y0)) - OUTLINE_PAD;
+    const w = Math.max(...cuts.map((c) => c.x0 + c.base.width)) + OUTLINE_PAD - x0;
+    const h = Math.max(...cuts.map((c) => c.y0 + c.base.height)) + OUTLINE_PAD - y0;
+    const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
+    const cx = c.getContext('2d', { willReadFrequently: true })!;
+    for (const cut of cuts) cx.drawImage(cut.base, cut.x0 - x0, cut.y0 - y0);
+    const rgba = cx.getImageData(0, 0, w, h).data;
+    const alpha = new Uint8Array(w * h);
+    for (let i = 0; i < alpha.length; i++) alpha[i] = rgba[i * 4 + 3];
+    hot.outline = { canvas: outlineCanvas(alpha, w, h), x0, y0, cuts: id };
+    return hot.outline;
+  }
+
+  /**
+   * Draws the outline's columns that belong to this card (the card nearest them) the way drawStrips draws the
+   * card: in strips on the card's own grid, each slid by the card's shift at that strip.
+   */
+  private outlineStrips(cut: Cut, o: Outline) {
+    const STRIP = 6;
+    const key = cut.occ.thing ?? cut.occ.key;
+    const { width: w, height: h } = o.canvas;
+    for (let x = cut.x0 + Math.floor((o.x0 - cut.x0) / STRIP) * STRIP; x < o.x0 + w; x += STRIP) {
+      if (this.cardOf(key, x + STRIP / 2) !== cut) continue;
+      const a = Math.max(x, o.x0);
+      const b = Math.min(x + STRIP, o.x0 + w);
+      if (b <= a) continue;
+      const [sx, sy] = this.cardShift(cut, x + STRIP / 2);
+      ctx.drawImage(o.canvas, a - o.x0, 0, b - a, h, a + sx, o.y0 + sy, b - a, h);
     }
   }
 
@@ -1722,9 +1836,16 @@ class Game {
         this.drawCard(cut);
       }
       this.drawClimbs();
-      // A change belongs to its thing's card, so it slides with it (and its glow with it).
       const story = this.data.story;
-      for (const { img, i } of this.changed()) this.at(this.thingY(story!.changes[i].thing), () => ctx.drawImage(img, 0, 0, W, H));
+      // A change belongs to its thing's card: it slides with it and rides the same swell, so it never comes apart
+      // from the card under it (nor from its outline).
+      for (const { img, i } of this.changed()) {
+        const cut = this.place.cuts.find((c) => (c.occ.thing ?? c.occ.key) === story!.changes[i].thing);
+        ctx.save();
+        if (cut) this.poseCard(cut);
+        this.at(this.thingY(story!.changes[i].thing), () => ctx.drawImage(img, 0, 0, W, H));
+        ctx.restore();
+      }
     } else {
       if (bg) ctx.drawImage(bg, 0, 0, W, H);
       // What the story has changed here (a beacon lit): each change is the thing as it looks after, transparent elsewhere.
@@ -1968,27 +2089,39 @@ class Game {
     ctx.restore();
   }
 
-  /** A glowing line along the edge of the thing's mask (its box, when it has no mask). */
+  /** A glowing line round the thing's mask (a walk-on exit: round the steps it covers), as painted; its box without one. */
   private drawOutline(hot: Hot) {
-    if (hot.mask && !hot.outline) {
-      const coverage = exitOutline(hot.mask, { ...hot.thing, role: hot.spec?.role ?? hot.thing.role }, this.place.g);
-      hot.outlineBox = coverage?.box ?? hot.thing.box;
-      hot.outline = edgeCanvas(coverage?.mask ?? hot.mask, this.place.g.frame.width, hot.outlineBox.map(Math.round) as Rect);
-    }
-    const [bx0, by0, bx1, by1] = (hot.outlineBox ?? hot.thing.box).map(Math.round);
-    ctx.save();
-    ctx.shadowColor = 'rgba(255,225,150,0.9)';
-    ctx.shadowBlur = 8;
     if (!hot.mask) {
+      const [bx0, by0, bx1, by1] = hot.thing.box.map(Math.round);
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,225,150,0.9)';
+      ctx.shadowBlur = 8;
       ctx.strokeStyle = 'rgba(255,233,168,0.8)';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.roundRect(bx0, by0, bx1 - bx0, by1 - by0, 8);
       ctx.stroke();
-    } else {
-      ctx.drawImage(hot.outline!, bx0 - 2, by0 - 2);
+      ctx.restore();
+      return;
     }
-    ctx.restore();
+    if (!hot.outline) {
+      const g = this.place.g;
+      const coverage = exitOutline(hot.mask, { ...hot.thing, role: hot.spec?.role ?? hot.thing.role }, g);
+      let mask = coverage?.mask ?? hot.mask;
+      // What swims (a critter) is outlined where it swims; only the rest stays where it was painted.
+      const critters = this.crittersOf(hot);
+      if (critters.length) {
+        const W = g.frame.width;
+        const bits = mask.bits.slice();
+        for (const c of critters) {
+          const [x0, y0, x1, y1] = c.box.map(Math.round);
+          for (let y = Math.max(0, y0 - 6); y < Math.min(bits.length / W, y1 + 6); y++) bits.fill(0, y * W + Math.max(0, x0 - 6), y * W + Math.min(W, x1 + 6));
+        }
+        mask = { bits, area: 0 };
+      }
+      hot.outline = bitsOutline(mask, g.frame.width, hot.thing.box);
+    }
+    ctx.drawImage(hot.outline.canvas, hot.outline.x0, hot.outline.y0);
   }
 
   /** Draws one person of the scene, an NPC or the hero: their shadow on the floor, or their body. */
@@ -2980,27 +3113,51 @@ function rgb(h: number, s: number, l: number): [number, number, number] {
   return [f(0) * 255, f(8) * 255, f(4) * 255];
 }
 
-/** The mask's edge pixels inside the box (plus 2 px), as a light line to draw over the painting. */
-function edgeCanvas(mask: Bits, frameW: number, [x0, y0, x1, y1]: Rect): HTMLCanvasElement {
-  const w = x1 - x0 + 4;
-  const h = y1 - y0 + 4;
-  const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
-  const cx = c.getContext('2d')!;
-  const img = cx.createImageData(w, h);
-  const frameH = mask.bits.length / frameW;
-  const at = (x: number, y: number) => x >= 0 && y >= 0 && x < frameW && y < frameH && mask.bits[y * frameW + x] === 1;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const fx = x0 + x - 2;
-      const fy = y0 + y - 2;
-      if (!at(fx, fy)) continue;
-      // Two pixels thick: set where something within 2 px is outside the mask.
-      if (at(fx - 2, fy) && at(fx + 2, fy) && at(fx, fy - 2) && at(fx, fy + 2)) continue;
-      const i = (y * w + x) * 4;
-      img.data.set([255, 236, 180, 230], i);
-    }
+/** Room round a cut-out for its outline's line and glow. */
+const OUTLINE_PAD = 12;
+
+/** The outline of a frame-sized mask (round `box` when it is empty), in a canvas just big enough. */
+function bitsOutline(mask: Bits, W: number, box: Rect): Outline {
+  const H = mask.bits.length / W;
+  let [x0, y0, x1, y1] = [W, H, 0, 0];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (mask.bits[y * W + x]) {
+    if (x < x0) x0 = x;
+    if (x >= x1) x1 = x + 1;
+    if (y < y0) y0 = y;
+    y1 = y + 1;
   }
-  cx.putImageData(img, 0, 0);
+  if (x1 <= x0) [x0, y0, x1, y1] = box.map(Math.round);
+  [x0, y0] = [x0 - OUTLINE_PAD, y0 - OUTLINE_PAD];
+  const [w, h] = [x1 + OUTLINE_PAD - x0, y1 + OUTLINE_PAD - y0];
+  const alpha = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const [fx, fy] = [x0 + x, y0 + y];
+    if (fx >= 0 && fy >= 0 && fx < W && fy < H && mask.bits[fy * W + fx]) alpha[y * w + x] = 255;
+  }
+  return { canvas: outlineCanvas(alpha, w, h), x0, y0 };
+}
+
+/**
+ * A glowing line round the shape of `alpha` (w x h), smoothed: the mask's pixel steps and hairline gaps are blurred
+ * away, specks and pin holes dropped, and the contour cut round its corners, so the line follows the thing.
+ */
+function outlineCanvas(alpha: Uint8Array, w: number, h: number): HTMLCanvasElement {
+  const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const loops = outlineLoops(softAlpha(alpha, w, h, 2), w, h, { threshold: 128, minArea: 120, minHole: 500, smooth: 3 });
+  if (!loops.length) return c;
+  const cx = c.getContext('2d')!;
+  const path = new Path2D();
+  for (const loop of loops) {
+    path.moveTo(...loop[0]);
+    for (const p of loop.slice(1)) path.lineTo(...p);
+    path.closePath();
+  }
+  cx.lineJoin = 'round';
+  cx.shadowColor = 'rgba(255,225,150,0.9)';
+  cx.shadowBlur = 8;
+  cx.strokeStyle = 'rgba(255,236,180,0.95)';
+  cx.lineWidth = 2;
+  cx.stroke(path);
   return c;
 }
 
