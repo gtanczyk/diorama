@@ -149,23 +149,28 @@ export class GlowFx {
         // Seen from the side, the turning beam swings left and right; pointing at us it flares, away it is gone.
         const across = Math.cos(a);
         const towards = Math.sin(a);
-        const reach = (420 + 600 * near) * Math.abs(across);
+        // Even a far lighthouse throws its beam across the whole sky: it is the brightest thing in a night storm.
+        const reach = (900 + 600 * near) * Math.abs(across);
         if (reach > 8) {
           const end = x + Math.sign(across) * reach;
-          const spread = 18 + 130 * Math.abs(across) * (0.4 + near);
-          const grad = ctx.createLinearGradient(x, y, end, y);
-          grad.addColorStop(0, `rgba(${c},${0.42 * (0.6 + 0.4 * towards * towards)})`);
-          grad.addColorStop(0.5, `rgba(${c},${0.16 * (0.6 + 0.4 * towards * towards)})`);
-          grad.addColorStop(1, `rgba(${c},0)`);
-          for (let k = 1; k <= 5; k++) pools.push({ x: x + ((end - x) * k) / 5, y, r: 50 + (spread * k) / 4, c, a: 0.4 * (1 - k / 7) });
-          ctx.fillStyle = grad;
-          ctx.beginPath();
-          ctx.moveTo(x, y - 4);
-          ctx.lineTo(end, y - spread);
-          ctx.lineTo(end, y + spread);
-          ctx.lineTo(x, y + 4);
-          ctx.closePath();
-          ctx.fill();
+          const spread = 26 + 150 * Math.abs(across) * (0.5 + near);
+          const strength = 0.6 + 0.4 * towards * towards;
+          // A wide soft cone, and a narrow white-hot core inside it.
+          for (const [w, a0, a1, colour] of [[spread, 0.62, 0.26, c], [spread * 0.3, 0.55, 0.12, '255,250,235']] as const) {
+            const grad = ctx.createLinearGradient(x, y, end, y);
+            grad.addColorStop(0, `rgba(${colour},${a0 * strength})`);
+            grad.addColorStop(0.45, `rgba(${colour},${a1 * strength})`);
+            grad.addColorStop(1, `rgba(${colour},0)`);
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.moveTo(x, y - 5);
+            ctx.lineTo(end, y - w);
+            ctx.lineTo(end, y + w);
+            ctx.lineTo(x, y + 5);
+            ctx.closePath();
+            ctx.fill();
+          }
+          for (let k = 1; k <= 6; k++) pools.push({ x: x + ((end - x) * k) / 6, y, r: 60 + (spread * k) / 4, c, a: 0.5 * (1 - k / 8) });
         }
         const flare = towards > 0 ? Math.pow(Math.max(0, 1 - Math.abs(across) * 2.5), 2) : 0;
         halo(ctx, x, y, (30 + 40 * near) * (1 + 1.4 * flare), c, 0.28 + 0.2 * level + 0.5 * flare);
