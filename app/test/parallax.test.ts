@@ -66,6 +66,7 @@ test('the tracking camera pans after the hero but keeps the exit they were sent 
   const at = panTo(900, 600, 100, 500, 40, [[880, 920], [0, 250]]);
   expect(at - 500).toBeLessThanOrEqual(250 - 40);
   expect(at + 500).toBeGreaterThanOrEqual(920 + 40);
-  // A target too far away to show with the hero is let go: the hero stays in view.
+  // A target too far away to show with the hero is let go: the hero stays in view, and later spans still count.
   expect(panTo(1000, 600, 400, 300, 20, [[980, 1020], [0, 100]])).toBe(1000);
+  expect(panTo(1000, 600, 400, 300, 20, [[980, 1020], [0, 100], [600, 700]])).toBe(880);
 });

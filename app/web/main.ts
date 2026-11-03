@@ -1379,6 +1379,12 @@ class Game {
       const keep: Array<[number, number, number, number]> = [[hero.x - tall / 4, hero.y - tall, hero.x + tall / 4, hero.y + 8]];
       if (end) keep.push([end[0] - tall / 4, end[1] - personPx(this.place.g, end[1]), end[0] + tall / 4, end[1] + 8]);
       if (this.sentTo) keep.push(this.sentTo);
+      // Then a strip of every exit, and of every other thing, as far as they fit: something to click at each edge.
+      const role = (h: Hot) => h.spec?.role ?? h.thing.role;
+      const strip = ([x0, y0, x1, y1]: Rect, s: number): Rect => [x1 - Math.min(s, x1 - x0), y1 - Math.min(s, y1 - y0), x0 + Math.min(s, x1 - x0), y0 + Math.min(s, y1 - y0)];
+      // Someone who walks about is where they are drawn, not where the layout put them.
+      const box = (h: Hot) => this.drawn.find((d) => d.hot.thing.key === h.thing.key)?.rect ?? h.thing.box;
+      for (const h of this.hots().sort((a, b) => Number(role(b) === 'exit') - Number(role(a) === 'exit'))) keep.push(strip(box(h), role(h) === 'exit' ? 96 : 64));
       const margin = Math.min(48, W / (16 * z));
       const drift = sway ? Math.sin(this.time * 0.45) * room * 0.3 : 0;
       const want = panTo((hero.path.length ? hero.x : W / 2) + drift, W / 2, room, W / (2 * z), margin, keep.map((b) => [b[0], b[2]]));
