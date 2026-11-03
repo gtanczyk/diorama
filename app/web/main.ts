@@ -214,6 +214,12 @@ const rimScale = Number(params.get('rim') ?? (capture ? '0' : '1')) || 0;
 // than far ones, like a side-scroller. It only drives the parallax, so a flat place stays as it was.
 const track = Number(params.get('track') ?? '0') || 0;
 const TRACK_ZOOM = 0.2;
+// ?fill=1: the painting covers the whole page, cut at its top and bottom (or its sides) instead of black bands beside
+// it, and slides so the hero, where they walk and the thing they were sent to stay on the page (src/play/parallax.ts panTo).
+const fill = params.get('fill') === '1';
+if (fill) document.body.classList.add('fill');
+/** How much closer tracking brings the camera: filling the page is already closer in, and slides with the hero too. */
+const trackZoom = TRACK_ZOOM * track * (fill ? 0.5 : 1);
 /** Water drifts this many px per second at its near edge (40% of it at its far edge). */
 const FLOW = 20;
 /** How far the water texture reaches past the banks (WATER_PAD in src/scene/layers.ts). */
@@ -611,6 +617,7 @@ class Game {
     this.darkTarget = 0;
     canvas.width = place.g.frame.width;
     canvas.height = place.g.frame.height;
+    this.fillAt = undefined;
     document.getElementById('where')!.textContent = `${this.data.world.title} · ${key}${place.g.preview ? ' (layout preview)' : ''}`;
     this.emit('enter', { place: key, from });
   }
@@ -1194,6 +1201,42 @@ class Game {
     else if (dy > 0) hero.foot = Math.max(hero.foot, tread);
   }
 
+  /** ?fill=1: the canvas point at the middle of the page, eased after the hero; undefined until a place shows. */
+  private fillAt: Point | undefined;
+
+  /** ?fill=1: slides the canvas (bigger than the page) so what the hero is doing stays on the page. */
+  fillPan(dt: number) {
+    if (!fill) return;
+    const { width: W, height: H } = this.place.g.frame;
+    const [cw, ch, w, h] = [canvas.offsetWidth, canvas.offsetHeight, innerWidth, innerHeight];
+    if (!cw || !ch) return;
+    const k = cw / W;
+    const z = this.zoom();
+    // Frame points as canvas pixels, through the camera's zoom and pan.
+    const cx = (x: number) => (x - (this.viewX || W / 2)) * z + W / 2;
+    const cy = (y: number) => (y - (this.viewY || H / 2)) * z + H / 2;
+    const hero = this.hero;
+    const tall = personPx(this.place.g, hero.y);
+    const end = hero.path[hero.path.length - 1];
+    const keep: Array<[number, number, number, number]> = [[hero.x - tall / 4, hero.y - tall * 1.1, hero.x + tall / 4, hero.y + 12]];
+    if (end) keep.push([end[0] - tall / 4, end[1] - personPx(this.place.g, end[1]), end[0] + tall / 4, end[1] + 12]);
+    if (this.sentTo) keep.push(this.sentTo);
+    const spans = keep.map(([x0, y0, x1, y1]) => [cx(x0), cy(y0), cx(x1), cy(y1)]);
+    const [hw, hh] = [w / (2 * k), h / (2 * k)];
+    // Across: after the hero; up and down: the feet in the lower part of the page, the rest to the sky.
+    const want: Point = [
+      panTo(cx(hero.x), W / 2, Math.max(0, W / 2 - hw), hw, 24, spans.map((b) => [b[0], b[2]])),
+      panTo(cy(hero.y) - 0.15 * hh, H / 2, Math.max(0, H / 2 - hh), hh, 24, spans.map((b) => [b[1], b[3]])),
+    ];
+    const e = 1 - Math.exp(-dt * 2);
+    this.fillAt = this.fillAt ? [this.fillAt[0] + (want[0] - this.fillAt[0]) * e, this.fillAt[1] + (want[1] - this.fillAt[1]) * e] : want;
+    // Where the page lays the canvas out before it is slid (the slide is the last translate set).
+    const r = canvas.getBoundingClientRect();
+    const [sx, sy] = (canvas.style.translate || '0px 0px').split(' ').map((v) => parseFloat(v) || 0);
+    const t = `${(w / 2 - (r.left - sx) - this.fillAt[0] * k).toFixed(1)}px ${(h / 2 - (r.top - (sy ?? 0)) - this.fillAt[1] * k).toFixed(1)}px`;
+    if (canvas.style.translate !== t) canvas.style.translate = t;
+  }
+
   /** The parallax of this frame, or undefined when the place is drawn flat (no backdrop, or turned off). */
   parallax(): Parallax | undefined {
     return this.place.backdrop ? { cam: this.cam, pivot: this.place.pivot, px: PARALLAX_PX * parallaxScale * (1 + 1.5 * track) } : undefined;
@@ -1214,13 +1257,13 @@ class Game {
   /** The zoom that keeps the frame's edges covered while the cards sway (and leaves room to pan when tracking); 1 when flat. */
   zoom(): number {
     const p = this.parallax();
-    return p ? overscan(this.place.g, { ...p, cam: { x: 1, y: 1 } }) * (1 + TRACK_ZOOM * track) : 1;
+    return p ? overscan(this.place.g, { ...p, cam: { x: 1, y: 1 } }) * (1 + trackZoom) : 1;
   }
 
   /** How far the view's middle may pan from the frame's middle when tracking. */
   private panRoom(): number {
     const W = this.place.g.frame.width;
-    return this.parallax() && track ? W / 2 - W / (2 * (1 + TRACK_ZOOM * track)) : 0;
+    return this.parallax() && track ? W / 2 - W / (2 * (1 + trackZoom)) : 0;
   }
 
   /** A canvas point as a point of the zoomed (and panned) scene. */
@@ -3264,6 +3307,7 @@ const frame = (now: number) => {
   soundless.hidden = !(mixer && mixer.ctx.state === 'suspended' && document.body.classList.contains('pad'));
   if (!soundless.hidden && soundless.textContent !== words.sound) soundless.textContent = words.sound;
   steer();
+  game.fillPan(dt);
   game.update(dt);
   mixer?.update();
   game.render();

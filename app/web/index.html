@@ -9,6 +9,8 @@
   #stage { position: absolute; inset: 0; display: grid; place-items: center; }
   /* Fills the window on the long side, so a 1080p recording gets the game 1080 px tall, not its 896 px canvas. */
   canvas { width: min(100vw, calc(100vh * 1200 / 896)); height: auto; aspect-ratio: 1200 / 896; image-rendering: auto; touch-action: manipulation; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+  /* ?fill=1: the picture covers the page, no black bands; the game slides it so the hero stays on the page. */
+  body.fill canvas { width: max(100vw, calc(100vh * 1200 / 896)); }
   #bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 14px; background: linear-gradient(transparent, #000a); font-size: 14px; pointer-events: none; display: flex; justify-content: space-between; }
   #bar .hint { opacity: 0.6; }
   /* A finger has no hover and no keys: the bar's hints only cover the picture. */

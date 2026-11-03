@@ -253,6 +253,11 @@ export function fitHud(canvas: HTMLCanvasElement) {
   const hud = document.getElementById('hud')!;
   const r = canvas.getBoundingClientRect();
   const k = r.width / canvas.width;
-  const t = `translate(${r.left}px, ${r.top}px) scale(${k})`;
+  // A canvas bigger than the page (?fill=1) has the HTML on the part of it the page shows, the bag on the page.
+  const [left, top] = [Math.max(0, r.left), Math.max(0, r.top)];
+  const t = `translate(${left}px, ${top}px) scale(${k})`;
   if (hud.style.transform !== t) hud.style.transform = t;
+  const [w, h] = [`${(Math.min(innerWidth, r.right) - left) / k}px`, `${(Math.min(innerHeight, r.bottom) - top) / k}px`];
+  if (hud.style.width !== w) hud.style.width = w;
+  if (hud.style.height !== h) hud.style.height = h;
 }
