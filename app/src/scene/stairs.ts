@@ -3,7 +3,8 @@
 // "stair step" returns one instance per step, tread and riser together, which is exactly the band a
 // foot belongs to. Kept: wide, flat bands inside the stairs, at least two of them, stacked top to bottom.
 import { emptyMask, maskArea, type Mask } from '../image/mask.ts';
-import { dilate, intersect, maskBox } from '../image/raster.ts';
+import sharp from 'sharp';
+import { dilate, intersect, maskBox, rectMask } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import { samFind } from '../meta/sam.ts';
 import type { Geometry } from '../play/geometry.ts';
@@ -98,6 +99,50 @@ export function mendStep(s: NonNullable<Geometry['steps']>[number]): NonNullable
 }
 
 /**
+ * The steps of `stairs` read off the painting: a tread is lit from above, so its front edge is a row where the
+ * picture turns from dark (the riser above's shadow) to light, all the way across the stairs. Rows like that,
+ * evenly spaced, split the stairs into its steps, each from one tread's edge to the next. Empty when there is no
+ * such run of at least three edges (a slope, a ladder, one big block): the stairs stay a ramp.
+ */
+export async function treadBands(painting: Buffer, stairs: Mask): Promise<Mask[]> {
+  const box = maskBox(stairs);
+  if (!box) return [];
+  const L = await sharp(painting).resize(W, H, { fit: 'fill' }).greyscale().raw().toBuffer();
+  // Per row: how much lighter the row below is than the row above, across the stairs' columns there.
+  const rows: number[] = [];
+  const width: number[] = [];
+  for (let y = 0; y < H; y++) {
+    if (y < box[1] + 2 || y > box[3] - 3) {
+      rows.push(0);
+      width.push(0);
+      continue;
+    }
+    let n = 0;
+    let sum = 0;
+    for (let x = box[0]; x < box[2]; x++) {
+      if (!stairs.bits[(y - 2) * W + x] || !stairs.bits[(y + 2) * W + x]) continue;
+      n++;
+      sum += L[(y + 1) * W + x] - L[(y - 1) * W + x];
+    }
+    rows.push(n ? sum / n : 0);
+    width.push(n);
+  }
+  const widest = Math.max(...width);
+  const edge = rows.map((v, y) => (y + 1 < H && Math.max(width[y], width[y + 1]) >= 0.4 * widest ? v + rows[y + 1] : 0));
+  const strongest = Math.max(...edge);
+  if (strongest < 40) return [];
+  // Peaks: the lightest turn within 6 px either way, at least 60% of the strongest.
+  const peaks = edge.flatMap((v, y) => (v >= 0.6 * strongest && edge.slice(Math.max(0, y - 6), y + 7).every((u, k) => u < v || (u === v && Math.max(0, y - 6) + k >= y)) ? [y] : []));
+  if (peaks.length < 3) return [];
+  const gaps = peaks.slice(1).map((y, i) => y - peaks[i]).sort((a, b) => a - b);
+  const usual = gaps[Math.floor(gaps.length / 2)];
+  if (usual < 8 || gaps.some((g) => g < 0.65 * usual || g > 1.5 * usual)) return [];
+  // The top step's lit edge is the stairs' own top when there is a whole step above the first edge found.
+  const cuts = [...(peaks[0] - box[1] >= 0.65 * usual ? [box[1]] : []), ...peaks, Math.min(box[3], peaks[peaks.length - 1] + usual)];
+  return cuts.slice(1).map((y1, i) => intersect(stairs, rectMask(W, H, [box[0], cuts[i], box[2], y1]))).filter((m) => maskArea(m) > 0);
+}
+
+/**
  * The steps inside `stairs` (the walk-on things and floors named as stairs), top step first. Empty when
  * SAM finds no clear run of steps there: the stairs then stay a ramp, as before.
  */
@@ -116,8 +161,16 @@ export async function findSteps(memo: Memo, placeKey: string, painting: Buffer, 
     bands.push(inside);
   }
   if (bands.length < 2) {
-    log(`stairs: ${bands.length} step(s) found, kept as a ramp`);
-    return [];
+    // SAM sees no single step on many painted stairs (a stack of cardboard boards, steps drawn in a few strokes):
+    // the treads' lit edges, row after row, split the stairs instead.
+    const lit = await treadBands(painting, stairs);
+    if (lit.length < 2) {
+      log(`stairs: ${bands.length} step(s) found, kept as a ramp`);
+      return [];
+    }
+    log(`stairs: SAM found ${bands.length} step(s); ${lit.length} read off the treads' painted edges`);
+    bands.length = 0;
+    bands.push(...lit);
   }
   const steps = bands.map(stepEdges).filter((s): s is NonNullable<typeof s> => !!s).map(mendStep);
   const mid = (s: (typeof steps)[number]) => {
