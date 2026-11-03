@@ -240,9 +240,9 @@ function liftPaper(painting: Painting, frame: ImageData, g: Glow, others: Glow[]
   }
   card.getContext('2d')!.putImageData(cardImg, 0, 0);
   keep.getContext('2d', { willReadFrequently: true })!.putImageData(keepImg, 0, 0);
-  // The fill under it: the paint round it, carried in across the paper (fillUnder).
+  // The fill under it: the paint round it, carried in across the paper (fillUnder). Only a burst is lifted.
   const patch = canvas(w, h);
-  patch.getContext('2d')!.putImageData(new ImageData(fillUnder(frame.data, W, g, found) as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0);
+  if (found.burst) patch.getContext('2d')!.putImageData(new ImageData(fillUnder(frame.data, W, g, found) as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0);
   return { card, patch, px: x0, py: y0, keep, turned: canvas(w, h), box: found.box, burst: found.burst };
 }
 
