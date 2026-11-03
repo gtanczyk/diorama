@@ -108,7 +108,7 @@ export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, 
     if (!found.length) continue;
     const biggest = found.reduce((a, b) => (area(b.mask) > area(a.mask) ? b : a));
     const made = { painting: png, figure: await cutHero(png, biggest.mask) };
-    const why = upright ? await notStanding(memo, who.key, made.figure, t) : undefined;
+    const why = (await boxed(made.figure)) ?? (upright ? await notStanding(memo, who.key, made.figure, t) : undefined);
     if (!why) return made;
     console.log(`  ${who.key} take ${t}: the figure is not standing whole (${why}); painting it once more`);
     fallback ??= { ...made, why };
@@ -137,6 +137,17 @@ export async function notStanding(memo: Memo, key: string, figure: Buffer, take 
 }
 
 const area = (m: Mask) => m.bits.reduce((s, b) => s + b, 0);
+
+/**
+ * Why a cut-out is a box and not a figure, or undefined: one that fills nearly all of its box kept the scene it
+ * was painted standing in (a framed picture of stormy sea), and the game would draw that patch around them.
+ */
+export async function boxed(figure: Buffer): Promise<string | undefined> {
+  const { data, info } = await sharp(figure).ensureAlpha().extractChannel(3).raw().toBuffer({ resolveWithObject: true });
+  let solid = 0;
+  for (let i = 0; i < info.width * info.height; i++) if (data[i] > 128) solid++;
+  return solid > 0.85 * info.width * info.height ? 'cut out with the scene behind them, a box' : undefined;
+}
 
 /** A grown-up's height, the scale's unit (PERSON_M in src/scene/scale.ts). */
 export const PERSON_M = 1.62;
