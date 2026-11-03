@@ -71,7 +71,8 @@ export class Surf {
     this.shore = shorePoints(pixelsOf(mask, w, h).data, w, h, 11, 4).filter((p) => {
       if (!bg) return true;
       const [a, b] = [paint(p.x - p.nx * 6, p.y - p.ny * 6), paint(p.x + p.nx * 14, p.y + p.ny * 14)];
-      return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) > 70;
+      const blue = (c: Uint8ClampedArray) => c[2] > c[0] + 15;
+      return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) > 70 && !(blue(a) && blue(b));
     });
   }
 
