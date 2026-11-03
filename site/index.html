@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Commissioner:wght@400;500;650&family=Martian+Mono:wght@400;500&family=Gaegu:wght@700&display=swap">
 <style>
-/* Layout: a night paper theatre. Torn paper sheets float over a stormy navy stage; the hero is the clip on a paper stage, then sketch→world wipes, the layers coming apart, the build steps, the worlds shelf. */
+/* Layout: a scroll-driven paper theatre. Three places of Paper Boat Storm come apart, fold together and pop up as you scroll; each chapter has its own sound; the storm passes and the page ends in daylight. */
 :root {
   --night: #0f1a2e;
   --stage: #172540;
@@ -29,6 +29,7 @@
   --foam: #e3ebf3;
   --muted: #98a8c2;
   --line: #2c3f63;
+  --day: #f7ecd9;
   --display: "Young Serif", "Iowan Old Style", Georgia, serif;
   --body: "Commissioner", "Segoe UI", system-ui, sans-serif;
   --mono: "Martian Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -63,31 +64,85 @@ p { margin: 0; }
 .top nav a { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; text-decoration: none; color: var(--muted); }
 .top nav a:hover { color: var(--coat); }
 
-/* hero */
-.hero { position: relative; isolation: isolate; overflow: hidden; }
-#rain { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
-.hero .wrap { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(24px, 4vw, 56px); align-items: center; padding-block: 24px 72px; }
-.hero-copy { display: grid; gap: 22px; min-width: 0; }
-.hero h1 em { font-style: normal; color: var(--coat); display: block; }
+
+/* scroll dioramas: a sticky stage per chapter; the scroll position drives the paper layers (--p, 0..1) */
+.top { position: absolute; left: 0; right: 0; top: 0; z-index: 5; }
+.chapter { position: relative; height: var(--len, 320vh); }
+#quay { --len: 380vh; background: radial-gradient(ellipse at 50% 30%, #1b2a4a, var(--night) 70%); }
+#mill { --len: 300vh; background: linear-gradient(#0f1a2e, #13203a); }
+#rock { --len: 300vh; background: linear-gradient(#13203a, #0f1a2e); }
+.sticky { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; }
+.dio { position: absolute; inset: 0; perspective: 1500px; perspective-origin: 50% 40%; }
+.box { position: absolute; left: 50%; top: 46%; width: 1200px; height: 896px; transform-style: preserve-3d; will-change: transform; }
+.box img, .box .beam { position: absolute; display: block; max-width: none; transform-origin: 50% 100%; backface-visibility: hidden; user-select: none; pointer-events: none; }
+.box img.card { filter: drop-shadow(0 10px 14px rgba(5,10,25,.55)); }
+.box img.sky { box-shadow: 0 40px 80px -20px rgba(0,0,0,.8); }
+.box .frame { position: absolute; inset: -14px; border: 14px solid #2a2014; border-radius: 6px; box-shadow: inset 0 0 0 2px #5a4630, 0 30px 80px rgba(0,0,0,.6); pointer-events: none; transition: opacity .3s; }
+.box img.critters { animation: swim 3.2s ease-in-out infinite alternate; }
+.box img.critters:nth-of-type(2n) { animation-duration: 2.6s; animation-delay: -1s; }
+@keyframes swim { from { translate: -10px 2px; } to { translate: 12px -4px; } }
+.box img.cloud { animation: drift 14s ease-in-out infinite alternate; }
+.box img.cloud:nth-of-type(2n) { animation-duration: 19s; }
+@keyframes drift { from { translate: -18px 0; } to { translate: 18px 0; } }
+.box .beam { width: 760px; height: 120px; transform-origin: 0 50%; background: linear-gradient(90deg, rgba(255,226,150,.75), rgba(255,226,150,0) 90%); clip-path: polygon(0 45%, 100% 0, 100% 100%, 0 55%); mix-blend-mode: screen; animation: sweep 6s ease-in-out infinite alternate; }
+@keyframes sweep { from { rotate: 196deg; } to { rotate: 240deg; } }
+.rain { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.intro, .cap { transition: opacity .5s ease, transform .5s ease; }
+.intro { position: absolute; left: 0; right: 0; top: 0; bottom: 0; display: grid; align-content: center; justify-items: start; gap: 18px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-inline-start: max(16px, 6vw); background: linear-gradient(90deg, rgba(10,16,30,.92), rgba(10,16,30,.55) 55%, rgba(10,16,30,0)); }
+.intro h1 em { font-style: normal; color: var(--coat); display: block; }
+.intro .lede { max-width: 30ch; }
+.scroll-hint { font-family: var(--hand); font-size: 24px; color: var(--paper); display: inline-flex; align-items: center; gap: 10px; }
+.scroll-hint::after { content: ""; width: 14px; height: 14px; border-right: 3px solid currentColor; border-bottom: 3px solid currentColor; transform: rotate(45deg); animation: nudge 1.4s ease-in-out infinite; }
+@keyframes nudge { 50% { translate: 0 6px; } }
+.caps { position: absolute; left: max(16px, 5vw); bottom: max(84px, 9vh); right: max(16px, env(safe-area-inset-right, 0px)); max-width: 560px; }
+.cap { position: absolute; left: 0; bottom: 0; display: grid; gap: 8px; justify-items: start; font-family: var(--display); font-size: clamp(24px, 3.2vw, 40px); line-height: 1.12; color: var(--foam); text-shadow: 0 2px 18px rgba(5,10,25,.95), 0 0 2px rgba(5,10,25,.9); text-wrap: balance; }
+.cap .label { color: var(--coat); text-shadow: none; background: rgba(10,16,30,.7); padding: 4px 8px; }
+.off { opacity: 0; transform: translateY(14px); pointer-events: none; }
+.btn.small { font-size: 15px; padding: 10px 18px; margin-top: 6px; }
+
 .ctas { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.btn { font-family: var(--body); font-weight: 650; font-size: 16px; border: 0; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; padding: 14px 22px; color: var(--paper-ink); background: var(--coat); clip-path: var(--tear-btn); transition: transform .15s ease, background .15s ease; }
+.btn { font-family: var(--body); font-weight: 650; font-size: 16px; border: 0; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; padding: 14px 22px; color: var(--paper-ink); background: var(--coat); clip-path: var(--tear-btn); transition: transform .15s ease, background .15s ease; text-shadow: none; }
 .btn:hover { transform: translateY(-2px) rotate(-1deg); background: #ffe170; }
 .btn.ghost { background: var(--paper); }
 .btn.ghost:hover { background: #fff6e6; }
-.btn svg { width: 18px; height: 18px; }
-.facts { display: flex; flex-wrap: wrap; gap: 6px 22px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
-.facts b { color: var(--lamp); font-weight: 500; }
+.btn svg { width: 18px; height: 18px; flex: none; }
+@media (min-width: 1000px) { #quay .box, #rock .box { left: 56%; } #mill .box { left: 44%; } #mill .caps { left: auto; right: max(16px, 5vw); width: min(520px, 38vw); } }
 
-/* paper stage around the clip */
-.stage { position: relative; min-width: 0; }
-.stage .sheet { position: absolute; inset: 0; background: var(--slate); }
-.stage .sheet.s1 { transform: rotate(-2.2deg) translate(-10px, 14px); background: #2a3d63; }
-.stage .sheet.s2 { transform: rotate(1.6deg) translate(12px, -8px); background: var(--paper); opacity: .92; }
-.stage .frame { position: relative; background: #000; padding: 0; box-shadow: 0 30px 60px -20px rgba(0,0,0,.7); }
-.stage video { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #000; }
-.stage .sound { position: absolute; right: 12px; bottom: 12px; font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; background: rgba(15,26,46,.82); color: var(--foam); border: 1px solid rgba(227,235,243,.3); padding: 8px 12px; cursor: pointer; }
-.stage .sound:hover { border-color: var(--coat); color: var(--coat); }
-.stage .tag { position: absolute; left: -8px; top: -18px; font-family: var(--hand); font-size: 26px; color: var(--paper-ink); background: var(--coat); padding: 2px 14px 0; transform: rotate(-4deg); clip-path: var(--tear-btn); z-index: 2; }
+/* the sound: one pill, its ambience follows the chapter on screen */
+.soundpill { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); z-index: 20; display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px 10px 12px; font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--paper-ink); background: var(--coat); border: 0; cursor: pointer; clip-path: var(--tear-btn); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+.soundpill svg { width: 20px; height: 20px; }
+.soundpill[aria-pressed="false"] .waves { opacity: .25; }
+.soundpill[aria-pressed="true"] { background: var(--paper); }
+
+/* morning: the sky warms, the sun comes up, the page turns to day */
+.dawn-sky { position: relative; overflow: hidden; background: linear-gradient(180deg, var(--stage) 0%, #3b4a72 22%, #b9788a 48%, #f0b88a 70%, var(--day) 100%); color: var(--foam); }
+.sun { position: absolute; left: 62%; top: 58%; width: clamp(120px, 18vw, 240px); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle at 40% 40%, #fff3c4, #ffd36a 55%, #f6a64a); box-shadow: 0 0 120px 40px rgba(255,200,110,.45); transform: translateY(calc((1 - var(--sun, 0)) * 40vh)); }
+.dawn-in { position: relative; padding-block: 140px 120px; }
+.dawn-sky .prose { color: #f3e6da; }
+.dawn-sky .label { color: #ffe3b0; }
+.clip { position: relative; max-width: 960px; background: var(--paper); padding: 10px; box-shadow: 0 30px 60px -20px rgba(60,30,20,.55); transform: rotate(-.6deg); }
+.clip video { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #000; }
+.day { background: var(--day); color: var(--paper-ink); }
+.day .label { color: #8a6a3a; }
+.day .prose, .day .note p, .day .world .meta p { color: #5b5f72; }
+.day .prose strong, .day .note strong { color: var(--paper-ink); }
+.day .step { background: #fffaf0; box-shadow: 0 10px 30px -14px rgba(90,60,30,.35); }
+.day .yours { background: #fffaf0; }
+.day .world .meta p { color: var(--muted); }
+.day.notes .section { padding-block: 48px 56px; }
+footer.day { border-top: 1px solid #e3cfae; }
+footer.day .wrap { color: #6b6a72; }
+footer.day a { color: var(--paper-ink); }
+
+@media (max-width: 700px) {
+  .intro { background: linear-gradient(0deg, rgba(10,16,30,.95), rgba(10,16,30,.6) 60%, rgba(10,16,30,.25)); align-content: end; padding-bottom: 12vh; }
+  .box { top: 40%; }
+  .caps { bottom: 84px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chapter { height: auto; }
+  .sticky { position: relative; height: 100vh; }
+}
 
 /* torn band dividers */
 .band { position: relative; }
@@ -120,16 +175,6 @@ p { margin: 0; }
 .wipe-text .num { font-family: var(--display); font-size: 56px; line-height: 1; color: #c9b99c; }
 .wipe-text p { color: #56607a; }
 
-/* explode */
-.explode { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(24px, 4vw, 56px); align-items: center; }
-.layers { position: relative; aspect-ratio: 16 / 10; max-width: 100%; perspective: 1400px; }
-.layers img { position: absolute; width: 78%; aspect-ratio: 16 / 9; object-fit: cover; box-shadow: 0 24px 50px -16px rgba(0,0,0,.75); transition: transform .9s cubic-bezier(.2,.8,.2,1); }
-.layers img:nth-child(1) { left: 0; top: 0; transform: rotate(-3deg); z-index: 1; }
-.layers img:nth-child(2) { left: 22%; top: 18%; transform: rotate(2deg); z-index: 2; }
-.layers img:nth-child(3) { left: 8%; top: 40%; transform: rotate(-1deg); z-index: 3; }
-.layers:hover img:nth-child(1) { transform: rotate(-6deg) translate(-4%, -6%); }
-.layers:hover img:nth-child(2) { transform: rotate(4deg) translate(5%, -2%); }
-.layers:hover img:nth-child(3) { transform: rotate(-2deg) translate(-2%, 6%); }
 .ticks { display: grid; gap: 16px; padding: 0; margin: 0; list-style: none; }
 .ticks li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; color: var(--muted); }
 .ticks li strong { color: var(--foam); font-weight: 650; }
@@ -183,10 +228,9 @@ footer a { color: var(--foam); }
 .make-links { display: flex; flex-wrap: wrap; gap: 14px; }
 
 @media (max-width: 900px) {
-  .hero .wrap, .explode, .shelf, .note { grid-template-columns: minmax(0, 1fr); }
+  .shelf, .note { grid-template-columns: minmax(0, 1fr); }
   .wipe-row, .wipe-row:nth-child(even) { grid-template-columns: minmax(0, 1fr); }
   .wipe-row:nth-child(even) .wipe { order: 0; }
-  .stage { margin-top: 18px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
@@ -211,40 +255,30 @@ footer a { color: var(--foam); }
   </div>
 </header>
 
-<section class="hero" aria-labelledby="hero-title">
-  <canvas id="rain" aria-hidden="true"></canvas>
-  <div class="wrap">
-    <div class="hero-copy">
+<section class="chapter" id="quay" data-sound="storm" data-mode="explode" data-place="quay" aria-labelledby="hero-title">
+  <div class="sticky">
+    <div class="dio" aria-hidden="true"><div class="box"></div></div>
+    <canvas class="rain" aria-hidden="true"></canvas>
+    <div class="intro" data-from="0" data-to="0.13">
       <span class="label">Meta AI Global Hackathon · 2026</span>
       <h1 id="hero-title">Draw it. <em>Walk into it.</em></h1>
-      <p class="lede">Diorama turns a sketch or a single sentence into a small paper diorama world you can play in the browser. Painted places cut into layers, a hero who walks and talks, things to pick up, sound, and endings checked to be reachable.</p>
+      <p class="lede">Diorama turns a sketch or a single sentence into a small paper diorama world you can play in the browser.</p>
       <div class="ctas">
-        <a class="btn" href="./paper-boat-storm/">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></svg>
-          Play Paper Boat Storm
-        </a>
-        <a class="btn ghost" href="#sketch">See the sketches</a>
+        <a class="btn" href="./paper-boat-storm/"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></svg>Play Paper Boat Storm</a>
       </div>
-      <div class="facts" aria-label="Paper Boat Storm in numbers">
-        <span><b>3</b> sketches</span><span><b>3</b> places</span><span><b>1</b> paragraph of story</span><span>plays in any browser</span>
-      </div>
+      <span class="scroll-hint">Scroll, and the painting comes apart</span>
     </div>
-    <div class="stage">
-      <div class="sheet s1" aria-hidden="true"></div>
-      <div class="sheet s2" aria-hidden="true"></div>
-      <span class="tag" aria-hidden="true">made from 3 sketches</span>
-      <div class="frame">
-        <video id="clip" autoplay muted loop playsinline preload="auto" poster="media/poster.jpg" aria-label="Paper Boat Storm: a girl in a yellow raincoat crosses a stormy paper harbour, a mill with a waterfall and a lighthouse rock; each place comes apart into its paper layers">
-          <source src="media/storm-720.mp4" type="video/mp4">
-        </video>
-        <button class="sound" id="sound" type="button" aria-pressed="false">Sound on</button>
-      </div>
+    <div class="caps">
+      <p class="cap" data-from="0.15" data-to="0.38"><span class="label">One painting</span>Muse Image painted this quay from a crayon sketch.</p>
+      <p class="cap" data-from="0.38" data-to="0.62"><span class="label">SAM 3.1 · depth</span>SAM cuts it into paper cards. A depth map stands each card at its own distance.</p>
+      <p class="cap" data-from="0.62" data-to="0.86"><span class="label">A stage</span>Now a hero can walk in, behind the lamp post and in front of the boat.</p>
+      <p class="cap" data-from="0.86" data-to="1.01"><span class="label">Paper Boat Storm</span>Three sketches, one paragraph, one playable world. <a class="btn small" href="./paper-boat-storm/">Play it</a></p>
     </div>
   </div>
-  <svg class="edge" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true"><path id="edge1" fill="#efe6d6" d=""/></svg>
 </section>
 
-<section class="band paper" id="sketch" aria-labelledby="sketch-title">
+<svg class="edge" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" style="background:#0f1a2e;margin-top:-1px"><path id="edge1" fill="#efe6d6" d=""/></svg>
+<section class="band paper" id="sketch" data-sound="paper" aria-labelledby="sketch-title">
   <div class="wrap section">
     <div class="section-head">
       <span class="label">Sketch → world</span>
@@ -287,29 +321,30 @@ footer a { color: var(--foam); }
   <svg class="edge" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" style="background:#efe6d6"><path id="edge2" fill="#0f1a2e" d=""/></svg>
 </section>
 
-<section aria-labelledby="layers-title">
-  <div class="wrap section">
-    <div class="explode">
-      <div class="layers" aria-label="Three places taken apart into their paper layers">
-        <img src="media/explode-1.jpg" alt="The quay pulled apart into separate paper layers" loading="lazy">
-        <img src="media/explode-2.jpg" alt="The mill pulled apart into separate paper layers" loading="lazy">
-        <img src="media/explode-3.jpg" alt="The lighthouse rock pulled apart into separate paper layers" loading="lazy">
-      </div>
-      <div class="section-head">
-        <span class="label">Not a flat picture</span>
-        <h2 id="layers-title">Every painting comes apart into a stage.</h2>
-        <ul class="ticks">
-          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h12M4 17h8" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg><span><strong>SAM 3.1 cuts out</strong> every thing, floor, stair and patch of water. The cut-outs become paper cards that stand at their own depth.</span></li>
-          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18c3-6 6-6 9 0s6 6 9 0" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg><span><strong>A depth map gives parallax and shadows.</strong> The hero walks behind the lamp post and in front of the boat.</span></li>
-          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20l4-8 3 4 3-6 4 10" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><span><strong>Code measures the walk grid</strong> from the masks, so the floor is where the painting says it is, and stairs are climbed step by step.</span></li>
-          <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span><strong>Then the place comes alive:</strong> waves roll, rain slants, lamps breathe, the lighthouse beam sweeps round.</span></li>
-        </ul>
-      </div>
+<section class="chapter" id="mill" data-sound="mill" data-mode="assemble" data-place="mill" aria-labelledby="mill-title">
+  <div class="sticky">
+    <div class="dio" aria-hidden="true"><div class="box"></div></div>
+    <div class="caps">
+      <p class="cap" data-from="-0.01" data-to="0.36"><span class="label">Not a flat picture</span><span id="mill-title">Every place arrives in pieces…</span></p>
+      <p class="cap" data-from="0.36" data-to="0.7"><span class="label">Cards, flats, water</span>…and folds into a stage: the waterfall, the mill wheel, the rope bridge.</p>
+      <p class="cap" data-from="0.7" data-to="1.01"><span class="label">Alive</span>Every fish is its own cut-out that swims. The water flows, the clouds drift.</p>
     </div>
   </div>
 </section>
 
-<section class="band deep" id="how" aria-labelledby="how-title">
+<section class="chapter" id="rock" data-sound="sea" data-mode="popup" data-place="rock" aria-labelledby="rock-title">
+  <div class="sticky">
+    <div class="dio" aria-hidden="true"><div class="box"></div></div>
+    <canvas class="rain light" aria-hidden="true"></canvas>
+    <div class="caps">
+      <p class="cap" data-from="-0.01" data-to="0.4"><span class="label">The last place</span><span id="rock-title">It pops up like a page in a book.</span></p>
+      <p class="cap" data-from="0.4" data-to="0.72"><span class="label">As drawn</span>The keeper waits in the lighthouse door, just where the sketch had him.</p>
+      <p class="cap" data-from="0.72" data-to="1.01"><span class="label">The ending</span>The girl brings him the paper boat. The beam sweeps over the storm.</p>
+    </div>
+  </div>
+</section>
+
+<section class="band deep" id="how" data-sound="sea" aria-labelledby="how-title">
   <div class="wrap section">
     <div class="section-head">
       <span class="label">How a world is built</span>
@@ -340,7 +375,23 @@ footer a { color: var(--foam); }
   </div>
 </section>
 
-<section id="worlds" aria-labelledby="worlds-title">
+<section class="dawn-sky" id="dawn" data-sound="dawn" aria-labelledby="dawn-title">
+  <div class="sun" aria-hidden="true"></div>
+  <div class="wrap section dawn-in">
+    <div class="section-head">
+      <span class="label">Morning</span>
+      <h2 id="dawn-title">The storm passes.</h2>
+      <p class="prose">Here is the whole world in motion, 47 seconds of it, cut from the game itself.</p>
+    </div>
+    <div class="clip">
+      <video id="clip" muted loop playsinline preload="metadata" poster="media/poster.jpg" aria-label="Paper Boat Storm: a girl in a yellow raincoat crosses a stormy paper harbour, a mill with a waterfall and a lighthouse rock; each place comes apart into its paper layers">
+        <source src="media/storm-720.mp4" type="video/mp4">
+      </video>
+    </div>
+  </div>
+</section>
+
+<section id="worlds" class="day" data-sound="dawn" aria-labelledby="worlds-title">
   <div class="wrap section">
     <div class="section-head">
       <span class="label">Worlds</span>
@@ -368,7 +419,7 @@ footer a { color: var(--foam); }
   </div>
 </section>
 
-<section id="make" aria-labelledby="make-title">
+<section id="make" class="day" data-sound="dawn" aria-labelledby="make-title">
   <div class="wrap section">
     <div class="section-head">
       <span class="label">How to use it</span>
@@ -388,22 +439,24 @@ npx -y @gtanczyk/diorama setup</code></li>
   </div>
 </section>
 
-<section class="band deep" aria-labelledby="notes-title">
+<section class="day notes" data-sound="dawn" aria-labelledby="notes-title">
   <div class="wrap section">
     <h2 id="notes-title" class="label" style="font-family:var(--mono);font-size:12px">Notes</h2>
     <div class="note">
-      <p><strong style="color:var(--foam)">About the sketches.</strong> No child drew the three storm sketches. They were generated with Muse Image to look like crayon drawings, then given to Diorama as input together with one paragraph of story. After the build, a few spots in the world were touched up by hand for the clip.</p>
-      <p><strong style="color:var(--foam)">About the project.</strong> Diorama was written during the Meta AI Global Hackathon, from the kickoff on 26 October 2026. It runs locally as a command-line tool and a Studio app, and exports each world as a static web page.</p>
+      <p><strong>About the sketches.</strong> No child drew the three storm sketches. They were generated with Muse Image to look like crayon drawings, then given to Diorama as input together with one paragraph of story. After the build, a few spots in the world were touched up by hand for the clip.</p>
+      <p><strong>About the project.</strong> Diorama was written during the Meta AI Global Hackathon, from the kickoff on 26 October 2026. It runs locally as a command-line tool and a Studio app, and exports each world as a static web page.</p>
     </div>
   </div>
 </section>
 
-<footer>
+<footer class="day">
   <div class="wrap">
     <span>Diorama · made by <a href="https://grzegorz.tanczyk.pl/">Grzegorz Tańczyk</a></span>
     <span><a href="https://x.com/gtanczyk" rel="noopener">x.com/gtanczyk</a> · <a href="https://github.com/gtanczyk/diorama" rel="noopener">github.com/gtanczyk/diorama</a></span>
   </div>
 </footer>
+
+<button class="soundpill" id="soundpill" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path class="waves" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Sound on</span></button>
 
 <script>
 (function () {
@@ -429,18 +482,6 @@ npx -y @gtanczyk/diorama setup</code></li>
   }
   document.documentElement.style.setProperty('--tear-btn', tear(3, 7));
   document.documentElement.style.setProperty('--tear-card', tear(11, 2.2));
-
-  /* sound toggle for the hero clip */
-  var clip = document.getElementById('clip'), snd = document.getElementById('sound');
-  if (clip && snd) {
-    snd.addEventListener('click', function () {
-      clip.muted = !clip.muted;
-      if (!clip.muted) { try { clip.currentTime = 0; } catch (e) {} clip.play().catch(function () {}); }
-      snd.textContent = clip.muted ? 'Sound on' : 'Sound off';
-      snd.setAttribute('aria-pressed', String(!clip.muted));
-    });
-    if (reduce) { clip.removeAttribute('autoplay'); clip.pause(); clip.controls = true; }
-  }
 
   /* sketch → world wipes */
   document.querySelectorAll('.wipe').forEach(function (w) {
@@ -468,29 +509,183 @@ npx -y @gtanczyk/diorama setup</code></li>
     }
   });
 
-  /* rain over the hero */
-  var cv = document.getElementById('rain');
-  if (cv && !reduce) {
-    var ctx = cv.getContext('2d'), drops = [], W = 0, H = 0, dpr = Math.min(2, window.devicePixelRatio || 1);
-    function size() { var b = cv.getBoundingClientRect(); W = b.width; H = b.height; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
-    size(); window.addEventListener('resize', size);
-    for (var i = 0; i < 140; i++) drops.push({ x: Math.random() * 1.2, y: Math.random(), l: 10 + Math.random() * 22, s: 0.5 + Math.random() * 0.9, a: 0.06 + Math.random() * 0.16 });
-    var visible = true;
-    if ('IntersectionObserver' in window) new IntersectionObserver(function (e) { visible = e[0].isIntersecting; }).observe(cv);
-    (function frame() {
-      if (visible) {
-        ctx.clearRect(0, 0, W, H);
-        ctx.lineWidth = 1.2; ctx.lineCap = 'round';
-        drops.forEach(function (d) {
-          d.y += d.s * 0.012; d.x -= d.s * 0.003;
-          if (d.y > 1.05) { d.y = -0.05; d.x = Math.random() * 1.2; }
-          var x = d.x * W, y = d.y * H;
-          ctx.strokeStyle = 'rgba(227,235,243,' + d.a + ')';
-          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - d.l * 0.3, y + d.l); ctx.stroke();
-        });
+  /* the scroll dioramas: real layers of Paper Boat Storm (media/dio/layers.json), driven by how far each chapter is scrolled */
+  function clamp(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+  function ease(v) { v = clamp(v); return v * v * (3 - 2 * v); }
+  var EXTRA = {
+    quay: [{ f: 'cast/girl.webp', role: 'girl', w: 407, h: 600 }],
+    rock: [{ f: 'cast/keeper.webp', role: 'keeper', box: [978, 474, 1004, 552], z: 0.41 }, { beam: true, x: 1012, y: 96, z: -0.69 }, { f: 'cast/girl.webp', role: 'girl2', box: [600, 640, 668, 740], z: 0.6 }]
+  };
+  var stages = [];
+  var pointer = { x: 0, y: 0 };
+  window.addEventListener('pointermove', function (e) { pointer.x = e.clientX / innerWidth - 0.5; pointer.y = e.clientY / innerHeight - 0.5; }, { passive: true });
+
+  function build(sec, layers) {
+    var box = sec.querySelector('.box');
+    var items = [];
+    layers.forEach(function (l, i) {
+      var img = new Image(); img.src = 'media/dio/' + l.f; img.alt = ''; img.decoding = 'async';
+      img.className = l.role;
+      var b = l.box; img.style.left = b[0] + 'px'; img.style.top = b[1] + 'px'; img.style.width = (b[2] - b[0]) + 'px'; img.style.height = (b[3] - b[1]) + 'px';
+      box.appendChild(img);
+      items.push({ el: img, z: l.z, i: i, role: l.role, bottom: b[3] });
+    });
+    (EXTRA[sec.dataset.place] || []).forEach(function (x) {
+      if (x.beam) {
+        var d = document.createElement('div'); d.className = 'beam'; d.style.left = x.x + 'px'; d.style.top = (x.y - 60) + 'px';
+        box.appendChild(d); items.push({ el: d, z: x.z, i: items.length, role: 'beam', bottom: x.y }); return;
       }
-      requestAnimationFrame(frame);
-    })();
+      var img = new Image(); img.src = 'media/dio/' + x.f; img.alt = ''; img.className = x.role;
+      if (x.box) { img.style.left = x.box[0] + 'px'; img.style.top = x.box[1] + 'px'; img.style.width = (x.box[2] - x.box[0]) + 'px'; img.style.height = (x.box[3] - x.box[1]) + 'px'; }
+      box.appendChild(img); items.push({ el: img, z: x.z || 0.9, i: items.length, role: x.role, w: x.w, h: x.h, bottom: x.box ? x.box[3] : 860 });
+    });
+    var frame = document.createElement('div'); frame.className = 'frame'; box.appendChild(frame);
+    items.sort(function (a, b) { return a.z - b.z; });
+    items.forEach(function (it, k) { it.k = k; });
+    var st = { sec: sec, box: box, items: items, frame: frame, mode: sec.dataset.mode, place: sec.dataset.place, rain: sec.querySelector('.rain'),
+      caps: [].slice.call(sec.querySelectorAll('[data-from]')), p: -1, t: 0 };
+    stages.push(st);
+    if (st.rain) rain(st);
+    layout(st); update(st, true);
+  }
+
+  function layout(st) {
+    var w = st.sec.querySelector('.sticky').clientWidth, h = st.sec.querySelector('.sticky').clientHeight;
+    var narrow = w < 700;
+    st.scale = Math.min(w * (narrow ? 0.96 : 0.82) / 1200, h * (narrow ? 0.5 : 0.76) / 896);
+  }
+
+  function progress(st) {
+    var r = st.sec.getBoundingClientRect();
+    return clamp(-r.top / Math.max(1, r.height - innerHeight));
+  }
+
+  function update(st, force) {
+    var p = reduce ? 0.5 : progress(st);
+    var tilt = reduce ? 0 : 1;
+    var px = pointer.x * 4 * tilt, py = -pointer.y * 3 * tilt;
+    var spread = 0, ry = 0, rx = 0, sc = 1, ty = 0, D = 520, lay = function () { return ''; };
+    if (st.mode === 'explode') {
+      spread = ease((p - 0.1) / 0.32) * (1 - 0.82 * ease((p - 0.66) / 0.2));
+      ry = -34 * spread; rx = 12 * spread; sc = 1 - 0.2 * spread;
+      lay = function (it) { return 'translateZ(' + (it.z * D * spread + it.k * 0.3).toFixed(1) + 'px)'; };
+    } else if (st.mode === 'assemble') {
+      spread = 1 - ease((p - 0.05) / 0.6);
+      ry = 26 * spread; rx = 16 * spread; sc = 1 - 0.22 * spread;
+      lay = function (it) { return 'translate3d(' + ((it.k % 2 ? 1 : -1) * 90 * spread * Math.abs(it.z)).toFixed(1) + 'px,' + (-(it.z + 0.3) * 240 * spread).toFixed(1) + 'px,' + (it.z * D * 1.2 * spread + it.k * 0.3).toFixed(1) + 'px)'; };
+    } else if (st.mode === 'popup') {
+      var open = ease((p - 0.04) / 0.62);
+      rx = 46 * (1 - open); sc = 0.9 + 0.1 * open; ty = 60 * (1 - open);
+      lay = function (it) {
+        var a = 90 * (1 - ease((p - 0.04 - it.k * 0.035) / 0.24));
+        if (it.role === 'sky') a = 90 * (1 - ease((p - 0.02) / 0.2));
+        return 'translateZ(' + (it.z * 140 + it.k * 0.3).toFixed(1) + 'px) rotateX(' + (-a).toFixed(1) + 'deg)';
+      };
+      spread = 1 - open;
+    }
+    st.box.style.transform = 'translate(-50%, -50%) translateY(' + ty + 'px) scale(' + (st.scale * sc).toFixed(4) + ') rotateX(' + (rx + py).toFixed(2) + 'deg) rotateY(' + (ry + px).toFixed(2) + 'deg)';
+    st.frame.style.opacity = spread > 0.05 ? 0 : 1;
+    st.items.forEach(function (it) {
+      var tr = lay(it);
+      if (it.role === 'girl') {
+        var g = ease((p - 0.56) / 0.36);
+        var x = 330 + 300 * g, y = 868 - 70 * g, hh = 150 * (y - 202) / (868 - 202), ww = hh * it.w / it.h;
+        var bob = g > 0 && g < 1 ? Math.abs(Math.sin(st.t * 9)) * 5 : 0;
+        it.el.style.left = (x - ww / 2) + 'px'; it.el.style.top = (y - hh - bob) + 'px'; it.el.style.width = ww + 'px'; it.el.style.height = hh + 'px';
+        it.el.style.opacity = clamp((p - 0.5) / 0.08);
+      }
+      if (it.role === 'girl2') it.el.style.opacity = ease((p - 0.7) / 0.12);
+      if (it.role === 'beam') it.el.style.opacity = st.mode === 'popup' ? ease((p - 0.55) / 0.2) : 1;
+      it.el.style.transform = tr;
+    });
+    st.caps.forEach(function (c) {
+      var on = reduce || (p >= +c.dataset.from && p < +c.dataset.to);
+      c.classList.toggle('off', !on);
+    });
+    st.p = p;
+  }
+
+  function rain(st) {
+    var cv = st.rain, ctx = cv.getContext('2d'), drops = [], W = 0, H = 0, dpr = Math.min(2, devicePixelRatio || 1);
+    var light = cv.classList.contains('light');
+    function size() { W = cv.clientWidth; H = cv.clientHeight; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+    size(); addEventListener('resize', size);
+    for (var i = 0; i < (light ? 80 : 170); i++) drops.push({ x: Math.random() * 1.3, y: Math.random(), l: 12 + Math.random() * 26, s: 0.6 + Math.random() * 1.1, a: 0.05 + Math.random() * (light ? 0.1 : 0.2) });
+    st.drawRain = function () {
+      ctx.clearRect(0, 0, W, H); ctx.lineWidth = 1.3; ctx.lineCap = 'round';
+      drops.forEach(function (d) {
+        d.y += d.s * 0.016; d.x -= d.s * 0.005;
+        if (d.y > 1.05) { d.y = -0.05; d.x = Math.random() * 1.3; }
+        var x = d.x * W, y = d.y * H;
+        ctx.strokeStyle = 'rgba(220,232,245,' + d.a + ')';
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - d.l * 0.35, y + d.l); ctx.stroke();
+      });
+    };
+  }
+
+  fetch('media/dio/layers.json').then(function (r) { return r.json(); }).then(function (all) {
+    document.querySelectorAll('.chapter').forEach(function (sec) { if (all[sec.dataset.place]) build(sec, all[sec.dataset.place]); });
+  }).catch(function () {});
+  addEventListener('resize', function () { stages.forEach(function (st) { layout(st); }); });
+
+  var dawn = document.getElementById('dawn');
+  var clip = document.getElementById('clip');
+  var last = performance.now();
+  (function loop(now) {
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    stages.forEach(function (st) {
+      var r = st.sec.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > innerHeight) return;
+      st.t += dt;
+      update(st);
+      if (st.drawRain && !reduce) st.drawRain();
+    });
+    if (dawn) {
+      var r = dawn.getBoundingClientRect();
+      dawn.style.setProperty('--sun', clamp((innerHeight - r.top) / (r.height + innerHeight * 0.2)).toFixed(3));
+    }
+    requestAnimationFrame(loop);
+  })(last);
+
+  if (clip && 'IntersectionObserver' in window && !reduce) {
+    new IntersectionObserver(function (e) { if (e[0].isIntersecting) clip.play().catch(function () {}); else clip.pause(); }, { threshold: 0.4 }).observe(clip);
+  } else if (clip) clip.controls = true;
+
+  /* sound: one loop per mood, crossfaded to the section in the middle of the screen */
+  var SOUNDS = { storm: ['media/snd/storm.mp3', 0.9, 'Rain on the quay'], paper: ['media/snd/paper.mp3', 0.7, 'Paper'], mill: ['media/snd/mill.mp3', 0.8, 'The waterfall'], sea: ['media/snd/sea.mp3', 0.75, 'Sea at the rock'], dawn: ['media/snd/dawn.mp3', 0.8, 'Morning'] };
+  var pill = document.getElementById('soundpill'), label = pill && pill.querySelector('span');
+  var actx = null, master = null, gains = {}, on = false, current = null;
+  function moodNow() {
+    var mid = innerHeight / 2, found = null;
+    document.querySelectorAll('[data-sound]').forEach(function (s) { var r = s.getBoundingClientRect(); if (r.top <= mid && r.bottom > mid) found = s.dataset.sound; });
+    return found;
+  }
+  function start() {
+    var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    actx = new AC(); master = actx.createGain(); master.gain.value = 0.9; master.connect(actx.destination);
+    Object.keys(SOUNDS).forEach(function (k) {
+      var g = actx.createGain(); g.gain.value = 0; g.connect(master); gains[k] = g;
+      fetch(SOUNDS[k][0]).then(function (r) { return r.arrayBuffer(); }).then(function (b) { return new Promise(function (ok, no) { actx.decodeAudioData(b, ok, no); }); }).then(function (buf) {
+        var src = actx.createBufferSource(); src.buffer = buf; src.loop = true; src.connect(g); src.start();
+      }).catch(function () {});
+    });
+  }
+  function mix() {
+    var m = moodNow();
+    if (label) label.textContent = on ? (m ? SOUNDS[m][2] : 'Sound off') : 'Sound on';
+    if (!actx || m === current) return;
+    current = m;
+    Object.keys(gains).forEach(function (k) { gains[k].gain.setTargetAtTime(k === m ? SOUNDS[k][1] : 0, actx.currentTime, 0.9); });
+  }
+  if (pill) {
+    pill.addEventListener('click', function () {
+      on = !on;
+      if (on && !actx) start();
+      if (actx) { if (on) actx.resume(); master.gain.setTargetAtTime(on ? 0.9 : 0, actx.currentTime, 0.3); }
+      pill.setAttribute('aria-pressed', String(on));
+      current = null; mix();
+    });
+    addEventListener('scroll', mix, { passive: true });
   }
 })();
 </script>
