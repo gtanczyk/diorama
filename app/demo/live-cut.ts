@@ -101,7 +101,7 @@ ${bg ? '' : '<rect width="100%" height="100%" fill="#1b2133"/>'}<rect width="100
 /** A caption: a paper pill at the lower left, the model in red, then what happens in ink. */
 async function lowerThird(caption: string, by: string | undefined, file: string) {
   const y = Math.round(H * 0.84) - 84;
-  const text = by ? `<tspan fill="#c4472b" font-weight="700">${esc(by)}</tspan><tspan fill="#1d1b22">   ${esc(caption)}</tspan>` : `<tspan fill="#1d1b22">${esc(caption)}</tspan>`;
+  const text = by ? `<tspan fill="#c4472b" font-weight="700">${esc(by)}</tspan><tspan dx="22" fill="#1d1b22">${esc(caption)}</tspan>` : `<tspan fill="#1d1b22">${esc(caption)}</tspan>`;
   const len = (by ? by.length + 3 : 0) + caption.length;
   const w = Math.min(W - 120, 110 + len * 23);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><defs>
