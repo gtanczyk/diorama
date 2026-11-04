@@ -71,6 +71,26 @@ export function lockOn(story: Story, state: State, via: string) {
   return story.locks.find((l) => l.place === state.place && l.via === via && !holds(state, l.until));
 }
 
+/**
+ * The next step toward facts the player still lacks (a lock's `until`): the first interaction that sets a missing
+ * fact and can be done now, the item for it in the bag. A nudge for a stuck player; undefined when the way there
+ * starts somewhere the player has not been yet (an item still to find).
+ */
+export function hintFor(story: Story, state: State, facts: readonly string[]): { place: string; thing: string; with?: string } | undefined {
+  for (const fact of facts) {
+    if (fact.startsWith('!') || holds(state, [fact])) continue;
+    const it = story.interactions.find((i, k) => !state.spent.includes(k) && holds(state, i.when) && i.do.some((d) => 'set' in d && d.set === fact)
+      && (!i.with || state.items.includes(i.with)));
+    if (it) return { place: it.place, thing: it.thing, ...(it.with && { with: it.with }) };
+  }
+  return undefined;
+}
+
+/** Where an item in hand is wanted in this place now, when it was tried on the wrong thing. */
+export function useFor(story: Story, state: State, item: string): string | undefined {
+  return story.interactions.find((i, k) => i.place === state.place && i.with === item && !state.spent.includes(k) && holds(state, i.when))?.thing;
+}
+
 /** Everything that would change the state from here. Clicks that only print a refusal are left out. */
 export function actions(world: World, story: Story, state: State): Action[] {
   if (state.ending) return [];

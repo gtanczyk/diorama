@@ -9,7 +9,7 @@ import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, RIM_ALPHA, RIM_COLOUR,
 import { frontMask } from '../src/play/depth-occlusion.ts';
 import { catchers, decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
 import { CYCLE, pose, sheetCell, type PartName, type Rig } from '../src/play/rig.ts';
-import { actions, activeChanges, apply, hiddenThings, holds, pickDialogue, pickInteraction, speakerOf, startState, type Action, type State } from '../src/story/engine.ts';
+import { actions, activeChanges, apply, hiddenThings, hintFor, holds, lockOn, pickDialogue, pickInteraction, speakerOf, startState, useFor, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
 import { Mixer, type Listened } from './audio.ts';
@@ -643,6 +643,7 @@ class Game {
     this.place = place;
     this.drawn = [];
     this.hover = undefined;
+    this.hinted = undefined;
     await this.syncNpcs();
     place.reactions?.reset();
     const back = from ? place.spec.exits.find((e) => e.to === from) : undefined;
@@ -910,6 +911,12 @@ class Game {
     }
     if (action.kind === 'do' && action.with) this.holding = undefined;
     if (!say.length && action.kind === 'do') say = [action.with ? this.nopeLine(action.with) : this.lookLine(action.thing, action.verb)];
+    // Stuck at a lock, or an item tried on the wrong thing: where to go next glows, and the hero says so.
+    const nudge = story && this.nudge(before, action);
+    if (nudge) {
+      this.hinted = { key: nudge.thing, until: Infinity };
+      say = [...say, nudge.with ? words.hintWith(this.itemLook(nudge.with).name) : words.hint];
+    }
     this.ui();
     // Who says each line: in a conversation the NPC answers after the hero's choice; everything else is the hero's.
     const hero = this.data.world.hero.key;
@@ -923,6 +930,8 @@ class Game {
         if (speechTurn !== this.speechTurn) break;
         await this.say(line, answers ? (action as { thing: string }).thing : npc && (action.kind === 'talk' || i > 0) ? npc : hero);
       }
+      // The hint keeps glowing a while after it is said.
+      if (nudge && this.hinted?.key === nudge.thing) this.hinted = { key: nudge.thing, until: this.time + 6 };
       if (after.place !== from) {
         // Out the same way: along the bridge or down the steps toward the frame's edge before the picture fades.
         const edge = action.kind === 'go' ? this.exitEdge(action.via) : undefined;
@@ -937,6 +946,25 @@ class Game {
     });
     this.saying = turn.catch(() => undefined);
     await turn;
+  }
+
+  /** A thing glowing for a while as the next step (see nudge), its outline blinking. */
+  private hinted: { key: string; until: number } | undefined;
+
+  /** The next step for a player stuck at a lock or with an item on the wrong thing, when it lies in this place. */
+  private nudge(before: State, action: Action): { thing: string; with?: string } | undefined {
+    const story = this.data.story;
+    if (!story || before.place !== this.state.place) return undefined;
+    if (action.kind === 'go') {
+      const lock = lockOn(story, before, action.via);
+      const hint = lock && hintFor(story, before, lock.until);
+      return hint && hint.place === before.place && hint.thing !== action.via && this.hots().some((h) => h.thing.key === hint.thing) ? hint : undefined;
+    }
+    if (action.kind === 'do' && action.with && this.state === before) {
+      const thing = useFor(story, before, action.with);
+      return thing && thing !== action.thing && this.hots().some((h) => h.thing.key === thing) ? { thing, with: action.with } : undefined;
+    }
+    return undefined;
   }
 
   /** Action effects stay ordered; a new action invalidates older speech. */
@@ -1988,6 +2016,8 @@ class Game {
     const lit = this.hover && !hideCursor && !gone.has(this.hover.thing.key) ? this.hover : undefined;
     // Under the people, so someone standing in front of a highlighted thing stays in front of its outline.
     if (lit && !this.drawn.some((d) => d.hot === lit)) this.drawLit(lit);
+    const hint = this.hinted && this.time < this.hinted.until && !gone.has(this.hinted.key) ? this.hots().find((h) => h.thing.key === this.hinted!.key) : undefined;
+    if (hint && hint !== lit && Math.sin(this.time * 6) > -0.3) this.drawLit(hint);
     this.drawn = [];
     // The flame burns among the people, far to near: over whoever stands behind it, under whoever stands in front.
     let burnt = !fire?.flame;
