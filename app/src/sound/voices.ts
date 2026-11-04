@@ -373,7 +373,7 @@ export async function castVoices(memo: Memo, world: World, lines: Line[], voices
   const describe = (v: Voice) => `${v.voice_id}: ${v.name}; ${Object.values(v.labels ?? {}).join(', ')}; ${v.description ?? ''}`;
   const prompt = `You cast voice actors for a 2D painted point-and-click adventure: ${world.title}. ${world.pitch}
 
-For each character pick ONE voice from that character's own list (the lists already match their gender and age). Pick by temperament and how they talk. Give different characters different voices when you can. The spoken language is ${world.language ?? 'English'}. Prefer voices native in that language. Set "stability" 0.3-0.7, "style" 0-0.5 and "speed" 0.85-1.1 to suit their personality, avoiding exaggerated cartoon delivery.
+For each character pick ONE voice from that character's own list (the lists already match their gender and age). Pick by temperament and how they talk. Give different characters different voices when you can. The spoken language is ${world.language ?? 'English'}. Prefer voices native in that language. Set "stability" 0.3-0.7, "style" 0-0.5 and "speed" 0.85-1.0 to suit their personality (a storybook pace a child can follow: never faster than normal; a narrator 0.85-0.92), avoiding exaggerated cartoon delivery.
 
 ${stock.map((k) => `## ${k}: ${profiles[k].age.replace('_', ' ')} ${profiles[k].gender === 'any' ? '' : profiles[k].gender}, ${profiles[k].sound}. Says: ${sample(k)}
 ${candidates[k].map((v) => `- ${describe(v)}`).join('\n')}`).join('\n\n')}

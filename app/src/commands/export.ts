@@ -112,6 +112,7 @@ export async function exportWorld(slug: string, out: string, home?: string, url?
   fs.writeFileSync(path.join(out, 'world-data.json'), JSON.stringify(data));
   fs.writeFileSync(path.join(out, 'main.js'), await bundle(true));
   let page = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
+  page = page.replace('<body>', '<body data-shipped>');
   if (home) page = page.replace('<div id="soundless"', `<a id="home" href="${esc(home)}">← Diorama</a>\n<div id="soundless"`);
   page = page.replace('<title>Diorama</title>', await sharePreview(files, out, url));
   fs.writeFileSync(path.join(out, 'index.html'), page);

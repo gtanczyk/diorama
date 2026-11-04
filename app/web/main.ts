@@ -199,6 +199,10 @@ function lineChoice(story: Story, state: State, index: number): string {
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
 const params = new URLSearchParams(location.search);
+/** A shared copy (diorama export) rather than the local player: no place keys or developer labels on screen. */
+const shipped = document.body.hasAttribute('data-shipped');
+// The key list at the bottom goes once the player has the hang of it: the first use, or half a minute in.
+if (shipped) setTimeout(() => document.body.classList.add('played'), 30000);
 const capture = params.has('capture');
 const nobody = params.get('people') === '0';
 const hideCursor = capture || params.get('cursor') === '0';
@@ -672,7 +676,7 @@ class Game {
     canvas.width = place.g.frame.width;
     canvas.height = place.g.frame.height;
     this.fillAt = undefined;
-    document.getElementById('where')!.textContent = `${this.data.world.title} · ${key}${place.g.preview ? ' (layout preview)' : ''}`;
+    document.getElementById('where')!.textContent = shipped ? this.data.world.title : `${this.data.world.title} · ${key}${place.g.preview ? ' (layout preview)' : ''}`;
     this.emit('enter', { place: key, from });
   }
 
@@ -825,6 +829,7 @@ class Game {
       // Three-quarter towards it, the way a painted figure talks to someone.
       this.hero.yaw = this.hero.facing * Math.PI / 3;
       this.emit('use', { thing: key, verb });
+      document.body.classList.add('played');
       await this.act(this.actionFor(key, hot, verb));
     } finally {
       if (this.meeting) this.meeting.wait = 2;
