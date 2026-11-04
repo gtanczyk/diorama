@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
 
-type Shot = { name: string; dur: number; src?: string; from?: number; speed?: number; image?: string; card?: string; fade?: number; audio?: number; caption?: string; by?: string; speedup?: string; crop?: [number, number, number, number] };
+type Shot = { name: string; dur: number; src?: string; from?: number; speed?: number; image?: string; card?: string; fade?: number; audio?: number; caption?: string; captionTop?: boolean; by?: string; speedup?: string; crop?: [number, number, number, number] };
 type Cut = { fps?: number; shots: Shot[]; music?: { src: string; volume?: number }; voice?: { src: string; at: number; volume?: number }[] };
 
 const W = 1920, H = 1080;
@@ -41,9 +41,10 @@ async function captionPng(shot: Shot): Promise<Buffer> {
   const pillW = 64 + badge + gap + textW;
   const pillH = 112;
   const x0 = Math.round((W - pillW) / 2);
-  const y0 = Math.round(H * 0.86) - pillH;
+  // `captionTop` lifts it to the top of the frame, clear of a screen recording's own buttons along the bottom.
+  const y0 = shot.captionTop ? Math.round(H * 0.06) : Math.round(H * 0.86) - pillH;
   const mid = y0 + pillH / 2;
-  const shade = `<defs><linearGradient id="sh" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.55"/></linearGradient></defs><rect x="0" y="${y0 - 120}" width="${W}" height="${H - y0 + 120}" fill="url(#sh)"/>`;
+  const shade = `<defs><linearGradient id="sh" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.55"/></linearGradient></defs>${shot.captionTop ? '' : `<rect x="0" y="${y0 - 120}" width="${W}" height="${H - y0 + 120}" fill="url(#sh)"/>`}`;
   const band = text || shot.by ? `${shade}<rect x="${x0}" y="${y0}" width="${pillW}" height="${pillH}" rx="${pillH / 2}" fill="#0b0b10" fill-opacity="0.95"/>
 ${shot.by ? `<rect x="${x0 + 32}" y="${mid - 30}" width="${badge}" height="60" rx="30" fill="#2f5bea"/><text x="${x0 + 32 + badge / 2}" y="${mid + 11}" text-anchor="middle" font-family="${font}" font-size="32" font-weight="bold" fill="#fff">${esc(shot.by)}</text>` : ''}
 <text x="${x0 + 32 + badge + gap}" y="${mid + 17}" font-family="${font}" font-size="${size}" font-weight="bold" fill="#ffffff">${esc(text)}</text>` : '';
