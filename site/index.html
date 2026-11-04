@@ -741,7 +741,9 @@ npx -y @gtanczyk/diorama setup</code></li>
   /* sound: one loop per mood, crossfaded to the section in the middle of the screen */
   var SOUNDS = { storm: ['media/snd/storm.mp3', 0.9, 'Rain on the quay'], paper: ['media/snd/paper.mp3', 0.7, 'Paper'], mill: ['media/snd/mill.mp3', 0.8, 'The waterfall'], sea: ['media/snd/sea.mp3', 0.75, 'Sea at the rock'], dawn: ['media/snd/dawn.mp3', 0.8, 'Morning'] };
   var pill = document.getElementById('soundpill'), label = pill && pill.querySelector('span');
-  var actx = null, master = null, gains = {}, on = false, current = null;
+  /* sound is on by default; browsers keep audio silent until the first tap, click or key, so it starts there. Turning it off is remembered. */
+  var off = false; try { off = localStorage.getItem('dio-sound') === 'off'; } catch (e) {}
+  var actx = null, master = null, gains = {}, on = !off, current = null;
   function moodNow() {
     var mid = innerHeight / 2, found = null;
     document.querySelectorAll('[data-sound]').forEach(function (s) { var r = s.getBoundingClientRect(); if (r.top <= mid && r.bottom > mid) found = s.dataset.sound; });
@@ -749,7 +751,8 @@ npx -y @gtanczyk/diorama setup</code></li>
   }
   function start() {
     var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-    actx = new AC(); master = actx.createGain(); master.gain.value = 0.9; master.connect(actx.destination);
+    actx = new AC(); master = actx.createGain(); master.gain.value = on ? 0.9 : 0; master.connect(actx.destination);
+    actx.onstatechange = function () { mix(true); };
     Object.keys(SOUNDS).forEach(function (k) {
       var g = actx.createGain(); g.gain.value = 0; g.connect(master); gains[k] = g;
       fetch(SOUNDS[k][0]).then(function (r) { return r.arrayBuffer(); }).then(function (b) { return new Promise(function (ok, no) { actx.decodeAudioData(b, ok, no); }); }).then(function (buf) {
@@ -757,22 +760,34 @@ npx -y @gtanczyk/diorama setup</code></li>
       }).catch(function () {});
     });
   }
-  function mix() {
+  function waiting() { return on && (!actx || actx.state !== 'running'); }
+  function mix(force) {
     var m = moodNow();
-    if (label) label.textContent = on ? (m ? SOUNDS[m][2] : 'Sound off') : 'Sound on';
-    if (!actx || m === current) return;
+    if (label) label.textContent = !on ? 'Sound off' : waiting() ? 'Tap for sound' : (m ? SOUNDS[m][2] : 'Sound on');
+    if (pill) pill.setAttribute('aria-pressed', String(on && !waiting()));
+    if (!actx || (m === current && force !== true)) return;
     current = m;
     Object.keys(gains).forEach(function (k) { gains[k].gain.setTargetAtTime(k === m ? SOUNDS[k][1] : 0, actx.currentTime, 0.9); });
   }
+  function wake() {
+    if (!on) return;
+    if (!actx) start();
+    if (actx && actx.state !== 'running') actx.resume().then(function () { mix(true); }, function () {});
+  }
   if (pill) {
-    pill.addEventListener('click', function () {
+    pill.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (waiting()) { wake(); return; }
       on = !on;
+      try { localStorage.setItem('dio-sound', on ? 'on' : 'off'); } catch (err) {}
       if (on && !actx) start();
       if (actx) { if (on) actx.resume(); master.gain.setTargetAtTime(on ? 0.9 : 0, actx.currentTime, 0.3); }
-      pill.setAttribute('aria-pressed', String(on));
       current = null; mix();
     });
+    ['pointerdown', 'keydown', 'touchend', 'click'].forEach(function (t) { addEventListener(t, wake, { capture: true, passive: true }); });
     addEventListener('scroll', mix, { passive: true });
+    if (on) { start(); wake(); }
+    mix(true);
   }
 })();
 </script>
