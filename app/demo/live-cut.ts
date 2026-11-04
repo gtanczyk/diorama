@@ -121,7 +121,7 @@ const BOARDS: Array<[string, string, string, string]> = [
   ['end', 'Diorama', 'grzegorz.tanczyk.pl/diorama/', 'PLAY THE WORLDS'],
 ];
 
-type Shot = { from?: number; to?: number; dur?: number; view: 'phone' | 'screen' | 'tv' | 'board'; speed?: number; caption?: string; by?: string; board?: string; crop?: [number, number, number, number]; src?: string; bed?: string; bedFrom?: number; bedVolume?: number; fadeOut?: number };
+type Shot = { from?: number; to?: number; dur?: number; view: 'phone' | 'screen' | 'tv' | 'board'; speed?: number; caption?: string; by?: string; board?: string; crop?: [number, number, number, number]; src?: string; bed?: string; bedFrom?: number; bedVolume?: number; fadeOut?: number; lead?: number };
 /** A voice-over line laid over the cut: starts `at` seconds into shot `shot`; the game sound ducks under it. */
 type Vo = { src: string; shot: number; at?: number; volume?: number };
 type Live = { phone: string; screen: string; offset: number; clock?: 'phone' | 'screen'; boards?: string; vhs?: boolean; vo?: Vo[]; shots: Shot[] };
@@ -161,7 +161,11 @@ async function cut(file: string, out: string) {
       const atempo = speed === 1 ? 'anull' : Array.from({ length: Math.ceil(Math.log2(speed)) }, () => `atempo=${Math.min(2, speed ** (1 / Math.ceil(Math.log2(speed))))}`).join(',');
       const crop = s.crop ? `crop=${s.crop[2]}:${s.crop[3]}:${s.crop[0]}:${s.crop[1]},` : '';
       if (s.view === 'phone') video = `[0:v]${pts}${fit}[v0]`;
-      else if (s.view === 'screen') video = `[1:v]${crop}${pts}${fit}[v0]`;
+      // `lead`: open on the phone (him at the TV showing the same moment), then cross into the screen recording.
+      else if (s.view === 'screen' && s.lead && speed === 1) {
+        const x = 0.4;
+        video = `[0:v]trim=0:${s.lead},setpts=PTS-STARTPTS,${fit}[p];[1:v]${crop}trim=start=${s.lead - x},setpts=PTS-STARTPTS,${fit}[s];[p][s]xfade=transition=fade:duration=${x}:offset=${s.lead - x}[v0]`;
+      } else if (s.view === 'screen') video = `[1:v]${crop}${pts}${fit}[v0]`;
       // The screen inside a TV: a blurred, darkened phone shot behind a bezelled 16:9 picture.
       else video = `[0:v]${pts}scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},boxblur=20,eq=brightness=-0.25,fps=${FPS}[bg];[1:v]${crop}${pts}scale=1500:880:force_original_aspect_ratio=decrease,pad=iw+60:ih+60:30:30:color=#1a1a1a,fps=${FPS}[tv];[bg][tv]overlay=(W-w)/2:(H-h)/2-20,format=yuv420p,setsar=1[v0]`;
       // The screen recording carries the voice and the game (the phone's mic is too weak), so its sound plays under
