@@ -5,7 +5,7 @@
 import { emptyMask, maskArea, type Mask } from '../image/mask.ts';
 import { dilate, maskBox, polygonMask, rectMask, subtract, union, unionAll } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
-import type { Geometry } from '../play/geometry.ts';
+import type { GeoThing, Geometry } from '../play/geometry.ts';
 import type { Place } from '../world/schema.ts';
 import { FRAME, type Layout } from './layout.ts';
 import type { Kind } from './locate.ts';
@@ -426,6 +426,51 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     const stand = thing.kind === 'walk-on' || thing.kind === 'flat' ? spot(cx, (box[1] + box[3]) / 2) : spot(cx, baseY + 14);
     return { key: t.key, role: t.role, kind: thing.kind, box, mask: `masks/${t.key}.png`, stand, ...(thing.coarse && { coarse: true }), ...(input.plates?.includes(t.key) && { plate: `plates/${t.key}.png` }) };
   });
+  // Npcs are drawn by the game over the painting: one standing in front of an item or an exit (a scientist
+  // before the potion on his table) hides it, and nobody can click it. They step aside along their row, to the
+  // nearest reachable spot where they hide little of any.
+  type Box = [number, number, number, number];
+  const covered = (box: Box, by: GeoThing): number => {
+    const t = things.find((m) => m.key === by.key);
+    if (!t) return 0;
+    const [bx0, by0, bx1, by1] = by.box;
+    let [all, hid] = [0, 0];
+    for (let y = Math.max(0, Math.floor(by0)); y < Math.min(H, Math.ceil(by1)); y++) for (let x = Math.max(0, Math.floor(bx0)); x < Math.min(W, Math.ceil(bx1)); x++) {
+      if (!t.mask.bits[y * W + x]) continue;
+      all++;
+      if (x >= box[0] && x < box[2] && y >= box[1] && y < box[3]) hid++;
+    }
+    return all ? hid / all : 0;
+  };
+  for (const npc of geoThings.filter((t) => t.role === 'npc' && !t.mask)) {
+    const foot = npc.box[3];
+    const behind = geoThings.filter((t) => (t.role === 'item' || t.role === 'exit') && t.mask && t.box[3] < foot + 4 && t.kind !== 'wall');
+    const worst = (box: Box) => Math.max(0, ...behind.map((t) => covered(box, t)));
+    if (worst(npc.box) < 0.4) continue;
+    const w = npc.box[2] - npc.box[0];
+    const cx = (npc.box[0] + npc.box[2]) / 2;
+    let moved: Box | undefined;
+    for (let d = 16; d <= 480 && !moved; d += 16) for (const x of [cx + d, cx - d]) {
+      if (x - w / 2 < 0 || x + w / 2 > W) continue;
+      const i = nearestRoomy(grid, x, foot, reached);
+      if (i === undefined) continue;
+      const [gx, gy] = grid.centre(i);
+      if (Math.hypot(gx - x, gy - foot) > 2 * CELL) continue;
+      const box: Box = [x - w / 2, npc.box[1], x + w / 2, foot];
+      if (worst(box) < 0.15) {
+        moved = box;
+        break;
+      }
+    }
+    const hidden = behind.filter((t) => covered(npc.box, t) >= 0.4).map((t) => t.key).join(', ');
+    if (!moved) {
+      flag(`${npc.key}: stands in front of ${hidden} and hides it, with nowhere near to step aside to`);
+      continue;
+    }
+    log(`${npc.key}: steps ${Math.round((moved[0] + moved[2]) / 2 - cx)} px aside so ${hidden} stays in sight`);
+    npc.box = moved;
+    npc.stand = spot((moved[0] + moved[2]) / 2, foot);
+  }
   for (const t of geoThings) {
     // Npcs stand where the layout put them; wall things (a ship at sea) may be far from any floor.
     if (role.get(t.key) === 'npc' || t.kind === 'wall' || t.kind === 'on-top') continue;

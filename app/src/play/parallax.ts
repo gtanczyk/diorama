@@ -164,6 +164,8 @@ export type Layers = {
   floats?: Array<{ file: string; box: [number, number, number, number] }>;
   /** Painted waterfalls to set pouring: each a feathered copy of the fall over `box`. */
   falls?: Array<{ file: string; box: [number, number, number, number] }>;
+  /** Small things painted falling (code rain, snow, petals): what stands out of the paint over `box`, to fall column by column inside `region` (a soft mask). */
+  streams?: Array<{ file: string; region: string; box: [number, number, number, number] }>;
   /** Painted animals as small cards to swim (in the water) or fly (in the air), and which way each faces (1 right). */
   critters?: Array<{ file: string; box: [number, number, number, number]; medium: 'water' | 'air'; facing: 1 | -1 }>;
   /** The painted clouds as bands (bottom first) to drift with the wind at their own speeds, cut to `clip` over `box`; `keep`: what stays put in the sky. */

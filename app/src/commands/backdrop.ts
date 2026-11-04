@@ -9,7 +9,7 @@ import { Geometry } from '../play/geometry.ts';
 import { defineCommand } from '../registry.ts';
 import { BACKDROP_GROW, backdropFor, smearedBackdrop, type Card } from '../scene/backdrop.ts';
 import { carryBetween, carryFrom, paintingFor, ran, remakes, tilesLine, withChange } from '../scene/carry.ts';
-import { cloudSheet, CRITTER, critterSheet, Depth, FALLING, fallSheet, farFlats, floatSheet, cloneFill, mistSheet, smokeSheet, waterSheet } from '../scene/layers.ts';
+import { cloudSheet, CRITTER, critterSheet, Depth, FALLING, fallSheet, STREAM, streamSheet, farFlats, floatSheet, cloneFill, mistSheet, smokeSheet, waterSheet } from '../scene/layers.ts';
 import { maskFromPng as waterMaskOf } from '../image/mask.ts';
 import { WorldFiles } from '../world/files.ts';
 
@@ -80,8 +80,22 @@ defineCommand({
         png = await sharp(cloneFill(raw, FRAME.width, FRAME.height, dilate(critterMask, 3)), { raw: { width: FRAME.width, height: FRAME.height, channels: 3 } }).png().toBuffer();
         files.write(at('backdrop.png'), png);
       }
+      // Small things painted falling in a stream (code rain, snow, petals) fall on the page (layers/stream-<i>.png):
+      // cut out of the backdrop here, each column falling at its own pace. Other things' masks stay put (a doorway
+      // inside the rain keeps what is seen through it).
+      const looks = (k: string) => place.things.find((t) => t.key === k)?.looks ?? '';
+      const streamKeys = Object.keys(notes).filter((k) => !keys.includes(k) && !critterKeys.includes(k) && STREAM.test(`${k} ${notes[k].phrase} ${looks(k)}`) && fs.existsSync(at('masks', `${k}.png`)));
+      const streams: Array<{ png: Buffer; region: Buffer; box: [number, number, number, number] }> = [];
+      for (const k of streamKeys) {
+        const others = await Promise.all(Object.keys(notes).filter((o) => o !== k && fs.existsSync(at('masks', `${o}.png`))).map(async (o) => maskFromPng(fs.readFileSync(at('masks', `${o}.png`)))));
+        const made = await streamSheet(png, await maskFromPng(fs.readFileSync(at('masks', `${k}.png`))), dilate(unionAll(FRAME.width, FRAME.height, others), 2));
+        if (!made) continue;
+        png = made.backdrop;
+        streams.push(made);
+      }
+      if (streams.length) files.write(at('backdrop.png'), png);
       // Painted waterfalls pour (layers/fall-<i>.png); they stay out of the flat water below them.
-      const fallKeys = Object.keys(notes).filter((k) => !keys.includes(k) && FALLING.test(`${k} ${notes[k].phrase}`) && fs.existsSync(at('masks', `${k}.png`)));
+      const fallKeys = Object.keys(notes).filter((k) => !keys.includes(k) && !streamKeys.includes(k) && FALLING.test(`${k} ${notes[k].phrase}`) && fs.existsSync(at('masks', `${k}.png`)));
       const fallMasks = await Promise.all(fallKeys.map(async (k) => maskFromPng(fs.readFileSync(at('masks', `${k}.png`)))));
       // The far view as flats one behind another (layers/), so it has depth of its own.
       fs.rmSync(at('layers'), { recursive: true, force: true });
@@ -133,6 +147,11 @@ defineCommand({
       const falls = (await Promise.all(fallMasks.map((m) => fallSheet(png, m)))).filter((f) => !!f);
       falls.forEach((f, i) => files.write(at('layers', `fall-${i}.png`), f.png));
       if (falls.length) console.log(`  ${place.key}: ${falls.length} waterfall(s) pouring`);
+      streams.forEach((f, i) => {
+        files.write(at('layers', `stream-${i}.png`), f.png);
+        files.write(at('layers', `stream-${i}-region.png`), f.region);
+      });
+      if (streams.length) console.log(`  ${place.key}: ${streams.length} stream(s) of small things falling (${streamKeys.join(', ')})`);
       const critters = critterKeys.length ? await critterSheet(withCritters, critterMask, wetMask) : [];
       critters.forEach((c, i) => files.write(at('layers', `critter-${i}.png`), c.png));
       if (critters.length) console.log(`  ${place.key}: ${critters.length} painted animal(s) ${critters.some((c) => c.medium === 'air') ? 'flying and ' : ''}swimming (${critterKeys.join(', ')})`);
@@ -162,7 +181,7 @@ defineCommand({
         files.write(at('layers', 'mist-mask.png'), mist.mask);
         console.log(`  ${place.key}: painted ${mist.phrase} drifting ${mist.drift === null ? 'with the wind' : mist.drift < 0 ? 'left' : 'right'}${mist.speed !== 1 ? ` x${mist.speed}` : ''}`);
       }
-      if (far || water || mist || smoke.length || falls.length || critters.length || clouds) {
+      if (far || water || mist || smoke.length || falls.length || streams.length || critters.length || clouds) {
         if (far) {
           files.write(at('layers', 'sky.png'), far.sky);
           far.flats.forEach((f, i) => files.write(at('layers', `${i}.png`), f.png));
@@ -176,6 +195,7 @@ defineCommand({
           ...(smoke.length && { smoke: smoke.map((s, i) => ({ file: `layers/smoke-${i}.png`, box: s.box })) }),
           ...(floats.length && { floats: floats.map((s, i) => ({ file: `layers/float-${i}.png`, box: s.box })) }),
           ...(falls.length && { falls: falls.map((f, i) => ({ file: `layers/fall-${i}.png`, box: f.box })) }),
+          ...(streams.length && { streams: streams.map((f, i) => ({ file: `layers/stream-${i}.png`, region: `layers/stream-${i}-region.png`, box: f.box })) }),
           ...(critters.length && { critters: critters.map((c, i) => ({ file: `layers/critter-${i}.png`, box: c.box, medium: c.medium, facing: c.facing })) }),
           ...(clouds && { clouds: { box: clouds.box, clip: 'layers/cloud-clip.png', ...(clouds.keep && { keep: 'layers/cloud-keep.png' }), bands: clouds.bands.map((b, i) => ({ file: `layers/cloud-${i}.png`, box: b.box, speed: b.speed })) } }),
         });

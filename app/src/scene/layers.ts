@@ -597,6 +597,58 @@ export const FALLING = /\b(water ?falls?|cascades?|falls|weir|spillway|wodospad\
 export const CRITTER = /\b(fish(es)?|goldfish|carp|trout|salmon|koi|eels?|dolphins?|whales?|seals?|ducks?|ducklings?|swans?|geese|goose|frogs?|birds?|gulls?|seagulls?|sparrows?|crows?|ravens?|pigeons?|doves?|swallows?|owls?|bats?|butterfl(y|ies)|dragonfl(y|ies)|jellyfish|ryb\w*|ptak\w*|mew\w*|kacz\w*|łabęd\w*|wron\w*|motyl\w*)\b/i;
 
 export type Fall = { png: Buffer; box: [number, number, number, number] };
+/**
+ * Small things painted falling in a stream (code rain, falling letters, snowflakes, petals, sparks): the page
+ * sets them falling, each column at its own pace, instead of rippling them like water.
+ */
+const STREAM_BITS = String.raw`letters?|code|symbols?|characters?|glyphs?|digits?|numbers?|numerals?|pixels?|bits|sparks?|petals?|leaves|snow\w*|stars?|confetti|runes?|litery|liter\w*|znak\w*|kod\w*|cyfr\w*|płatk\w*|liści\w*|gwiazd\w*|iskr\w*`;
+export const STREAM = new RegExp(String.raw`\b(falling|raining|rain of|shower of|showers of|streams? of|stream of|cascad\w*|curtains? of|spadaj\w*|deszcz\w*)\b[\w\s-]{0,30}?\b(${STREAM_BITS})\b|\b(code|digital|matrix|data) rain\b|\b(${STREAM_BITS})[\s-]+(falling|raining|fall|rain|spadaj\w*)\b`, 'i');
+
+export type Stream = Fall & { region: Buffer; backdrop: Buffer };
+
+/** How far a stream's mask is closed over the glyphs SAM left out of it, px. */
+const STREAM_CLOSE = 16;
+
+/**
+ * A painted stream of small falling things, cut out to fall on the page: what stands out of the paint behind it
+ * (the glyphs: lighter or more coloured than the median around them) under `mask` is the sheet; the backdrop
+ * gets the paint behind them in their place, so no still copy stays under the falling one. `region` is the
+ * mask, softened, that the falling sheet is cut to. Undefined when nothing stands out.
+ */
+export async function streamSheet(backdrop: Buffer, painted: Mask, keepOut?: Mask): Promise<Stream | undefined> {
+  const [W, H]: [number, number] = [FRAME.width, FRAME.height];
+  // SAM finds the paint between the glyphs more often than the glyphs: closed, the mask holds them too.
+  const closed = dilate(dilate(painted, STREAM_CLOSE), -STREAM_CLOSE);
+  const mask = keepOut ? subtract(closed, keepOut) : closed;
+  if (maskArea(mask) < 1500) return undefined;
+  const rgb = new Uint8Array(await sharp(backdrop).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer());
+  const bg = new Uint8Array(await sharp(rgb, { raw: { width: W, height: H, channels: 3 } }).median(15).raw().toBuffer());
+  const glyph = emptyMask(W, H);
+  let n = 0;
+  for (let i = 0; i < W * H; i++) {
+    if (!mask.bits[i]) continue;
+    const d = [0, 1, 2].map((c) => rgb[i * 3 + c] - bg[i * 3 + c]);
+    const luma = 0.3 * d[0] + 0.59 * d[1] + 0.11 * d[2];
+    if (luma > 22 || Math.max(...d.map(Math.abs)) > 45) {
+      glyph.bits[i] = 1;
+      n++;
+    }
+  }
+  if (n < 400) return undefined;
+  const cut = intersect(dilate(glyph, 2), mask);
+  const [x0, y0, x1, y1] = boxOf(mask);
+  const region = { left: x0, top: y0, width: x1 - x0, height: y1 - y0 };
+  const alpha = await sharp(await maskToPng(cut)).blur(0.8).extract(region).extractChannel(0).raw().toBuffer();
+  const png = await sharp(rgb, { raw: { width: W, height: H, channels: 3 } }).extract(region).joinChannel(alpha, { raw: { width: region.width, height: region.height, channels: 1 } }).png().toBuffer();
+  const soft = await sharp(await maskToPng(mask)).blur(6).extract(region).extractChannel(0).raw().toBuffer();
+  const regionPng = await sharp(Buffer.alloc(region.width * region.height * 3, 255), { raw: { width: region.width, height: region.height, channels: 3 } }).joinChannel(soft, { raw: { width: region.width, height: region.height, channels: 1 } }).png().toBuffer();
+  // The paint behind the glyphs where they were: the median of the paint around them.
+  const out = new Uint8Array(rgb);
+  for (let i = 0; i < W * H; i++) if (cut.bits[i]) for (let c = 0; c < 3; c++) out[i * 3 + c] = bg[i * 3 + c];
+  const filled = await sharp(out, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
+  return { png, box: [x0, y0, x1, y1], region: regionPng, backdrop: filled };
+}
+
 
 /**
  * A painted waterfall for the page to set pouring: its pixels (from the backdrop) under its mask, feathered, over

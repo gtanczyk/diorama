@@ -122,11 +122,21 @@ export function hides(o: Occluder, x: number, feetY: number, support?: (key: str
   return feetY < floorYAt(o, x) - BEHIND_MARGIN;
 }
 
-/** Column runs [x0, x1) inside [left, right) where the occluder hides the person; a few runs per occluder. */
-export function hiddenRuns(o: Occluder, left: number, right: number, feetY: number, support?: (key: string) => Occluder | undefined): Array<[number, number]> {
+/**
+ * Column runs [x0, x1) inside [left, right) where the occluder hides the person; a few runs per occluder.
+ * With `feetX` the person is one body at one distance: the floor line where their feet are decides for their
+ * whole box, so a slanted desk whose near leg is nearer than the feet and far leg farther hides all of them or
+ * none, never cuts them in half down one column. Past the occluder's ends its nearest column decides.
+ */
+export function hiddenRuns(o: Occluder, left: number, right: number, feetY: number, support?: (key: string) => Occluder | undefined, feetX?: number): Array<[number, number]> {
   const runs: Array<[number, number]> = [];
   const x0 = Math.max(Math.floor(left), Math.floor(o.box[0]));
   const x1 = Math.min(Math.ceil(right), Math.ceil(o.box[2]));
+  if (feetX !== undefined) {
+    if (x1 <= x0) return runs;
+    const at = Math.min(o.box[2] - 0.5, Math.max(o.box[0] + 0.5, feetX));
+    return hides(o, at, feetY, support) ? [[x0, x1]] : runs;
+  }
   let start = -1;
   for (let x = x0; x < x1; x++) {
     const hid = hides(o, x + 0.5, feetY, support);

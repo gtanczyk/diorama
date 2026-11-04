@@ -60,6 +60,17 @@ test('an occluder hides feet behind its floor line, per column', () => {
   expect(hiddenRuns(barrel, 90, 210, 285)).toEqual([[128, 172]]);
 });
 
+test('with the feet given, one floor line spot decides for the whole person: no cut down a column', () => {
+  // Feet behind the barrel's middle: all of it in the box hides them, its rounded sides too.
+  expect(hiddenRuns(barrel, 90, 210, 285, undefined, 150)).toEqual([[100, 200]]);
+  // A slanted desk, near leg on the left: feet behind its far end hide nothing.
+  const desk: Occluder = { key: 'desk#1', box: [0, 400, 900, 850], baseY: 850, floor: [[0, 850], [900, 700]] };
+  expect(hiddenRuns(desk, 380, 460, 778, undefined, 420)).toEqual([]);
+  expect(hiddenRuns(desk, 380, 460, 778)).not.toEqual([]);
+  // Beside the barrel, its nearest column decides.
+  expect(hiddenRuns(barrel, 190, 250, 285, undefined, 220)).toEqual([]);
+});
+
 test('a thing on another hides exactly when its support does; front always hides', () => {
   const pot: Occluder = { key: 'pot#1', box: [140, 150, 160, 200], baseY: 200, on: 'barrel#1' };
   const support = (k: string) => (k === barrel.key ? barrel : undefined);

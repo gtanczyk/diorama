@@ -90,6 +90,7 @@ export async function exportWorld(slug: string, out: string, home?: string, url?
         entry.layers.mist.mask = await copy(entry.layers.mist.mask);
       }
       for (const f of entry.layers.flats) f.file = await art(f.file); // transparent around the flat
+      for (const f of entry.layers.streams ?? []) [f.file, f.region] = [await art(f.file), await copy(f.region)];
       for (const f of [...(entry.layers.smoke ?? []), ...(entry.layers.floats ?? []), ...(entry.layers.falls ?? []), ...(entry.layers.critters ?? []), ...(entry.layers.clouds?.bands ?? [])]) f.file = await art(f.file);
       if (entry.layers.clouds) {
         entry.layers.clouds.clip = await copy(entry.layers.clouds.clip);

@@ -65,6 +65,7 @@ export function worldData(files: WorldFiles) {
       ...(flats.smoke?.length && { smoke: flats.smoke.map((f) => ({ ...f, file: rel(f.file) })) }),
       ...(flats.floats?.length && { floats: flats.floats.map((f) => ({ ...f, file: rel(f.file) })) }),
       ...(flats.falls?.length && { falls: flats.falls.map((f) => ({ ...f, file: rel(f.file) })) }),
+      ...(flats.streams?.length && { streams: flats.streams.map((f) => ({ ...f, file: rel(f.file), region: rel(f.region) })) }),
       ...(flats.critters?.length && { critters: flats.critters.map((f) => ({ ...f, file: rel(f.file) })) }),
       ...(flats.clouds && { clouds: { ...flats.clouds, clip: rel(flats.clouds.clip), ...(flats.clouds.keep && { keep: rel(flats.clouds.keep) }), bands: flats.clouds.bands.map((b) => ({ ...b, file: rel(b.file) })) } }),
     };

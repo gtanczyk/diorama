@@ -402,3 +402,39 @@ export class Clouds {
     ctx.drawImage(canvas, this.box[0] + sx, this.box[1] + sy);
   }
 }
+
+/**
+ * Small things painted falling (code rain, snow, petals): the glyphs cut out of the backdrop fall in columns,
+ * each column at its own pace, wrapping round inside their painted region (a soft mask) so they keep falling.
+ */
+export class Stream {
+  private readonly canvas: HTMLCanvasElement;
+  /** Column width, px: about one glyph, so a letter falls whole. */
+  private static readonly COLUMN = 22;
+
+  constructor(readonly img: HTMLImageElement, readonly region: HTMLImageElement, readonly box: Box, readonly k: number) {
+    this.canvas = canvasOf(box[2] - box[0], box[3] - box[1]);
+  }
+
+  draw(ctx: CanvasRenderingContext2D, t: number, shift: Shift) {
+    const { img, region, canvas } = this;
+    const [w, h] = [canvas.width, canvas.height];
+    const c = canvas.getContext('2d')!;
+    c.globalCompositeOperation = 'source-over';
+    c.clearRect(0, 0, w, h);
+    const cw = Stream.COLUMN;
+    for (let x = 0, i = 0; x < w; x += cw, i++) {
+      const speed = 28 + 46 * rand(i, 31 + this.k);
+      const y = (t * speed + rand(i, 32 + this.k) * h) % h;
+      const sw = Math.min(cw, w - x);
+      c.drawImage(img, x, 0, sw, h, x, y, sw, h);
+      c.drawImage(img, x, 0, sw, h, x, y - h, sw, h);
+    }
+    // Only inside the painted rain, fading at its edges.
+    c.globalCompositeOperation = 'destination-in';
+    c.drawImage(region, 0, 0, w, h);
+    c.globalCompositeOperation = 'source-over';
+    const [sx, sy] = shift(this.box[3]);
+    ctx.drawImage(canvas, this.box[0] + sx, this.box[1] + sy);
+  }
+}

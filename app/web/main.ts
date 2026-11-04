@@ -20,7 +20,7 @@ import { spokenLine, type SoundData } from '../src/play/sound.ts';
 import type { Figure3D, ModelInfo } from './hero3d.ts';
 import type { Weather } from '../src/play/weather.ts';
 import { WeatherFx } from './weather.ts';
-import { Clouds, Critter, drawSwell, Fall, Surf } from './living.ts';
+import { Clouds, Critter, drawSwell, Fall, Stream, Surf } from './living.ts';
 import { stormOf } from '../src/play/living.ts';
 import type { Reactions } from '../src/play/reactions.ts';
 import { ReactionFx } from './reactions.ts';
@@ -103,6 +103,8 @@ type Place = {
   surf?: Surf;
   /** Painted waterfalls pouring, painted animals swimming and flying, cloud bands drifting (see living.ts). */
   falls?: Fall[];
+  /** Small things painted falling (code rain, snow, petals), column by column (see living.ts). */
+  streams?: Stream[];
   critters?: Critter[];
   clouds?: Clouds;
   far?: { sky?: HTMLImageElement; flats: Array<{ img: HTMLImageElement; box: [number, number, number, number]; d: number }> };
@@ -492,12 +494,16 @@ class Game {
   }
 
   /** The waterfalls, animals and cloud bands a place's layers set moving. */
-  private async living(layers: Layers): Promise<Pick<Place, 'falls' | 'critters' | 'clouds'>> {
+  private async living(layers: Layers): Promise<Pick<Place, 'falls' | 'streams' | 'critters' | 'clouds'>> {
     const img = (p: string) => loadImage(files(p)).catch(() => undefined);
     const falls = (await Promise.all((layers.falls ?? []).map(async (f) => {
       const i = await img(f.file);
       return i && new Fall(i, f.box);
     }))).filter((f): f is Fall => !!f);
+    const streams = (await Promise.all((layers.streams ?? []).map(async (f, k) => {
+      const [i, r] = await Promise.all([img(f.file), img(f.region)]);
+      return i && r && new Stream(i, r, f.box, k);
+    }))).filter((f): f is Stream => !!f);
     const critters = (await Promise.all((layers.critters ?? []).map(async (c, k) => {
       const i = await img(c.file);
       return i && new Critter(i, c.box, c.medium, c.facing, k);
@@ -508,7 +514,7 @@ class Game {
       const [clip, keep, ...bands] = await Promise.all([img(cl.clip), cl.keep ? img(cl.keep) : Promise.resolve(undefined), ...cl.bands.map((b) => img(b.file))]);
       if (clip && bands.every(Boolean)) clouds = new Clouds(cl.bands.map((b, i) => ({ img: bands[i]!, box: b.box, speed: b.speed })), clip, keep, cl.box);
     }
-    return { falls, critters, clouds };
+    return { falls, streams, critters, clouds };
   }
 
   /** A place, loaded once: a second ask while it loads (the preload, an NPC's walk) waits on the same files. */
@@ -1274,13 +1280,39 @@ class Game {
   thingAt(x: number, y: number): Hot | undefined {
     const g = this.place.g;
     const gone = this.gone();
+    const [sx0, sy0] = [x, y];
     for (let i = this.drawn.length - 1; i >= 0; i--) {
       const [x0, y0, x1, y1] = this.drawn[i].rect;
       // The rect includes the shadow; trim it and the transparent margin at the sides.
       const inset = (x1 - x0) * 0.12;
-      if (x >= x0 + inset && x <= x1 - inset && y >= y0 && y <= y1 - 4) return this.drawn[i].hot;
+      if (!(x >= x0 + inset && x <= x1 - inset && y >= y0 && y <= y1 - 4)) continue;
+      // A person's rect is wider than the person: where nobody was drawn over a painted thing (a potion at a
+      // scientist's feet), the thing is what is under the pointer.
+      const under = this.drawnOver(sx0, sy0) === false ? this.paintedAt(sx0, sy0, gone) : undefined;
+      return under?.mask ? under : this.drawn[i].hot;
     }
-    const [sx0, sy0] = [x, y];
+    return this.paintedAt(sx0, sy0, gone);
+  }
+
+  /**
+   * Whether anyone was drawn over the frame point in the last frame: the canvas there differs from the place as
+   * drawn without anyone (the depth snapshot). Undefined without a snapshot.
+   */
+  private drawnOver(x: number, y: number): boolean | undefined {
+    if (!this.snapped || !this.snap) return undefined;
+    const { width: W, height: H } = this.place.g.frame;
+    const z = this.zoom();
+    const [cx, cy] = [Math.floor(((x - (this.viewX || W / 2)) * z + W / 2) * (canvas.width / W)), Math.floor(((y - (this.viewY || H / 2)) * z + H / 2) * (canvas.height / H))];
+    if (cx < 0 || cy < 0 || cx >= canvas.width || cy >= canvas.height) return undefined;
+    const a = ctx.getImageData(cx, cy, 1, 1).data;
+    const b = this.snap.getContext('2d')!.getImageData(cx, cy, 1, 1).data;
+    return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) > 24;
+  }
+
+  /** The painted thing (not a person) under a frame point, by its own mask where it has one. */
+  private paintedAt(sx0: number, sy0: number, gone: Set<string>): Hot | undefined {
+    const g = this.place.g;
+    let [x, y] = [sx0, sy0];
     for (const hot of this.hots()) {
       if (this.drawn.some((d) => d.hot === hot)) continue;
       if (gone.has(hot.thing.key)) continue;
@@ -1963,6 +1995,7 @@ class Game {
       this.place.clouds?.draw(ctx, this.time, this.place.weather?.w.wind ?? 0, (y) => shiftAt(g, p, y));
       this.drawWater(p);
       for (const f of this.place.falls ?? []) f.draw(ctx, this.time, (y) => shiftAt(g, p, y));
+      for (const f of this.place.streams ?? []) f.draw(ctx, this.time, (y) => shiftAt(g, p, y));
       for (const c of this.place.critters ?? []) c.draw(ctx, this.time, (y) => shiftAt(g, p, y));
       this.drawFloats(p);
       this.drawSmoke(p);
@@ -3065,7 +3098,9 @@ class Game {
       const y0 = Math.max(top, cut.y0);
       const y1 = Math.min(bottom, cut.y0 + cut.canvas.height);
       if (y1 <= y0) continue;
-      for (const [a, b] of hiddenRuns(cut.occ, left, right, feetY, support)) {
+      // Where the feet are, as seen from the card: a figure's box need not be centred on them.
+      const feet = (feetX ?? (rect[0] + rect[2]) / 2) - sx;
+      for (const [a, b] of hiddenRuns(cut.occ, left, right, feetY, support, feet)) {
         const xa = Math.max(a, cut.x0);
         const xb = Math.min(b, cut.x0 + cut.canvas.width);
         if (xb > xa) this.drawCard(cut, xa, xb, y0, y1);
