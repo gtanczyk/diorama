@@ -7,6 +7,19 @@ import { defineCommand } from '../registry.ts';
 import { WorldFiles } from '../world/files.ts';
 import { bundle, WEB, worldData } from './play.ts';
 
+/** A language name ("Polish", "polski") or code ("pl", "pt-BR") as a BCP 47 code, when Intl knows it. */
+function langCode(language?: string): string | undefined {
+  if (!language) return undefined;
+  const t = language.trim();
+  if (/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/i.test(t)) return t;
+  const names = new Intl.DisplayNames(['en'], { type: 'language' });
+  for (const code of ['en', 'pl', 'de', 'fr', 'es', 'it', 'pt', 'nl', 'cs', 'sk', 'uk', 'ru', 'sv', 'no', 'da', 'fi', 'hu', 'ro', 'el', 'tr', 'ja', 'ko', 'zh', 'ar', 'he', 'hi']) {
+    const own = new Intl.DisplayNames([code], { type: 'language' }).of(code);
+    if ([names.of(code), own].some((n) => n?.toLowerCase() === t.toLowerCase())) return code;
+  }
+  return undefined;
+}
+
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** The link preview (X, Facebook, chats): the world's title and pitch, and a 1200x630 picture: the world's own og.jpg when it has one, else its first painted place. */
@@ -115,6 +128,9 @@ export async function exportWorld(slug: string, out: string, home?: string, url?
   page = page.replace('<body>', '<body data-shipped>');
   if (home) page = page.replace('<div id="soundless"', `<a id="home" href="${esc(home)}">← Diorama</a>\n<div id="soundless"`);
   page = page.replace('<title>Diorama</title>', await sharePreview(files, out, url));
+  // The page's language follows the world's, so browsers and screen readers read a Polish world as Polish.
+  const lang = langCode(files.world().language);
+  if (lang) page = page.replace('<html lang="en">', `<html lang="${lang}">`);
   fs.writeFileSync(path.join(out, 'index.html'), page);
 }
 
