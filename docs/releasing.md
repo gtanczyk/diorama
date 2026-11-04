@@ -14,7 +14,7 @@
    token) and creates the `vX.Y.Z` tag and a GitHub Release with that section as notes.
 
 Hold a release by leaving the PR open. Set the repository variable `RELEASE_AUTOMERGE=true` to merge it
-by itself. A version npm already has is never published twice; Actions → Publish to npm → Run workflow
+by itself, and the secret `RELEASE_TOKEN` (a PAT) if CI must run on the release PR. A version npm already holds is stepped past by patch and never published twice; Actions → Publish to npm → Run workflow
 publishes the version in `package.json` by hand.
 
 Locally: `node app/scripts/release.mjs next` (the next version, or none), `notes 0.2.0`, `check`
