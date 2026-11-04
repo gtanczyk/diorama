@@ -113,6 +113,7 @@ Model answers are memoised by a hash of their inputs, so running a step again wi
 - [Characters, style and icons](docs/characters.md)
 - [NPC story stages, optional walks and travel](docs/npc-motion.md)
 - [Sound and voices](docs/sound.md)
+- [Releasing and the changelog](docs/releasing.md) ([CHANGELOG.md](CHANGELOG.md))
 
 ## Built at the Meta AI Global Hackathon
 
