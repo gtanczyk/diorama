@@ -126,6 +126,14 @@ export function notes(text, version) {
   return parsed.lines.slice(section.start + 1, section.end).join('\n').trim() || null;
 }
 
+function baseChangelog(ref) {
+  try {
+    return execFileSync('git', ['show', `${ref}:${CHANGELOG}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    return '';
+  }
+}
+
 function computeNext() {
   const parsed = parse(read(CHANGELOG));
   if (parsed.errors.length) throw new Error(`${CHANGELOG}: ${parsed.errors.join('; ')}`);
@@ -191,7 +199,8 @@ function main() {
   if (command === 'check') {
     const files = option('files');
     const baseRef = option('base');
-    const base = baseRef ? execFileSync('git', ['show', `${baseRef}:${CHANGELOG}`], { cwd: ROOT, encoding: 'utf8' }) : null;
+    // A base without a changelog yet (the change that adds it) counts as an empty one.
+    const base = baseRef ? baseChangelog(baseRef) : null;
     return void (process.exitCode = check(files === null ? null : files.split(/[,\n]/).map((f) => f.trim()).filter(Boolean), base));
   }
   console.error('usage: release.mjs next | cut [--date YYYY-MM-DD] | notes <version> | check [--files a,b]');
