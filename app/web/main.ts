@@ -198,6 +198,15 @@ function lineChoice(story: Story, state: State, index: number): string {
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
+/**
+ * The canvas's pixels per painting pixel. A phone or a plain laptop that cannot keep up at full size drops to
+ * fewer pixels (see adapt in the frame loop); the picture is the same, a little softer. Frame size is in
+ * canvas.dataset.w/h, the drawing goes through ctx's transform, so nothing else needs to know.
+ */
+let res = 1;
+/** The painting's frame size, whatever the canvas's pixels. */
+const frameW = () => Number(canvas.dataset.w) || canvas.width;
+const frameH = () => Number(canvas.dataset.h) || canvas.height;
 const params = new URLSearchParams(location.search);
 /** A shared copy (diorama export) rather than the local player: no place keys or developer labels on screen. */
 const shipped = document.body.hasAttribute('data-shipped');
@@ -673,8 +682,7 @@ class Game {
     for (const b of this.party) this.beside(b);
     this.speech = null;
     this.darkTarget = 0;
-    canvas.width = place.g.frame.width;
-    canvas.height = place.g.frame.height;
+    this.size();
     this.fillAt = undefined;
     document.getElementById('where')!.textContent = shipped ? this.data.world.title : `${this.data.world.title} · ${key}${place.g.preview ? ' (layout preview)' : ''}`;
     this.emit('enter', { place: key, from });
@@ -710,6 +718,14 @@ class Game {
     }
     if (!best || bestD > 0.08 * W || Math.hypot(best[0] - t.stand[0], best[1] - t.stand[1]) < 3 * g.cell) return undefined;
     return grid.route(t.stand, best).length ? best : undefined;
+  }
+
+  /** Sizes the canvas for this place's frame at the current resolution. */
+  size() {
+    const { width: W, height: H } = this.place.g.frame;
+    Object.assign(canvas.dataset, { w: String(W), h: String(H) });
+    const [cw, ch] = [Math.round(W * res), Math.round(H * res)];
+    if (canvas.width !== cw || canvas.height !== ch) Object.assign(canvas, { width: cw, height: ch });
   }
 
   /** Walks to a point; resolves on arrival, or at once when there is no way there. Another body (`who`) just sets off. */
@@ -1008,7 +1024,7 @@ class Game {
     const { width: W, height: H } = this.place.g.frame;
     const [x0, y0] = [(box[0] - (this.viewX || W / 2)) * z + W / 2, (box[1] - (this.viewY || H / 2)) * z + H / 2];
     const r = canvas.getBoundingClientRect();
-    const k = r.width / canvas.width;
+    const k = r.width / W;
     return new DOMRect(r.left + x0 * k, r.top + y0 * k, (box[2] - box[0]) * z * k, (box[3] - box[1]) * z * k);
   }
 
@@ -1884,10 +1900,10 @@ class Game {
     const H = g.frame.height;
     const p = this.parallax();
     const z = this.zoom();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(res, 0, 0, res, 0, 0);
     ctx.fillStyle = '#20232a';
     ctx.fillRect(0, 0, W, H);
-    ctx.setTransform(z, 0, 0, z, W / 2 - z * (this.viewX || W / 2), H / 2 - z * (this.viewY || H / 2));
+    ctx.setTransform(z * res, 0, 0, z * res, res * (W / 2 - z * (this.viewX || W / 2)), res * (H / 2 - z * (this.viewY || H / 2)));
     const gone = this.gone();
     this.recut();
     const npcs = this.hots().filter((h) => (h.spec?.role ?? h.thing.role) === 'npc' && !h.mask);
@@ -2065,7 +2081,7 @@ class Game {
     // The bubble sits over whoever says the line; the narrator (no speaker) and the hero use the hero.
     const speaker = this.speech?.who ? this.drawn.find((d) => d.hot.thing.key === this.speech!.who)?.rect : undefined;
     this.drawSpeech(speaker ?? rect, this.speech?.who && displayName(this.speech.who, this.data.world.names));
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(res, 0, 0, res, 0, 0);
     if (this.dark > 0) {
       ctx.fillStyle = `rgba(0,0,0,${this.dark})`;
       ctx.fillRect(0, 0, W, H);
@@ -3107,9 +3123,9 @@ class Game {
   /** The narrator (the intro) speaks in a caption across the top of the frame, not from anyone's mouth. */
   private drawCaption(text: string) {
     ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(res, 0, 0, res, 0, 0);
     ctx.font = 'italic 23px Georgia, serif';
-    const max = Math.min(820, canvas.width - 80);
+    const max = Math.min(820, frameW() - 80);
     const lines: string[] = [];
     for (const word of text.split(/\s+/)) {
       const last = lines[lines.length - 1];
@@ -3118,7 +3134,7 @@ class Game {
     }
     const width = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 56;
     const height = lines.length * 30 + 26;
-    const x = (canvas.width - width) / 2;
+    const x = (frameW() - width) / 2;
     const y = 22;
     ctx.fillStyle = 'rgba(251,244,226,0.95)';
     ctx.strokeStyle = '#2b2118';
@@ -3140,7 +3156,7 @@ class Game {
     ctx.fillStyle = '#2b2118';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    lines.forEach((l, i) => ctx.fillText(l, canvas.width / 2, y + 14 + i * 30));
+    lines.forEach((l, i) => ctx.fillText(l, frameW() / 2, y + 14 + i * 30));
     ctx.restore();
   }
 
@@ -3326,7 +3342,7 @@ game.answers.hear = (text) => {
 /** The scene point under the pointer: canvas pixels, then out of the parallax zoom. */
 const toFrame = (e: MouseEvent): Point => {
   const r = canvas.getBoundingClientRect();
-  return game.unzoom(((e.clientX - r.left) / r.width) * canvas.width, ((e.clientY - r.top) / r.height) * canvas.height);
+  return game.unzoom(((e.clientX - r.left) / r.width) * frameW(), ((e.clientY - r.top) / r.height) * frameH());
 };
 
 canvas.addEventListener('pointermove', (e) => {
@@ -3616,7 +3632,26 @@ const frame = (now: number) => {
   game.update(dt);
   mixer?.update();
   game.render();
+  adapt(now);
 };
+
+// Fewer canvas pixels when the frames run slow (a phone, a work laptop without a strong GPU): two steps down,
+// judged on a couple of seconds of frames, never in capture mode (a recording keeps every pixel).
+const slow: number[] = [];
+let lastFrame = 0;
+const adapt = (now: number) => {
+  const gap = now - lastFrame;
+  lastFrame = now;
+  if (capture || params.has('res') || res <= 0.6 || document.hidden || gap > 1000) return;
+  slow.push(gap);
+  if (slow.length < 90) return;
+  const median = [...slow].sort((a, b) => a - b)[45];
+  slow.length = 0;
+  if (median < 26) return;
+  res = res > 0.8 ? 0.75 : 0.6;
+  game.size();
+};
+if (params.has('res')) res = Math.min(1, Math.max(0.3, Number(params.get('res')) || 1));
 requestAnimationFrame(frame);
 await game.start().catch((e: unknown) => {
   loading?.classList.add('failed');

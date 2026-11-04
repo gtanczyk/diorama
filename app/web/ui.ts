@@ -252,7 +252,7 @@ export function showEnding(ending: { title: string; text: string } | undefined, 
 export function fitHud(canvas: HTMLCanvasElement) {
   const hud = document.getElementById('hud')!;
   const r = canvas.getBoundingClientRect();
-  const k = r.width / canvas.width;
+  const k = r.width / (Number(canvas.dataset.w) || canvas.width);
   // A canvas bigger than the page (?fill=1) has the HTML on the part of it the page shows, the bag on the page.
   const [left, top] = [Math.max(0, r.left), Math.max(0, r.top)];
   const t = `translate(${left}px, ${top}px) scale(${k})`;
