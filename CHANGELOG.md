@@ -7,6 +7,8 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ## Unreleased
 
+- Final cut
+
 ## 0.2.0 — 2026-11-04
 
 ### Fixed
