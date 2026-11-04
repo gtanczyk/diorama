@@ -202,7 +202,14 @@ async function cut(file: string, out: string) {
     const voMix = vo.length > 1 ? `${vo.map((_, i) => `[vo${i}]`).join('')}amix=inputs=${vo.length}:normalize=0[vos]` : '[vo0]anull[vos]';
     mix = `${lines.join(';')};${voMix};[vos]apad=whole_dur=${clock.toFixed(3)},asplit=2[key][say];[0:a][key]sidechaincompress=threshold=0.015:ratio=12:attack=30:release=400[duck];[duck][say]amix=inputs=2:normalize=0:duration=first[mix]`;
   }
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, ...voIn, '-filter_complex', `[0:v]${vhs}[v];${mix}`, '-map', '[v]', '-map', '[mix]', '-c:v', 'libx264', '-crf', '20', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', out], { stdio: 'inherit' });
+  // The sound is mixed in its own pass: sharing one concat input between the slow video branch and the
+  // sidechain/amix stalls ffmpeg 7 and cuts the sound short.
+  const wav = path.join(tmp, 'mix.wav');
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, ...voIn, '-filter_complex', mix, '-map', '[mix]', '-vn', '-c:a', 'pcm_s16le', wav], { stdio: 'inherit' });
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-i', wav, '-filter_complex', `[0:v]${vhs}[v]`, '-map', '[v]', '-map', '1:a', '-c:v', 'libx264', '-crf', '20', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', out], { stdio: 'inherit' });
+  const dur = (kind: string) => Number(execFileSync('ffprobe', ['-v', 'error', '-select_streams', kind, '-show_entries', 'stream=duration', '-of', 'csv=p=0', out]).toString().trim());
+  const [dv, da] = [dur('v:0'), dur('a:0')];
+  if (Math.abs(dv - da) > 0.1) throw new Error(`sound ${da}s and picture ${dv}s differ in ${out}`);
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(out);
 }
