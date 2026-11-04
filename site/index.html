@@ -228,7 +228,8 @@ footer.day a { color: var(--paper-ink); }
 .also { color: var(--muted); font-size: 15px; max-width: 80ch; }
 
 /* worlds shelf */
-.shelf { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: 24px; align-items: stretch; }
+.shelf { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: stretch; }
+.shelf .yours { grid-column: 1 / -1; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; justify-items: start; column-gap: 24px; }
 .world { position: relative; display: grid; grid-template-rows: auto 1fr; background: var(--slate); text-decoration: none; color: var(--foam); overflow: hidden; box-shadow: 0 24px 50px -24px rgba(0,0,0,.8); transition: transform .2s ease; }
 .world:hover { transform: translateY(-4px) rotate(-.4deg); }
 .world .thumb { position: relative; aspect-ratio: 16 / 9; overflow: hidden; }
@@ -260,6 +261,7 @@ footer a { color: var(--foam); }
 
 @media (max-width: 900px) {
   .shelf, .note { grid-template-columns: minmax(0, 1fr); }
+  .shelf .yours { grid-template-columns: minmax(0, 1fr); }
   .wipe-row, .wipe-row:nth-child(even) { grid-template-columns: minmax(0, 1fr); }
   .wipe-row:nth-child(even) .wipe { order: 0; }
 }
@@ -464,6 +466,17 @@ footer a { color: var(--foam); }
           <div class="chips"><span class="chip live">Play now</span><span class="chip">3 places</span><span class="chip">cut paper</span><span class="chip">sound on</span></div>
           <h3>Paper Boat Storm</h3>
           <p>A stormy night by the sea. A girl in a yellow raincoat has folded a letter into a paper boat and must bring it to the old lighthouse keeper before the storm gets worse.</p>
+        </div>
+      </a>
+      <a class="world" href="./cat-eared-house/">
+        <div class="thumb">
+          <img src="media/world-winky.webp" alt="Winky's Cat-Eared House: a sunny crayon room with cat-ear windows and a round wooden door" loading="lazy">
+          <span class="play" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 4v16l14-8z" fill="currentColor"/></svg></span>
+        </div>
+        <div class="meta">
+          <div class="chips"><span class="chip live">Play now</span><span class="chip">3 places</span><span class="chip">crayon</span><span class="chip">sound on</span></div>
+          <h3>Winky's Cat-Eared House</h3>
+          <p>Step through the round door of a house with cat ears and help Winky, the winking cat, and friends on the sunny hill find the little hat that makes everyone smile.</p>
         </div>
       </a>
       <div class="yours">
