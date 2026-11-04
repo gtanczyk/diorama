@@ -12,6 +12,20 @@ import { readSoundFixes } from '../sound/fixes.ts';
 import { elevenKey, musicgenPython } from '../sound/sources.ts';
 import { Story } from '../story/schema.ts';
 import { WorldFiles } from '../world/files.ts';
+import type { World } from '../world/schema.ts';
+
+/** What each place's sounds are planned from: its painting brief and floors. */
+export function placeSources(files: WorldFiles, world: World): Record<string, PlaceSources> {
+  const sources: Record<string, PlaceSources> = {};
+  for (const place of world.places) {
+    const read = <T>(file: string, schema: { parse: (v: unknown) => T }) => (fs.existsSync(files.place(place.key, file)) ? schema.parse(files.readJson(files.place(place.key, file))) : undefined);
+    sources[place.key] = { brief: read('brief.json', Brief), layout: read('layout.json', Layout) };
+  }
+  return sources;
+}
+
+/** sound.json's `from`: the plan is made again when this changes. */
+export const soundPlanFrom = (world: World, story: Story | null, sources: Record<string, PlaceSources>) => inputHash(JSON.stringify(world), JSON.stringify(story), JSON.stringify(sources));
 
 defineCommand({
   name: 'sound',
@@ -31,16 +45,12 @@ defineCommand({
     const files = new WorldFiles(slug);
     const world = files.world();
     const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
-    const sources: Record<string, PlaceSources> = {};
-    for (const place of world.places) {
-      const read = <T>(file: string, schema: { parse: (v: unknown) => T }) => (fs.existsSync(files.place(place.key, file)) ? schema.parse(files.readJson(files.place(place.key, file))) : undefined);
-      sources[place.key] = { brief: read('brief.json', Brief), layout: read('layout.json', Layout) };
-    }
+    const sources = placeSources(files, world);
 
     // sound.json is the plan people may edit. It is made again with --replan, or when what it was made from
     // (world, story, briefs, floors) has changed since, so its shots and loops keep matching the story's things.
     const planFile = files.path('sound.json');
-    const from = inputHash(JSON.stringify(world), JSON.stringify(story), JSON.stringify(sources));
+    const from = soundPlanFrom(world, story, sources);
     const old = fs.existsSync(planFile) ? SoundPlan.parse(files.readJson(planFile)) : undefined;
     let plan: SoundPlan;
     // A plan made before silent things lost their loops drops them here too, before anything is paid for.

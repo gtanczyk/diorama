@@ -24,6 +24,7 @@ import './pictures.ts';
 import './start.ts';
 import './sound.ts';
 import './step-work.ts';
+import './language.ts';
 
 import './video.ts';
 import './idea-review.ts';

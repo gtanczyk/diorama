@@ -24,6 +24,7 @@ import './cast.ts';
 import './model.ts';
 import './sprites.ts';
 import './style.ts';
+import './language.ts';
 import './play.ts';
 import './export.ts';
 import './publish.ts';
