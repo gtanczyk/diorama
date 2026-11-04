@@ -159,7 +159,8 @@ test('notes wait as pending until closed with a reply, and can be reopened', asy
 
 test('budget counts only calls sent, prices Meta calls by what they used, and counts Meta credits down', async () => {
   const { root, dir, ctx } = world();
-  process.env.XDG_CONFIG_HOME = path.join(root, 'config');
+  const configBefore = process.env.DIORAMA_CONFIG_DIR;
+  process.env.DIORAMA_CONFIG_DIR = path.join(root, 'config');
   fs.mkdirSync(path.join(dir, 'memo'), { recursive: true });
   const now = new Date().toISOString();
   const lines = [
@@ -183,7 +184,7 @@ test('budget counts only calls sent, prices Meta calls by what they used, and co
   expect(priced.over).toBe(true);
   // Calls before the balance was typed in are already in it.
   expect(priced.creditsLeft).toBe(10);
-  delete process.env.XDG_CONFIG_HOME;
+  process.env.DIORAMA_CONFIG_DIR = configBefore;
 });
 
 test('a failed build is retried from the step it failed on', async () => {

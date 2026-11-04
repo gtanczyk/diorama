@@ -1,7 +1,7 @@
 // Diorama Studio: Start (worlds and a new idea), Setup (what this machine needs) and the Workshop (a world
 // building live). Everything here goes through actions, the same ones `diorama action` and the agent use.
 import { render, type ComponentChildren } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { ChatNotice, SessionTurn } from 'genaicode/react';
 import { agentDefault, askAgent, call, type AgentDefaults, fileUrl, follow, listActions, openSession, token, type StudioEvent } from './api.ts';
 import { AgentPanel } from './agent.tsx';
@@ -592,7 +592,8 @@ function Workshop({ slug }: { slug: string }) {
   const creatorBrief = useCreatorBrief(slug);
   const worldRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLElement>(null);
-  useEffect(() => {
+  // Layout effect: Esc must close the drawer from the moment it shows, not only after the next frame.
+  useLayoutEffect(() => {
     if (!byHand) return;
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && setByHand(null);
     addEventListener('keydown', esc);

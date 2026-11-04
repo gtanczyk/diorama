@@ -194,7 +194,7 @@ test('the manual place inspector shows current verifier flags', async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 860 } });
   try {
     await open(page); await page.locator('.wcard .thumb').nth(1).click();
-    await page.getByRole('button', { name: 'Fix this place by hand', exact: true }).click();
+    await page.getByRole('button', { name: 'Place details', exact: true }).click();
     await expect.poll(() => page.getByRole('region', { name: 'Place checks' }).innerText()).toContain('COARSE_MASK');
   } finally { await page.close(); }
 }, 30_000);
@@ -265,10 +265,10 @@ test('Build lets the creator watch a place through updates and resume automatic 
     await open(page);
     const nav = page.getByRole('navigation', { name: 'Build places' });
     await nav.waitFor();
-    await nav.getByRole('button', { name: 'Room b', exact: true }).click();
+    await nav.locator('[data-place="room-b"]').click();
     expect(await page.locator('.stage-top h2').textContent()).toBe('Room b');
     expect(await nav.getByRole('button', { name: 'Follow build' }).getAttribute('aria-pressed')).toBe('false');
-    await nav.getByRole('button', { name: 'Room a', exact: true }).click();
+    await nav.locator('[data-place="room-a"]').click();
     studio.events.publish('file.changed', { world: 'w', file: 'places/room-b/painting.png', exists: true });
     // A live update and the build's rotation timer must not replace a manually watched place.
     await page.waitForTimeout(4700);
@@ -297,7 +297,7 @@ test.each([true, false])('Story opened from Build returns to Build and its watch
     await page.locator('.stage-body.place').waitFor();
     await page.locator('.convo .to-build').click();
     const nav = page.getByRole('navigation', { name: 'Build places' });
-    await nav.getByRole('button', { name: 'Room b', exact: true }).click();
+    await nav.locator('[data-place="room-b"]').click();
     const story = () => page.locator('.stage-body .pipeline button.label').filter({ hasText: 'Story' });
     await story().click();
     await page.locator('.stage-body.story .paper-panel').waitFor();
