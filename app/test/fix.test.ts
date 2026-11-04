@@ -368,6 +368,15 @@ test('composition failure has a new-take retry and can simplify a plan while pre
   const fix = await runAction('layout_fix', { slug: 'w', place: 'dock', guidance: 'Keep one broad connected pier and put the stairs directly on it.' }, ctx('agent')) as { id: string };
   await jobs.wait(fix.id); expect(readCorrections(place).layout?.guidance).toContain('connected pier');
   expect(fs.readFileSync(path.join(place, 'painting.png'), 'utf8')).toBe('x');
+  // Plans that keep failing the composition check wait for a new painting take after the second.
+  expect(readCorrections(place).layout?.replans).toBe(1);
+  const again = await runAction('layout_fix', { slug: 'w', place: 'dock', guidance: 'One straight pier, the stairs at its middle.' }, ctx('agent')) as { id: string };
+  await jobs.wait(again.id); expect(readCorrections(place).layout?.replans).toBe(2);
+  await expect(runAction('layout_fix', { slug: 'w', place: 'dock', guidance: 'Yet another simpler pier plan.' }, ctx('agent'))).rejects.toThrow(/paint_retry/);
+  const take = await runAction('paint_retry', { slug: 'w', place: 'dock' }, ctx('agent')) as { id: string };
+  await jobs.wait(take.id); expect(readCorrections(place).layout?.replans).toBe(0);
+  const third = await runAction('layout_fix', { slug: 'w', place: 'dock', guidance: 'Yet another simpler pier plan.' }, ctx('agent')) as { id: string };
+  await jobs.wait(third.id); expect(readCorrections(place).layout?.replans).toBe(1);
   fs.writeFileSync(path.join(place, 'painting-layout.json'), JSON.stringify({ ok: true, attempts: [{ issues: [] }] }));
   await expect(runAction('layout_fix', { slug: 'w', place: 'dock', guidance: 'Change the room.' }, ctx('agent'))).rejects.toThrow('already has a painting');
 });

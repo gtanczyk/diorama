@@ -103,7 +103,7 @@ export const softIssue = (issue: string) => /^camera horizon moved|: moved from 
 export type LayoutAttempt = { seen: PaintedLayout; issues: string[] };
 export class PaintingLayoutError extends Error {
   constructor(readonly attempts: LayoutAttempt[]) {
-    super(`PAINT_LAYOUT_MISMATCH: ${attempts.at(-1)!.issues.join('; ')}. A composition repair was tried. Read place_status.paintingLayout; use layout_fix for a simpler connected plan or paint_retry for a new take. No floor has been invented to hide this mismatch.`);
+    super(`PAINT_LAYOUT_MISMATCH: ${attempts.at(-1)!.issues.join('; ')}. A composition repair was tried. Read place_status.paintingLayout; use paint_retry for a new take or layout_fix for a simpler connected plan (after 2 rejected plans in a row, paint_retry comes first). No floor has been invented to hide this mismatch.`);
   }
 }
 

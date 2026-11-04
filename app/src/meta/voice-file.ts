@@ -41,4 +41,38 @@ async function fileTranscribe(pcm: Buffer, options: SpeechOptions): Promise<Tran
     }
   }
 }
+const QuickBody = z.object({ transcript: z.string() });
+// A few file requests at a time: the realtime route takes the clip's own length and one stream per process, the file
+// route answers a short line in 2-3 s and takes several at once.
+const QUICK_LANES = 4;
+let quickActive = 0;
+const quickWaiting: Array<() => void> = [];
+/**
+ * Plain transcript of one short clip on the file route (PUSH_TO_TALK: one speaker, no turns), for listening back to
+ * a voice take. It sometimes writes a word twice ("jest jest"), so callers confirm a mismatch on the realtime route.
+ */
+export async function quickTranscribe(pcm24k: Buffer): Promise<string> {
+  if (quickActive >= QUICK_LANES) await new Promise<void>((r) => quickWaiting.push(r));
+  quickActive++;
+  try {
+    const wav = wav24k(Buffer.concat([pcm24k, Buffer.alloc(48000)]));
+    const request = { model: MODEL, audioEncoding: 'WAV', mode: 'PUSH_TO_TALK' };
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const body = new FormData();
+        body.set('request', new Blob([JSON.stringify(request)], { type: 'application/json' }));
+        body.set('audio', new Blob([new Uint8Array(wav)], { type: 'audio/wav' }), 'speech.wav');
+        const response = await fetch(`${META_API}/asr/transcribe?sessionId=${randomUUID()}`, { method: 'POST', headers: { Authorization: `Bearer ${apiKey()}`, Accept: 'application/json' }, body, signal: AbortSignal.timeout(60000) });
+        if (!response.ok) throw new MetaHttpError(response.status, `Meta file STT: ${response.status} ${(await response.text()).slice(0, 300)}`);
+        return QuickBody.parse(await response.json()).transcript.trim();
+      } catch (error) {
+        if (error instanceof z.ZodError || (error instanceof MetaHttpError && ![408, 429, 500, 502, 503, 504].includes(error.status)) || attempt >= 2) throw error;
+        await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+      }
+    }
+  } finally {
+    quickActive--;
+    quickWaiting.shift()?.();
+  }
+}
 export const metaFileStt: SttProvider = { id: 'meta', model: MODEL, capabilities: { timing: 'turn', speakers: true, maxSeconds: 600 }, transcribe: fileTranscribe };

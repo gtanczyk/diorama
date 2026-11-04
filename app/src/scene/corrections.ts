@@ -22,7 +22,11 @@ export type Stroke = z.infer<typeof Stroke>;
 
 export const Corrections = z.object({
   /** Persistent instructions for repairing an unfinished layout. */
-  layout: z.object({ guidance: z.string().min(10).max(4000) }).optional(),
+  layout: z.object({
+    guidance: z.string().min(10).max(4000),
+    /** layout_fix rounds after a composition rejection since the last new painting take. */
+    replans: z.number().int().min(0).optional(),
+  }).optional(),
   things: z.record(z.string(), z.object({
     /** What to ask SAM for instead of Spark's phrase. */
     phrase: z.string().min(2).optional(),

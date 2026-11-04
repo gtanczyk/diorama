@@ -261,9 +261,18 @@ defineAction({
   job: true,
   async run({ slug, place }, ctx) {
     if (!new WorldFiles(slug, ctx.root).world().places.some((p) => p.key === place)) throw new ActionError(404, `${slug} has no place ${place}`);
-    return fixPlace(ctx, slug, place, 'paint', 'new painting take', (c) => { c.take = (c.take ?? 0) + 1; });
+    return fixPlace(ctx, slug, place, 'paint', 'new painting take', (c) => {
+      c.take = (c.take ?? 0) + 1;
+      if (c.layout) c.layout.replans = 0;
+    });
   },
 });
+
+/**
+ * layout_fix rounds a composition rejection allows before a new painting take. Each round is a full relayout and
+ * repaint (2-5 minutes); magic-toast's cloud-harbor went through 7 plans in a row, each failing the same way.
+ */
+export const REPLANS = 2;
 
 defineAction({
   name: 'layout_fix',
@@ -275,9 +284,12 @@ defineAction({
     if (!files.world().places.some((p) => p.key === place)) throw new ActionError(404, `${slug} has no place ${place}`);
     const painted = () => fs.existsSync(files.place(place, 'painting.png')) && !compositionFailed(files.place(place));
     if (painted()) throw new ActionError(409, `${place} already has a painting: use the existing place fix tools`);
+    const replanning = compositionFailed(files.place(place));
+    const replans = readCorrections(files.place(place)).layout?.replans ?? 0;
+    if (replanning && replans >= REPLANS) throw new ActionError(409, `${place}: ${replans} simpler plans in a row were still rejected by the composition check; call paint_retry for a new painting take of the current plan first (or ask the person), then layout_fix may simplify again`);
     return fixPlace(ctx, slug, place, 'layout', 'repair layout', (c) => {
       if (painted()) throw new ActionError(409, `${place} acquired a painting while this repair waited: use the existing place fix tools`);
-      c.layout = { guidance };
+      c.layout = { guidance, ...(replanning && { replans: replans + 1 }) };
     });
   },
 });

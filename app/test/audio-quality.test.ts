@@ -4,7 +4,8 @@ import path from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Memo } from '../src/meta/memo.ts';
 import { transcribe } from '../src/meta/voice.ts';
-import { Cast, designVoice, heardMatch, heardOk, previewText, profileKey, reusableDesign, soundsOnly, speechRequest, stockVoices, storyLines, voiceCandidates, voiceLine } from '../src/sound/voices.ts';
+import { quickTranscribe } from '../src/meta/voice-file.ts';
+import { Cast, designVoice, heardMatch, heardOk, spokenMatch, previewText, profileKey, reusableDesign, soundsOnly, speechRequest, stockVoices, storyLines, voiceCandidates, voiceLine } from '../src/sound/voices.ts';
 import { soundQuality, ttsModel } from '../src/sound/cost.ts';
 import { decode, encodeMp3, RATE, type Pcm } from '../src/sound/pcm.ts';
 import { forgetEffect, soundEffect } from '../src/sound/sources.ts';
@@ -19,6 +20,8 @@ import { scene } from './fixtures/scene.ts';
 import { resumePendingVoices } from '../src/sound/voices.ts';
 
 vi.mock('../src/meta/voice.ts', () => ({ transcribe: vi.fn() }));
+// The file route is down by default, so these tests check the realtime route that decides every mismatch.
+vi.mock('../src/meta/voice-file.ts', () => ({ quickTranscribe: vi.fn() }));
 vi.mock('../src/sound/sources.ts', () => ({ elevenKey: () => 'test', soundEffect: vi.fn(), forgetEffect: vi.fn(), elevenMusic: vi.fn(), musicgen: vi.fn(), MUSICGEN_MODEL: 'test' }));
 vi.mock('../src/sound/pcm.ts', async (original) => ({ ...await original<object>(), decode: vi.fn(), encodeMp3: vi.fn(() => Buffer.from('encoded')) }));
 let root: string, memo: Memo;
@@ -34,6 +37,7 @@ beforeEach(() => {
   memo = new Memo(path.join(root, 'memo'));
   vi.clearAllMocks();
   vi.mocked(decode).mockReturnValue(tone());
+  vi.mocked(quickTranscribe).mockRejectedValue(new Error('file STT down'));
   vi.mocked(soundEffect).mockResolvedValue(Buffer.from('raw'));
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); fs.rmSync(root, { recursive: true, force: true }); });
@@ -152,6 +156,28 @@ test('retrying rejected speech makes fresh takes, while an ASR outage resumes th
   expect((await voiceLine(memo, line, voice, () => 'out.mp3')).text).toBe(line.text);
   expect(fetch).toHaveBeenCalledTimes(4);
   expect(JSON.stringify(voice)).toBe(before);
+});
+
+test('a take heard right on the file route skips the realtime route; a mismatch there is confirmed on realtime', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response('audio')));
+  vi.mocked(quickTranscribe).mockResolvedValue('Znalazłem twoje jabłko.');
+  expect((await voiceLine(memo, { speaker: 'hero', text: 'Znalazłem twoje jabłko!' }, actor(), () => 'a.mp3')).match).toBe(1);
+  expect(transcribe).not.toHaveBeenCalled();
+  vi.mocked(quickTranscribe).mockResolvedValue('Mam, dżem,em, pachnie je jagodami.');
+  vi.mocked(transcribe).mockResolvedValue('Mam dżem. Pachnie jagodami.');
+  const l = await voiceLine(memo, { speaker: 'hero', text: 'Mam dżem! Pachnie jagodami.' }, actor(), () => 'b.mp3');
+  expect([l.match, l.heard]).toEqual([1, 'Mam dżem. Pachnie jagodami.']);
+  expect(transcribe).toHaveBeenCalledTimes(1);
+});
+
+test('acted sounds and transcriber stutters do not fail a line, other words and numbers still do', () => {
+  expect(spokenMatch('Hu-hu... dobranoc... Ale wróć z gwiazdką, dobrze? Chrrr.', 'Dobranoc. Ale wróć z gwiazdką, dobrze?', 'Polish')).toBe(1);
+  expect(spokenMatch('Hmm, to tu nie pomoże.', 'To tu nie pomoże.', 'Polish')).toBe(1);
+  expect(heardOk('Mam linę! Jest ciężka, uff!', spokenMatch('Mam linę! Jest ciężka, uff!', 'Mamlinę, jest ciężka, ów,', 'Polish'))).toBe(true);
+  expect(spokenMatch('Drzwi piekarnika są otwarte!', 'Drzwi piekarnika piekarnika są otwarte.', 'Polish')).toBe(1);
+  expect(spokenMatch('Puk puk!', 'Puk.', 'Polish')).toBeLessThan(1);
+  expect(spokenMatch('Mam trzy skarby', 'Mam dwa skarby', 'Polish')).toBeLessThan(0.9);
+  expect(spokenMatch('Hu-hu!', '', 'Polish')).toBe(0);
 });
 
 const plan = (prompt: string): SoundPlan => ({ music: { prompt: 'warm music' }, places: {}, steps: {}, shots: [{ on: 'ending', prompt, level: 2, seconds: 2 }] });

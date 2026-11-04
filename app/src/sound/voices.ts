@@ -8,6 +8,7 @@ import { trackOperation } from '../studio/operation.ts';
 import { inputHash, type Memo } from '../meta/memo.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import { transcribe } from '../meta/voice.ts';
+import { quickTranscribe } from '../meta/voice-file.ts';
 import { speakerOf } from '../story/engine.ts';
 import { goodbye } from '../story/phrases.ts';
 import type { Story } from '../story/schema.ts';
@@ -201,9 +202,9 @@ async function prepareVoice(memo: Memo, p: Profile, says: string[], description?
         if (audioProblem(pcm)) continue;
         let heard: string | undefined;
         // Transcribe owns the bounded retry/backoff. Do not multiply it with another retry loop here.
-        try { heard = await transcribe(memo, `voice-preview:${v.generated_voice_id}`, pcm24k(pcm)); }
+        let match: number;
+        try { ({ heard, match } = await listenBack(memo, `voice-preview:${v.generated_voice_id}`, pcm24k(pcm), text, p.language)); }
         catch (error) { throw new Error(`Voice Design validation pending: ${error instanceof Error ? error.message : error}`); }
-        const match = spokenMatch(text, heard ?? '', p.language);
         if (!heardOk(text, match)) continue;
         // Pitch is diagnostic only. Highest pitch is not evidence of a convincing character.
         if (!best || match > best.match) best = { generated: v.generated_voice_id, hz: pitchHz(pcm), match };
@@ -437,11 +438,34 @@ export function heardMatch(line: string, heard: string): number {
  * that says another number than the line fails however close the letters are.
  */
 export function spokenMatch(line: string, heard: string, language?: string): number {
-  const said = spokenText(line, language);
-  const got = spokenText(heard, language);
+  // Laughs, hoots and snores in a line ("Hu-hu... dobranoc... Chrrr.") are acted, but the transcriber writes them
+  // down rarely and never the same way: 4 lines of one world were rejected after 3 takes for them alone. Only the
+  // words are compared. A word written twice in a row that the line has once is a transcriber stutter.
+  const said = spokenText(withoutSounds(line), language);
+  const raw = spokenText(withoutSounds(heard), language);
+  const got = [raw, withoutStutter(raw, said)];
   const want = numberWords(said, language);
-  if (want.length && want.join(' ') !== numberWords(got, language).join(' ')) return Math.min(heardMatch(said, got), 0.5);
-  return heardMatch(said, got);
+  const best = Math.max(...got.map((g) => heardMatch(said, g)));
+  if (want.length && got.every((g) => want.join(' ') !== numberWords(g, language).join(' '))) return Math.min(best, 0.5);
+  return best;
+}
+
+/** The text without words that are only a sound (see soundsOnly); a line of sounds alone stays as it is. */
+export function withoutSounds(text: string): string {
+  const kept = text.split(/\s+/).filter((w) => {
+    const parts = w.normalize('NFC').toLowerCase().split(/[^\p{L}]+/u).filter(Boolean);
+    return !parts.length || !parts.every((p) => p.length > 1 && SOUND.test(p));
+  });
+  return kept.some((w) => /\p{L}/u.test(w)) ? kept.join(' ') : text;
+}
+
+/** Drops a word repeated right after itself, unless the line itself repeats it there. */
+function withoutStutter(heard: string, said: string): string {
+  const key = (w: string) => w.normalize('NFC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  const lineWords = said.split(/\s+/).map(key);
+  const doubled = new Set(lineWords.filter((w, i) => w && w === lineWords[i - 1]));
+  const words = heard.split(/\s+/);
+  return words.filter((w, i) => !(i > 0 && key(w) && key(w) === key(words[i - 1]) && !doubled.has(key(w)))).join(' ');
 }
 
 /** 16-bit mono PCM at 24 kHz, what the transcriber takes. */
@@ -481,13 +505,36 @@ function speak(memo: Memo, label: string, line: Line, voice: Cast[string], take:
   });
 }
 
+/**
+ * Listens to a take: first on the file route (a few at once, 2-3 s a line), and only a take that does not match goes
+ * to the realtime route too (one stream at a time, as long as the clip), because the file route now and then writes
+ * a word twice. The better hearing counts. Voices of one world were 15 minutes of realtime listening before.
+ */
+export async function listenBack(memo: Memo, label: string, pcm: Buffer, line: string, language?: string): Promise<{ heard: string; match: number }> {
+  const spoken = spokenText(line, language);
+  let quick: { heard: string; match: number } | undefined;
+  try {
+    const heard = (await memo.remember('voice', `${label}#file`, inputHash('quick-stt-v1', pcm), 'txt', async () => Buffer.from(await quickTranscribe(pcm), 'utf8'))).toString('utf8');
+    quick = { heard, match: spokenMatch(line, heard, language) };
+    if (heardOk(spoken, quick.match)) return quick;
+  } catch { /* the realtime route below decides */ }
+  try {
+    const heard = await transcribe(memo, label, pcm);
+    const slow = { heard, match: spokenMatch(line, heard, language) };
+    return quick && quick.match > slow.match ? quick : slow;
+  } catch (error) {
+    if (quick) return quick;
+    throw error;
+  }
+}
+
 export const lineId = (line: Line) => `line-${inputHash(line.speaker, line.text).slice(0, 10)}`;
 
 /** Close enough: 90% of the letters, or at most two letters off, so a short line is not failed for one misheard word ("a" for "of"). */
-export const heardOk = (line: string, match: number) => match >= 0.9 || (match >= 0.7 && (1 - match) * letters(line).length <= 2.01);
+export const heardOk = (line: string, match: number) => match >= 0.9 || (match >= 0.7 && (1 - match) * letters(withoutSounds(line)).length <= 2.01);
 
 /** Laughs, sighs and calls: no word a transcriber writes down the way the line spells it. */
-const SOUND = /^(?:(?:h+[aeiouy]+h*)+|(?:[aeiouy]+h+)+|a+w+|o+w+|u+g+h+|e+w+|h+m+|m+h*m*|m+|u+h*m+|e+r+m*|h+u+h+|h+e+h+|p+s+t+|s+h+|t+s+k+|z+|w+h+e+e+|y+a+y+|w+o+w+|o+o+h*|a+r+g+h+|o+j+(?:e+j+)?|a+c+h+|o+c+h+|e+c+h+|u+f+|h+y+h+y+)$/;
+const SOUND = /^(?:c?h+r+|(?:h+[aeiouy]+h*)+|(?:[aeiouy]+h+)+|a+w+|o+w+|u+g+h+|e+w+|h+m+|m+h*m*|m+|u+h*m+|e+r+m*|h+u+h+|h+e+h+|p+s+t+|s+h+|t+s+k+|z+|w+h+e+e+|y+a+y+|w+o+w+|o+o+h*|a+r+g+h+|o+j+(?:e+j+)?|a+c+h+|o+c+h+|e+c+h+|u+f+|h+y+h+y+)$/;
 export function soundsOnly(text: string): boolean {
   const words = text.normalize('NFC').toLowerCase().split(/[^\p{L}]+/u).filter(Boolean);
   return words.length > 0 && words.every((w) => SOUND.test(w));
@@ -521,8 +568,7 @@ export async function voiceLine(memo: Memo, line: Line, voice: Cast[string], wri
     const pcm = pitchShift(trim(decode(await speak(memo, `${id}-${take}`, line, voice, take, designed, retrySeed)), 0.005), voice.pitch ?? 0);
     if (audioProblem(pcm)) continue;
     if (sound) { best = { pcm, heard: '', match: 0, take }; break; }
-    const heard = await transcribe(memo, `${id}-${take}`, pcm24k(pcm));
-    const match = spokenMatch(line.text, heard, voice.profile?.language);
+    const { heard, match } = await listenBack(memo, `${id}-${take}`, pcm24k(pcm), line.text, voice.profile?.language);
     if (!best || match > best.match) best = { pcm, heard, match, take };
     if (heardOk(spoken, match)) break;
   }
