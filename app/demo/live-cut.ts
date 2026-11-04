@@ -74,40 +74,54 @@ function xcorr(a: Float64Array, b: Float64Array, rate: number, lo: number, hi: n
 const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const FONT = "'Arial Black', 'DejaVu Sans', sans-serif";
 
-/** A title board in the look of 90s TVP: a dark blue gradient, a thin white rule, plain white title, sub in yellow. */
-async function board(title: string, sub: string, file: string) {
+const SERIF = "Caladea, 'Liberation Serif', serif";
+const SANS = "Inter, 'DejaVu Sans', sans-serif";
+
+/** A title board: a still of one of the worlds, blurred and dimmed, with a paper card on it (title, rule, sub). */
+async function board(title: string, sub: string, kicker: string, file: string, bg?: string) {
+  const card = { w: 1180, h: 430 };
+  const x = (W - card.w) / 2, y = (H - card.h) / 2;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><defs>
-<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b1a4a"/><stop offset="1" stop-color="#020617"/></linearGradient></defs>
-<rect width="${W}" height="${H}" fill="url(#bg)"/>
-<rect x="260" y="${H / 2 + 46}" width="${W - 520}" height="4" fill="#ffffff" opacity="0.85"/>
-<text x="${W / 2}" y="${H / 2 + 10}" text-anchor="middle" font-family="${FONT}" font-size="128" fill="#ffffff" letter-spacing="6">${esc(title)}</text>
-<text x="${W / 2}" y="${H / 2 + 130}" text-anchor="middle" font-family="${FONT}" font-size="54" fill="#ffd84a">${esc(sub)}</text></svg>`;
-  await sharp(Buffer.from(svg)).png().toFile(file);
+<radialGradient id="v" cx="0.5" cy="0.5" r="0.75"><stop offset="0.45" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.65"/></radialGradient>
+<filter id="sh" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000" flood-opacity="0.55"/></filter></defs>
+${bg ? '' : '<rect width="100%" height="100%" fill="#1b2133"/>'}<rect width="100%" height="100%" fill="url(#v)"/>
+<rect x="${x}" y="${y}" width="${card.w}" height="${card.h}" rx="26" fill="#f6efe2" filter="url(#sh)"/>
+<rect x="${x + 14}" y="${y + 14}" width="${card.w - 28}" height="${card.h - 28}" rx="18" fill="none" stroke="#d9cdb6" stroke-width="2"/>
+<text x="${W / 2}" y="${y + 92}" text-anchor="middle" font-family="${SANS}" font-weight="700" font-size="30" letter-spacing="10" fill="#c4472b">${esc(kicker)}</text>
+<text x="${W / 2}" y="${y + 236}" text-anchor="middle" font-family="${SERIF}" font-size="${title.length > 12 ? 104 : 124}" fill="#1d1b22">${esc(title)}</text>
+<rect x="${W / 2 - 60}" y="${y + 280}" width="120" height="4" rx="2" fill="#c4472b"/>
+<text x="${W / 2}" y="${y + 356}" text-anchor="middle" font-family="${SANS}" font-weight="500" font-size="${sub.length > 34 ? 46 : 52}" fill="#4a4550">${esc(sub)}</text></svg>`;
+  const over = await sharp(Buffer.from(svg)).png().toBuffer();
+  const base = bg
+    ? await sharp(bg).resize(W, H, { fit: 'cover' }).blur(16).modulate({ brightness: 0.62, saturation: 1.1 }).toBuffer()
+    : await sharp({ create: { width: W, height: H, channels: 3, background: '#1b2133' } }).png().toBuffer();
+  await sharp(base).composite([{ input: over }]).png().toFile(file);
 }
 
-/** A 90s TV caption: a dark translucent band from the left, the model in yellow, then what happens in white. */
+/** A caption: a paper pill at the lower left, the model in red, then what happens in ink. */
 async function lowerThird(caption: string, by: string | undefined, file: string) {
-  const y = Math.round(H * 0.84) - 96;
-  const text = by ? `<tspan fill="#ffd84a">${esc(by)}</tspan><tspan fill="#ffffff">  ·  ${esc(caption)}</tspan>` : `<tspan fill="#ffffff">${esc(caption)}</tspan>`;
-  const len = (by ? by.length + 5 : 0) + caption.length;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-<rect x="0" y="${y}" width="${Math.min(W, 200 + len * 27)}" height="96" fill="#05103a" fill-opacity="0.82"/>
-<rect x="0" y="${y + 92}" width="${Math.min(W, 200 + len * 27)}" height="4" fill="#ffd84a"/>
-<text x="120" y="${y + 64}" font-family="${FONT}" font-size="46">${text}</text></svg>`;
+  const y = Math.round(H * 0.84) - 84;
+  const text = by ? `<tspan fill="#c4472b" font-weight="700">${esc(by)}</tspan><tspan fill="#1d1b22">   ${esc(caption)}</tspan>` : `<tspan fill="#1d1b22">${esc(caption)}</tspan>`;
+  const len = (by ? by.length + 3 : 0) + caption.length;
+  const w = Math.min(W - 120, 110 + len * 23);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><defs>
+<filter id="sh" x="-10%" y="-40%" width="120%" height="200%"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000" flood-opacity="0.5"/></filter></defs>
+<rect x="60" y="${y}" width="${w}" height="84" rx="42" fill="#f6efe2" fill-opacity="0.96" filter="url(#sh)"/>
+<text x="110" y="${y + 55}" font-family="${SANS}" font-weight="500" font-size="40">${text}</text></svg>`;
   await sharp(Buffer.from(svg)).png().toFile(file);
 }
 
 /** The show's boards, edit here: one per round. */
-const BOARDS: Array<[string, string, string]> = [
-  ['intro', 'DIORAMA', 'Grzegorz Tańczyk plays a game he just made'],
-  ['idea', 'THE IDEA', 'one sentence'],
-  ['build', 'THE BUILD', 'Muse Spark, Muse Image, SAM 3.1'],
-  ['play', 'THE GAME', 'let us play'],
-  ['change', 'ONE MORE THING', 'change it by asking'],
-  ['end', 'DIORAMA', 'github.com/gtanczyk/diorama'],
+const BOARDS: Array<[string, string, string, string]> = [
+  ['intro', 'Diorama', 'Grzegorz Tańczyk plays a game he just made', 'LIVE DEMO'],
+  ['idea', 'The idea', 'two drawings and one sentence', 'DIORAMA'],
+  ['build', 'The build', 'Muse Spark · Muse Image · SAM 3.1', 'DIORAMA'],
+  ['play', "Let's play", 'the game, twenty minutes old', 'DIORAMA'],
+  ['change', 'One more thing', 'change it by asking', 'DIORAMA'],
+  ['end', 'Diorama', 'grzegorz.tanczyk.pl/diorama/', 'PLAY THE WORLDS'],
 ];
 
-type Shot = { from?: number; to?: number; dur?: number; view: 'phone' | 'screen' | 'tv' | 'board'; speed?: number; caption?: string; by?: string; board?: string; crop?: [number, number, number, number]; src?: string; bed?: string; bedVolume?: number };
+type Shot = { from?: number; to?: number; dur?: number; view: 'phone' | 'screen' | 'tv' | 'board'; speed?: number; caption?: string; by?: string; board?: string; crop?: [number, number, number, number]; src?: string; bed?: string; bedFrom?: number; bedVolume?: number; fadeOut?: number };
 /** A voice-over line laid over the cut: starts `at` seconds into shot `shot`; the game sound ducks under it. */
 type Vo = { src: string; shot: number; at?: number; volume?: number };
 type Live = { phone: string; screen: string; offset: number; clock?: 'phone' | 'screen'; boards?: string; vhs?: boolean; vo?: Vo[]; shots: Shot[] };
@@ -134,7 +148,7 @@ async function cut(file: string, out: string) {
     if (s.view === 'board') {
       args.push('-loop', '1', '-t', String(len), '-i', path.join(boards, `${s.board}.png`), '-f', 'lavfi', '-t', String(len), '-i', 'anullsrc=r=48000:cl=stereo');
       video = `[0:v]${fit},fade=in:d=0.2,fade=out:st=${Math.max(0, len - 0.2)}:d=0.2[v0]`;
-      audio = '[1:a]anull[a]';
+      audio = s.bed ? `[BED:a]atrim=0:${len},volume=${s.bedVolume ?? 0.5},aresample=48000,aformat=channel_layouts=stereo[a]` : '[1:a]anull[a]';
     } else {
       // Times are on the phone's clock unless the edit says `clock: "screen"`.
       const pf = (s.from ?? 0) + (live.clock === 'screen' ? live.offset : 0), sf = pf - live.offset;
@@ -157,8 +171,11 @@ async function cut(file: string, out: string) {
     }
     if (s.bed) {
       audio = audio.replace('[BED:a]', `[${args.filter((a) => a === '-i').length}:a]`);
-      args.push('-i', at(s.bed));
+      args.push('-ss', String(s.bedFrom ?? 0), '-i', at(s.bed));
     }
+    // Short fades at every cut so no word or note is chopped into a click; `fadeOut` lets the last shot fade away.
+    const fo = s.fadeOut ?? 0.04;
+    audio = audio.replace(/\[a\]$/, `,afade=t=in:d=0.04,afade=t=out:st=${Math.max(0, len - fo)}:d=${fo}[a]`);
     let chain = `${video};${audio}`;
     if (s.caption || s.by) {
       const png = path.join(tmp, `${i}-lt.png`);
@@ -203,7 +220,12 @@ if (cmd === 'sync') {
 } else if (cmd === 'boards') {
   const out = path.resolve(takeOption(rest, 'out', 'app/demo/footage/live/boards'));
   fs.mkdirSync(out, { recursive: true });
-  for (const [name, title, sub] of BOARDS) await board(title, sub, path.join(out, `${name}.png`));
+  // `--bg dir`: a still per board (dir/<name>.png), blurred behind its card.
+  const bgDir = takeOption(rest, 'bg', '');
+  for (const [name, title, sub, kicker] of BOARDS) {
+    const bg = bgDir && fs.existsSync(path.join(bgDir, `${name}.png`)) ? path.join(bgDir, `${name}.png`) : undefined;
+    await board(title, sub, kicker, path.join(out, `${name}.png`), bg);
+  }
   console.log(out);
 } else if (cmd === 'cut') {
   await cut(rest[0], path.resolve(rest[1] ?? 'app/demo/out/live.mp4'));
