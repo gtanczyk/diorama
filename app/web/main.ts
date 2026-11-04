@@ -648,13 +648,21 @@ class Game {
     const back = from ? place.spec.exits.find((e) => e.to === from) : undefined;
     const arrive = back ? place.g.things.find((t) => t.key === back.via)?.stand : undefined;
     [this.hero.x, this.hero.y] = arrive ?? place.g.start;
+    // Coming over a bridge or up the steps, the hero walks in from the exit's far end (by the frame's edge) to
+    // where one stands at it, instead of popping up in the middle of the place.
+    const edge = back && arrive ? this.exitEdge(back.via) : undefined;
+    if (edge) {
+      [this.hero.x, this.hero.y] = edge;
+      this.hero.path = this.place.grid.route(edge, arrive!);
+    }
     // ?spawn=x,y,left|right places the hero exactly on the first entry, to match a shot cut into the game.
     const spawn = !from && params.get('spawn')?.split(',');
     if (spawn && spawn.length >= 2) {
       [this.hero.x, this.hero.y] = [Number(spawn[0]), Number(spawn[1])];
       if (spawn[2]) this.hero.facing = spawn[2] === 'left' ? -1 : 1;
+      this.hero.path = [];
     }
-    this.hero.path = [];
+    if (!edge) this.hero.path = [];
     this.hero.foot = undefined;
     this.hero.along = undefined;
     for (const b of this.party) this.beside(b);
@@ -665,6 +673,38 @@ class Game {
     this.fillAt = undefined;
     document.getElementById('where')!.textContent = `${this.data.world.title} · ${key}${place.g.preview ? ' (layout preview)' : ''}`;
     this.emit('enter', { place: key, from });
+  }
+
+  /**
+   * Where an exit leads off: its walkable spot nearest the frame's edge (a bridge's far end, the foot of the steps),
+   * when that is a few steps from where one stands to use it and the way there is open. Undefined otherwise (a boat
+   * out on the water, a door one stands right at).
+   */
+  exitEdge(via: string): Point | undefined {
+    const { g, grid } = this.place;
+    const t = g.things.find((th) => th.key === via);
+    if (!t?.stand || !t.box) return undefined;
+    const { width: W, height: H } = g.frame;
+    // The frame side the exit runs off toward, when it reaches near it (a bridge whose planks run on past its box).
+    const sides = [
+      { gap: t.box[0], box: [0, t.box[1], t.box[2], t.box[3]], d: (x: number) => x },
+      { gap: W - t.box[2], box: [t.box[0], t.box[1], W, t.box[3]], d: (x: number) => W - x },
+      { gap: H - t.box[3], box: [t.box[0], t.box[1], t.box[2], H], d: (_x: number, y: number) => H - y },
+    ].sort((a, b) => a.gap - b.gap);
+    const side = sides[0];
+    if (side.gap > 0.2 * W) return undefined;
+    const [x0, y0, x1, y1] = side.box;
+    let best: Point | undefined;
+    let bestD = Infinity;
+    for (let y = Math.max(0, y0) + g.cell / 2; y < Math.min(H, y1); y += g.cell) {
+      for (let x = Math.max(0, x0) + g.cell / 2; x < Math.min(W, x1); x += g.cell) {
+        if (!grid.walkable(x, y)) continue;
+        const d = side.d(x, y);
+        if (d < bestD) [best, bestD] = [[x, y], d];
+      }
+    }
+    if (!best || bestD > 0.08 * W || Math.hypot(best[0] - t.stand[0], best[1] - t.stand[1]) < 3 * g.cell) return undefined;
+    return grid.route(t.stand, best).length ? best : undefined;
   }
 
   /** Walks to a point; resolves on arrival, or at once when there is no way there. Another body (`who`) just sets off. */
@@ -884,6 +924,9 @@ class Game {
         await this.say(line, answers ? (action as { thing: string }).thing : npc && (action.kind === 'talk' || i > 0) ? npc : hero);
       }
       if (after.place !== from) {
+        // Out the same way: along the bridge or down the steps toward the frame's edge before the picture fades.
+        const edge = action.kind === 'go' ? this.exitEdge(action.via) : undefined;
+        if (edge) await Promise.race([this.walkTo(...edge), this.wait(2500)]);
         this.emit('exit', { from, to: after.place });
         await this.fadeOut();
         await this.enter(after.place, from);
