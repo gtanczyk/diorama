@@ -34,11 +34,12 @@ export const PHASES = [
 
 /** memo/calls.jsonl's model names as people know them. */
 export const MODEL_NAME: Record<string, string> = { spark: 'Muse Spark', muse: 'Muse Image', sam: 'SAM 3.1', sound: 'ElevenLabs', music: 'ElevenLabs', voice: 'ElevenLabs', space: '3D' };
-const META = new Set(['Muse Spark', 'Muse Image', 'SAM 3.1']);
+const META = new Set(['Muse Spark', 'Muse Image', 'SAM 3.1', 'Muse Voice']);
 const tone = (by: string) => ({ 'Muse Spark': 'spark', 'Muse Image': 'image', 'SAM 3.1': 'sam' })[by] ?? 'other';
 
 /** A model another than Meta's, by a short name: what a call's `via` or Setup's pick names. */
 export function viaName(via: string): string {
+  if (via === 'muse-voice') return 'Muse Voice';
   if (/claude/i.test(via)) return 'Claude';
   if (/banana/i.test(via)) return 'Nano Banana';
   if (/gemini|google/i.test(via)) return 'Gemini';
@@ -218,9 +219,10 @@ export function Pipeline({ job, all, live, build, typical, total, onOpen }: { jo
     <section class={`pipeline${job ? ' on' : ''}`} aria-live="polite">
       <div class="row head">
         <strong>{job ? `${job.by === 'agent' ? 'Agent: ' : ''}${job.label}` : 'Build'}</strong>
-        {/* This job's calls, each with the world's total beside it: a new job starts at 0, the world keeps counting. */}
+        {/* This job's calls, with the world's total beside it only when earlier jobs added to it: "136 of 136" read as
+            a progress bar that was always full, while it only said this job made every call the world has. */}
         {job && calls.length > 0 && <span class="detail calls-kicker" title="Model calls this job made. The number after 'of' is the whole world so far, every build and agent job together">this job</span>}
-        {job && calls.map(([by, n]) => <span class={`count ${tone(by)}${fresh && live.lastCall?.by === by ? ' hot' : ''}`} title={`${nowBy(by)}: ${n} call${n === 1 ? '' : 's'} in this job${total?.[by] ? `, ${Math.max(n, total[by])} for this world so far` : ''}`}><ModelTag by={by} /> {n}{total?.[by] ? <span class="of"> of {Math.max(n, total[by])}</span> : null}</span>)}
+        {job && calls.map(([by, n]) => <span class={`count ${tone(by)}${fresh && live.lastCall?.by === by ? ' hot' : ''}`} title={`${nowBy(by)}: ${n} call${n === 1 ? '' : 's'} sent in this job (not a target: it grows with every take and check)${(total?.[by] ?? 0) > n ? `, ${total![by]} for this world so far` : ''}`}><ModelTag by={by} /> {n}{(total?.[by] ?? 0) > n ? <span class="of"> · {total![by]} in all</span> : null}</span>)}
         {/* A step's raw line is cut to what it is doing ("barn-interior layout try 1"); the whole line is on hover. */}
         <span class="detail tail" title={job ? live.tail : undefined}>{job ? (fresh && live.lastCall ? `${nowBy(live.lastCall.by)}: ${live.lastCall.label}` : live.tail.split(/: |[.!?]\s/)[0].slice(0, 60)) : ''}</span>
         {when && <span class="detail when">{when}</span>}

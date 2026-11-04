@@ -3,6 +3,7 @@
 // Referer), the Host must be ours (no DNS rebinding), cross-site requests are refused (Origin and
 // Sec-Fetch-Site), writes are JSON only and no CORS header is ever sent. World files are served to <img>
 // with a SameSite=Strict cookie the page gets in exchange for the token.
+import { callVia } from '../meta/memo.ts';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -119,8 +120,9 @@ class WorldWatch {
     for (const line of text.slice(0, complete).split('\n')) {
       if (!line) continue;
       try {
-        const { model, label, ms, hit, via } = JSON.parse(line) as Record<string, unknown>;
-        this.events.publish('call', { world: this.slug, model, label, ms, hit, via });
+        const call = JSON.parse(line) as Record<string, unknown>;
+        const { model, label, ms, hit } = call;
+        this.events.publish('call', { world: this.slug, model, label, ms, hit, via: callVia(this.dir, call as { model: string; hash?: string; via?: unknown }) });
       } catch {}
     }
   }

@@ -1,6 +1,6 @@
 // Small provider boundary: the video pipeline only knows PCM in, normalized evidence out.
 import { metaFileStt } from '../meta/voice-file.ts';
-import { inputHash, type Memo } from '../meta/memo.ts';
+import { inputHash, MUSE_VOICE, type Memo } from '../meta/memo.ts';
 import { Transcript, type SpeechOptions, type SttProvider } from './types.ts';
 export { type SttProvider, type SpeechOptions, Transcript } from './types.ts';
 export const defaultStt = metaFileStt;
@@ -28,7 +28,7 @@ export async function transcribeFile(memo: Memo, label: string, pcm: Buffer, opt
     const saved = await memo.remember('voice', label, hash, 'json', async () => {
       const request = (lanes.get(lane) ?? Promise.resolve()).catch(() => {}).then(() => provider.transcribe(pcm, options));
       lanes.set(lane, request);
-      try { return Buffer.from(JSON.stringify(check(await request))); }
+      try { return { data: Buffer.from(JSON.stringify(check(await request))), via: MUSE_VOICE }; }
       finally { if (lanes.get(lane) === request) lanes.delete(lane); }
     });
     return check(JSON.parse(saved.toString('utf8')));

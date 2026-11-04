@@ -23,6 +23,20 @@ export function inputHash(...parts: (string | Buffer)[]): string {
 /** What a call cost, when the asker knows: dollars and which backend answered (e.g. "claude" for a dev-mode Spark). */
 export type Paid = { data: Buffer; usd?: number; via?: string };
 
+/** The `via` of a Muse Voice Transcribe call: it shares the voice memo with ElevenLabs speech, but Meta answers it. */
+export const MUSE_VOICE = 'muse-voice';
+
+/**
+ * Who answered a logged call. Transcripts logged before they carried `via` are told apart from speech by the answer
+ * kept in the world's memo (a transcript is .txt or .json, speech .mp3), so old worlds stop counting them as ElevenLabs.
+ */
+export function callVia(dir: string, call: { model: string; hash?: string; via?: unknown }): string | undefined {
+  if (typeof call.via === 'string') return call.via;
+  if (call.model !== 'voice' || !call.hash) return undefined;
+  const at = (ext: string) => fs.existsSync(path.join(dir, 'memo', 'voice', `${call.hash}.${ext}`));
+  return at('txt') || at('json') ? MUSE_VOICE : undefined;
+}
+
 export class Memo {
   /** Calls actually sent to each model in this process (cache hits are not counted). */
   readonly sent: Record<ModelName, number> = { spark: 0, muse: 0, sam: 0, sound: 0, music: 0, voice: 0, space: 0 };

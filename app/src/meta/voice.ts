@@ -1,6 +1,6 @@
 // Muse Voice Transcribe realtime transport. File uploads use voice-file.ts through speech/transcribe.ts.
 import { apiKey } from './http.ts';
-import { inputHash, type Memo } from './memo.ts';
+import { inputHash, MUSE_VOICE, type Memo } from './memo.ts';
 
 export const VOICE_TRANSCRIBE = 'muse-voice-transcribe-1.0';
 const URL_ASR = 'wss://api.meta.ai/v1/asr/realtime';
@@ -29,7 +29,7 @@ export function transcribe(memo: Memo, label: string, pcm24k: Buffer, pace = 1):
       }
     });
     queue = run.catch(() => {});
-    return run;
+    return run.then((data) => ({ data, via: MUSE_VOICE }));
   }).then((b) => b.toString('utf8'));
 }
 

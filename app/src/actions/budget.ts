@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import type { ModelName } from '../meta/memo.ts';
+import { callVia, MUSE_VOICE, type ModelName } from '../meta/memo.ts';
 import { imageVia } from '../meta/muse.ts';
 import { sparkTier, sparkVia } from '../meta/spark.ts';
 import { configDir } from '../secrets.ts';
@@ -54,10 +54,18 @@ function tally(dir: string, since: string, credits?: string) {
   for (const line of fs.readFileSync(log, 'utf8').split('\n')) {
     if (!line) continue;
     try {
-      const c = JSON.parse(line) as { at: string; model: ModelName; hit: boolean; usd?: number; via?: string };
+      const c = JSON.parse(line) as { at: string; model: ModelName; hit: boolean; hash?: string; usd?: number; via?: string };
       if (c.hit) continue;
+      const via = callVia(dir, c);
+      // Muse Voice transcribing a take: Meta's, not an ElevenLabs call, so the ElevenLabs price is not put on it.
+      if (via === MUSE_VOICE) {
+        usd.all += c.usd ?? 0;
+        if (c.at >= since) usd.recent += c.usd ?? 0;
+        if (credits && c.at >= credits) usd.sinceCredits += c.usd ?? 0;
+        continue;
+      }
       // Answered by another model (Claude, Gemini through OpenRouter): not on Meta's bill, counted apart.
-      if (c.via && c.via !== 'contributor') {
+      if (via && via !== 'contributor') {
         usd.elsewhereCalls++;
         usd.elsewhereUsd += c.usd ?? 0;
         continue;

@@ -10,6 +10,7 @@ import { placeTrouble } from '../studio/trouble.ts';
 import { withThingEdits, WorldFiles } from '../world/files.ts';
 import { liveVoiceFailures } from '../sound/data.ts';
 import { Slug, World } from '../world/schema.ts';
+import { callVia } from '../meta/memo.ts';
 import { storyNeeds } from '../story/check.ts';
 import { ActionError, defineAction } from './registry.ts';
 
@@ -57,9 +58,9 @@ export function callCounts(dir: string, byVia = false): Record<string, number> {
   for (const line of fs.readFileSync(log, 'utf8').split('\n')) {
     if (!line) continue;
     try {
-      const call = JSON.parse(line) as { model: string; hit: boolean; via?: string };
-      // byVia: "model|via", so Studio names who answered (Claude standing in for Spark) as the live counts do.
-      const key = byVia ? `${call.model}|${typeof call.via === 'string' ? call.via : ''}` : call.model;
+      const call = JSON.parse(line) as { model: string; hit: boolean; hash?: string; via?: string };
+      // byVia: "model|via", so Studio names who answered (Claude standing in for Spark, Muse Voice transcribing) as the live counts do.
+      const key = byVia && !call.hit ? `${call.model}|${callVia(dir, call) ?? ''}` : call.model;
       if (!call.hit) counts[key] = (counts[key] ?? 0) + 1;
     } catch {}
   }
