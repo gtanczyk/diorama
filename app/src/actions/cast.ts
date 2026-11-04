@@ -89,6 +89,8 @@ defineAction({
         looksNow: fixes[c.key]?.looks ?? c.looks,
         fix: fixes[c.key] ?? null,
         figure: pic(`cast/${c.key}.png`),
+        // What the cut-out keeps beyond the body (cast_holds) and the share of its height the body takes.
+        cut: fs.existsSync(files.path('cast', c.key, 'cut.json')) ? files.readJson(files.path('cast', c.key, 'cut.json')) : null,
         face: faceStatus(files, c.key),
         painting: pic(`cast/${c.key}-painting.png`),
         rig: animationCurrent(files,c.key,'rig') && fs.existsSync(files.path('cast', c.key, 'rig.json')),
@@ -149,6 +151,23 @@ defineAction({
       if (anotherTake) f.take = (f.take ?? 0) + 1;
     });
     return ctx.jobs.start(slug, ['cast', slug, key], `cast ${key}`, ctx.by, prepare);
+  },
+});
+
+defineAction({
+  name: 'cast_holds',
+  description: 'Keep what a character holds or carries on their cut-out (a giant slice of toast over the head, a lantern, a net), however big: SAM finds each '
+    + 'thing by its name and it is cut out with them and walks with their hands. Without holds, what their description says they hold is used (read by Spark); '
+    + 'holds names the things yourself in a few words each ("slice of toast"), [] keeps nothing extra. Kept across rebuilds. Cuts the figure again from its '
+    + 'painting and makes its 2D walk again: no Muse calls, a few SAM calls. Use it when the person says the figure lost what it holds. '
+    + 'A 3D model and its sprites never hold anything (held things tear its rig): when the held thing is who they are, say so. Then play_reload. Runs as a job.',
+  input: z.object({ slug: Slug, key: z.string().min(1), holds: z.array(z.string().min(2).max(60)).max(4).optional() }),
+  job: true,
+  async run({ slug, key, holds }, ctx) {
+    const prepare = prepareFix(ctx, slug, key, (f) => {
+      if (holds) f.holds = holds;
+    });
+    return ctx.jobs.start(slug, ['rig', slug, key], `cut out ${key} with what they hold`, ctx.by, prepare);
   },
 });
 

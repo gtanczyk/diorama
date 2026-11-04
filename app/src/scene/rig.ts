@@ -7,6 +7,7 @@ import { emptyMask, maskArea, type Mask } from '../image/mask.ts';
 import { components, dilate, intersect, maskBox, subtract, union, unionAll } from '../image/raster.ts';
 import type { Memo } from '../meta/memo.ts';
 import { samFind } from '../meta/sam.ts';
+import { groundGaps, heldMask } from './held.ts';
 import { labelPixels, Part, silhouette, warpSheet } from './warp.ts';
 import type { PartName, Rig } from '../play/rig.ts';
 
@@ -162,7 +163,8 @@ export type RigBuild = { rig: Rig; parts: Record<string, Buffer>; issues: string
 /** Cut parts (the old rig), or the whole painting warped into a walk sheet (the default: nothing tears). */
 export type RigStyle = 'parts' | 'warp';
 
-export async function rigFigure(memo: Memo, key: string, painting: Buffer, style: RigStyle = 'warp'): Promise<RigBuild> {
+/** `holds`: what the character holds (scene/held.ts), found by SAM and walked with the hands that hold it. */
+export async function rigFigure(memo: Memo, key: string, painting: Buffer, style: RigStyle = 'warp', holds: string[] = []): Promise<RigBuild> {
   const png = await sharp(painting).png().toBuffer();
   const find = async (prompt: string) => (await samFind(memo, { label: `rig:${key}:${prompt}`, image: png, prompt })).map((f) => f.mask);
   const [people, arms, boots, legsFound, trousers, heads] = await Promise.all(['person', 'arm', 'boot', 'leg', 'trousers', 'head'].map(find));
@@ -180,6 +182,9 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer, style
   const ground = bottom - 1;
   const H = ground - top;
   const inPerson = (m: Mask) => intersect(m, person);
+  // What they hold, however big (a slice of toast wider than they are): part of the picture that walks.
+  const held = await heldMask(memo, key, png, person, holds);
+  const heldBox = held && maskBox(held);
 
   // Two boots, nearest-first by size; a figure in long trousers or a dress may show none.
   const feet = boots.map(inPerson).filter((b) => maskArea(b) > H * 2).sort((a, b) => maskArea(b) - maskArea(a)).slice(0, 2);
@@ -187,7 +192,9 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer, style
   const footless = (m: Mask) => feet.reduce((acc, f) => subtract(acc, f), m);
   // The lower body without the feet: SAM's trousers with the bare legs below them (rolled-up trousers, shorts,
   // a skirt), else every leg it found.
-  const legs = legsFound.map((l) => footless(inPerson(l))).filter((l) => maskArea(l) > H * 4).sort((a, b) => maskArea(b) - maskArea(a));
+  const shinsOf = legsFound.map((l) => footless(inPerson(l)));
+  // Short legs under big boots (a small figure holding something huge over its head) are allowed half the size.
+  const legs = (shinsOf.some((l) => maskArea(l) > H * 4) ? shinsOf.filter((l) => maskArea(l) > H * 4) : shinsOf.filter((l) => maskArea(l) > H * 2)).sort((a, b) => maskArea(b) - maskArea(a));
   const worn = trousers[0] && inPerson(trousers[0]);
   const lower = footless(worn ? legs.filter((l) => overlap(dilate(worn, 4), l) > 0).reduce((a, l) => union(a, l), worn) : unionAll(W, Hh, legs));
   if (maskArea(lower) < H * 4) throw new Error(`${key}: no legs found to rig`);
@@ -295,8 +302,8 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer, style
 
   // Room around the figure for swinging legs, then every part as its own RGBA image.
   const margin = Math.round(0.3 * H);
-  const crop = { x0: Math.max(0, px0 - margin), y0: Math.max(0, top - Math.round(0.05 * H)) };
-  const crop1 = { x1: Math.min(W, px1 + margin), y1: Math.min(Hh, bottom + 2) };
+  const crop = { x0: Math.max(0, Math.min(px0 - margin, heldBox?.[0] ?? W)), y0: Math.max(0, Math.min(top - Math.round(0.05 * H), heldBox?.[1] ?? Hh)) };
+  const crop1 = { x1: Math.min(W, Math.max(px1 + margin, heldBox?.[2] ?? 0)), y1: Math.min(Hh, bottom + 2) };
   const torsoPixels = Buffer.from(data);
   // The body behind the near arm, painted in from the colours around it.
   const behindArm = enclosed(torso, dilate(nearArm, 2));
@@ -314,7 +321,9 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer, style
   };
   if (style === 'warp') {
     // The whole painting, held things and all, each pixel labelled with the part whose bones pull it.
-    const whole = silhouette(data, person);
+    const whole = silhouette(data, held ? union(person, held) : person);
+    // The window of plain ground a thing held up in both hands closes with the arms stays see-through.
+    if (held) for (const gap of groundGaps(data, whole, union(person, held))) gap.bits.forEach((b, i) => b && (whole.bits[i] = 0));
     const labels = labelPixels(whole, [[Part.Body, person], [Part.FarLeg, far], [Part.NearLeg, near], [Part.FarBoot, farBoot], [Part.NearBoot, nearBoot], [Part.FarArm, farArm], [Part.NearArm, nearArm]], person);
     const [cw, chh] = placed.size;
     const image = Buffer.alloc(cw * chh * 4);

@@ -6,8 +6,8 @@ import { museEdit } from '../meta/muse.ts';
 import { askSparkJson } from '../meta/spark.ts';
 import { z } from 'zod';
 import { defineCommand, takeOption } from '../registry.ts';
-import { castBodies, cutHero, paintFigure, readBodies, type Who } from '../scene/cast.ts';
-import { samFind } from '../meta/sam.ts';
+import { castBodies, cutOut, findFigure, paintFigure, readBodies, type Who } from '../scene/cast.ts';
+import { heldMask, heldThings } from '../scene/held.ts';
 import { photoStanding } from '../scene/photo.ts';
 import { rigFigure } from '../scene/rig.ts';
 import { checkSheet } from '../scene/rig-check.ts';
@@ -64,14 +64,15 @@ defineCommand({
         return null;
       });
       if (!made) return;
-      const { painting, figure } = made;
+      const { painting, figure, share, holds } = made;
       bindExistingAnimation(files, who.key);
       files.write(files.path('cast', `${who.key}-painting.png`), painting);
       files.write(files.path('cast', `${who.key}.png`), figure);
+      writeCut(files, who.key, share, holds);
       markStyled(files, 'cast', who.key, style);
       // The same painting cut into parts, so the runtime can walk the figure.
       if (bodies[who.key]?.upright === false) return console.log(`${who.key}: ${files.path('cast', `${who.key}.png`)} · not upright: drawn as painted`);
-      await rigCast(files, who.key, painting);
+      await rigCast(files, who.key, painting, holds);
     }));
     for (const m of missing) console.log(`set aside, shown as a stand-in: ${m}`);
     console.log(`calls sent: muse ${files.memo.sent.muse}, sam ${files.memo.sent.sam}`);
@@ -83,9 +84,9 @@ defineCommand({
  * rig.json with the joints and how the walk measured. A walk that tears is kept but marked, and the game slides
  * the painted figure as one piece instead. Parts of an older cut-out rig are removed.
  */
-export async function rigCast(files: WorldFiles, key: string, painting: Buffer) {
+export async function rigCast(files: WorldFiles, key: string, painting: Buffer, holds: string[] = []) {
   try {
-    let { rig, parts, issues } = await rigFigure(files.memo, key, painting);
+    let { rig, parts, issues } = await rigFigure(files.memo, key, painting, 'warp', holds);
     rig.check = rig.sheet ? await checkSheet(rig, parts[rig.sheet.file]) : undefined;
     if (rig.check && !rig.check.ok) {
       // Try a separate neutral source for the warp; never overwrite the creator's painting.
@@ -96,7 +97,7 @@ export async function rigCast(files: WorldFiles, key: string, painting: Buffer) 
         const verdict = schema.parse(await askSparkJson(files.memo, { label: `rig-neutral-check:${key}`, schema, images: [painting,neutral], personal: true,
           prompt: 'Compare the original and proposed neutral standing character. Check identity, clothing, colours and proportions match; legs are visible and not already walking; every object held in the original remains complete and held in the same hand. If none is held, heldPreserved is true. Reply JSON {"matches":true,"neutral":true,"heldPreserved":true,"reason":"short explanation"}.' }));
         if (!verdict.matches || !verdict.neutral || !verdict.heldPreserved) throw new Error(verdict.reason || 'neutral pose did not preserve the original');
-        const candidate = await rigFigure(files.memo, key, neutral);
+        const candidate = await rigFigure(files.memo, key, neutral, 'warp', holds);
         candidate.rig.check = candidate.rig.sheet ? await checkSheet(candidate.rig, candidate.parts[candidate.rig.sheet.file]) : undefined;
         if (!candidate.rig.check?.ok) throw new Error(candidate.rig.check?.why ?? 'neutral walk did not pass');
         rig = candidate.rig; parts = candidate.parts; issues = [...issues, 'walk prepared from a verified neutral pose'];
@@ -121,22 +122,40 @@ export async function rigCast(files: WorldFiles, key: string, painting: Buffer) 
 
 export const rigAttemptFile = (files: WorldFiles, key: string) => files.path('cast', key, 'rig-attempt.json');
 
+/**
+ * cast/<key>/cut.json: what the cut-out keeps beyond the body (`holds`, SAM phrases) and the share of its height the
+ * body takes (`share`), so the game draws the body at its own height and a slice of toast held over it above.
+ */
+export const cutFile = (files: WorldFiles, key: string) => files.path('cast', key, 'cut.json');
+export function writeCut(files: WorldFiles, key: string, share: number, holds: string[]) {
+  files.write(cutFile(files, key), { share, holds });
+}
+
 defineCommand({
   name: 'rig',
-  usage: 'rig <slug> [key...]     make the walk again from the cast paintings already painted (no Muse; SAM answers are kept), and cut the figure out again so what it holds stays on',
+  usage: 'rig <slug> [key...]     make the walk again from the cast paintings already painted (no Muse; SAM answers are kept), and cut the figure out again so what it holds stays on (what the description says they hold, or cast/fixes.json holds)',
   async run(args) {
     const [slug, ...only] = args;
     if (!slug) throw new Error('usage: diorama rig <slug> [key...]');
     const files = new WorldFiles(slug);
+    const world = files.world();
     const bodies = readBodies(files, fs.existsSync);
+    const looksOf = new Map<string, string>([[world.hero.key, world.hero.looks], ...world.places.flatMap((p) => p.things.filter((t) => t.role === 'npc').map((t) => [t.key, t.looks] as [string, string])), ...players(files).map((p) => [p.key, p.looks] as [string, string])]);
     const keys = fs.readdirSync(files.path('cast')).filter((f) => f.endsWith('-painting.png')).map((f) => f.slice(0, -'-painting.png'.length)).filter((k) => !only.length || only.includes(k));
     for (const key of keys) {
-      if (bodies[key]?.upright === false) continue;
       const painting = fs.readFileSync(files.path('cast', `${key}-painting.png`));
-      const person = (await samFind(files.memo, { label: `figure:${key}`, image: painting, prompt: 'person' })).sort((a, b) => b.mask.bits.reduce((s, x) => s + x, 0) - a.mask.bits.reduce((s, x) => s + x, 0))[0];
-      if (person) files.write(files.path('cast', `${key}.png`), await cutHero(painting, person.mask));
-      await rigCast(files, key, painting);
+      const who = fixedLooks(files, { key, looks: looksOf.get(key) ?? '' });
+      const holds = await heldThings(files.memo, who);
+      const person = await findFigure(files.memo, who, painting);
+      if (person) {
+        const { figure, share } = await cutOut(painting, person.mask, await heldMask(files.memo, key, painting, person.mask, holds));
+        files.write(files.path('cast', `${key}.png`), figure);
+        writeCut(files, key, share, holds);
+        console.log(`${key}: cut out again${holds.length ? `, holding ${holds.join(', ')}` : ''}${share < 1 ? ` (the body is ${Math.round(share * 100)}% of its height)` : ''}`);
+      }
+      if (bodies[key]?.upright === false) continue;
+      await rigCast(files, key, painting, holds);
     }
-    console.log(`calls sent: sam ${files.memo.sent.sam}`);
+    console.log(`calls sent: spark ${files.memo.sent.spark}, sam ${files.memo.sent.sam}`);
   },
 });

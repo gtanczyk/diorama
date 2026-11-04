@@ -118,7 +118,10 @@ export function worldData(files: WorldFiles) {
       const walks = body?.upright !== false;
       // A creature has no legs for a 2D rig, but its own 3D model (no skeleton, model.json creature) hops and squashes.
       const creatureModel = model?.info.creature ? model : undefined;
-      return [key, { image: `cast/${f}`, ...(face && { face }), ...(body && { height: body.height }), ...(!walks && { upright: false }), ...(walks && rig && rig.check?.ok !== false ? { rig, parts: `cast/${key}` } : {}), ...(walks ? model && { model } : creatureModel && { model: creatureModel }), ...(walks && sheets && { sprites: sheets }) }];
+      // cast/<key>/cut.json (diorama cast, rig): the share of the cut-out's height the body takes when it holds something above it.
+      const cutAt = files.path('cast', key, 'cut.json');
+      const share = fs.existsSync(cutAt) ? Number((files.readJson(cutAt) as { share?: unknown }).share) : 1;
+      return [key, { image: `cast/${f}`, ...(share > 0 && share < 1 && { share }), ...(face && { face }), ...(body && { height: body.height }), ...(!walks && { upright: false }), ...(walks && rig && rig.check?.ok !== false ? { rig, parts: `cast/${key}` } : {}), ...(walks ? model && { model } : creatureModel && { model: creatureModel }), ...(walks && sheets && { sprites: sheets }) }];
     }));
   const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : null;
   // changes/<i>.png per place: how story.changes[i] looks once it holds.

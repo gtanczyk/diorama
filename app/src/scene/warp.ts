@@ -32,8 +32,12 @@ export function labelPixels(silhouette: Mask, masks: [Part, Mask][], person?: Ma
       const ring = dilate(c, 2);
       ring.bits.forEach((b, i) => b && !c.bits[i] && label[i] && touch.set(label[i], (touch.get(label[i]) ?? 0) + 1));
       if (!touch.size) continue;
-      const arm = [Part.NearArm, Part.FarArm].filter((a) => touch.has(a)).sort((a, b) => touch.get(b)! - touch.get(a)!)[0];
-      const part = arm ?? [...touch].sort((a, b) => b[1] - a[1])[0][0];
+      // Held up in both hands (a big slice of toast over the head), it goes with the body and so do both arms:
+      // they carry it, they do not swing away from it.
+      const arms = [Part.NearArm, Part.FarArm].filter((a) => touch.has(a)).sort((a, b) => touch.get(b)! - touch.get(a)!);
+      const carried = arms.length === 2 && maskArea(c) > 0.5 * maskArea(person);
+      if (carried) label.forEach((l, i) => (l === Part.NearArm || l === Part.FarArm) && (label[i] = Part.Body));
+      const part = carried ? Part.Body : arms[0] ?? [...touch].sort((a, b) => b[1] - a[1])[0][0];
       c.bits.forEach((b, i) => b && (label[i] = part));
     }
   }

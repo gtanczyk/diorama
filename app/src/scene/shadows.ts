@@ -24,6 +24,8 @@ export type Shadows = { mask: Mask; light?: Light; casters: CasterShadow[]; sour
 /** Darker than this share of the lit floor around it is shadow. */
 export const SHADOW_DARK = 0.74;
 const REF_CELL = 16;
+/** Dark floor over more than this share of the floor is its pattern, not shadow. */
+export const PATTERN_SHARE = 0.4;
 const REF_RADIUS = 6;
 
 /** The painting's luma, lightly blurred so plank grain and pebbles don't count. */
@@ -135,8 +137,14 @@ export async function findShadows(memo: Memo, label: string, painting: Buffer, f
     const contact = centroid(intersect(shadow, touch)) ?? [cx, b.baseY];
     measured.push({ thing: b.key, px: maskArea(shadow), ...measure(shadow, contact, height) });
   }
-  const mask = unionAll(W, H, kept);
-  const directed = measured.filter((m) => m.dir);
+  let mask = unionAll(W, H, kept);
+  let directed = measured.filter((m) => m.dir);
+  // "Shadow" over much of the floor is the floor's own pattern (a black-and-white checkerboard, dark tiles), not
+  // light: painted shadows cover a quarter of it at most. Nobody is darkened there; the light is Spark's.
+  if (maskArea(mask) > PATTERN_SHARE * Math.max(1, maskArea(floor))) {
+    mask = emptyMask(W, H);
+    directed = [];
+  }
   // Dark wet planks next to a teapot look like a shadow too: Spark says whether there is sun at all.
   const sun = await sparkLight(memo, `light:${label}`, askWith);
   if (!sun) return { mask: emptyMask(W, H), casters: measured, source: 'none' };

@@ -2,7 +2,8 @@ import { STYLE_REFERENCE_PROMPT } from '../world/style-reference.ts';
 // The hero and every NPC as one painted figure each: Muse paints them alone on a plain ground, SAM cuts them out.
 import sharp from 'sharp';
 import type { Mask } from '../image/mask.ts';
-import { maskBox } from '../image/raster.ts';
+import { maskBox, union } from '../image/raster.ts';
+import { bodyShare, groundGaps, heldMask, heldThings } from './held.ts';
 import { companions, silhouette } from './warp.ts';
 import type { Memo } from '../meta/memo.ts';
 import { museEdit, musePaint } from '../meta/muse.ts';
@@ -13,7 +14,8 @@ import { restyleFigurePrompt } from './restyle.ts';
 
 export const HERO_PX = 600;
 
-export type Who = { key: string; looks: string };
+/** `holds`: what they hold, as SAM phrases, when the person named it (cast/fixes.json); else read from `looks`. */
+export type Who = { key: string; looks: string; holds?: string[] };
 
 export function figurePrompt(world: World, who: Who): string {
   return `A single full-body character for a 2D point-and-click adventure game, standing in a relaxed walking-ready pose, seen from the side in three-quarter view, facing to the right. The whole figure is visible from the top of the head down to both feet, centred, about two thirds of the image tall.
@@ -25,19 +27,31 @@ Plain flat light grey background, no floor, no shadow, no other people, no props
 }
 
 /** The biggest instance SAM finds of the hero, as an RGBA PNG cropped to the figure and HERO_PX tall. */
-export async function cutHero(painting: Buffer, mask: Mask): Promise<Buffer> {
+export async function cutHero(painting: Buffer, mask: Mask, held?: Mask): Promise<Buffer> {
+  return (await cutOut(painting, mask, held)).figure;
+}
+
+/**
+ * The cut-out, and the share of its height the body takes (`share`, 1 unless something held stands above the head):
+ * `held` (scene/held.ts) is what SAM found of the things the description has in their hands, kept whatever its size.
+ */
+export async function cutOut(painting: Buffer, mask: Mask, held?: Mask): Promise<{ figure: Buffer; share: number }> {
   if (!maskBox(mask)) throw new Error('figure: the mask is empty');
   const { data, info } = await sharp(painting).resize(mask.width, mask.height, { fit: 'fill' }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   // SAM's person leaves out what they hold (a lantern, a net of fish) and leaves holes where it hangs over them.
   // ... and what floats beside them as part of who they are (a heart, the bubble they are in).
-  const whole = companions(data, silhouette(data, mask));
+  const body = held ? union(mask, held) : mask;
+  const whole = companions(data, silhouette(data, body));
+  // Held up in both hands, the thing closes a window of plain ground with the arms and head: it stays see-through.
+  if (held) for (const gap of groundGaps(data, whole, body)) gap.bits.forEach((b, i) => b && (whole.bits[i] = 0));
   for (let i = 0; i < whole.bits.length; i++) if (!whole.bits[i]) data[i * info.channels + 3] = 0;
   const [x0, y0, x1, y1] = maskBox(whole)!;
-  return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
+  const figure = await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
     .extract({ left: x0, top: y0, width: x1 - x0, height: y1 - y0 })
     .resize({ height: HERO_PX })
     .png()
     .toBuffer();
+  return { figure, share: bodyShare(mask, whole) };
 }
 
 /** For a photo of a real person standing whole in frame: same person, same pose and outline, so live footage can dissolve into the figure. */
@@ -79,12 +93,13 @@ Plain flat light grey background, no paper, no table, no written name, no floor,
  * that comes out sitting, lying or cut off is painted once more, as a seated painting makes a seated walker and a
  * 3D model with the chair grown into it.
  */
-export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, from?: { photo?: Buffer; standing?: boolean; drawing?: Buffer; concept?: Buffer; styleReference?: Buffer; restyle?: { painting: Buffer; was: string } }, upright = false): Promise<{ painting: Buffer; figure: Buffer }> {
+export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, from?: { photo?: Buffer; standing?: boolean; drawing?: Buffer; concept?: Buffer; styleReference?: Buffer; restyle?: { painting: Buffer; was: string } }, upright = false): Promise<{ painting: Buffer; figure: Buffer; share: number; holds: string[] }> {
   const edit = (args: Parameters<typeof museEdit>[1]) => museEdit(memo, from?.styleReference ? {
     ...args, prompt: args.prompt.replace('The LAST image is the creator-approved', 'The second-to-last image is the creator-approved') + '\nThe LAST image: ' + STYLE_REFERENCE_PROMPT,
     images: [...args.images, from.styleReference],
   } : args);
-  let fallback: { painting: Buffer; figure: Buffer; why: string } | undefined;
+  let fallback: { painting: Buffer; figure: Buffer; share: number; holds: string[]; why: string } | undefined;
+  const holds = await heldThings(memo, who);
   // A take SAM finds no one in (a drawing painted back as loose scribble) is painted once more before giving up.
   for (const t of [take, take + 1]) {
     const painting = from?.restyle
@@ -100,14 +115,9 @@ export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, 
         : (from?.styleReference ? await edit({ label: `figure:${who.key}`, prompt: figurePrompt(world, who), images: [], take: t }) : await musePaint(memo, { label: `figure:${who.key}`, prompt: figurePrompt(world, who), take: t }));
     const png = await sharp(painting).png().toBuffer();
     // Not every character is a person (a flock of pigeons, a cat): SAM is asked by their own description next.
-    let found: Awaited<ReturnType<typeof samFind>> = [];
-    for (const prompt of ['person', who.looks.split(/[,.;]/)[0].trim().split(/\s+/).slice(0, 6).join(' '), 'animal']) {
-      found = await samFind(memo, { label: `figure:${who.key}`, image: png, prompt });
-      if (found.length) break;
-    }
-    if (!found.length) continue;
-    const biggest = found.reduce((a, b) => (area(b.mask) > area(a.mask) ? b : a));
-    const made = { painting: png, figure: await cutHero(png, biggest.mask) };
+    const biggest = await findFigure(memo, who, png);
+    if (!biggest) continue;
+    const made = { painting: png, ...(await cutOut(png, biggest.mask, await heldMask(memo, who.key, png, biggest.mask, holds))), holds };
     const why = (await boxed(made.figure)) ?? (upright ? await notStanding(memo, who.key, made.figure, t) : undefined);
     if (!why) return made;
     console.log(`  ${who.key} take ${t}: the figure is not standing whole (${why}); painting it once more`);
@@ -115,9 +125,18 @@ export async function paintFigure(memo: Memo, world: World, who: Who, take = 0, 
   }
   if (fallback) {
     console.log(`  ${who.key}: kept a figure that is not standing whole (${fallback.why}); try another take (cast_redo anotherTake)`);
-    return { painting: fallback.painting, figure: fallback.figure };
+    return { painting: fallback.painting, figure: fallback.figure, share: fallback.share, holds };
   }
   throw new Error(`${who.key}: SAM found no one in the painting, two takes; try another take (cast_redo anotherTake)`);
+}
+
+/** The biggest one SAM finds of the character: as a person, else by its own description (a flock of pigeons, a cat), else as an animal. */
+export async function findFigure(memo: Memo, who: Who, png: Buffer) {
+  for (const prompt of ['person', who.looks.split(/[,.;]/)[0].trim().split(/\s+/).slice(0, 6).join(' '), 'animal']) {
+    const found = await samFind(memo, { label: `figure:${who.key}`, image: png, prompt });
+    if (found.length) return found.reduce((a, b) => (area(b.mask) > area(a.mask) ? b : a));
+  }
+  return undefined;
 }
 
 /**

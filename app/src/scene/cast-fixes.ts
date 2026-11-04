@@ -6,6 +6,8 @@ import type { WorldFiles } from '../world/files.ts';
 
 export const CastFixes = z.record(z.string(), z.object({
   looks: z.string().min(10).optional(),
+  /** What they hold, as short SAM phrases ("slice of toast"), kept on the cut-out whatever its size (cast_holds); [] keeps nothing. */
+  holds: z.array(z.string().min(2)).max(4).optional(),
   take: z.number().int().min(0).optional(),
   /** The person asked for a 3D model (cast_animate) though the story would not build one: the model step builds it every time. */
   animate: z.boolean().optional(),
@@ -25,7 +27,7 @@ export function readCastFixes(files: WorldFiles): CastFixes {
 }
 
 /** A character with the person's description in place of the world's. */
-export function fixedLooks<T extends { key: string; looks: string }>(files: WorldFiles, who: T): T {
-  const looks = readCastFixes(files)[who.key]?.looks;
-  return looks ? { ...who, looks } : who;
+export function fixedLooks<T extends { key: string; looks: string }>(files: WorldFiles, who: T): T & { holds?: string[] } {
+  const { looks, holds } = readCastFixes(files)[who.key] ?? {};
+  return { ...who, ...(looks && { looks }), ...(holds && { holds }) };
 }

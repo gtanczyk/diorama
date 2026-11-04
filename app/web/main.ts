@@ -35,7 +35,7 @@ type Data = {
   world: World;
   places: Record<string, { geometry: Geometry | null; painting: string | null; backdrop?: string; layers?: Layers; weather?: Weather; reactions?: Reactions; glows?: Glow[]; issue?: string }>;
   /** Figure per hero or NPC key: a cut-out image, and its rig when `diorama cast` could cut it into parts. */
-  cast: Record<string, { image: string; height?: number; upright?: boolean; face?: { dir: string; info: FaceDefinition }; rig?: Rig; parts?: string; model?: { dir: string; info: ModelInfo }; sprites?: { dir: string; info: SpriteInfo } }>;
+  cast: Record<string, { image: string; height?: number; upright?: boolean; share?: number; face?: { dir: string; info: FaceDefinition }; rig?: Rig; parts?: string; model?: { dir: string; info: ModelInfo }; sprites?: { dir: string; info: SpriteInfo } }>;
   story: Story | null;
   /** Index into story.changes → the painting as it looks once that change holds. */
   changes?: Record<string, string>;
@@ -70,7 +70,7 @@ export type SpriteInfo = {
 /** walk: the cells a walk steps through, without the ones the sprites step found off the gait (a crouch, a sit). */
 type Sheet = { file: string; yaw: number; stand: number; img: HTMLImageElement; gestures: string[]; walk: number[] };
 /** height: metres standing (a grown-up 1.62, a cat 0.3), so each is drawn at its own size; upright false: an animal, drawn as painted. */
-type Figure = { img: HTMLImageElement; face?: PaintedFace; faceInfo?: FaceDefinition; height?: number; upright?: boolean; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; sheet?: HTMLImageElement; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
+type Figure = { img: HTMLImageElement; face?: PaintedFace; faceInfo?: FaceDefinition; height?: number; upright?: boolean; share?: number; rig?: { rig: Rig; parts: Map<PartName, HTMLImageElement>; sheet?: HTMLImageElement; canvas: HTMLCanvasElement }; model?: Figure3D; sprites?: { info: SpriteInfo; sheets: Sheet[]; talk: Sheet[] } };
 /** y: the floor row the cut stands on, which sets how far it slides with parallax. */
 /** Things that float and ride the swell, by their names. */
 const FLOATS = /\b(boat|rowboat|dinghy|skiff|canoe|kayak|raft|ship|barge|punt|gondola|sampan|junk|ferry|trawler|yacht|sailboat)s?\b/i;
@@ -386,7 +386,7 @@ class Game {
     await Promise.all(Object.entries(this.data.cast).map(async ([key, cast]) => {
       const img = await loadImage(files(cast.image)).catch(() => undefined);
       if (!img) return;
-      const figure: Figure = { img, height: cast.height, upright: cast.upright };
+      const figure: Figure = { img, height: cast.height, upright: cast.upright, share: cast.share };
       if (cast.rig && cast.parts) {
         const parts = new Map<PartName, HTMLImageElement>();
         await Promise.all(cast.rig.parts.map(async (p) => parts.set(p.name, await loadImage(files(`${cast.parts}/${p.file}`)))));
@@ -2057,15 +2057,19 @@ class Game {
       // ?people=0: the place alone, for a landscape take; everyone keeps playing, just unseen.
       if (nobody) continue;
       if (who.npc) {
+        this.bodyTop = undefined;
         const drawn = this.drawWho(who, lit, 'body');
+        const bodyTop = this.bodyTop;
         this.drawn.push({ hot: who.npc, rect: drawn });
         const body = who.npc.npc?.body;
-        this.occlude(drawn, who.y, gone, body?.x, body && (body.foot ?? stepFootY(g, body.x, who.y)));
+        this.occlude(drawn, who.y, gone, body?.x, body && (body.foot ?? stepFootY(g, body.x, who.y)), bodyTop);
       } else {
+        this.bodyTop = undefined;
         const drawn = this.drawWho(who, lit, 'body');
+        const bodyTop = this.bodyTop;
         if (who.body === this.hero) rect = drawn;
         // The depth map goes by where the feet are drawn: on a stair's tread, not at the walker's row.
-        this.occlude(drawn, who.y, gone, who.body?.x, who.body && (who.body.foot ?? stepFootY(g, who.body.x, who.y)));
+        this.occlude(drawn, who.y, gone, who.body?.x, who.body && (who.body.foot ?? stepFootY(g, who.body.x, who.y)), bodyTop);
       }
     }
     burn();
@@ -2136,14 +2140,14 @@ class Game {
    * than the feet. Painted figures and painted things are equally lit and equally sharp; this occlusion is
    * the cue that puts the figure in front. ctx is already shifted for parallax.
    */
-  private separate(x: number, y: number, h: number, paint: (c: CanvasRenderingContext2D) => number) {
+  private separate(x: number, y: number, h: number, paint: (c: CanvasRenderingContext2D) => number, tall = h) {
     const { focus: d, g } = this.place;
     const feet = y - g.scale.horizonY;
     if (!d || separateScale <= 0 || feet < 4 || h < 8) return;
     const blur = h * SEPARATE_BLUR;
     const pad = Math.ceil(blur * 2.5 + h * SEPARATE_SHIFT);
-    const [bw, bh] = [Math.ceil(h * 1.2) + 2 * pad, Math.ceil(h * 1.15) + 2 * pad];
-    const [ox, oy] = [Math.round(bw / 2), Math.ceil(pad + h * 1.1)];
+    const [bw, bh] = [Math.ceil(Math.max(h * 1.2, tall * 1.2)) + 2 * pad, Math.ceil(tall + h * 0.15) + 2 * pad];
+    const [ox, oy] = [Math.round(bw / 2), Math.ceil(pad + tall + h * 0.1)];
     const c = this.sepCanvas;
     if (c.width < bw || c.height < bh) Object.assign(c, { width: Math.max(c.width, bw), height: Math.max(c.height, bh) });
     const cc = c.getContext('2d')!;
@@ -2399,6 +2403,10 @@ class Game {
     // A rig walks its legs; a plain cut-out (or the stand-in) only bobs and rocks as it slides.
     const bob = creature ? creature.lift * h : rig || model || sprites || !walking ? 0 : Math.abs(Math.sin(phase * Math.PI * 2)) * h * 0.025;
     const rock = creature ? creature.lean * (facing < 0 ? -1 : 1) : rig || model || sprites || !walking ? 0 : Math.sin(phase * Math.PI * 2) * 0.035;
+    // How far above the feet the drawn figure reaches: the body's height, or more when it holds something over
+    // its head (a walk sheet cut with it, or a cut-out's cut.json share). Scratch canvases and boxes are sized by it.
+    const tall = rig ? Math.max(h, (h * rig.rig.ground) / rig.rig.height) : !model && !sprites && figure?.img && figure.share ? h / Math.max(0.2, Math.min(1, figure.share)) : h;
+    this.bodyTop = y - h * 1.04;
     let rigCanvas: CanvasImageSource | undefined;
     if (rig) {
       const at = pose(rig.rig, phase, walking);
@@ -2446,10 +2454,12 @@ class Game {
         return Math.max(ax, rig.canvas.width - ax) * s;
       }
       const img = figure?.img;
-      const w = img ? (h * img.width) / img.height : h * 0.36;
+      // A cut-out holding something over its head (cut.json share): the body keeps its height, the thing rises above.
+      const ih = h / Math.max(0.2, Math.min(1, figure?.share ?? 1));
+      const w = img ? (ih * img.width) / img.height : h * 0.36;
       // A creature squashes and stretches from the feet up, keeping its volume.
       const [sx2, sy2] = creature ? [1 / Math.sqrt(creature.stretch), creature.stretch] : [1, 1];
-      if (img) c.drawImage(figure?.face?.draw(img, '$image', 0, 1, 1, articulation, faceTime) ?? img, (-w / 2) * sx2, -h * sy2, w * sx2, h * sy2);
+      if (img) c.drawImage(figure?.face?.draw(img, '$image', 0, 1, 1, articulation, faceTime) ?? img, (-w / 2) * sx2, -ih * sy2, w * sx2, ih * sy2);
       else drawFigure(c, h, colour);
       return w / 2;
     };
@@ -2467,7 +2477,7 @@ class Game {
       const breath = 0.5 + 0.5 * Math.sin(t * ((2 * Math.PI) / 3.6));
       const m = c.getTransform();
       const density = Math.max(1, Math.min(1.5, Math.hypot(m.a, m.b)));
-      return idleWarp(c, paintRaw, token, h, density, sway, k * 0.02 * breath, 0.009 * k * Math.sin(t * ((2 * Math.PI) / 4.1) + 0.7));
+      return idleWarp(c, paintRaw, token, h, density, sway, k * 0.02 * breath, 0.009 * k * Math.sin(t * ((2 * Math.PI) / 4.1) + 0.7), tall);
     };
     // How much of the floor under the feet lies in a painted shadow: the person stands in it too.
     const shaded = Math.max(this.shadeAt(x, y, h), this.fireShadeAt(x, y, h));
@@ -2507,7 +2517,7 @@ class Game {
     const bright = this.lightAt(x, y - h * 0.5) * (1 - shaded * strength) * breath;
     // A party member is edged in its player's colour (twice, so the edge reads at a glance on a busy painting).
     const edge = glow ? ` drop-shadow(0 0 ${Math.max(2, h * 0.008).toFixed(1)}px ${glow}) drop-shadow(0 0 ${Math.max(2, h * 0.008).toFixed(1)}px ${glow})` : '';
-    this.separate(x, y, h, paintRaw);
+    this.separate(x, y, h, paintRaw, tall);
     ctx.filter = `brightness(${bright.toFixed(2)})${lit ? ' drop-shadow(0 0 5px rgba(255,225,150,0.95))' : ''}${edge}`;
     const frameAt = ctx.getTransform();
     ctx.translate(x, y - bob);
@@ -2520,9 +2530,10 @@ class Game {
       ctx.setTransform(feetAt);
       this.rim(h, paint, bright * (1 - shaded), light);
     }
-    this.shadeOver(paint, frameAt, feetAt, [x - half - 4, y - h * 1.06 - bob - 4, x + half + 4, y + Math.max(3, h * 0.04) + 4]);
+    this.shadeOver(paint, frameAt, feetAt, [x - half - 4, y - tall * 1.06 - bob - 4, x + half + 4, y + Math.max(3, h * 0.04) + 4]);
     ctx.restore();
-    return [x - half - 2 + sx, y - h * 1.04 - bob - 2 + sy, x + half + 2 + sx, y + Math.max(3, h * 0.04) + sy];
+    this.bodyTop = y - h * 1.04 - bob - 2 + sy;
+    return [x - half - 2 + sx, y - tall * 1.04 - bob - 2 + sy, x + half + 2 + sx, y + Math.max(3, h * 0.04) + sy];
   }
 
   /**
@@ -2933,16 +2944,18 @@ class Game {
     if (!light) return 1;
     const c = Math.min(light.cols - 1, Math.max(0, Math.floor(x / LIGHT_CELL)));
     const r = Math.min(light.rows - 1, Math.max(0, Math.floor(y / LIGHT_CELL)));
-    let sum = 0;
-    let n = 0;
-    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+    // The light, not the colour of what lies there: a black tile, a dark table or a blue chair is dark paint in
+    // bright light, so the brighter cells around (the upper quartile of a 5 x 5) say how lit the spot is.
+    const around: number[] = [];
+    for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
       const rr = r + dr;
       const cc = c + dc;
       if (rr < 0 || cc < 0 || rr >= light.rows || cc >= light.cols) continue;
-      sum += light.luma[rr * light.cols + cc];
-      n++;
+      around.push(light.luma[rr * light.cols + cc]);
     }
-    return Math.min(1.1, Math.max(0.4, 0.35 + (0.65 * sum) / n / 150));
+    around.sort((a, b) => a - b);
+    const lit = around[Math.floor(around.length * 0.75)] ?? 150;
+    return Math.min(1.1, Math.max(0.4, 0.35 + (0.65 * lit) / 150));
   }
 
   /** For the explorer: where the depth map puts the painting in front of feet at (x, feetY), over rect (src/qa/probe.ts). */
@@ -2955,6 +2968,8 @@ class Game {
   private snap?: HTMLCanvasElement;
   private snapped = false;
   private depthMask?: HTMLCanvasElement;
+  /** The top of the body of the person drawn last (drawPerson), below anything held over their head. */
+  private bodyTop?: number;
   private depthPatch?: HTMLCanvasElement;
 
   /**
@@ -3035,8 +3050,10 @@ class Game {
   }
 
   /** Puts the painting back over the hero, column by column, wherever an occluder stands in front of him. */
-  private occlude(rect: [number, number, number, number], feetY: number, gone: Set<string>, feetX?: number, drawnFeetY?: number) {
-    if (this.depthOcclusion) this.occludeDepth(rect, drawnFeetY ?? feetY, feetX);
+  private occlude(rect: [number, number, number, number], feetY: number, gone: Set<string>, feetX?: number, drawnFeetY?: number, bodyTop?: number) {
+    // The depth map hides only the body: what is held up over the head (a giant slice of toast) reaches where the
+    // map holds the near ceiling and the wall's top, which never stand in front of someone on the floor.
+    if (this.depthOcclusion) this.occludeDepth(bodyTop !== undefined && bodyTop > rect[1] ? [rect[0], bodyTop, rect[2], rect[3]] : rect, drawnFeetY ?? feetY, feetX);
     const support = (k: string) => this.place.byKey.get(k);
     for (const cut of this.place.cuts) {
       if (cut.occ.thing && gone.has(cut.occ.thing)) continue;
@@ -3680,8 +3697,9 @@ let idleOwner: { token: object; density: number; half: number } | undefined;
  * sway x height x u^1.7 (u = height above the feet as a share of the figure), so the feet stay planted and the head
  * moves most; the slices above the hips lift by up to `lift` x height (the breath), and the head nods by `nod`.
  */
-function idleWarp(c: CanvasRenderingContext2D, paint: (c: CanvasRenderingContext2D) => number, token: object, h: number, density: number, sway: number, lift: number, nod: number): number {
-  const W = Math.ceil(h * 1.6 * density), H = Math.ceil(h * 1.35 * density);
+function idleWarp(c: CanvasRenderingContext2D, paint: (c: CanvasRenderingContext2D) => number, token: object, h: number, density: number, sway: number, lift: number, nod: number, tall = h): number {
+  // Wide and high enough for what the figure holds over its head too (tall), else it is cut off flat.
+  const W = Math.ceil(Math.max(h * 1.6, tall * 1.2) * density), H = Math.ceil((tall + h * 0.35) * density);
   const foot = Math.ceil(h * 0.15 * density);
   if (!(W >= 8 && H >= 8 && W <= 4096 && H <= 4096)) return paint(c);
   const scratch = (idleScratch ??= document.createElement('canvas'));
