@@ -132,7 +132,7 @@ function computeNext() {
   return nextVersion(packageVersion(), unreleased(parsed));
 }
 
-function check(files) {
+function check(files, base) {
   const parsed = parse(read(CHANGELOG));
   if (parsed.errors.length) {
     console.error(`${CHANGELOG} is malformed:\n${parsed.errors.map((e) => `  ${e}`).join('\n')}`);
@@ -143,12 +143,26 @@ function check(files) {
     console.error(`version drift: ${CHANGELOG} says ${newest ?? 'nothing released'}, package.json says ${packageVersion()}. Bump versions only through the release PR (release.mjs cut).`);
     return 1;
   }
-  const fine = !files ? `OK (${newest})` : !shippedTouched(files) ? 'no shipped change in this diff' : files.includes(CHANGELOG) ? 'moved with the change' : null;
-  if (fine) {
-    console.log(`${CHANGELOG}: ${fine}`);
+  if (!files) {
+    console.log(`${CHANGELOG}: OK (${newest})`);
     return 0;
   }
-  console.error(`This change touches shipped code (${SHIPPED.join(', ')}) but not ${CHANGELOG}.\nAdd one line under "## Unreleased" in ### Added, ### Fixed, ### Breaking, or ### Internal (no release).`);
+  if (!shippedTouched(files)) {
+    console.log(`${CHANGELOG}: no shipped change in this diff`);
+    return 0;
+  }
+  // A line this change added under Unreleased: compared with the base branch's changelog when given,
+  // so editing old notes or the intro does not count.
+  const entries = (section) => (section ? CATEGORIES.flatMap((c) => section.categories[c]) : []);
+  const before = new Set(base === null ? [] : entries(unreleased(parse(base))));
+  const added = entries(unreleased(parsed)).filter((e) => !before.has(e));
+  if (files.includes(CHANGELOG) && added.length) {
+    console.log(`${CHANGELOG}: Unreleased gained ${added.length} line(s)`);
+    return 0;
+  }
+  console.error(
+    `This change touches shipped code (${SHIPPED.join(', ')}) but adds no line under "## Unreleased" in ${CHANGELOG}.\nAdd one in ### Added, ### Fixed, ### Breaking, or ### Internal (no release).`,
+  );
   return 1;
 }
 
@@ -176,7 +190,9 @@ function main() {
   }
   if (command === 'check') {
     const files = option('files');
-    return void (process.exitCode = check(files === null ? null : files.split(/[,\n]/).map((f) => f.trim()).filter(Boolean)));
+    const baseRef = option('base');
+    const base = baseRef ? execFileSync('git', ['show', `${baseRef}:${CHANGELOG}`], { cwd: ROOT, encoding: 'utf8' }) : null;
+    return void (process.exitCode = check(files === null ? null : files.split(/[,\n]/).map((f) => f.trim()).filter(Boolean), base));
   }
   console.error('usage: release.mjs next | cut [--date YYYY-MM-DD] | notes <version> | check [--files a,b]');
   process.exitCode = 2;
