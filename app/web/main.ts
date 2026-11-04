@@ -1844,14 +1844,29 @@ class Game {
       // what is above the horizon is that same wall, so the band reaches the top: a door is not cut in two at eye level.
       const edge = this.place.edge;
       const top = this.place.far?.sky || this.place.far?.flats.length ? h : 0;
-      for (let c = 0; c < edge.length; c++) {
+      // Neighbouring columns whose edges lie within a row or two of each other slide the same to a fraction of a
+      // pixel, so they go down as one piece: ~150 full-height draws a frame were a big share of a slow laptop's frame.
+      for (let c = 0; c < edge.length; ) {
         const e = Math.round(edge[c]);
-        if (e <= h + 1) continue;
+        if (e <= h + 1) {
+          c++;
+          continue;
+        }
+        let n = 1;
+        let lo = e;
+        let hi = e;
+        while (c + n < edge.length) {
+          const f = Math.round(edge[c + n]);
+          if (f <= h + 1 || Math.max(hi, f) - Math.min(lo, f) > 2) break;
+          [lo, hi] = [Math.min(lo, f), Math.max(hi, f)];
+          n++;
+        }
         const x0 = c * g.cell;
-        const w = Math.min(g.cell + 1, W - x0);
+        c += n;
+        const w = Math.min(n * g.cell + 1, W - x0);
         if (w <= 0) break;
-        const [sx, sy] = shiftAt(g, p, e);
-        ctx.drawImage(backdrop, x0, top, w, e - top + 1, x0 + sx, top + sy, w, e - top + 1);
+        const [sx, sy] = shiftAt(g, p, (lo + hi) / 2);
+        ctx.drawImage(backdrop, x0, top, w, hi - top + 1, x0 + sx, top + sy, w, hi - top + 1);
       }
       this.place.clouds?.draw(ctx, this.time, this.place.weather?.w.wind ?? 0, (y) => shiftAt(g, p, y));
       this.drawWater(p);

@@ -144,6 +144,20 @@ export class Surf {
   }
 }
 
+const swells = new WeakMap<object, { src: Uint32Array; sw: number; sh: number; out: ImageData; o32: Uint32Array }>();
+/** The water texture's pixels (read once) and the w x h picture the swell is copied into. */
+function swellPixels(tex: CanvasImageSource, w: number, h: number) {
+  let b = swells.get(tex);
+  if (!b || b.out.width !== w || b.out.height !== h) {
+    const [sw, sh] = tex instanceof HTMLImageElement ? [tex.naturalWidth, tex.naturalHeight] : [(tex as HTMLCanvasElement).width, (tex as HTMLCanvasElement).height];
+    const src = new Uint32Array(pixelsOf(tex, sw, sh).data.buffer);
+    const out = new ImageData(w, h);
+    b = { src, sw, sh, out, o32: new Uint32Array(out.data.buffer) };
+    swells.set(tex, b);
+  }
+  return b;
+}
+
 /**
  * Still water swells: the texture is read in small tiles, each from a little aside and above or below (src/play
  * living.ts swellAt), so waves roll toward the viewer and the near paper heaves; crests catch a little light.
@@ -151,17 +165,27 @@ export class Surf {
 export function drawSwell(c: CanvasRenderingContext2D, tex: CanvasImageSource, w: number, h: number, t: number, storm: number) {
   const TW = 20;
   const TH = 4;
-  c.globalCompositeOperation = 'source-over';
-  c.globalAlpha = 1;
+  // The tiles are copied pixel by pixel into one picture put down at once: as ~9000 drawImage calls a frame they
+  // were most of the game's frame time, and a plain laptop or phone dropped to a few frames a second.
+  const b = swellPixels(tex, w, h);
+  const { src, sw, sh, o32 } = b;
   for (let y = 0; y < h; y += TH) {
     const u = y / Math.max(1, h);
+    const rows = Math.min(TH, h - y);
     for (let x = 0; x < w; x += TW) {
       const s = swellAt(x, u, t, storm);
-      const sy = Math.max(0, Math.min(h - TH, y + s.dy));
+      const sy = Math.max(0, Math.min(Math.min(h, sh) - TH, Math.round(y + s.dy)));
       // One px wider than the tile, so neighbours read from a hair apart never leave a seam.
-      c.drawImage(tex, Math.max(0, Math.min(w - TW - 1, x + s.dx)), sy, TW + 1, TH, x, y, TW + 1, TH);
+      const sx = Math.max(0, Math.min(Math.min(w, sw) - TW - 1, Math.round(x + s.dx)));
+      const n = Math.min(TW + 1, w - x, sw - sx);
+      if (n <= 0 || sy < 0) continue;
+      for (let r = 0; r < rows; r++) {
+        const a = (sy + r) * sw + sx;
+        o32.set(src.subarray(a, a + n), (y + r) * w + x);
+      }
     }
   }
+  c.putImageData(b.out, 0, 0);
   // The crests catch the light and the troughs darken a touch, so a smooth painted sea is seen to heave.
   c.globalCompositeOperation = 'soft-light';
   for (let y = 0; y < h; y += TH) {
