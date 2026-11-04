@@ -54,7 +54,11 @@ function effects(files: WorldFiles): SoundData | undefined {
   const plan = SoundPlan.parse(files.readJson(planFile));
   const made = SoundManifest.parse(files.readJson(madeFile)).sounds;
   const wanted = new Map(jobsOf(plan, readSoundFixes(files)).map((j) => [j.id, j.prompt]));
-  const have = (id: string) => (made[id] && made[id].prompt === wanted.get(id)
+  // A take made from an older wording of its prompt still plays until a new one is made: the plan changing (a
+  // sound fix, a re-plan) once left a finished world with no music and no beds at all, silent instead of close.
+  // Only for music, beds and loops (mood under the game); a one-shot or a step made for other words may be the
+  // wrong sound for its moment, so those wait for their new take.
+  const have = (id: string) => (made[id] && (made[id].prompt === wanted.get(id) || (wanted.has(id) && ['music', 'bed', 'loop'].includes(made[id].kind)))
     && !made[id].flags.some((f) => /does not loop well|still hissy|only \d+ footstep/.test(f))
     && fs.existsSync(files.path(made[id].file)) ? id : undefined);
   const data: SoundData = {

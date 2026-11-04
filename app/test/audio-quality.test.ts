@@ -210,6 +210,16 @@ test('game data excludes old mismatched effects and rejected loops while preserv
   expect(spokenLine(data, 'Cześć!', 'owl')?.file).toBe('owl.mp3');
 });
 
+test('game data keeps music made from an older wording of its prompt, so a re-planned world is not silent', async () => {
+  await scene(root);
+  const files = new WorldFiles('w', root);
+  files.write(files.path('sound.json'), plan('bell and envelope'));
+  const entry = { kind: 'music', level: 2, seconds: 27, source: 'musicgen', flags: [], quality: 'final' };
+  files.write(files.path('sound/sounds.json'), { sounds: { music: { ...entry, file: 'sound/music.mp3', prompt: 'an older music prompt' } } });
+  files.write(files.path('sound/music.mp3'), Buffer.from('kept'));
+  expect(soundData(files)!.music).toBe('music');
+});
+
 test('a laugh is no words to transcribe: its first clean take is used, flagged, without listening back', async () => {
   vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response('audio')));
   vi.mocked(transcribe).mockResolvedValue('');
