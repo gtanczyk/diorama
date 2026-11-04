@@ -40,3 +40,16 @@ test('an automatic box correction cannot make the same wrong mask pass by removi
   vi.mocked(checkMasks).mockRejectedValueOnce(new Error('unavailable'));
   await expect(run()).rejects.toThrow('mask check failed');
 });
+
+test('a way out cut as its opening is not a wrong mask when Spark sees through it, inside the doorway it boxes', async () => {
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'diorama-mask-check-'));
+  const { world, geometry } = await scene(path.join(root, 'worlds'));
+  const place = { ...world.places[0], things: [{ key: 'door', role: 'exit' as const, looks: 'a glowing doorway', to: 'room' }] };
+  const thing = { key: 'door', role: 'exit' as const, kind: 'wall' as const, box: [108, 451, 317, 750] as [number, number, number, number], stand: [500, 620] as [number, number], mask: 'masks/door.png' };
+  const notes = (box: [number, number, number, number]) => ({ things: { door: { coarse: false, source: 'sam-box', check: { ok: false, seen: 'a desk and servers seen through the doorway', box } } }, floors: { floor: { coarse: false, source: 'sam-text', iouLayout: 1 } } });
+  const through = verifyPlace(place as never, { ...geometry, things: [thing] }, notes([45, 150, 362, 750]));
+  expect(through.errors.map((e) => e.code)).not.toContain('MASK_WRONG');
+  expect(through.flags.map((f) => f.code)).toContain('MASK_DOUBT');
+  // Spark pointing somewhere else is still a wrong mask.
+  expect(verifyPlace(place as never, { ...geometry, things: [thing] }, notes([700, 150, 1000, 750])).errors.map((e) => e.code)).toContain('MASK_WRONG');
+});

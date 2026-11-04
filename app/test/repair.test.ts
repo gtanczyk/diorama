@@ -37,7 +37,7 @@ test('the prompt names each place with its errors and the limits from the brief'
   const text = repairPrompt(job());
   expect(text).toContain('przystan-barek: FLOOR_UNREACHABLE 0');
   expect(text).toMatch(/place_view/);
-  expect(text).toMatch(/at most three fixes a place/);
+  expect(text).toMatch(/after three failed fixes of a place take a different path/);
 });
 
 test('a completed build with missing animation wakes one repair turn without calling the build failed',()=>{

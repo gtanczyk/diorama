@@ -22,19 +22,11 @@ async function fixPlace(ctx: ActionContext, slug: string, place: string, from: '
   const dir = path.join(ctx.root, slug);
   const blocked = agentBlocked(dir, ctx.by, place);
   if (blocked) throw new ActionError(423, blocked);
-  // The agent's repair limit: after three fixes in a row that left the place unplayable, it is the person's turn.
-  if (ctx.by === 'agent') {
-    const since = new Date(Date.now() - 30 * 60_000).toISOString();
-    const tries = ctx.jobs.list(slug).filter((j) => j.by === 'agent' && j.args.includes('--place') && j.args[j.args.indexOf('--place') + 1] === place && (j.queuedAt ?? '') >= since);
-    const lastOk = tries.findLastIndex((j) => j.state === 'done');
-    if (tries.slice(lastOk + 1).filter((j) => j.state === 'failed').length >= 3) {
-      throw new ActionError(429, `three fixes of ${place} in a row left it unplayable: stop here and tell the person what you tried and what you would do next`);
-    }
-  }
+  const note = ctx.by === 'agent' ? repairGuard(ctx, slug, place, label, from) : undefined;
   const placeDir = path.join(dir, 'places', place);
   const needs = { layout: null, paint: 'blockin.png', masks: 'painting.png', derive: 'masks.json' }[from];
   if (needs && !fs.existsSync(path.join(placeDir, needs))) throw new ActionError(404, `${slug}/${place} has no ${needs} yet: build it first`);
-  return ctx.jobs.start(slug, ['build', slug, '--from', from, '--to', 'verify', '--place', place], `${label} · ${place}`, ctx.by, () => {
+  const job = ctx.jobs.start(slug, ['build', slug, '--from', from, '--to', 'verify', '--place', place], `${label} · ${place}`, ctx.by, () => {
     // The job snapshots first, then changes its source. Queued fixes must not change a running build.
     fs.mkdirSync(placeDir, { recursive: true });
     const fixes = readCorrections(placeDir);
@@ -42,6 +34,32 @@ async function fixPlace(ctx: ActionContext, slug: string, place: string, from: '
     writeCorrections(placeDir, Corrections.parse(fixes));
     fs.rmSync(path.join(placeDir, 'verify.json'), { force: true });
   }, addedThing ? { place, key: addedThing } : undefined);
+  return note ? { ...job, note } : job;
+}
+
+/** Fixes that repaint or relayout cost a Muse call; cheap ones only rerun SAM and the walk grid. */
+const COSTLY = new Set(['layout', 'paint']);
+
+/**
+ * The agent's repair guardrail. A streak of fixes that left the place unplayable does not stop the agent: it steers it.
+ * After three, a fix that already failed in the streak is refused (it would fail the same way) and a new path goes
+ * ahead with a short reminder; after six, costly repaints and relayouts wait for the person, while cheap fixes stay open.
+ */
+function repairGuard(ctx: ActionContext, slug: string, place: string, label: string, from: string): string | undefined {
+  const since = new Date(Date.now() - 30 * 60_000).toISOString();
+  const tries = ctx.jobs.list(slug).filter((j) => j.by === 'agent' && j.args.includes('--place') && j.args[j.args.indexOf('--place') + 1] === place && (j.queuedAt ?? '') >= since);
+  const lastOk = tries.findLastIndex((j) => j.state === 'done');
+  const failed = tries.slice(lastOk + 1).filter((j) => j.state === 'failed');
+  if (failed.length < 3) return undefined;
+  const tried = [...new Set(failed.map((j) => j.label.replace(` · ${place}`, '')))];
+  const paths = 'other paths: mask_brush (paint or erase a thing\'s mask by hand), floor_cells (add or take back 60 px floor cells), stand_set or hero_start_set, thing_remove, corrections_clear of a fix that made it worse, or ask_person';
+  if (tried.includes(label)) {
+    throw new ActionError(429, `${place}: "${label}" already failed in this streak (${failed.length} fixes in a row left it unplayable: ${tried.join(', ')}). Do not repeat it; look with place_view (walk, masks) and take a different path. ${paths}.`);
+  }
+  if (failed.length >= 6 && COSTLY.has(from)) {
+    throw new ActionError(429, `${place}: ${failed.length} fixes in a row left it unplayable (${tried.join(', ')}). A repaint or relayout now costs credits on a guess: ask_person first, or keep to the cheap fixes. ${paths}.`);
+  }
+  return `${failed.length} fixes of ${place} in a row left it unplayable (${tried.join(', ')}); this one is a new path. Check place_status after it ends; if it fails too, tell the person briefly what you tried.`;
 }
 
 const thingOf = (c: Corrections, key: string) => (c.things[key] ??= { strokes: [] });

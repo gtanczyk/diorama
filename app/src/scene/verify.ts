@@ -93,6 +93,10 @@ export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates:
       // of thing: a doubt about details ("but no long rays in its mask", when the painting has none), not a wrong
       // mask. Brushing a disc of sky onto the mask to please it only gave the thing a round outline.
       if (check.box && check.seen && rectIou(check.box, t.box) >= 0.6 && sameKind(check.seen, thing.key, thing.looks)) flags.push({ code: 'MASK_DOUBT', key: thing.key, detail: `Spark sees ${seen} in its mask, where the mask is` });
+      // A way out in a wall is cut as the opening its frame holds, and Spark judges the opening by what shows through
+      // it (green-code-hall: "a desk and servers seen through the doorway"). When the opening lies inside the box
+      // Spark gives the doorway, the mask is the way out as meant: a doubt to look at, not a mask to fix again.
+      else if (check.box && thing.role === 'exit' && t.kind === 'wall' && inside(t.box, check.box) >= 0.9) flags.push({ code: 'MASK_DOUBT', key: thing.key, detail: `Spark sees ${seen} in its opening, inside the doorway at [${check.box.join(', ')}]` });
       // Spark points to where the thing really is: the mask is wrong for sure, whatever the thing's role.
       else if (check.box) errors.push({ code: 'MASK_WRONG', key: thing.key, detail: `Spark sees ${seen} in its mask; it is at [${check.box.join(', ')}]`, box: check.box });
       // Spark sees no such thing anywhere, and what it sees is not even the same kind of thing: it was never
@@ -153,4 +157,12 @@ export function verifyPlace(place: Place, g: Geometry, notes: MaskNotes, plates:
 
   for (const line of g.flagged ?? []) flags.push({ code: 'DERIVE', detail: line });
   return { ok: errors.length === 0, errors, flags };
+}
+
+/** How much of rect a lies inside rect b, 0 to 1. */
+function inside(a: readonly number[], b: readonly number[]): number {
+  const w = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
+  const h = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+  const area = (a[2] - a[0]) * (a[3] - a[1]);
+  return area > 0 ? (w * h) / area : 0;
 }

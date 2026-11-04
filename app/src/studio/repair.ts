@@ -19,7 +19,7 @@ export function repairPrompt(job: Job): string {
   if (job.unplayable?.length) {
     const places = job.unplayable.map((u) => `- ${u.place}: ${u.errors.join('; ') || 'see place_status'}`).join('\n');
     return `[Studio] The build "${job.label}" ended with places that are not playable, and its free fixes did not help:\n${places}\n`
-      + 'Repair them as your brief says: place_status and place_view first, then the playbook\'s fix tools in order, at most three fixes a place, '
+      + 'Repair them as your brief says: place_status and place_view first, then the playbook\'s fix tools in order, after three failed fixes of a place take a different path rather than repeating one, '
       + 'and ask me before the last resort. Then tell me in two sentences what you fixed and what is left for me.' + animation;
   }
   const tail = job.tail.slice(-15).map((l) => `  ${l}`).join('\n');

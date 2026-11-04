@@ -273,7 +273,7 @@ test('Fix it rebuilds a place from the step it never got past, and hands a built
   await expect(runAction('place_fix', { slug: 'w', place: 'dock' }, ctx('agent'))).rejects.toThrow(/playbook/);
 });
 
-test('the agent gets three fixes of a place that leave it unplayable; then it must hand over to the person', async () => {
+test('after three fixes of a place that leave it unplayable the agent may not repeat one, but may take a new path', async () => {
   const { ctx, jobs } = world();
   process.env.FAKE_FAIL = '1';
   try {
@@ -281,7 +281,12 @@ test('the agent gets three fixes of a place that leave it unplayable; then it mu
       const job = (await runAction('floor_cells', { slug: 'w', place: 'dock', floor: 'deck', add: [`C${i + 1}`] }, ctx('agent'))) as { id: string };
       expect((await jobs.wait(job.id)).state).toBe('failed');
     }
-    await expect(runAction('floor_cells', { slug: 'w', place: 'dock', floor: 'deck', add: ['C9'] }, ctx('agent'))).rejects.toThrow(/tell the person/);
+    // The same fix again would fail the same way: refused, with other paths named.
+    await expect(runAction('floor_cells', { slug: 'w', place: 'dock', floor: 'deck', add: ['C9'] }, ctx('agent'))).rejects.toThrow(/already failed in this streak.*mask_brush/);
+    // A different path goes ahead, with a short reminder.
+    const brush = (await runAction('mask_brush', { slug: 'w', place: 'dock', layer: 'floor', key: 'deck', strokes: [{ mode: 'add', radius: 20, points: [[10, 10], [40, 40]] }] }, ctx('agent'))) as { id: string; note?: string };
+    expect(brush.note).toMatch(/3 fixes of dock in a row.*new path/);
+    expect((await jobs.wait(brush.id)).state).toBe('failed');
     // The person is never held back.
     await runAction('floor_cells', { slug: 'w', place: 'dock', floor: 'deck', add: ['C9'] }, ctx('user'));
   } finally {
