@@ -32,7 +32,7 @@ npm run doctor -- --now        # before building in front of people: is the netw
 npm run studio                 # the GUI
 npm run build -- <slug> "<idea>"
 npm run play -- <slug>
-npm run publish -- <slug>
+npm run pages -- <slug>        # diorama publish (npm keeps the script name publish for itself)
 npm run export -- <slug> --zip
 npm run browsers               # Playwright's Chromium, for explore, playthrough and sprites
 npm run diorama -- <command>   # any other command, e.g. npm run diorama -- masks <slug>

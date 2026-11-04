@@ -42,7 +42,7 @@
     "studio": "node app/bin/diorama.mjs studio",
     "build": "node app/bin/diorama.mjs build",
     "play": "node app/bin/diorama.mjs play",
-    "publish": "node app/bin/diorama.mjs publish",
+    "pages": "node app/bin/diorama.mjs publish",
     "export": "node app/bin/diorama.mjs export",
     "browsers": "node app/bin/diorama.mjs browsers",
     "typecheck": "tsc --noEmit -p app && tsc --noEmit -p app/web && tsc --noEmit -p app/studio",
