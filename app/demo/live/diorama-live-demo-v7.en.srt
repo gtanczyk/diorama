@@ -1,0 +1,145 @@
+1
+00:00:01,400 --> 00:00:03,990
+20 minutes ago this game didn't exist.
+
+2
+00:00:04,040 --> 00:00:07,120
+My daughter drew it on two cards.
+
+3
+00:00:11,210 --> 00:00:15,410
+Hello, I'm Grzegorz.
+I'm from Gdańsk, Poland.
+
+4
+00:00:15,750 --> 00:00:17,520
+I would like to show you Diorama.
+
+5
+00:00:17,570 --> 00:00:23,400
+What is Diorama? Diorama lets you to build
+a world, a world you can interact with
+
+6
+00:00:23,450 --> 00:00:28,150
+and play it as a game, as
+a point-and-click game.
+
+7
+00:00:32,140 --> 00:00:34,680
+Those cards are drawn by my daughter.
+
+8
+00:00:36,060 --> 00:00:39,060
+First picture, picture,
+
+9
+00:00:40,430 --> 00:00:47,170
+Take a photo.
+So make me a nice game out of this.
+
+10
+00:00:47,390 --> 00:00:50,750
+So let's click build.
+This is the Winky cat.
+
+11
+00:00:50,990 --> 00:00:54,230
+Okay, the llama, Banana Bob.
+
+12
+00:00:56,820 --> 00:00:59,880
+From here Diorama builds it all.
+
+13
+00:01:00,020 --> 00:01:05,420
+The story, the painted places, the
+cutouts, the character and their voices.
+
+14
+00:01:09,130 --> 00:01:17,030
+You can see here that using SAM we were
+able to actually select some objects.
+
+15
+00:01:17,130 --> 00:01:23,190
+So for this one we have the Muse Image
+had to generate front, back, side,
+
+16
+00:01:24,070 --> 00:01:27,810
+other side as well. And now
+we have the model actually.
+
+17
+00:01:27,930 --> 00:01:30,830
+It's very nice.
+Ah, you can see here the depth.
+
+18
+00:01:31,190 --> 00:01:34,400
+So depth is important for various reasons.
+
+19
+00:01:34,450 --> 00:01:38,220
+We are using it for walking, but
+not only for various visual effects.
+
+20
+00:01:38,270 --> 00:01:43,240
+So checks is also an important part because
+the workflow is actually trying to play
+
+21
+00:01:43,290 --> 00:01:47,010
+the game, whether it's possible to click
+through things, walk through the world.
+
+22
+00:01:57,010 --> 00:01:58,810
+Ooh, shiny! I'll keep it safe.
+
+23
+00:02:02,310 --> 00:02:03,510
+Oh, hello, little friend.
+
+24
+00:02:04,030 --> 00:02:06,950
+I'm Winky. The sunny
+hill is too quiet today.
+
+25
+00:02:07,350 --> 00:02:08,550
+Will you help me?
+
+26
+00:02:12,160 --> 00:02:16,060
+And let's make a prompt. I
+will say I want this cat.
+
+27
+00:02:20,620 --> 00:02:24,760
+Make this cat house yellow.
+
+28
+00:02:31,350 --> 00:02:35,180
+All the objects you can see in this game
+were actually hand drawn by the children
+
+29
+00:02:35,230 --> 00:02:39,230
+and not inside detail. It's very nice.
+
+30
+00:02:39,410 --> 00:02:44,950
+I recommend Diorama. Thanks for
+watching and enjoy your day.
+
+31
+00:02:45,370 --> 00:02:49,990
+A few drawings and one sentence,
+a game you can play and share.
+
+32
+00:02:50,230 --> 00:02:51,490
+That's Diorama.
