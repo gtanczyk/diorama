@@ -4,11 +4,12 @@ import { mouthAt, type LipSync } from '../src/play/lipsync.ts';
 import { personPx, type GeoThing, type Geometry } from '../src/play/geometry.ts';
 import { levelGain, placeSound, spokenLine, zoneAt, type SoundData } from '../src/play/sound.ts';
 import { holds, type State } from '../src/story/engine.ts';
+import { Synth } from './synth.ts';
 
 /** What the mixer reads from the game each frame. */
 export type Listened = {
   data: { sound?: SoundData; world?: { hero: { key: string } } };
-  place?: { key: string; g: Geometry; hots: Array<{ thing: GeoThing }> };
+  place?: { key: string; g: Geometry; hots: Array<{ thing: GeoThing }>; weather?: { w: { fall: string; strength: number } }; water?: unknown };
   hero: { x: number; y: number; phase: number; path: unknown[] };
   state: State;
   viewX: number;
@@ -28,6 +29,7 @@ export class Mixer {
   private master = this.ctx.createGain();
   private musicBus = this.ctx.createGain();
   private voiceBus = this.ctx.createGain();
+  private synth = new Synth(this.ctx, this.musicBus, this.master);
   private limiter = new DynamicsCompressorNode(this.ctx, { threshold: -14, knee: 8, ratio: 8, attack: 0.004, release: 0.25 });
   private buffers = new Map<string, AudioBuffer>();
   private loading = new Map<string, Promise<AudioBuffer | undefined>>();
@@ -113,6 +115,12 @@ export class Mixer {
   /** A new place: its bed and loops fade in, the last place's fade out; the music carries on. */
   async enter(place: string) {
     const sound = this.sound;
+    // No music of its own (none made, or every take rejected): a quiet one made here. No bed for the place: its
+    // rain and its sea, from what the page already knows of it.
+    if (!sound?.music) this.synth.startMusic();
+    const at = this.game.place?.key === place ? this.game.place : undefined;
+    const bedless = !sound?.places[place]?.bed;
+    this.synth.ambience(bedless && at?.weather?.w.fall === 'rain' ? at.weather.w.strength : 0, bedless && !!at?.water);
     if (!sound) return;
     // Everything loads on the first place, so later one-shots and footsteps are ready when they fire.
     if (!this.loading.size) for (const id of Object.keys(sound.files)) void this.buffer(id);
