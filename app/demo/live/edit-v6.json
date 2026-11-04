@@ -1,0 +1,312 @@
+{
+"phone": "phone.mp4",
+"screen": "screen.mp4",
+"offset": 60.55,
+"clock": "screen",
+"boards": "boards",
+"vhs": false,
+"vo": [
+{
+"src": "vo/vo1-fix.wav",
+"shot": 0,
+"at": 0.6
+},
+{
+"src": "vo/vo2-fix.wav",
+"shot": 10,
+"at": 0.4
+},
+{
+"src": "vo/vo3-fix.wav",
+"shot": 24,
+"at": 0.3
+}
+],
+"shots": [
+{
+"view": "screen",
+"from": 0.8,
+"to": 8.8,
+"src": "broll/cat-play.mp4"
+},
+{
+"view": "board",
+"board": "intro",
+"dur": 2.5
+},
+{
+"view": "phone",
+"from": 5.2,
+"to": 11.95,
+"caption": "Grzegorz Tańczyk, Gdańsk"
+},
+{
+"view": "phone",
+"from": 20.5,
+"to": 31.6
+},
+{
+"view": "board",
+"board": "idea",
+"dur": 2.5
+},
+{
+"view": "phone",
+"from": 35.4,
+"to": 38.9,
+"caption": "Two cards drawn by his daughter"
+},
+{
+"view": "phone",
+"from": 45.5,
+"to": 52.2,
+"caption": "A photo of each card"
+},
+{
+"view": "screen",
+"from": 66.85,
+"to": 73.95,
+"crop": [
+150,
+90,
+1760,
+990
+],
+"caption": "One sentence: make me a nice game out of this"
+},
+{
+"view": "screen",
+"from": 201.5,
+"to": 206.9,
+"crop": [
+150,
+90,
+1760,
+990
+],
+"caption": "The cast, painted from the cards",
+"by": "Muse Image"
+},
+{
+"view": "board",
+"board": "build",
+"dur": 2.5
+},
+{
+"view": "screen",
+"from": 265,
+"to": 421,
+"speed": 13,
+"bed": "broll/music.mp3",
+"crop": [
+150,
+90,
+1760,
+990
+],
+"caption": "Story, plan, painting",
+"by": "Muse Spark · Muse Image"
+},
+{
+"view": "screen",
+"from": 500.7,
+"to": 509.1,
+"crop": [
+150,
+90,
+1760,
+990
+],
+"caption": "Cuts out everything you can click",
+"by": "SAM 3.1"
+},
+{
+"view": "screen",
+"from": 631.3,
+"to": 642.85,
+"crop": [
+150,
+90,
+1760,
+990
+],
+"caption": "Four sides, then a 3D model",
+"by": "Muse Image · TRELLIS"
+},
+{
+"view": "screen",
+"crop": [
+150,
+90,
+1760,
+990
+],
+"caption": "A depth map: how far each pixel is",
+"from": 685.0,
+"to": 694.65
+},
+{
+"view": "screen",
+"from": 747.2,
+"to": 755.95,
+"crop": [
+150,
+90,
+1760,
+990
+],
+"caption": "A bot plays every place to check it"
+},
+{
+"view": "screen",
+"from": 2,
+"to": 12,
+"speed": 2,
+"src": "storygraph.mp4",
+"bed": "broll/music.mp3",
+"bedFrom": 12,
+"crop": [
+680,
+140,
+1220,
+940
+],
+"caption": "The story as a map: places, locks, endings",
+"by": "Muse Spark"
+},
+{
+"view": "board",
+"board": "play",
+"dur": 2.5
+},
+{
+"view": "screen",
+"from": 8,
+"to": 23,
+"src": "broll/cat-play.mp4",
+"caption": "Every character speaks",
+"by": "ElevenLabs"
+},
+{
+"view": "board",
+"board": "change",
+"dur": 2.5
+},
+{
+"view": "screen",
+"from": 1338.7,
+"to": 1351.5,
+"crop": [
+150,
+90,
+1760,
+990
+],
+"caption": "A snip of the picture, one sentence",
+"by": "Muse Code"
+},
+{
+"view": "screen",
+"from": 1,
+"to": 7,
+"src": "broll/cat-yellow.mp4",
+"caption": "Repainted, the rest kept",
+"by": "Muse Image"
+},
+{
+"view": "tv",
+"from": 1548.1,
+"to": 1554.6,
+"crop": [
+240,
+80,
+1160,
+700
+],
+"caption": "A kindergarten: 25 drawings, one game"
+},
+{
+"view": "phone",
+"from": 1575.1,
+"to": 1578.7
+},
+{
+"view": "phone",
+"from": 1592.8,
+"to": 1596.8
+},
+{
+"view": "screen",
+"from": 2,
+"to": 3.5,
+"src": "broll/w-harbour.mp4",
+"bed": "broll/music.mp3",
+"bedFrom": 30.0,
+"bedVolume": 0.6,
+"caption": "Made with Diorama this week"
+},
+{
+"view": "screen",
+"from": 2,
+"to": 3.5,
+"src": "broll/w-star.mp4",
+"bed": "broll/music.mp3",
+"bedFrom": 31.5,
+"bedVolume": 0.6
+},
+{
+"view": "screen",
+"from": 2,
+"to": 3.5,
+"src": "broll/w-labyrinth.mp4",
+"bed": "broll/music.mp3",
+"bedFrom": 33.0,
+"bedVolume": 0.6
+},
+{
+"view": "screen",
+"from": 2,
+"to": 3.5,
+"src": "broll/w-ticket.mp4",
+"bed": "broll/music.mp3",
+"bedFrom": 34.5,
+"bedVolume": 0.6
+},
+{
+"view": "screen",
+"from": 2,
+"to": 3.5,
+"src": "broll/w-drawn.mp4",
+"bed": "broll/music.mp3",
+"bedFrom": 36.0,
+"bedVolume": 0.6
+},
+{
+"view": "screen",
+"from": 2,
+"to": 3.5,
+"src": "broll/w-storm.mp4",
+"bed": "broll/music.mp3",
+"bedFrom": 37.5,
+"bedVolume": 0.6
+},
+{
+"view": "screen",
+"from": 2,
+"to": 3.5,
+"src": "broll/w-storm2.mp4",
+"bed": "broll/music.mp3",
+"bedFrom": 39.0,
+"bedVolume": 0.6
+},
+{
+"view": "board",
+"board": "end",
+"dur": 3.5,
+"bed": "broll/music.mp3",
+"bedFrom": 40.5,
+"bedVolume": 0.6,
+"fadeOut": 3
+}
+]
+}
