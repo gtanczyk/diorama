@@ -107,7 +107,7 @@ const BOARDS: Array<[string, string, string]> = [
   ['end', 'DIORAMA', 'github.com/gtanczyk/diorama'],
 ];
 
-type Shot = { from?: number; to?: number; dur?: number; view: 'phone' | 'screen' | 'tv' | 'board'; speed?: number; caption?: string; by?: string; board?: string; crop?: [number, number, number, number]; src?: string };
+type Shot = { from?: number; to?: number; dur?: number; view: 'phone' | 'screen' | 'tv' | 'board'; speed?: number; caption?: string; by?: string; board?: string; crop?: [number, number, number, number]; src?: string; bed?: string; bedVolume?: number };
 /** A voice-over line laid over the cut: starts `at` seconds into shot `shot`; the game sound ducks under it. */
 type Vo = { src: string; shot: number; at?: number; volume?: number };
 type Live = { phone: string; screen: string; offset: number; clock?: 'phone' | 'screen'; boards?: string; vhs?: boolean; vo?: Vo[]; shots: Shot[] };
@@ -152,13 +152,19 @@ async function cut(file: string, out: string) {
       // The screen recording carries the voice and the game (the phone's mic is too weak), so its sound plays under
       // every view; sped up, the voice would chirp, so a speeded shot is silent (a voice-over line goes there).
       audio = speed === 1 ? '[1:a]anull[a]' : `[1:a]${atempo},volume=0[a]`;
+      // `bed`: a music file plays under the shot instead (from its start), for speeded shots.
+      if (s.bed) audio = `[BED:a]atrim=0:${len},volume=${s.bedVolume ?? 0.5},aresample=48000,aformat=channel_layouts=stereo[a]`;
+    }
+    if (s.bed) {
+      audio = audio.replace('[BED:a]', `[${args.filter((a) => a === '-i').length}:a]`);
+      args.push('-i', at(s.bed));
     }
     let chain = `${video};${audio}`;
     if (s.caption || s.by) {
       const png = path.join(tmp, `${i}-lt.png`);
       await lowerThird(s.caption ?? '', s.by, png);
       args.push('-loop', '1', '-t', String(len), '-i', png);
-      const k = s.view === 'board' ? 2 : 2;
+      const k = args.filter((a) => a === '-i').length - 1;
       chain = `${video.replace('[v0]', '[vb]')};[${k}:v]format=rgba,fade=in:st=0.2:d=0.3:alpha=1,fade=out:st=${Math.max(0.5, len - 0.4)}:d=0.3:alpha=1[lt];[vb][lt]overlay=0:0,format=yuv420p[v0];${audio}`;
     }
     execFileSync('ffmpeg', [...args, '-filter_complex', chain, '-map', '[v0]', '-map', '[a]', '-t', String(len), '-c:v', 'libx264', '-crf', '18', '-c:a', 'aac', '-ar', '48000', '-ac', '2', seg]);
