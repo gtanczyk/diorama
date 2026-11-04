@@ -140,9 +140,9 @@ async function cut(file: string, out: string) {
       // The screen inside a TV: a blurred, darkened phone shot behind a bezelled 16:9 picture.
       else video = `[0:v]${pts}scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},boxblur=20,eq=brightness=-0.25,fps=${FPS}[bg];[1:v]${pts}scale=1500:-2,pad=iw+60:ih+60:30:30:color=#1a1a1a,fps=${FPS}[tv];[bg][tv]overlay=(W-w)/2:(H-h)/2-20,format=yuv420p,setsar=1[v0]`;
       // Sped up, the voice would chirp: speeded shots keep only the game, low; normal ones the voice over the game.
-      audio = speed === 1
-        ? (s.view === 'phone' ? '[0:a]anull[a]' : '[0:a]volume=1[va];[1:a]volume=0.35[ga];[va][ga]amix=inputs=2:normalize=0[a]')
-        : `[1:a]${atempo},volume=0.25[a]`;
+      // The screen recording carries the voice and the game (the phone's mic is too weak), so its sound plays under
+      // every view; sped up, it would chirp, so a speeded shot keeps it low.
+      audio = speed === 1 ? '[1:a]anull[a]' : `[1:a]${atempo},volume=0.25[a]`;
     }
     let chain = `${video};${audio}`;
     if (s.caption || s.by) {
