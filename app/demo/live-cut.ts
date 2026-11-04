@@ -139,7 +139,8 @@ async function cut(file: string, out: string) {
   for (const [i, s] of live.shots.entries()) {
     const seg = path.join(tmp, `${String(i).padStart(3, '0')}.mp4`);
     const speed = s.speed ?? 1;
-    const len = s.view === 'board' ? s.dur ?? 2 : ((s.to ?? 0) - (s.from ?? 0)) / speed;
+    // Whole frames, so picture and sound stay the same length and the joined film does not drift.
+    const len = Math.round((s.view === 'board' ? s.dur ?? 2 : ((s.to ?? 0) - (s.from ?? 0)) / speed) * FPS) / FPS;
     starts.push(clock);
     clock += len;
     const args: string[] = ['-y', '-loglevel', 'error'];
@@ -171,11 +172,11 @@ async function cut(file: string, out: string) {
     }
     if (s.bed) {
       audio = audio.replace('[BED:a]', `[${args.filter((a) => a === '-i').length}:a]`);
-      args.push('-ss', String(s.bedFrom ?? 0), '-i', at(s.bed));
+      args.push('-stream_loop', '-1', '-ss', String(s.bedFrom ?? 0), '-i', at(s.bed));
     }
     // Short fades at every cut so no word or note is chopped into a click; `fadeOut` lets the last shot fade away.
     const fo = s.fadeOut ?? 0.04;
-    audio = audio.replace(/\[a\]$/, `,afade=t=in:d=0.04,afade=t=out:st=${Math.max(0, len - fo)}:d=${fo}[a]`);
+    audio = audio.replace(/\[a\]$/, `,apad,atrim=0:${len},asetpts=N/SR/TB,afade=t=in:d=0.04,afade=t=out:st=${Math.max(0, len - fo)}:d=${fo}[a]`);
     let chain = `${video};${audio}`;
     if (s.caption || s.by) {
       const png = path.join(tmp, `${i}-lt.png`);
@@ -199,7 +200,7 @@ async function cut(file: string, out: string) {
   if (vo.length) {
     const lines = vo.map((v, i) => `[${i + 1}:a]aresample=48000,aformat=channel_layouts=stereo,volume=${v.volume ?? 1.6},adelay=${Math.round((starts[v.shot] + (v.at ?? 0)) * 1000)}:all=1[vo${i}]`);
     const voMix = vo.length > 1 ? `${vo.map((_, i) => `[vo${i}]`).join('')}amix=inputs=${vo.length}:normalize=0[vos]` : '[vo0]anull[vos]';
-    mix = `${lines.join(';')};${voMix};[vos]asplit=2[key][say];[0:a][key]sidechaincompress=threshold=0.015:ratio=12:attack=30:release=400[duck];[duck][say]amix=inputs=2:normalize=0:duration=first[mix]`;
+    mix = `${lines.join(';')};${voMix};[vos]apad=whole_dur=${clock.toFixed(3)},asplit=2[key][say];[0:a][key]sidechaincompress=threshold=0.015:ratio=12:attack=30:release=400[duck];[duck][say]amix=inputs=2:normalize=0:duration=first[mix]`;
   }
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, ...voIn, '-filter_complex', `[0:v]${vhs}[v];${mix}`, '-map', '[v]', '-map', '[mix]', '-c:v', 'libx264', '-crf', '20', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', out], { stdio: 'inherit' });
   fs.rmSync(tmp, { recursive: true, force: true });
