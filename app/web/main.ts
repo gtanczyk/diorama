@@ -1926,7 +1926,8 @@ class Game {
     }
     // Everyone is drawn far to near, and each one gets the things in front of them put back.
     let rect: Rect = [0, 0, 0, 0];
-    const lit = this.hover && !hideCursor ? this.hover : undefined;
+    // A thing taken (or otherwise gone) loses its outline at once, though the pointer has not moved off where it lay.
+    const lit = this.hover && !hideCursor && !gone.has(this.hover.thing.key) ? this.hover : undefined;
     // Under the people, so someone standing in front of a highlighted thing stays in front of its outline.
     if (lit && !this.drawn.some((d) => d.hot === lit)) this.drawLit(lit);
     this.drawn = [];
