@@ -107,8 +107,10 @@ const BOARDS: Array<[string, string, string]> = [
   ['end', 'DIORAMA', 'github.com/gtanczyk/diorama'],
 ];
 
-type Shot = { from?: number; to?: number; dur?: number; view: 'phone' | 'screen' | 'tv' | 'board'; speed?: number; caption?: string; by?: string; board?: string };
-type Live = { phone: string; screen: string; offset: number; boards?: string; vhs?: boolean; shots: Shot[] };
+type Shot = { from?: number; to?: number; dur?: number; view: 'phone' | 'screen' | 'tv' | 'board'; speed?: number; caption?: string; by?: string; board?: string; crop?: [number, number, number, number]; src?: string };
+/** A voice-over line laid over the cut: starts `at` seconds into shot `shot`; the game sound ducks under it. */
+type Vo = { src: string; shot: number; at?: number; volume?: number };
+type Live = { phone: string; screen: string; offset: number; clock?: 'phone' | 'screen'; boards?: string; vhs?: boolean; vo?: Vo[]; shots: Shot[] };
 
 async function cut(file: string, out: string) {
   const live = JSON.parse(fs.readFileSync(file, 'utf8')) as Live;
@@ -118,10 +120,14 @@ async function cut(file: string, out: string) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'live-'));
   const fit = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,fps=${FPS},format=yuv420p,setsar=1`;
   const parts: string[] = [];
+  const starts: number[] = [];
+  let clock = 0;
   for (const [i, s] of live.shots.entries()) {
     const seg = path.join(tmp, `${String(i).padStart(3, '0')}.mp4`);
     const speed = s.speed ?? 1;
     const len = s.view === 'board' ? s.dur ?? 2 : ((s.to ?? 0) - (s.from ?? 0)) / speed;
+    starts.push(clock);
+    clock += len;
     const args: string[] = ['-y', '-loglevel', 'error'];
     let video: string;
     let audio: string;
@@ -130,15 +136,19 @@ async function cut(file: string, out: string) {
       video = `[0:v]${fit},fade=in:d=0.2,fade=out:st=${Math.max(0, len - 0.2)}:d=0.2[v0]`;
       audio = '[1:a]anull[a]';
     } else {
-      const pf = s.from ?? 0, sf = pf - live.offset;
-      const dur = (s.to ?? 0) - pf;
-      args.push('-ss', String(pf), '-t', String(dur), '-i', at(live.phone), '-ss', String(Math.max(0, sf)), '-t', String(dur), '-i', at(live.screen));
+      // Times are on the phone's clock unless the edit says `clock: "screen"`.
+      const pf = (s.from ?? 0) + (live.clock === 'screen' ? live.offset : 0), sf = pf - live.offset;
+      const dur = (s.to ?? 0) - (s.from ?? 0);
+      // `src`: an extra recording (its own clock) stands in for both the phone and the screen.
+      if (s.src) args.push('-ss', String(s.from ?? 0), '-t', String(dur), '-i', at(s.src), '-ss', String(s.from ?? 0), '-t', String(dur), '-i', at(s.src));
+      else args.push('-ss', String(pf), '-t', String(dur), '-i', at(live.phone), '-ss', String(Math.max(0, sf)), '-t', String(dur), '-i', at(live.screen));
       const pts = speed === 1 ? '' : `setpts=PTS/${speed},`;
       const atempo = speed === 1 ? 'anull' : Array.from({ length: Math.ceil(Math.log2(speed)) }, () => `atempo=${Math.min(2, speed ** (1 / Math.ceil(Math.log2(speed))))}`).join(',');
+      const crop = s.crop ? `crop=${s.crop[2]}:${s.crop[3]}:${s.crop[0]}:${s.crop[1]},` : '';
       if (s.view === 'phone') video = `[0:v]${pts}${fit}[v0]`;
-      else if (s.view === 'screen') video = `[1:v]${pts}${fit}[v0]`;
+      else if (s.view === 'screen') video = `[1:v]${crop}${pts}${fit}[v0]`;
       // The screen inside a TV: a blurred, darkened phone shot behind a bezelled 16:9 picture.
-      else video = `[0:v]${pts}scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},boxblur=20,eq=brightness=-0.25,fps=${FPS}[bg];[1:v]${pts}scale=1500:-2,pad=iw+60:ih+60:30:30:color=#1a1a1a,fps=${FPS}[tv];[bg][tv]overlay=(W-w)/2:(H-h)/2-20,format=yuv420p,setsar=1[v0]`;
+      else video = `[0:v]${pts}scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},boxblur=20,eq=brightness=-0.25,fps=${FPS}[bg];[1:v]${crop}${pts}scale=1500:880:force_original_aspect_ratio=decrease,pad=iw+60:ih+60:30:30:color=#1a1a1a,fps=${FPS}[tv];[bg][tv]overlay=(W-w)/2:(H-h)/2-20,format=yuv420p,setsar=1[v0]`;
       // Sped up, the voice would chirp: speeded shots keep only the game, low; normal ones the voice over the game.
       // The screen recording carries the voice and the game (the phone's mic is too weak), so its sound plays under
       // every view; sped up, it would chirp, so a speeded shot keeps it low.
@@ -159,8 +169,17 @@ async function cut(file: string, out: string) {
   fs.writeFileSync(list, parts.map((p) => `file '${p}'`).join('\n'));
   fs.mkdirSync(path.dirname(out), { recursive: true });
   // A light 90s TV tape look over everything: soft, a little grain, faint scanlines, colour bleeding sideways.
-  const vhs = live.vhs === false ? [] : ['-vf', `gblur=sigma=0.6,noise=alls=7:allf=t,rgbashift=rh=2:bh=-2,drawgrid=w=${W}:h=3:t=1:c=black@0.12,eq=saturation=1.08:contrast=1.04`];
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, ...vhs, '-c:v', 'libx264', '-crf', '20', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', out], { stdio: 'inherit' });
+  const vhs = live.vhs === false ? 'null' : `gblur=sigma=0.6,noise=alls=7:allf=t,rgbashift=rh=2:bh=-2,drawgrid=w=${W}:h=3:t=1:c=black@0.12,eq=saturation=1.08:contrast=1.04`;
+  // Voice-over lines are placed on the cut's clock and the shots' own sound ducks under them (sidechain).
+  const vo = live.vo ?? [];
+  const voIn = vo.flatMap((v) => ['-i', at(v.src)]);
+  let mix = '[0:a]anull[mix]';
+  if (vo.length) {
+    const lines = vo.map((v, i) => `[${i + 1}:a]aresample=48000,aformat=channel_layouts=stereo,volume=${v.volume ?? 1.6},adelay=${Math.round((starts[v.shot] + (v.at ?? 0)) * 1000)}:all=1[vo${i}]`);
+    const voMix = vo.length > 1 ? `${vo.map((_, i) => `[vo${i}]`).join('')}amix=inputs=${vo.length}:normalize=0[vos]` : '[vo0]anull[vos]';
+    mix = `${lines.join(';')};${voMix};[vos]asplit=2[key][say];[0:a][key]sidechaincompress=threshold=0.015:ratio=12:attack=30:release=400[duck];[duck][say]amix=inputs=2:normalize=0:duration=first[mix]`;
+  }
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, ...voIn, '-filter_complex', `[0:v]${vhs}[v];${mix}`, '-map', '[v]', '-map', '[mix]', '-c:v', 'libx264', '-crf', '20', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', out], { stdio: 'inherit' });
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(out);
 }
