@@ -5,7 +5,7 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { claude, codexLive, createAgentSession, detectAgents, museLive, type CodingAgent, withoutProviderCredentials, type AgentSession, type ApprovalDecision, type ApprovalRequest, type SessionState, type SessionTurn } from 'genaicode/agents';
+import { antigravity, claude, codexLive, createAgentSession, detectAgents, museLive, type CodingAgent, withoutProviderCredentials, type AgentSession, type ApprovalDecision, type ApprovalRequest, type SessionState, type SessionTurn } from 'genaicode/agents';
 import { configDir, redact, withoutSecrets } from '../secrets.ts';
 import type { Events } from './events.ts';
 import { History } from './history.ts';
@@ -51,7 +51,7 @@ export function studioTool(request: ApprovalRequest): boolean {
   const detail = (request.detail ?? {}) as { subject?: { kind?: string } };
   if (['shell', 'process', 'fileAccess'].includes(String(detail.subject?.kind))) return false;
   const text = JSON.stringify(detail);
-  return /"mcp__diorama__[a-z_]+"/.test(text) || /"(server|serverName|mcpServer)"\s*:\s*"diorama"/.test(text);
+  return /"mcp__?diorama__?[a-z_]+"/.test(text) || /"(server|serverName|mcpServer)"\s*:\s*"diorama"/.test(text);
 }
 
 /**
@@ -71,9 +71,9 @@ export function readsOnly(request: ApprovalRequest): boolean {
 
 type Call = { turn?: number; name: string; args: Record<string, unknown>; done: boolean; ok?: boolean; summary?: string };
 
-/** A Studio tool's own name, however the agent spells it (mcp__diorama__job_wait, diorama.job_wait). */
+/** A Studio tool's own name, however the agent spells it (mcp__diorama__job_wait, Antigravity's mcp_diorama_job_wait, diorama.job_wait). */
 export function toolName(name: string): string | undefined {
-  return /^(?:mcp__diorama__|diorama[.:_/]+)(\w+)$/.exec(name)?.[1];
+  return /^(?:mcp__?diorama__?|diorama[.:_/]+)(\w+)$/.exec(name)?.[1];
 }
 
 /** A tool's result in one line for the panel: a job by its name and state, else the result itself, short. */
@@ -225,7 +225,7 @@ class Talk {
         // A turn's entries only grow, so a turn and a place in it name an entry.
         if (entry.kind === 'tool' && !this.tools.has(`${turn.id}:${i}`)) {
           this.tools.add(`${turn.id}:${i}`);
-          this.publish('tool', { name: entry.name.replace(/^mcp__diorama__/, '') });
+          this.publish('tool', { name: toolName(entry.name) ?? entry.name });
           // The shell sees files, not the pictures the Studio's tools show: after a few shell calls in a turn,
           // the agent is reminded once which tools look for it. It is still let through.
           if (shellTool(entry.name) && ++this.shell === NUDGE_AFTER) {
@@ -302,6 +302,7 @@ export const AGENTS = {
   muse: { label: 'Muse Code', make: (command?: string) => museLive({ command: command ?? process.env.DIORAMA_MUSE_COMMAND ?? 'muse' }) },
   claude: { label: 'Claude Code', make: () => claude() },
   codex: { label: 'Codex', make: () => preapproved(codexLive()) },
+  antigravity: { label: 'Antigravity', make: () => antigravity({ command: process.env.DIORAMA_AGY_COMMAND ?? 'agy' }) },
 } satisfies Record<string, { label: string; make(command?: string): CodingAgent }>;
 export type AgentName = keyof typeof AGENTS;
 export const isAgentName = (name: string): name is AgentName => Object.hasOwn(AGENTS, name);

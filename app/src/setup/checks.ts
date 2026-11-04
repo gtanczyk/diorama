@@ -55,7 +55,7 @@ export async function runChecks(opts: { live?: boolean } = {}): Promise<Check[]>
 
   const muse = await sh('muse', ['--version']);
   // Other agents the Studio can switch to (genaicode drives them the same way, with the Studio's MCP tools).
-  const others = await Promise.all([['claude', 'Claude Code'], ['codex', 'Codex']].map(async ([cmd, label]) => ({ label, version: await sh(cmd, ['--version']) })));
+  const others = await Promise.all([['claude', 'Claude Code'], ['codex', 'Codex'], ['agy', 'Antigravity']].map(async ([cmd, label]) => ({ label, version: await sh(cmd, ['--version']) })));
   const found = others.filter((o) => o.version);
   const install = ['curl -fsSL https://dev.meta.ai/install.sh | bash', 'muse login', 'muse --version'];
   checks.push(muse
@@ -68,7 +68,7 @@ export async function runChecks(opts: { live?: boolean } = {}): Promise<Check[]>
     id: 'agents',
     label: 'Other agents',
     state: found.length ? 'ok' : 'optional',
-    detail: `${others.map((o) => (o.version ? `${o.label} ${/\d+\.\d+[\w.-]*/.exec(o.version)?.[0] ?? 'found'}` : `${o.label} not found`)).join(' · ')}. Switch in the agent panel; DIORAMA_AGENT=muse, claude or codex sets the default.`,
+    detail: `${others.map((o) => (o.version ? `${o.label} ${/\d+\.\d+[\w.-]*/.exec(o.version)?.[0] ?? 'found'}` : `${o.label} not found`)).join(' · ')}. Switch in the agent panel; DIORAMA_AGENT=muse, claude, codex or antigravity sets the default.`,
   });
 
   let chromium: string | null = null;

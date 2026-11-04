@@ -76,6 +76,8 @@ test('only the Studio\'s own MCP tools run without asking: a path with "diorama"
   expect(studioTool(bash)).toBe(false);
   expect(studioTool(read)).toBe(false);
   expect(studioTool(other)).toBe(false);
+  expect(studioTool({ id: '5', kind: 'other' as const, detail: { toolCall: { toolCallId: 't', name: 'mcp_diorama_world_status', kind: 'other' } } })).toBe(true);
+  expect(studioTool({ id: '6', kind: 'other' as const, detail: { toolCall: { name: 'mcp_github_search' } } })).toBe(false);
   // Reading is let through on its own terms; the shell never is.
   expect(readsOnly(read)).toBe(true);
   expect(readsOnly(bash)).toBe(false);
@@ -91,7 +93,7 @@ test('shell calls are told from the Studio\'s tools and reading by name, as the 
 test('the agent can be switched between turns; Muse Code is the default', async () => {
   const get = async () => (await (await fetch(`${studio.url}api/agent/harbour/agents`, { headers: { authorization: `Bearer ${studio.token}` } })).json()) as Array<{ name: string; using: boolean }>;
   const offers = await get();
-  expect(offers.map((o) => o.name)).toEqual(['muse', 'claude', 'codex']);
+  expect(offers.map((o) => o.name)).toEqual(['muse', 'claude', 'codex', 'antigravity']);
   expect(offers.find((o) => o.using)?.name).toBe('muse');
   expect((await post('api/agent/harbour/use', { name: 'codex' })).status).toBe(200);
   expect((await get()).find((o) => o.using)?.name).toBe('codex');
