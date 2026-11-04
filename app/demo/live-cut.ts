@@ -39,6 +39,38 @@ function clapAt(file: string, within = 90): number {
   return at;
 }
 
+/** Log loudness per 1/rate s of a file's sound, mean-removed and scaled to unit variance. */
+function envelope(file: string, rate: number): Float64Array {
+  const sr = 8000, win = sr / rate;
+  const raw = execFileSync('ffmpeg', ['-loglevel', 'error', '-i', file, '-ac', '1', '-ar', String(sr), '-f', 's16le', '-'], { maxBuffer: 1 << 30 });
+  const s = new Int16Array(raw.buffer, raw.byteOffset, Math.floor(raw.length / 2));
+  const n = Math.floor(s.length / win);
+  const e = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let sum = 0;
+    for (let k = 0; k < win; k++) sum += s[i * win + k] ** 2;
+    e[i] = Math.log(1 + sum / win);
+  }
+  const mean = e.reduce((a, b) => a + b, 0) / n;
+  const sd = Math.sqrt(e.reduce((a, b) => a + (b - mean) ** 2, 0) / n) || 1;
+  return e.map((v) => (v - mean) / sd);
+}
+
+/** The lag (s, phone time - screen time) in [lo, hi] where the envelopes correlate best, by mean product over the overlap. */
+function xcorr(a: Float64Array, b: Float64Array, rate: number, lo: number, hi: number): { lag: number; score: number } {
+  let best = { lag: 0, score: -Infinity };
+  for (let L = Math.round(lo * rate); L <= Math.round(hi * rate); L++) {
+    // phone[i] matches screen[i - L]
+    const i0 = Math.max(0, L), i1 = Math.min(a.length, b.length + L);
+    if (i1 - i0 < 30 * rate) continue;
+    let sum = 0;
+    for (let i = i0; i < i1; i++) sum += a[i] * b[i - L];
+    const score = sum / (i1 - i0);
+    if (score > best.score) best = { lag: L / rate, score };
+  }
+  return best;
+}
+
 const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const FONT = "'Arial Black', 'DejaVu Sans', sans-serif";
 
@@ -137,6 +169,13 @@ if (cmd === 'sync') {
   const [phone, screen] = rest;
   const a = clapAt(phone), b = clapAt(screen);
   console.log(JSON.stringify({ phoneClap: a, screenClap: b, offset: +(a - b).toFixed(3) }));
+} else if (cmd === 'xsync') {
+  // No clap: the offset where the two sound tracks' loudness envelopes line up best (both mics hear the same room).
+  const [phone, screen] = rest;
+  const maxLag = Number(takeOption(rest, 'max', '900'));
+  const coarse = xcorr(envelope(phone, 10), envelope(screen, 10), 10, -maxLag, maxLag);
+  const fine = xcorr(envelope(phone, 100), envelope(screen, 100), 100, coarse.lag - 1, coarse.lag + 1);
+  console.log(JSON.stringify({ offset: +fine.lag.toFixed(3), score: +fine.score.toFixed(3), coarseScore: +coarse.score.toFixed(3) }));
 } else if (cmd === 'boards') {
   const out = path.resolve(takeOption(rest, 'out', 'app/demo/footage/live/boards'));
   fs.mkdirSync(out, { recursive: true });
