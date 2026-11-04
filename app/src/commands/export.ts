@@ -7,8 +7,31 @@ import { defineCommand } from '../registry.ts';
 import { WorldFiles } from '../world/files.ts';
 import { bundle, WEB, worldData } from './play.ts';
 
-/** Writes the playable copy of world `slug` to `out`, replacing whatever was there; `home` adds a link back to the page it is shared from. */
-export async function exportWorld(slug: string, out: string, home?: string): Promise<void> {
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** The link preview (X, Facebook, chats): the world's title and pitch, and a 1200x630 picture: the world's own og.jpg when it has one, else its first painted place. */
+async function sharePreview(files: WorldFiles, out: string, url?: string): Promise<string> {
+  const world = files.world();
+  const title = `${world.title} · Diorama`;
+  const pitch = world.pitch.length > 200 ? `${world.pitch.slice(0, 197).replace(/\s+\S*$/, '')}…` : world.pitch;
+  const own = files.path('og.jpg');
+  const painted = [world.start, ...world.places.map((p) => p.key)].map((key) => files.place(key, 'painting.png')).find((f) => fs.existsSync(f));
+  const source = fs.existsSync(own) ? own : painted;
+  const base = url ? (url.endsWith('/') ? url : `${url}/`) : '';
+  const tags = [`<title>${esc(title)}</title>`, `<meta name="description" content="${esc(pitch)}">`, `<meta property="og:type" content="website">`, `<meta property="og:title" content="${esc(title)}">`, `<meta property="og:description" content="${esc(pitch)}">`];
+  if (base) tags.push(`<meta property="og:url" content="${esc(base)}">`);
+  if (source) {
+    await sharp(source).resize(1200, 630, { fit: 'cover', position: 'attention' }).jpeg({ quality: 85, mozjpeg: true }).toFile(path.join(out, 'og.jpg'));
+    // Crawlers want an absolute address; the stamp makes X fetch a new picture after a re-export.
+    const image = `${base}og.jpg?v=${Date.now().toString(36)}`;
+    tags.push(`<meta property="og:image" content="${esc(image)}">`, '<meta property="og:image:width" content="1200">', '<meta property="og:image:height" content="630">', `<meta property="og:image:alt" content="${esc(world.title)}, a playable paper diorama world">`, '<meta name="twitter:card" content="summary_large_image">', `<meta name="twitter:image" content="${esc(image)}">`);
+  } else tags.push('<meta name="twitter:card" content="summary">');
+  tags.push(`<meta name="twitter:title" content="${esc(title)}">`, `<meta name="twitter:description" content="${esc(pitch)}">`);
+  return tags.join('\n');
+}
+
+/** Writes the playable copy of world `slug` to `out`, replacing whatever was there; `home` adds a link back to the page it is shared from; `url` is where the copy will be served, so its link preview has absolute addresses. */
+export async function exportWorld(slug: string, out: string, home?: string, url?: string): Promise<void> {
   const files = new WorldFiles(slug);
   const data = worldData(files);
   fs.rmSync(out, { recursive: true, force: true });
@@ -89,25 +112,24 @@ export async function exportWorld(slug: string, out: string, home?: string): Pro
   fs.writeFileSync(path.join(out, 'world-data.json'), JSON.stringify(data));
   fs.writeFileSync(path.join(out, 'main.js'), await bundle(true));
   let page = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
-  if (home) {
-    const href = home.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-    page = page.replace('<div id="soundless"', `<a id="home" href="${href}">← Diorama</a>\n<div id="soundless"`);
-  }
+  if (home) page = page.replace('<div id="soundless"', `<a id="home" href="${esc(home)}">← Diorama</a>\n<div id="soundless"`);
+  page = page.replace('<title>Diorama</title>', await sharePreview(files, out, url));
   fs.writeFileSync(path.join(out, 'index.html'), page);
 }
 
 defineCommand({
   name: 'export',
-  usage: 'export <slug> [dir] [--zip] [--home <url>]   write a static, playable copy of the world (default exports/<slug>); --zip also packs it for itch.io or e-mail; --home puts a "← Diorama" link to <url> in the corner',
+  usage: 'export <slug> [dir] [--zip] [--home <url>] [--url <url>]   write a static, playable copy of the world (default exports/<slug>); --zip also packs it for itch.io or e-mail; --home puts a "← Diorama" link to <url> in the corner; --url is where it will be served, for the X/Facebook link preview (title, pitch, og.jpg: worlds/<slug>/og.jpg if you made one, else the first place)',
   async run(args) {
     const zip = args.includes('--zip');
-    const h = args.indexOf('--home');
+    const flag = (name: string) => { const i = args.indexOf(name); if (i >= 0 && !args[i + 1]) throw new Error(`${name} needs a url`); return i; };
+    const h = flag('--home'), u = flag('--url');
     const home = h >= 0 ? args[h + 1] : undefined;
-    if (h >= 0 && !home) throw new Error('--home needs a url');
-    const [slug, dir = path.join('exports', slug ?? '')] = args.filter((a, i) => a !== '--zip' && (h < 0 || (i !== h && i !== h + 1)));
-    if (!slug) throw new Error('usage: diorama export <slug> [dir] [--zip] [--home <url>]');
+    const url = u >= 0 ? args[u + 1] : undefined;
+    const [slug, dir = path.join('exports', slug ?? '')] = args.filter((a, i) => a !== '--zip' && ![h, u].some((f) => f >= 0 && (i === f || i === f + 1)));
+    if (!slug) throw new Error('usage: diorama export <slug> [dir] [--zip] [--home <url>] [--url <url>]');
     const out = path.resolve(dir);
-    await exportWorld(slug, out, home);
+    await exportWorld(slug, out, home, url);
     console.log(`export ${slug}: ${out}`);
     if (zip) {
       // index.html at the zip's root, which is what itch.io wants for an HTML5 upload.
