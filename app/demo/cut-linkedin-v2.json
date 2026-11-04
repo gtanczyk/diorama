@@ -1,0 +1,247 @@
+{
+ "fps": 30,
+ "shots": [
+  {
+   "name": "Opener: kindergarten",
+   "src": "footage/kapture-opener.mp4",
+   "from": 0,
+   "dur": 7.6,
+   "caption": "Kindergarten, Oct 29: their drawings go in"
+  },
+  {
+   "name": "Hook: lighthouse",
+   "src": "footage/lantern7/alive/lantern-harbour--lighthouse-point.mp4",
+   "from": 1,
+   "dur": 2.2,
+   "crop": [
+    0,
+    0,
+    1440,
+    810
+   ],
+   "fade": 0.3,
+   "caption": "A sentence or a sketch. A whole game."
+  },
+  {
+   "name": "Hook: you play it",
+   "src": "footage/lantern7/walk/lantern-harbour--harbour-pier.mp4",
+   "from": 0.5,
+   "dur": 3.0,
+   "crop": [
+    0,
+    135,
+    1440,
+    810
+   ],
+   "fade": 0.3,
+   "caption": "Painted, alive, and you can walk in it"
+  },
+  {
+   "name": "Studio: the idea",
+   "src": "footage/mock/studio.mp4",
+   "from": 0.4,
+   "dur": 3.4,
+   "speed": 1.5,
+   "fade": 0.5,
+   "caption": "It starts with an idea"
+  },
+  {
+   "name": "Studio: reads",
+   "src": "footage/mock/studio.mp4",
+   "from": 5.6,
+   "dur": 1.4,
+   "caption": "Diorama reads it",
+   "by": "Muse Spark"
+  },
+  {
+   "name": "Studio: who",
+   "src": "footage/mock/studio.mp4",
+   "from": 7.6,
+   "dur": 3.4,
+   "caption": "and asks only what it cannot guess, in pictures",
+   "by": "Muse Spark"
+  },
+  {
+   "name": "Studio: build",
+   "src": "footage/mock/studio.mp4",
+   "from": 15.6,
+   "dur": 6,
+   "speed": 2,
+   "caption": "Then it builds the world",
+   "by": "Muse Image",
+   "speedup": "2x"
+  },
+  {
+   "name": "Studio: the story",
+   "src": "footage/extras1/story/story-diagram.mp4",
+   "from": 0.5,
+   "dur": 4.5,
+   "crop": [
+    680,
+    80,
+    1200,
+    675
+   ],
+   "fade": 0.4,
+   "caption": "It writes the story, and a bot plays every ending",
+   "by": "Muse Spark"
+  },
+  {
+   "name": "3 Architecture",
+   "src": "footage/architecture.mp4",
+   "from": 0,
+   "dur": 10,
+   "fade": 0.5,
+   "speed": 1.3
+  },
+  {
+   "name": "4 How: the plan",
+   "image": "footage/lantern5/method/1-plan.png",
+   "dur": 2.2,
+   "fade": 0.5,
+   "caption": "Plans where every thing stands",
+   "by": "Muse Spark"
+  },
+  {
+   "name": "4 How: the painting",
+   "image": "footage/lantern5/method/2-painting.png",
+   "dur": 2.2,
+   "fade": 0.8,
+   "caption": "Paints over the plan",
+   "by": "Muse Image"
+  },
+  {
+   "name": "4 How: the cut-outs",
+   "image": "footage/lantern5/method/3-masks.png",
+   "dur": 2.2,
+   "fade": 0.6,
+   "caption": "Cuts out every thing you can touch",
+   "by": "SAM 3.1"
+  },
+  {
+   "name": "4 How: depth",
+   "image": "footage/lantern5/method/4-depth.png",
+   "dur": 2.2,
+   "fade": 0.6,
+   "caption": "Depth: what is near, what is far",
+   "by": "Depth Anything"
+  },
+  {
+   "name": "4 How: floor and scale",
+   "image": "footage/lantern5/method/6-walk.png",
+   "dur": 2.2,
+   "fade": 0.6,
+   "caption": "The floor you walk on, the hero's size at every step"
+  },
+  {
+   "name": "4 How: taken apart",
+   "src": "footage/lantern6/explode/lantern-harbour--harbour-pier.mp4",
+   "from": 0.6,
+   "dur": 5.5,
+   "fade": 0.4,
+   "caption": "One painting becomes a 3D stage",
+   "by": "SAM 3.1"
+  },
+  {
+   "name": "4 How: taken apart, the market",
+   "src": "footage/lantern6/explode/lantern-harbour--lantern-market.mp4",
+   "from": 5.5,
+   "dur": 3.2,
+   "fade": 0.4,
+   "caption": "Then it closes back into the painting, and it's playable"
+  },
+  {
+   "name": "5b Effects: lamp shadow",
+   "src": "footage/extras1/effects/effect-shadow-lamp.mp4",
+   "from": 0.3,
+   "dur": 3,
+   "crop": [
+    0,
+    135,
+    1440,
+    810
+   ],
+   "fade": 0.35,
+   "caption": "Every lamp casts your shadow"
+  },
+  {
+   "name": "5b Effects: parallax",
+   "src": "footage/extras1/effects/effect-parallax-tracking.mp4",
+   "from": 0.3,
+   "dur": 3,
+   "crop": [
+    0,
+    135,
+    1440,
+    810
+   ],
+   "fade": 0.35,
+   "caption": "The camera follows you, in depth"
+  },
+  {
+   "name": "6 Play: the pier",
+   "src": "footage/lantern7/walk/lantern-harbour--harbour-pier.mp4",
+   "from": 0.5,
+   "dur": 4.5,
+   "crop": [
+    0,
+    135,
+    1440,
+    810
+   ],
+   "fade": 0.4,
+   "caption": "Then you play it"
+  },
+  {
+   "name": "PBS: sketch to rock",
+   "src": "footage/pbs-v15.mp4",
+   "from": 27.12,
+   "dur": 3.9,
+   "crop": [
+    0,
+    200,
+    1440,
+    810
+   ],
+   "fade": 0.3
+  },
+  {
+   "name": "PBS: keeper",
+   "src": "footage/pbs-v15.mp4",
+   "from": 35.6,
+   "dur": 3.6,
+   "crop": [
+    0,
+    135,
+    1440,
+    810
+   ],
+   "fade": 0.2,
+   "caption": "Every world is a game you can play"
+  },
+  {
+   "name": "9 More worlds: kids ghost path",
+   "src": "footage/extras1/worlds/walk/drawn-dreams--mushroom-ghost-path.mp4",
+   "from": 0.5,
+   "dur": 3.0,
+   "crop": [
+    0,
+    135,
+    1440,
+    810
+   ],
+   "fade": 0.35,
+   "caption": "Drawn by kids, played by kids"
+  },
+  {
+   "name": "End",
+   "dur": 4,
+   "card": "Diorama  \u00b7  grzegorz.tanczyk.pl/diorama",
+   "fade": 0.5
+  }
+ ],
+ "music": {
+  "src": "footage/music-a.mp3",
+  "volume": 0.5
+ }
+}
