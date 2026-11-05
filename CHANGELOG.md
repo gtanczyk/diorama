@@ -7,8 +7,6 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ## Unreleased
 
-- Final cut
-
 ### Added
 
 - Small things painted falling (code rain, falling letters, snow, petals) fall on the page, each column at its own pace, instead of standing still or rippling like a waterfall.
