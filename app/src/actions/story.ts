@@ -83,6 +83,33 @@ defineAction({
 });
 
 defineAction({
+  name: 'story_look',
+  description: 'Set what the hero says looking at one thing (a sign, a prop, a car), adding the look line where the story has none and rewording it where it has one. '
+    + 'Nothing else in the story changes (story_redo would write it all again). Kept across rebuilds. A spoken line needs run_step voices afterwards.',
+  input: z.object({ slug: Slug, place: Slug, thing: Slug, text: z.string().trim().min(1).max(400) }),
+  async run({ slug, place, thing, text }, ctx) {
+    const files = open(slug, ctx);
+    const blocked = agentBlocked(files.dir, ctx.by);
+    if (blocked) throw new ActionError(423, blocked);
+    const story = readStory(files);
+    if (!story) throw new ActionError(409, `${slug} has no story yet: run_step story first`);
+    const spot = files.world().places.find((p) => p.key === place);
+    if (!spot) throw new ActionError(400, `${place} is not a place of ${slug}`);
+    if (!spot.things.some((t) => t.key === thing)) throw new ActionError(400, `${thing} is not a thing in ${place}: ${spot.things.map((t) => t.key).join(', ')}`);
+    const busy = ctx.jobs.busy(slug);
+    if (busy) throw new ActionError(409, `${busy.label} is ${busy.state}; wait before editing story text`);
+    new History(files.dir).snapshot(`story look ${place}/${thing}`, ctx.by);
+    const fixes = readStoryFixes(files);
+    const look = { text, at: new Date().toISOString() };
+    fixes.looks = { ...fixes.looks, [`${place}/${thing}`]: look };
+    files.write(storyFixesFile(files), StoryFixes.parse(fixes));
+    const now = applyTexts(story, { texts: {}, looks: { [`${place}/${thing}`]: look } }).story;
+    files.write(files.path('story.json'), now);
+    return { place, thing, text, spoken: storyLines(files.world(), now).some((l) => l.text === text) };
+  },
+});
+
+defineAction({
   name: 'story_redo',
   description: 'Have Spark write the story again to a wish ("the ferrywoman should want something in return", "after receiving the key she goes to the garden and thanks me there"); '
     + 'NPC stages use ordinary flags and conditional dialogue; patrols are optional, and moveNpc effects trigger travel through existing exits. '
@@ -95,7 +122,7 @@ defineAction({
     const blocked = agentBlocked(files.dir, ctx.by);
     if (blocked) throw new ActionError(423, blocked);
     return ctx.jobs.start(slug, ['story', slug], wish ? 'rewrite story' : 'first story', ctx.by, () => {
-      files.write(storyFixesFile(files), StoryFixes.parse({ ...(wish && { wish }), texts: {} }));
+      files.write(storyFixesFile(files), StoryFixes.parse({ ...(wish && { wish }), texts: {}, looks: readStoryFixes(files).looks }));
     });
   },
 });

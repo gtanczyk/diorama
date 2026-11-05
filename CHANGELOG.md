@@ -11,6 +11,7 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 - The Studio agent's model can be chosen: `DIORAMA_AGY_MODEL` (Antigravity, e.g. `gemini-4-argon-high`; `agy models` lists them), `DIORAMA_CODEX_MODEL`, `DIORAMA_MUSE_MODEL`, `DIORAMA_AGENT_CLAUDE_MODEL`, or `DIORAMA_AGENT_MODEL` for any agent.
 - Drive places: a place with `"kind": "drive"` is a car ride seen from the side, its scenery streaming past in depth bands that loop, the hero in the car and things clicked without walking (docs/scenes.md, Drive).
+- `story_look` (Studio action): sets what the hero says looking at one thing, adding the line where the story has none, without writing the whole story again; kept across rebuilds.
 
 ### Fixed
 

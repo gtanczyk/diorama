@@ -9,6 +9,8 @@ export const StoryFixes = z.object({
   wish: z.string().min(5).optional(),
   /** Reworded text by its place in story.json, e.g. "dialogues.0.lines.2.says". */
   texts: z.record(z.string(), z.object({ text: z.string().min(1), at: z.string() })).default({}),
+  /** What the hero says looking at a thing, by "place/thing": added where the story has no look line there, else it rewords it. */
+  looks: z.record(z.string(), z.object({ text: z.string().min(1), at: z.string() })).default({}),
 });
 export type StoryFixes = z.infer<typeof StoryFixes>;
 
@@ -19,7 +21,7 @@ export const storyFixesFile = (files: WorldFiles) => files.path('story-fixes.jso
 
 export function readStoryFixes(files: WorldFiles): StoryFixes {
   const file = storyFixesFile(files);
-  return fs.existsSync(file) ? StoryFixes.parse(files.readJson(file)) : { texts: {} };
+  return fs.existsSync(file) ? StoryFixes.parse(files.readJson(file)) : { texts: {}, looks: {} };
 }
 
 /** The object holding a text field and the field's name, or null when the path names no text. */
@@ -42,13 +44,20 @@ export function textAt(story: Story, path: string): string | null {
 }
 
 /** The story with the reworded lines in; paths that no longer name a text are left out and listed. */
-export function applyTexts(story: Story, fixes: StoryFixes): { story: Story; skipped: string[] } {
+export function applyTexts(story: Story, fixes: Pick<StoryFixes, 'texts'> & Partial<Pick<StoryFixes, 'looks'>>): { story: Story; skipped: string[] } {
   const out = structuredClone(story);
   const skipped: string[] = [];
   for (const [path, { text }] of Object.entries(fixes.texts)) {
     const hit = locate(out, path);
     if (hit) hit[0][hit[1]] = text;
     else skipped.push(path);
+  }
+  for (const [at, { text }] of Object.entries(fixes.looks ?? {})) {
+    const [place, thing] = at.split('/');
+    // The plain look line (no condition) is the one replaced; a thing with none gets one.
+    const plain = out.interactions.find((i) => i.place === place && i.thing === thing && i.verb === 'look' && i.when.length === 0);
+    if (plain) plain.say = text;
+    else out.interactions.push({ place, thing, verb: 'look', when: [], say: text, do: [], once: false } as Story['interactions'][number]);
   }
   return { story: out, skipped };
 }

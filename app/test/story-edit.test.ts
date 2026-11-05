@@ -76,7 +76,16 @@ test('story_redo keeps the wish, drops reworded lines and runs the story step; a
   const job = (await runAction('story_redo', { slug: 'w', wish: 'the ferryman wants a coin too' }, ctx('user'))) as { id: string; args: string[] };
   expect(job.args).toEqual(['story', 'w']);
   await ctx('user').jobs.wait(job.id);
-  expect(JSON.parse(fs.readFileSync(path.join(dir, 'story-fixes.json'), 'utf8'))).toEqual({ wish: 'the ferryman wants a coin too', texts: {} });
+  expect(JSON.parse(fs.readFileSync(path.join(dir, 'story-fixes.json'), 'utf8'))).toEqual({ wish: 'the ferryman wants a coin too', texts: {}, looks: {} });
   await runAction('lock_set', { slug: 'w', locked: true }, ctx('user'));
   await expect(runAction('story_text', { slug: 'w', path: 'intro', text: 'Hi there.' }, ctx('agent'))).rejects.toThrow(/locked/);
+});
+
+test('applyTexts adds a look line where a thing has none and rewords a plain one', async () => {
+  const { applyTexts } = await import('../src/story/fixes.ts');
+  const story = { intro: 'x', items: [], locks: [], interactions: [{ place: 'road', thing: 'sign', verb: 'look', when: [], say: 'old', do: [], once: false }], dialogues: [], changes: [], patrols: [], endings: [] } as never;
+  const at = 'now';
+  const out = applyTexts(story, { texts: {}, looks: { 'road/sign': { text: 'new', at }, 'road/car': { text: 'a car', at } } }).story as { interactions: Array<{ thing: string; say: string; verb: string }> };
+  expect(out.interactions.find((i) => i.thing === 'sign')!.say).toBe('new');
+  expect(out.interactions.find((i) => i.thing === 'car')).toMatchObject({ verb: 'look', say: 'a car' });
 });
