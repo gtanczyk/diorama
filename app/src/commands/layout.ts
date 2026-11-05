@@ -3,8 +3,10 @@ import fs from 'node:fs';
 import { renderBlockin, renderPlan } from '../scene/blockin.ts';
 import { readCorrections } from '../scene/corrections.ts';
 import { layOut } from '../scene/layout.ts';
+import { framePhoto, placePicture } from '../scene/photo.ts';
 import { defineCommand } from '../registry.ts';
 import { WorldFiles } from '../world/files.ts';
+import { placeSketch } from '../world/drawings.ts';
 import { approvedConcept } from '../world/sketch.ts';
 
 defineCommand({
@@ -16,10 +18,13 @@ defineCommand({
     const world = files.world();
     const places = world.places.filter((p) => only.length === 0 || only.includes(p.key));
     await Promise.all(places.map(async (place) => {
-      // A place made from a photo is measured from it, and the photo stands in for the block-in.
-      const photoFile = files.place(place.key, 'photo.png');
-      const photo = fs.existsSync(photoFile) ? fs.readFileSync(photoFile) : undefined;
-      const layout = await layOut(files.memo, world, place, photo, readCorrections(files.place(place.key)).layout?.guidance, approvedConcept(files, 'place', place.key));
+      // A place made from a photo is measured from it, and the photo stands in for the block-in. So does a
+      // grown-up's sketch of the place: drawn in perspective, it is the camera Muse would paint anyway.
+      const sketch = !fs.existsSync(files.place(place.key, 'photo.png')) && !fs.existsSync(files.place(place.key, 'sketch.png')) ? placeSketch(files, place.key) : undefined;
+      if (sketch) files.write(files.place(place.key, 'sketch.png'), (await framePhoto(sketch)).image);
+      const picture = placePicture(files.place(place.key));
+      const photo = picture && fs.readFileSync(picture.file);
+      const layout = await layOut(files.memo, world, place, photo, readCorrections(files.place(place.key)).layout?.guidance, approvedConcept(files, 'place', place.key), picture?.kind);
       files.write(files.place(place.key, 'layout.json'), layout);
       const blockin = photo ?? await renderBlockin(layout, place);
       files.write(files.place(place.key, 'blockin.png'), blockin);

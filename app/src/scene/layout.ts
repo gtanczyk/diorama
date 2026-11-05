@@ -193,9 +193,9 @@ export function repairSmallBoxes(layout: Layout): Layout {
   })) };
 }
 
-/** With a photo, measure existing positions without resizing them. */
-export async function layOut(memo: Memo, world: World, place: Place, photo?: Buffer, guidance?: string, concept?: Buffer): Promise<Layout> {
-  const ask = () => (photo ? `${brief(world, place)}\n\nThe place already exists: it is the attached photo, ${FRAME.width}x${FRAME.height} px. Do not place anything; measure where each thing, floor and light is in it.` : brief(world, place));
+/** With a photo (or a grown-up's sketch of the place), measure existing positions without resizing them. */
+export async function layOut(memo: Memo, world: World, place: Place, photo?: Buffer, guidance?: string, concept?: Buffer, picture: 'photo' | 'sketch' = 'photo'): Promise<Layout> {
+  const ask = () => (photo ? `${brief(world, place)}\n\nThe place already exists: it is the attached ${picture === 'sketch' ? "artist's sketch (ignore the sketchbook page, notes and colour swatches)" : 'photo'}, ${FRAME.width}x${FRAME.height} px. Do not place anything; measure where each thing, floor and light is in it.` : brief(world, place));
   const base = ask() + (!photo && concept ? '\n\nThe attached image is the creator-approved concept for this place. Start from its camera and relative arrangement of the listed things, scaled to the output frame. Preserve the recognizable composition where possible, but adapt positions, sizes and floor connections to satisfy every walkability rule above. This is a concept, not a fixed photograph; do not copy inaccessible areas or invent extra things.' : '') + (guidance ? `\n\nLayout repair guidance: ${guidance}` : '');
   // Keep paid replies. An exhausted batch becomes feedback for the next batch, never an identical replay.
   const stateFile = path.join(memo.dir, 'layout-retries', `${inputHash(base, photo ?? '', ...(!photo && concept ? [concept] : []))}.json`);

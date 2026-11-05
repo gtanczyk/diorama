@@ -1,6 +1,8 @@
 import { STYLE_REFERENCE_PROMPT } from '../world/style-reference.ts';
 // A real photo as a place: crop it to the game frame, let Spark read the room into things,
 // and let Muse repaint it in the world's style without moving anything.
+import fs from 'node:fs';
+import path from 'node:path';
 import sharp from 'sharp';
 import { z } from 'zod';
 import type { Memo } from '../meta/memo.ts';
@@ -58,6 +60,27 @@ Reply with JSON only:
   throw new Error('Spark could not read the photo into a place in 3 tries');
 }
 
+/** The picture a place was made from, which stands in for its block-in: a real photo, or a grown-up's sketch of the place. */
+export function placePicture(dir: string): { file: string; kind: 'photo' | 'sketch' } | undefined {
+  for (const kind of ['photo', 'sketch'] as const) {
+    const file = path.join(dir, `${kind}.png`);
+    if (fs.existsSync(file)) return { file, kind };
+  }
+  return undefined;
+}
+
+export function sketchPaintPrompt(world: World, place: Place, brief?: Brief): string {
+  const looks = place.things.filter((t) => t.role !== 'npc').map((t) => `- ${t.key}: ${brief?.looks[t.key] ?? t.looks}`);
+  return `Finish this artist's sketchbook drawing as a background of a 2D point-and-click adventure game. Keep the camera and every object exactly where and as big as it is in the sketch: same buildings, same furniture, same floor, same perspective. Keep the artist's hand and medium; only finish it: clean confident lines, full colour, depth and light.
+
+Style: ${world.style}
+Mood: ${place.mood}
+Objects to keep recognisable:
+${looks.join('\n')}
+
+Leave out the sketchbook page itself: its edges and spine, the handwritten notes, colour swatches and any writing; continue the scene out to every edge of the frame. Remove every person; paint what is behind them. Keep the floor clear to walk on. No text or letters, no border.`;
+}
+
 export function photoPaintPrompt(world: World, place: Place, brief?: Brief): string {
   const looks = place.things.filter((t) => t.role !== 'npc').map((t) => `- ${t.key}: ${brief?.looks[t.key] ?? t.looks}`);
   return `Repaint this photo as a finished background of a 2D point-and-click adventure game. Keep the camera and every object exactly where and as big as it is in the photo: same walls, same furniture, same door, same floor. Only the medium changes.
@@ -70,8 +93,8 @@ ${looks.join('\n')}
 Remove every person; paint the furniture and floor behind them. Keep the floor clear to walk on. No text or letters, no border.`;
 }
 
-export async function paintPhoto(memo: Memo, world: World, place: Place, photo: Buffer, brief?: Brief, take = 0, concept?: Buffer, styleReference?: Buffer): Promise<Buffer> {
-  const prompt = photoPaintPrompt(world, place, brief) + (styleReference ? '\nThe LAST image: ' + STYLE_REFERENCE_PROMPT : '') + (concept ? '\nThe second image is the creator-approved visual concept: preserve its palette and treatment. The first photo is authoritative for the real room, furniture, perspective and layout.' : '');
+export async function paintPhoto(memo: Memo, world: World, place: Place, photo: Buffer, brief?: Brief, take = 0, concept?: Buffer, styleReference?: Buffer, picture: 'photo' | 'sketch' = 'photo'): Promise<Buffer> {
+  const prompt = (picture === 'sketch' ? sketchPaintPrompt : photoPaintPrompt)(world, place, brief) + (styleReference ? '\nThe LAST image: ' + STYLE_REFERENCE_PROMPT : '') + (concept ? '\nThe second image is the creator-approved visual concept: preserve its palette and treatment. The first photo is authoritative for the real room, furniture, perspective and layout.' : '');
   const painted = await museEdit(memo, { label: `paint:${place.key}`, prompt, images: [photo, ...(concept ? [concept] : []), ...(styleReference ? [styleReference] : [])], take });
   return sharp(painted).resize(FRAME.width, FRAME.height, { fit: 'fill' }).png().toBuffer();
 }

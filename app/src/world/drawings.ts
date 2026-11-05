@@ -214,6 +214,13 @@ export function drawnIssues(world: World, drawn: Drawn[]): string[] {
   });
 }
 
+/** A grown-up's sketch of the whole place: drawn in perspective, it sets the camera Muse paints with, so the
+ * layout starts from it like an approved concept (a child's flat drawing leaves the composition to the layout). */
+export function placeSketch(files: WorldFiles, key: string): Buffer | undefined {
+  const drawn = readDrawn(files).find((d) => d.key === key && d.kind === 'place' && d.by === 'grown-up');
+  return drawn ? drawingFor(files, key) : undefined;
+}
+
 /** The drawings a place's painting follows: the place itself first, then what was drawn of the props and items in it (three at most). */
 export function drawingsIn(files: WorldFiles, place: Place): Array<{ key: string; image: Buffer }> {
   const keys = [place.key, ...place.things.filter((t) => t.role !== 'npc').map((t) => t.key)];

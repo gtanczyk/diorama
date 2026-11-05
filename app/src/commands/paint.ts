@@ -9,7 +9,7 @@ import { readCorrections, writeCorrections } from '../scene/corrections.ts';
 import { Layout } from '../scene/layout.ts';
 import { paintPlace } from '../scene/paint.ts';
 import { alignPainting, PaintingLayoutError, paintingLayoutHash } from '../scene/paint-layout.ts';
-import { paintPhoto } from '../scene/photo.ts';
+import { paintPhoto, placePicture } from '../scene/photo.ts';
 import { restylePlace } from '../scene/restyle.ts';
 import { refusedByFilter, reword, withWords, worded, type Words } from '../scene/words.ts';
 import { defineCommand, takeOption } from '../registry.ts';
@@ -42,7 +42,8 @@ defineCommand({
       const world = { ...base, style };
       const layout = Layout.parse(files.readJson(files.place(place.key, 'layout.json')));
       const blockin = fs.readFileSync(files.place(place.key, 'blockin.png'));
-      const fromPhoto = fs.existsSync(files.place(place.key, 'photo.png'));
+      const picture = placePicture(files.place(place.key));
+      const fromPhoto = !!picture;
       // An approved concept steers Muse's camera toward its own; when it keeps pulling the painting off the plan
       // (a second new take was asked for), the place is painted from the block-in alone.
       const concept = take >= CONCEPT_TAKES ? undefined : approvedConcept(files, 'place', place.key);
@@ -116,8 +117,8 @@ defineCommand({
           brief = withWords(await writeBrief(files.memo, world, told, layout), words);
           files.write(files.place(place.key, 'brief.json'), brief);
           try {
-            first = fromPhoto
-              ? await paintPhoto(files.memo, world, told, blockin, brief, take, concept, styleReference)
+            first = picture
+              ? await paintPhoto(files.memo, world, told, blockin, brief, take, concept, styleReference, picture.kind)
               : await paintPlace(files.memo, world, told, layout, blockin, brief, take, drawingsIn(files, place), concept, styleReference);
             break;
           } catch (error) {
