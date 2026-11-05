@@ -21,6 +21,9 @@ import { markStyled, placeStyle, readStyled } from '../world/styled.ts';
 /** Rewords Spark may try after the image safety filter refuses a painting, before the place is set aside. */
 const REWORDS = 2;
 
+/** From this new take on, a place is painted without its approved concept (see paint below). */
+const CONCEPT_TAKES = 2;
+
 defineCommand({
   name: 'paint',
   usage: 'paint <slug> [place...]  brief, paint, critique and repaint laid-out places [--take N]',
@@ -40,7 +43,10 @@ defineCommand({
       const layout = Layout.parse(files.readJson(files.place(place.key, 'layout.json')));
       const blockin = fs.readFileSync(files.place(place.key, 'blockin.png'));
       const fromPhoto = fs.existsSync(files.place(place.key, 'photo.png'));
-      const concept = approvedConcept(files, 'place', place.key);
+      // An approved concept steers Muse's camera toward its own; when it keeps pulling the painting off the plan
+      // (a second new take was asked for), the place is painted from the block-in alone.
+      const concept = take >= CONCEPT_TAKES ? undefined : approvedConcept(files, 'place', place.key);
+      if (take >= CONCEPT_TAKES && approvedConcept(files, 'place', place.key)) console.log(`  ${place.key}: take ${take}, painted from the block-in without its concept`);
       const styleReference = worldStyleReference(files, style);
       // The first painting is kept while its block-in, layout and take stay the same, even without the model
       // cache (a world copied without memo/): a person's region repaint must not repaint the whole place.
