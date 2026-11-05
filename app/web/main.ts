@@ -77,9 +77,6 @@ type Figure = { img: HTMLImageElement; face?: PaintedFace; faceInfo?: FaceDefini
 const FLOATS = /\b(boat|rowboat|dinghy|skiff|canoe|kayak|raft|ship|barge|punt|gondola|sampan|junk|ferry|trawler|yacht|sailboat)s?\b/i;
 
 /** canvas: the card as the place looks now (story changes on it); base: as painted, whose alpha is the card's shape. */
-/** A drive's road grows out of its vanishing point by DRIVE_ZOOM every DRIVE_SECONDS (at ?drive=1). */
-const DRIVE_ZOOM = 1.8;
-const DRIVE_SECONDS = 0.75;
 
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; base: HTMLCanvasElement; x0: number; y0: number; y: number };
 
@@ -113,8 +110,6 @@ type Place = {
   critters?: Critter[];
   clouds?: Clouds;
   far?: { sky?: HTMLImageElement; flats: Array<{ img: HTMLImageElement; box: [number, number, number, number]; d: number }> };
-  /** A drive place (kind "drive"): the far view that stays, the road and roadside that stream out of the vanishing point. */
-  drive?: { near: HTMLImageElement; far: HTMLImageElement; vp: [number, number] };
   hots: Hot[];
   cuts: Cut[];
   byKey: Map<string, Occluder>;
@@ -552,13 +547,6 @@ class Game {
       const ds = flatDisparities(g, edge, imgs.length);
       if (imgs.every(Boolean)) far = { sky, flats: entry.layers.flats.map((f, i) => ({ img: imgs[i]!, box: f.box, d: ds[i] })) };
     }
-    // A drive streams past even in capture runs (no parallax there): it is the place, not a camera move.
-    let drive: Place['drive'];
-    if (spec.kind === 'drive' && entry.layers?.drive) {
-      const d = entry.layers.drive;
-      const [near, far] = await Promise.all([d.near, d.far].map((f) => loadImage(files(f)).catch(() => undefined)));
-      if (near && far) drive = { near, far, vp: d.vp };
-    }
     let water: Place['water'];
     const w = entry.layers?.water;
     if (backdrop && w && !params.has('still')) {
@@ -622,10 +610,10 @@ class Game {
     const weather = wx && new WeatherFx(wx, g, ripples?.bits, key);
     const reactions = entry.reactions && params.get('reactions') !== '0' ? new ReactionFx(entry.reactions, g, key, matchMedia('(prefers-reduced-motion: reduce)').matches) : undefined;
     // ?glow=0 (or ?still; capture unless ?glow=1) keeps the painted lights as painted, for pixel checks.
-    const glows = spec.kind !== 'drive' && (entry.glows?.length || bg) && !params.has('still') && (params.get('glow') ?? (capture ? '0' : '1')) !== '0' ? new GlowFx(entry.glows ?? [], g.frame.height, bg, wet, backdrop ? kept.map((c) => c.occ.box) : []) : undefined;
+    const glows = (entry.glows?.length || bg) && !params.has('still') && (params.get('glow') ?? (capture ? '0' : '1')) !== '0' ? new GlowFx(entry.glows ?? [], g.frame.height, bg, wet, backdrop ? kept.map((c) => c.occ.box) : []) : undefined;
     const focus = focusScale > 0 || separateScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
     const surf = water && !params.has('still') ? new Surf(water.tex, water.mask, water.box, backdrop) : undefined;
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, drive, water, mist, smoke, floats, surf, ...living, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, smoke, floats, surf, ...living, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
     this.cache.set(key, place);
     for (const hot of hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc')) {
       const id = `${key}/${hot.thing.key}`;
@@ -912,6 +900,8 @@ class Game {
   /** What a click on a thing means: the exit, the talk, the held item, or the first verb the story answers. */
   private actionFor(key: string, hot: Hot, verb?: Verb): Action {
     if (verb === 'look') return { kind: 'do', thing: key, verb: 'look' };
+    // A car that drives to several places is driven from its board; a click on it looks at it.
+    if (this.place.spec.exits.filter((e) => e.via === key).length > 1) return { kind: 'do', thing: key, verb: 'look' };
     if (this.place.spec.exits.some((e) => e.via === key)) return { kind: 'go', via: key };
     const role = hot.spec?.role ?? hot.thing.role;
     // A person talks: in a conversation when the story has one for them now, else in their own talk lines.
@@ -1497,66 +1487,6 @@ class Game {
     return this.shift(y);
   }
 
-  /**
-   * A drive: the far view stays; the road and the roadside grow out of the vanishing point, one copy taking over
-   * from the next every DRIVE_SECONDS, so what stands beside the road comes nearer, grows and leaves by the sides
-   * (?drive=N: speed, 0 parked).
-   */
-  private drawDrive() {
-    const drive = this.place.drive!;
-    const pace = params.has('still') ? 0 : Number(params.get('drive') ?? 1) / DRIVE_SECONDS;
-    const phase = ((this.time * pace) % 1 + 1) % 1;
-    const [vx, vy] = drive.vp;
-    const bandsThen: Array<() => void> = [];
-    ctx.drawImage(drive.far, 0, 0);
-    const grown = (scale: number, alpha: number) => {
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.translate(vx, vy);
-      ctx.scale(scale, scale);
-      ctx.drawImage(drive.near, -vx, -vy);
-      ctx.restore();
-    };
-    // The copy coming out of the distance, whole, under the one that has grown past it and fades as it leaves.
-    grown(DRIVE_ZOOM ** (phase - 1), 1);
-    const fade = Math.min(1, Math.max(0, (phase - 0.6) / 0.4));
-    grown(DRIVE_ZOOM ** phase, 1 - fade * fade * (3 - 2 * fade));
-    // The car's own shade on the road under it rides with the car (what was painted under it slides away).
-    const car = this.carOf(this.place);
-    if (car) {
-      const [x0, , x1] = car.occ.box;
-      const y1 = this.wheelsOf(car);
-      bandsThen.push(() => {
-        ctx.save();
-        ctx.filter = 'blur(10px)';
-        ctx.fillStyle = 'rgba(20,16,30,0.55)';
-        ctx.beginPath();
-        ctx.ellipse((x0 + x1) / 2, y1 - 4, (x1 - x0) * 0.5, Math.max(14, (x1 - x0) * 0.05), 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      });
-    }
-    for (const then of bandsThen) then();
-  }
-
-  private readonly wheels = new WeakMap<Cut, number>();
-
-  /** Where a car card's wheels meet the road: its lowest row that is solid across a fifth of it (its painted shade is thinner). */
-  private wheelsOf(cut: Cut): number {
-    let y = this.wheels.get(cut);
-    if (y !== undefined) return y;
-    const { width: w, height: h } = cut.canvas;
-    const px = cut.canvas.getContext('2d')!.getImageData(0, 0, w, h).data;
-    y = cut.y0 + h;
-    for (let r = h - 1; r >= 0; r--) {
-      let solid = 0;
-      for (let c = 0; c < w; c++) if (px[(r * w + c) * 4 + 3] > 200) solid++;
-      if (solid > w * 0.2) { y = cut.y0 + r; break; }
-    }
-    this.wheels.set(cut, y);
-    return y;
-  }
-
   /** The car of a drive place: the card named as a car, else the biggest card standing on the road. */
   private carOf(place: Place): Cut | undefined {
     const named = (c: Cut) => { const k = c.occ.thing ?? c.occ.key; return `${k} ${place.spec.things.find((t) => t.key === k)?.looks ?? ''}`; };
@@ -1578,13 +1508,14 @@ class Game {
    * card (its outline, its story change) goes through here, so it moves exactly as the card does.
    */
   private poseCard(cut: Cut) {
-    if (this.place.drive && cut === this.carOf(this.place) && !params.has('still')) {
-      // The car on the road: a small quick bob of the body over the road's seams, and a slow sway.
+    if (this.place.spec.kind === 'drive' && cut === this.carOf(this.place) && !params.has('still')) {
+      // The engine idles: the body trembles on its springs, harder while it revs to leave.
       const t = this.time;
-      const bob = Math.sin(t * 13) * 0.8 + Math.sin(t * 5.3) * 1.2 + (Math.sin(t * 1.7) > 0.97 ? -2.5 : 0);
+      const rev = this.revving > t ? 3 : 1;
+      const shake = (Math.sin(t * 61) * 0.5 + Math.sin(t * 37 + 1) * 0.35) * rev;
       const [cx, cy] = [(cut.occ.box[0] + cut.occ.box[2]) / 2, cut.occ.box[3]];
-      ctx.translate(cx, cy + bob);
-      ctx.rotate(Math.sin(t * 2.1) * 0.004);
+      ctx.translate(cx, cy + shake);
+      ctx.rotate(Math.sin(t * 23) * 0.0012 * rev);
       ctx.translate(-cx, -cy);
       return;
     }
@@ -2041,23 +1972,7 @@ class Game {
     const people: Who[] = [...npcs.map((h) => ({ npc: h, y: h.npc?.body.y ?? h.thing.box[3] })), ...(riding ? [] : [this.hero, ...this.party]).map((body) => ({ body, y: body.y }))].sort((a, b) => a.y - b.y);
     const fire = this.fireOf(gone);
     this.climbs.length = 0;
-    if (this.place.drive) {
-      this.drawDrive();
-      for (const hot of this.hots()) {
-        if (!hot.plate || !gone.has(hot.thing.key)) continue;
-        const [x0, y0, x1, y1] = hot.thing.box.map((v, i) => (i < 2 ? Math.max(0, v - 16) : v + 16));
-        ctx.drawImage(hot.plate, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
-      }
-      for (const who of people) this.drawWho(who, undefined, 'shadow');
-      for (const cut of this.place.cuts) if (!cut.occ.thing || !gone.has(cut.occ.thing)) this.drawCard(cut);
-      for (const { img, i } of this.changed()) {
-        const cut = this.place.cuts.find((c) => (c.occ.thing ?? c.occ.key) === this.data.story!.changes[i].thing);
-        ctx.save();
-        if (cut) this.poseCard(cut);
-        ctx.drawImage(img, 0, 0, W, H);
-        ctx.restore();
-      }
-    } else if (p && backdrop) {
+    if (p && backdrop) {
       // A diorama: the backdrop's floor shears with depth, then every card slides as the floor row it stands on.
       const { above, below } = backdropTransforms(g, p);
       const h = Math.round(g.scale.horizonY);
@@ -2167,6 +2082,7 @@ class Game {
       this.drawClimbs();
     }
     this.place.glows?.draw(ctx, (y) => this.shift(y));
+    if (this.place.spec.kind === 'drive') this.drawIdle();
     this.place.weather?.drawDrips(ctx, (y) => this.shift(y));
     this.drawFocus();
     // The place as drawn so far, without anyone: what the depth map puts back over a person (occludeDepth).
@@ -2807,6 +2723,105 @@ class Game {
   }
 
   /** Shadows that land on things standing behind their person (a tent wall): drawn over the cards. */
+  /** Until when a drive's engine revs (it shakes harder) before it leaves. */
+  revving = 0;
+  /** The destination board of a drive place, as drawn this frame: each place it leads to and its box. */
+  private board: Array<{ to: string; via: string; box: [number, number, number, number] }> = [];
+  /** The destination under the pointer. */
+  boardHover: string | undefined;
+
+  /** Where a drive place's car leads: every exit through a thing that leads to more than one place. */
+  destinations(): Array<{ to: string; via: string }> {
+    if (this.place?.spec.kind !== 'drive') return [];
+    const exits = this.place.spec.exits;
+    return exits.filter((e) => exits.filter((o) => o.via === e.via).length > 1).map((e) => ({ to: e.to, via: e.via }));
+  }
+
+  destinationAt(x: number, y: number): string | undefined {
+    return this.board.find((b) => x >= b.box[0] && x <= b.box[2] && y >= b.box[1] && y <= b.box[3])?.to;
+  }
+
+  /** The middle of a destination's row on the board, in page pixels (for scripts and recorders). */
+  destinationPoint(to: string): { x: number; y: number } | null {
+    const b = this.board.find((d) => d.to === to);
+    if (!b) return null;
+    const z = this.zoom();
+    const { width: W, height: H } = this.place.g.frame;
+    const [fx, fy] = [((b.box[0] + b.box[2]) / 2 - (this.viewX || W / 2)) * z + W / 2, ((b.box[1] + b.box[3]) / 2 - (this.viewY || H / 2)) * z + H / 2];
+    const r = canvas.getBoundingClientRect();
+    return { x: r.left + (fx * r.width) / W, y: r.top + (fy * r.height) / H };
+  }
+
+  /** Drives off to a destination: the engine revs, the picture fades, the car is parked there and the hero gets out. */
+  async driveTo(to: string) {
+    const d = this.destinations().find((e) => e.to === to);
+    if (!d || this.busy) return;
+    this.busy = true;
+    try {
+      this.emit('use', { thing: d.via, verb: 'go' });
+      this.revving = this.time + 1;
+      await this.wait(800);
+      await this.act({ kind: 'go', via: d.via, to });
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** A drive place's engine running (exhaust puffing from behind the car) and its board of destinations. */
+  private drawIdle() {
+    const car = this.carOf(this.place);
+    const t = this.time;
+    if (car && !params.has('still')) {
+      const [x0, y0, x1, y1] = car.occ.box;
+      const [w, h] = [x1 - x0, y1 - y0];
+      const rev = this.revving > t ? 2.2 : 1;
+      ctx.save();
+      for (let i = 0; i < 10; i++) {
+        const age = (t * 0.8 * rev + i / 10) % 1;
+        const r = w * (0.02 + age * 0.08);
+        ctx.fillStyle = `rgba(210,210,215,${(0.32 * (1 - age) * Math.min(1, age * 6)).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(x0 + w * 0.12 - age * w * 0.22 + Math.sin(t * 2 + i) * 4, y1 - h * 0.12 - age * h * 0.35, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+    const where = this.destinations();
+    this.board = [];
+    if (!where.length) return;
+    const W = this.place.g.frame.width;
+    const [rowH, bw, x1, top] = [52, 330, W - 28, 36];
+    const x0 = x1 - bw;
+    ctx.save();
+    ctx.fillStyle = 'rgba(12,10,18,0.78)';
+    ctx.strokeStyle = 'rgba(255,60,170,0.9)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x0, top, bw, 54 + where.length * rowH, 12);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#ffd34d';
+    ctx.font = '700 22px system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Where to?', x0 + 18, top + 28);
+    where.forEach((d, i) => {
+      const y = top + 54 + i * rowH;
+      const box: [number, number, number, number] = [x0 + 8, y + 3, x1 - 8, y + rowH - 3];
+      this.board.push({ ...d, box });
+      const lit = this.boardHover === d.to;
+      ctx.fillStyle = lit ? 'rgba(255,60,170,0.85)' : 'rgba(255,255,255,0.07)';
+      ctx.beginPath();
+      ctx.roundRect(box[0], box[1], box[2] - box[0], box[3] - box[1], 8);
+      ctx.fill();
+      ctx.fillStyle = lit ? '#fff' : '#e8e4f0';
+      ctx.font = '600 21px system-ui, sans-serif';
+      ctx.fillText(displayName(d.to, this.data.world.names), box[0] + 14, (box[1] + box[3]) / 2);
+      ctx.fillStyle = '#5ee6ff';
+      ctx.fillText('›', box[2] - 26, (box[1] + box[3]) / 2);
+    });
+    ctx.restore();
+  }
+
   private climbs: Array<{ canvas: HTMLCanvasElement; box: [number, number, number, number]; dark: number; blur: string; shift: [number, number] }> = [];
   private climbPool: HTMLCanvasElement[] = [];
   private climbMask = document.createElement('canvas');
@@ -3519,10 +3534,11 @@ canvas.addEventListener('pointermove', (e) => {
   usePad(false);
   const r = canvas.getBoundingClientRect();
   pointer = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
-  game.hover = game.thingAt(...toFrame(e));
+  game.boardHover = game.destinationAt(...toFrame(e));
+  game.hover = game.boardHover ? undefined : game.thingAt(...toFrame(e));
   // Off the floor (a wall, the sky, the water) the cursor says no, so nobody clicks blind.
-  const off = !game.hover && !game.place.grid.walkable(...game.floorAt(...toFrame(e)));
-  canvas.style.cursor = hideCursor || game.holding ? 'none' : game.hover ? 'pointer' : off ? 'not-allowed' : 'default';
+  const off = !game.hover && !game.boardHover && !game.place.grid.walkable(...game.floorAt(...toFrame(e)));
+  canvas.style.cursor = hideCursor || game.holding ? 'none' : game.hover || game.boardHover ? 'pointer' : off ? 'not-allowed' : 'default';
   game.bag.point(e.clientX, e.clientY, game.hover?.thing.key.replace(/-/g, ' '));
   document.getElementById('hover')!.textContent = game.hover ? game.hover.thing.key.replace(/-/g, ' ') : '';
 });
@@ -3554,6 +3570,8 @@ canvas.addEventListener('click', (e) => {
   if (e.detail >= 2 && game.hero.path.length) return void (game.hero.run = true);
   game.hero.run = false;
   const [x, y] = toFrame(e);
+  const to = game.destinationAt(x, y);
+  if (to) return void game.driveTo(to);
   const hot = game.thingAt(x, y);
   if (hot) void game.use(hot.thing.key);
   else void game.walkTo(...game.floorAt(x, y));

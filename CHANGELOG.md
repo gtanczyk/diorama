@@ -10,7 +10,7 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 ### Added
 
 - The Studio agent's model can be chosen: `DIORAMA_AGY_MODEL` (Antigravity, e.g. `gemini-4-argon-high`; `agy models` lists them), `DIORAMA_CODEX_MODEL`, `DIORAMA_MUSE_MODEL`, `DIORAMA_AGENT_CLAUDE_MODEL`, or `DIORAMA_AGENT_MODEL` for any agent.
-- Drive places: a place with `"kind": "drive"` is a car ride in a chase view, the road and roadside streaming toward the camera out of the vanishing point, the hero at the wheel seen from behind and things clicked without walking; road signs take you to other places (docs/scenes.md, Drive).
+- The hero's car: a place with `"kind": "drive"` is the car standing at the kerb with the engine running (trembling, exhaust, lights), the hero at the wheel and a board of destinations; every place has the car parked in it to get in, and picking a destination fades to the hero stepping out there. No driving animation (docs/scenes.md, Drive). A `go` through one thing that leads to several places carries `to`.
 - `story_look` (Studio action): sets what the hero says looking at one thing, adding the line where the story has none, without writing the whole story again; kept across rebuilds.
 
 ### Fixed

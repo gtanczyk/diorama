@@ -13,12 +13,12 @@ import { WorldFiles } from '../world/files.ts';
 import { chromium } from './explore.ts';
 import { serveWorld } from './play.ts';
 
-type Step = { use: string; verb?: string; with?: string } | { act: Action } | { wait: number };
+type Step = { use: string; verb?: string; with?: string; to?: string } | { act: Action } | { wait: number };
 
 /** A story action as what a player does on the page: click the thing, or pick an answer. */
 export function toStep(action: Action): Step {
   switch (action.kind) {
-    case 'go': return { use: action.via };
+    case 'go': return { use: action.via, ...(action.to && { to: action.to }) };
     case 'talk': return { use: action.npc };
     case 'do': return { use: action.thing, verb: action.verb, ...(action.with ? { with: action.with } : {}) };
     default: return { act: action };

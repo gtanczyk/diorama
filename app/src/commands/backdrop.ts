@@ -12,8 +12,6 @@ import { carryBetween, carryFrom, paintingFor, ran, remakes, tilesLine, withChan
 import { cloudSheet, CRITTER, critterSheet, Depth, FALLING, fallSheet, STREAM, streamSheet, farFlats, floatSheet, cloneFill, mistSheet, smokeSheet, waterSheet } from '../scene/layers.ts';
 import { maskFromPng as waterMaskOf } from '../image/mask.ts';
 import { WorldFiles } from '../world/files.ts';
-import { CAR, clearUnderCar, driveLayers } from '../scene/drive.ts';
-import { depthMap } from '../scene/depthmap.ts';
 
 /** A thing that is water itself: its mask is where the swell is, not dry land. */
 const WET_THING = /\b(water|river|sea|lake|pond|pool|stream|canal|creek|brook|waves?|fountain|puddle)s?\b/i;
@@ -71,28 +69,6 @@ defineCommand({
         const ghosts = Object.entries(report).filter(([, r]) => r.ghost).map(([k]) => k);
         for (const [k, r] of Object.entries(report)) if (r.cut) console.log(`  ${place.key}: ${k}: its card cuts through a painted part of it at [${r.cut.box?.join(', ')}] (its mask leaves that part out, so it stays on the backdrop and slides apart)`);
         console.log(`${place.key}: backdrop behind ${keys.join(', ')}${stuck.length ? ` (Muse left ${stuck.join(', ')}: smeared there)` : ''}${ghosts.length ? ` (a silhouette of ${ghosts.join(', ')} was left: painted over again)` : ''}`);
-      }
-      if (place.kind === 'drive') {
-        // A drive: the road and the roadside stream toward the camera, the far view stays; no flats, water or fog.
-        fs.rmSync(at('layers'), { recursive: true, force: true });
-        const car = place.things.find((t) => CAR.test(`${t.key} ${t.looks}`)) ?? place.things.find((t) => t.role === 'prop');
-        const carBox = car && g.things.find((t) => t.key === car.key)?.box;
-        if (carBox) png = await clearUnderCar(png, carBox);
-        // Depth read again from the backdrop: the painting's has the cards in it. Local model, no call.
-        const own = await depthMap(png, g).catch(() => undefined);
-        const depth = own && 'png' in own ? own.png : g.depth && fs.existsSync(at(g.depth)) ? fs.readFileSync(at(g.depth)) : undefined;
-        // The vanishing point: the middle of the road's farthest walk row.
-        const top = g.walk.findIndex((row) => row.includes('#'));
-        const cols = top < 0 ? [] : [...g.walk[top]].flatMap((ch, c) => (ch === '#' ? [(c + 0.5) * g.cell] : []));
-        const roadX = cols.length ? cols.reduce((a, b) => a + b, 0) / cols.length : FRAME.width / 2;
-        const made = await driveLayers(png, depth, g.scale.horizonY, roadX);
-        files.write(at('layers', 'drive-near.png'), made.near);
-        files.write(at('layers', 'drive-far.jpg'), made.far);
-        files.write(at('layers.json'), { sky: null, flats: [], drive: { near: 'layers/drive-near.png', far: 'layers/drive-far.jpg', vp: made.vp } });
-        console.log(`  ${place.key}: drive, streaming from [${made.vp.join(', ')}]${depth ? '' : ' (no depth map: below the horizon only)'}`);
-        ran(at(), 'backdrop', carry?.old ?? painting);
-        ran(at(), 'backdrop-made', png);
-        return;
       }
       // Painted animals (fish, gulls) swim and fly as small cards of their own: painted out of the backdrop here.
       const alive = (fs.existsSync(at('brief.json')) ? (files.readJson(at('brief.json')) as { alive?: Array<{ key: string; as: string }> }).alive : undefined) ?? [];

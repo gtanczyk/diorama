@@ -32,7 +32,7 @@ export function whereIs(layout: Layout, box: Layout['things'][number]): string {
 }
 
 /** A drive place is seen from the side at car height, and its scenery loops sideways in the page. */
-const DRIVE_PAINT = (world: World) => `A chase view from just behind and a little above the car, like a driving game: the straight road runs ahead from the bottom edge to its vanishing point on the horizon at the centre, the car seen from behind at the bottom centre, open-topped, with the hero at the wheel seen from behind (only the back of the head and the shoulders above the seat): ${world.hero.looks}. Paint it still and sharp, no motion blur or speed lines.`;
+const DRIVE_PAINT = (world: World) => `The hero's car stands at the kerb with its engine running, lights on, a wisp of exhaust, seen from behind at three-quarters, with the hero at the wheel visible through the window or over the open top: ${world.hero.looks}. Keep the top right quarter of the picture calm, nothing important there.`;
 
 export function paintPrompt(world: World, place: Place, layout: Layout, brief?: Brief): string {
   const look = (key: string, fallback: string) => brief?.looks[key] ?? fallback;

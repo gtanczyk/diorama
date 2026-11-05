@@ -17,7 +17,8 @@ export type State = {
 };
 
 export type Action =
-  | { kind: 'go'; via: string }
+  /** `to` picks among several places one thing leads to (a car that drives anywhere). */
+  | { kind: 'go'; via: string; to?: string }
   | { kind: 'do'; thing: string; verb: string; with?: string }
   | { kind: 'talk'; npc: string }
   | { kind: 'choose'; index: number }
@@ -101,7 +102,11 @@ export function actions(world: World, story: Story, state: State): Action[] {
   }
   const place = world.places.find((p) => p.key === state.place)!;
   const out: Action[] = [];
-  for (const exit of place.exits) if (!lockOn(story, state, exit.via)) out.push({ kind: 'go', via: exit.via });
+  for (const exit of place.exits) {
+    if (lockOn(story, state, exit.via)) continue;
+    const shared = place.exits.filter((e) => e.via === exit.via).length > 1;
+    out.push({ kind: 'go', via: exit.via, ...(shared && { to: exit.to }) });
+  }
   const seen = new Set<string>();
   for (const it of story.interactions) {
     const id = `${it.thing}|${it.verb}|${it.with ?? ''}`;
@@ -126,7 +131,7 @@ export function apply(world: World, story: Story, state: State, action: Action):
     case 'go': {
       const lock = lockOn(story, state, action.via);
       if (lock) return { state, say: [lock.say] };
-      const exit = world.places.find((p) => p.key === state.place)?.exits.find((e) => e.via === action.via);
+      const exit = world.places.find((p) => p.key === state.place)?.exits.find((e) => e.via === action.via && (!action.to || e.to === action.to));
       if (!exit) throw new Error(`no exit "${action.via}" in ${state.place}`);
       next.place = exit.to;
       break;
@@ -201,7 +206,7 @@ export function stateKey(state: State): string {
 
 export function describe(action: Action): string {
   switch (action.kind) {
-    case 'go': return `go ${action.via}`;
+    case 'go': return `go ${action.via}${action.to ? ` to ${action.to}` : ''}`;
     case 'do': return `${action.verb} ${action.thing}${action.with ? ` with ${action.with}` : ''}`;
     case 'talk': return `talk ${action.npc}`;
     case 'choose': return `choose ${action.index + 1}`;

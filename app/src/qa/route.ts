@@ -1,7 +1,7 @@
 import type { Page } from 'playwright';
 import type { Action } from '../story/engine.ts';
 
-type Step = { use: string; verb?: string; with?: string } | { act: Action } | { wait: number };
+type Step = { use: string; verb?: string; with?: string; to?: string } | { act: Action } | { wait: number };
 
 /** Follow a route through the same pointer targets, inventory and answers as a person. */
 export async function playRoute(page: Page, steps: Step[]): Promise<{ ending: string | null; frames: number; time: number }> {
@@ -20,6 +20,14 @@ export async function playRoute(page: Page, steps: Step[]): Promise<{ ending: st
       await page.locator(`#talk button[data-action=${JSON.stringify(action)}]`).click();
     } else {
       if (step.with) await page.locator(`#inventory button[data-item=${JSON.stringify(step.with)}]`).click();
+      if (step.to) {
+        // One thing that leads to several places (a car): its destination is picked on the board the page shows.
+        const at = await page.evaluate(`window.diorama.destinationPoint(${JSON.stringify(step.to)})`) as { x: number; y: number } | null;
+        if (!at) throw new Error(`No destination ${step.to} on the board for ${step.use}`);
+        await page.mouse.click(at.x, at.y);
+        await settled();
+        continue;
+      }
       const point = await aimPoint(page, step);
       if (!point) throw new Error(`No clickable pixel for ${step.use}: its pointer target is hidden or covered`);
       await page.mouse.click(point.x, point.y, { button: step.verb === 'look' ? 'right' : 'left' });

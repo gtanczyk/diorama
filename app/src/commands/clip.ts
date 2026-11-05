@@ -149,6 +149,13 @@ async function gameTake(port: number, work: string, actions: Action[], zoom: boo
         clicks.push({ wall: await rec.click(at.x, at.y, { ms: 450, dwell: 150 }), ...at, place: here, action: a });
         continue;
       }
+      if (a.kind === 'go' && a.to) {
+        // A car's destination is picked on the board the page shows over it.
+        const at = await page.evaluate(`window.diorama.destinationPoint(${JSON.stringify(a.to)})`) as { x: number; y: number } | null;
+        if (!at) throw new Error(`no destination ${a.to} on the board`);
+        clicks.push({ wall: await rec.click(at.x, at.y, { ms: 650 }), ...at, place: here, action: a });
+        continue;
+      }
       const step: { use: string; verb?: string; with?: string } = a.kind === 'go' ? { use: a.via } : a.kind === 'talk' ? { use: a.npc } : { use: a.thing, verb: a.verb, ...(a.with ? { with: a.with } : {}) };
       // The bag is hidden in the clip: the item is lifted from it unseen and rides the cursor to its target.
       const pick = async () => {
