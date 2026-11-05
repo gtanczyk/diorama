@@ -13,6 +13,9 @@ const Prompt = z.string().min(8);
 /** 1 quiet, 2 normal, 3 loud: how it sits in the mix next to the place bed. */
 const Level = z.union([z.literal(1), z.literal(2), z.literal(3)]).default(2);
 
+/** One-shots kept from a plan; the same prompt is made once, so exits of one kind cost one sound. */
+const MAX_SHOTS = 24;
+
 export const SoundPlan = z.object({
   /** Hash of what the plan was made from (world, story, briefs, floors); when that changes the plan is made again. */
   from: z.string().optional(),
@@ -29,7 +32,9 @@ export const SoundPlan = z.object({
   /** Surface name to what a few footsteps on it sound like. */
   steps: z.record(z.string(), Prompt),
   /** Short one-shots: picking up an item, an exit, using a thing, the ending. */
-  shots: z.array(z.object({ on: z.string(), prompt: Prompt, seconds: z.number().min(0.5).max(5).default(1.5), level: Level })).max(16).default([]),
+  shots: z.array(z.object({ on: z.string(), prompt: Prompt, seconds: z.number().min(0.5).max(5).default(1.5), level: Level })).default([])
+    // A world with many exits (a car parked in every place) asks for more than fit: the first ones are kept.
+    .transform((shots) => shots.slice(0, MAX_SHOTS)),
 });
 export type SoundPlan = z.infer<typeof SoundPlan>;
 

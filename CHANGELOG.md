@@ -16,6 +16,7 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ### Fixed
 
+- A sound plan with more one-shots than fit (a world with many exits) keeps the first 24 instead of failing the build.
 - A place whose approved concept keeps pulling the painting off its plan (a second new take asked for) is painted from the block-in alone, instead of failing the composition check take after take.
 
 ## 0.3.0 — 2026-11-05
