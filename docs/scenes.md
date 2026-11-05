@@ -29,6 +29,15 @@ Walk geometry still comes from the accepted painting, not the rough plan. The bu
 - **Rim light.** Each person gets a thin warm edge on the side the light comes from (against the way shadows fall; a place with no measured light gets none), as illustrators separate a figure from a busy background. `?rim=0` off, `?rim=1.5` wider.
 - **Focus** (off by default). `?focus=1` softens and pales what is behind the hero with its depth, like a close-up camera. It only separates far things, so it stays opt-in.
 
+## Drive: riding a car between places
+
+A place with `"kind": "drive"` in world.json is a ride: the hero sits in the car (unseen) and the scenery streams past. The world designer makes one only when the idea asks for driving; it works well as a hub with a road sign to several places.
+
+- **Layout and paint.** The layout is a side view at car height: the road is the one floor, level from the left edge to the right; the car stands on it side on in the middle third; road signs (the exits) stand on the far kerb; the scenery runs on past both edges. Muse paints it still and sharp (no speed lines). The usual gates run: the road is walk floor, so masks, derive and verify need nothing new.
+- **Cards.** Everything one clicks (the car, the signs, the props) is a card of its own (`derive` makes one for every thing with a mask), so it stays where it is clicked while the scenery behind it moves.
+- **Bands.** `backdrop` paints the cards out as usual, fills the road under the car along each row (its painted shade would slide away from it), then cuts the backdrop into depth bands by the depth model read on the backdrop itself (else `derive`'s depth.png, else rows): far rows under the horizon move slowly, the road fast, as `1 / distance` on a level road. Where a nearer thing stood in front of a band, the band is filled along the row from its own pixels; each band's last 160 px are cross-faded into its start, so it repeats without a seam. `layers.json` keeps them under `drive` (`layers/drive-<n>.png`, period, speed, top). No model calls.
+- **In the page.** The bands slide left and repeat (`?drive=N` sets the speed, `0` parks; `still` too, also in capture runs), the whole backdrop is drawn under them in strips of rows, each at its row's pace, so no band leaves a hole; the car card bobs over the road with a soft shade under its wheels; the other cards stay. The hero is not drawn and speaks from the car; a click uses a thing at once, without walking, and an exit sign changes place without walking to the edge. `clip` and `playthrough` click things as anywhere else.
+
 ## Weather: rain, snow and drips
 
 `diorama weather <slug>` (a build step, after `backdrop`) reads what falls on each place and where water drips, into `places/<key>/weather.json`; the page animates it all, so nothing in the painting is a frozen streak:

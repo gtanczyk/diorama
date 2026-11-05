@@ -156,6 +156,15 @@ defineCommand({
         });
         console.log(`  ${place.key}: closed ${faced.closed} walk cells on an upright face (feet over thin air)${faced.beyond ? ` and ${faced.beyond} only they led to` : ''}`);
       }
+      if (place.kind === 'drive') {
+        // A drive's scenery streams past, so everything one clicks stays put as a card of its own (a road sign
+        // left in the scenery would slide away from where it is clicked).
+        const carded = new Set(geometry.occluders.map((o) => o.thing ?? o.key));
+        for (const t of geometry.things) {
+          if (carded.has(t.key) || !t.mask || t.role === 'npc') continue;
+          geometry.occluders.push({ key: `${t.key}#1`, thing: t.key, box: t.box, mask: t.mask, baseY: t.box[3] });
+        }
+      }
       files.write(at('geometry.json'), geometry);
       files.write(at('walk.png'), await walkPicture(painting, geometry, out.footprint));
       ran(at(), 'derive', carry?.old ?? painting);

@@ -154,6 +154,16 @@ export function closeUpIssues(layout: Layout): string[] {
     : [];
 }
 
+/** A drive place: a side view of a road that loops sideways, the car standing on it, the signs beside it. */
+const DRIVE_LAYOUT = `
+This place is a drive: the hero rides in the car along the road, seen from the side at about car height, and the scenery will stream past sideways in a loop. So:
+- horizon between 300 and 420; the road runs straight across the whole frame from the left edge to the right edge, level, below the horizon: one floor, the road with its near and far kerb, from x 0 to x ${FRAME.width}, reaching the bottom edge
+- the car stands on the road in the middle third, side on, wheels on the road, about a third of the frame wide
+- road signs on posts stand on the far kerb of the road, spread left and right of the car, not behind it; other things sit in or on the car or at the roadside
+- the scenery beside the road (buildings, palms, sea, hills) runs on past both frame edges, with nothing cut in half at an edge that matters
+
+`;
+
 function brief(world: World, place: Place): string {
   const { width: W, height: H } = FRAME;
   return `Lay out one place of a 2D point-and-click adventure as a block-in for a painter. The frame is ${W}x${H} px, x to the right, y down; the camera looks a little down at the place, like at a stage.
@@ -169,8 +179,7 @@ Give:
 - floors: 1 to 4 walkable areas below the horizon as outlines, nearest first; the first reaches the bottom edge; every other floor touches one listed before it (a bridge, steps or a path across water or a drop is a floor too), so the hero can walk everywhere; leave room to walk around things
 - things: every thing as a box standing on the floor: x (centre), footY (where it touches the floor), width, height in px, metres (real height), colour (main colour), shape (its silhouette: block = a box, stall, cupboard; low = bench, table, boat, cart, bed; post = lamp, pole, sign, column; tree; arch = door, gate, archway, window, tunnel; round = barrel, pot, rock, bush, well; steps = stairs or steps; flat = lies on the floor: rug, water, tracks); nearer things sit lower and are bigger; exits sit at the edge of a floor; every exit, item and person stands on a floor; leave a way round every big thing, and never stand one across the only way to a floor
 - lights: up to 6 visible sources (lamps, fires, windows) with x, y, colour
-
-Reply with JSON only:
+${place.kind === 'drive' ? DRIVE_LAYOUT : ''}Reply with JSON only:
 {"horizon": 0, "sky": "#rrggbb", "ground": "#rrggbb",
  "floors": [{"key": "...", "is": "what the floor is", "colour": "#rrggbb", "outline": [[x, y], ...]}],
  "things": [{"key": "...", "colour": "#rrggbb", "x": 0, "footY": 0, "width": 0, "height": 0, "metres": 1.0, "shape": "block"}],

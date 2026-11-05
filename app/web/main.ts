@@ -12,6 +12,7 @@ import { CYCLE, pose, sheetCell, type PartName, type Rig } from '../src/play/rig
 import { actions, activeChanges, apply, hiddenThings, hintFor, holds, lockOn, pickDialogue, pickInteraction, speakerOf, startState, useFor, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
 import type { Place as PlaceSpec, World } from '../src/world/schema.ts';
+import { CAR } from '../src/play/car.ts';
 import { Mixer, type Listened } from './audio.ts';
 import { PLAYER_COLOURS, readEachPad, readPads, Turns, type PadButton, type PadFrame } from './pad.ts';
 import { Answers, Bag, displayName, fitHud, showEnding, type ItemLook } from './ui.ts';
@@ -76,6 +77,11 @@ type Figure = { img: HTMLImageElement; face?: PaintedFace; faceInfo?: FaceDefini
 const FLOATS = /\b(boat|rowboat|dinghy|skiff|canoe|kayak|raft|ship|barge|punt|gondola|sampan|junk|ferry|trawler|yacht|sailboat)s?\b/i;
 
 /** canvas: the card as the place looks now (story changes on it); base: as painted, whose alpha is the card's shape. */
+/** How fast the nearest road row passes in a drive, px a second. */
+const DRIVE_PX = 620;
+/** The rows the painting under a drive's bands is drawn in, each at its own pace. */
+const DRIVE_STRIP = 12;
+
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; base: HTMLCanvasElement; x0: number; y0: number; y: number };
 
 type Place = {
@@ -108,6 +114,8 @@ type Place = {
   critters?: Critter[];
   clouds?: Clouds;
   far?: { sky?: HTMLImageElement; flats: Array<{ img: HTMLImageElement; box: [number, number, number, number]; d: number }> };
+  /** A drive place (kind "drive"): the backdrop's depth bands streaming past, far first, each `period` wide and repeating. */
+  drive?: { period: number; horizon: number; base: HTMLImageElement; bands: Array<{ img: HTMLImageElement; speed: number; top: number }> };
   hots: Hot[];
   cuts: Cut[];
   byKey: Map<string, Occluder>;
@@ -545,6 +553,13 @@ class Game {
       const ds = flatDisparities(g, edge, imgs.length);
       if (imgs.every(Boolean)) far = { sky, flats: entry.layers.flats.map((f, i) => ({ img: imgs[i]!, box: f.box, d: ds[i] })) };
     }
+    // A drive streams past even in capture runs (no parallax there): it is the place, not a camera move.
+    let drive: Place['drive'];
+    if (spec.kind === 'drive' && entry.layers?.drive) {
+      const d = entry.layers.drive;
+      const [base, ...imgs] = await Promise.all([d.base, ...d.bands.map((b) => b.file)].map((f) => loadImage(files(f)).catch(() => undefined)));
+      if (base && imgs.every(Boolean)) drive = { period: d.period, horizon: d.horizon, base, bands: d.bands.map((b, i) => ({ img: imgs[i]!, speed: b.speed, top: b.top })) };
+    }
     let water: Place['water'];
     const w = entry.layers?.water;
     if (backdrop && w && !params.has('still')) {
@@ -611,7 +626,7 @@ class Game {
     const glows = (entry.glows?.length || bg) && !params.has('still') && (params.get('glow') ?? (capture ? '0' : '1')) !== '0' ? new GlowFx(entry.glows ?? [], g.frame.height, bg, wet, backdrop ? kept.map((c) => c.occ.box) : []) : undefined;
     const focus = focusScale > 0 || separateScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
     const surf = water && !params.has('still') ? new Surf(water.tex, water.mask, water.box, backdrop) : undefined;
-    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, water, mist, smoke, floats, surf, ...living, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
+    const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, drive, water, mist, smoke, floats, surf, ...living, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
     this.cache.set(key, place);
     for (const hot of hots.filter((h) => (h.spec?.role ?? h.thing.role) === 'npc')) {
       const id = `${key}/${hot.thing.key}`;
@@ -670,7 +685,10 @@ class Game {
     [this.hero.x, this.hero.y] = arrive ?? place.g.start;
     // Coming over a bridge or up the steps, the hero walks in from the exit's far end (by the frame's edge) to
     // where one stands at it, instead of popping up in the middle of the place.
-    const edge = back && arrive ? this.exitEdge(back.via) : undefined;
+    const edge = back && arrive && place.spec.kind !== 'drive' ? this.exitEdge(back.via) : undefined;
+    // In a drive the hero sits in the car, unseen: they speak from it.
+    const car = place.spec.kind === 'drive' ? this.carOf(place) : undefined;
+    if (car) [this.hero.x, this.hero.y] = [(car.occ.box[0] + car.occ.box[2]) / 2, car.occ.box[3]];
     if (edge) {
       [this.hero.x, this.hero.y] = edge;
       this.hero.path = this.place.grid.route(edge, arrive!);
@@ -844,7 +862,8 @@ class Game {
     try {
       const placeKey = this.place.key;
       const [sx, sy] = this.approach(hot);
-      if (!(await this.walkTo(sx, sy)) && Math.hypot(this.hero.x - sx, this.hero.y - sy) > this.place.g.cell * 2) return;
+      // In a drive things are used from the car, where they are.
+      if (this.place.spec.kind !== 'drive' && !(await this.walkTo(sx, sy)) && Math.hypot(this.hero.x - sx, this.hero.y - sy) > this.place.g.cell * 2) return;
       if (this.place.key !== placeKey) return;
       const [x0, , x1] = hot.thing.box;
       this.hero.facing = (hot.npc?.body.x ?? (x0 + x1) / 2) >= this.hero.x ? 1 : -1;
@@ -961,7 +980,7 @@ class Game {
       if (nudge && this.hinted?.key === nudge.thing) this.hinted = { key: nudge.thing, until: this.time + 6 };
       if (after.place !== from) {
         // Out the same way: along the bridge or down the steps toward the frame's edge before the picture fades.
-        const edge = action.kind === 'go' ? this.exitEdge(action.via) : undefined;
+        const edge = action.kind === 'go' && this.place.spec.kind !== 'drive' ? this.exitEdge(action.via) : undefined;
         if (edge) await Promise.race([this.walkTo(...edge), this.wait(2500)]);
         this.emit('exit', { from, to: after.place });
         await this.fadeOut();
@@ -1476,6 +1495,73 @@ class Game {
     return this.shift(y);
   }
 
+  /**
+   * A drive: each depth band of the backdrop slides left at its own pace and repeats, far bands slowly, the road
+   * fast (?drive=N: speed, 0 parked). Bands are drawn far first, so nearer ones cover them.
+   */
+  private drawDrive() {
+    const drive = this.place.drive!;
+    const W = this.place.g.frame.width;
+    const pace = params.has('still') ? 0 : Number(params.get('drive') ?? 1) * DRIVE_PX;
+    const H = this.place.g.frame.height;
+    const near = H - drive.horizon;
+    const slide = (speed: number) => Math.round(((this.time * pace * speed) % drive.period + drive.period) % drive.period);
+    // The whole painting first, in strips of rows, each at its row's pace (as the floor row it is, the sky as the
+    // farthest band): what the bands leave open shows the painting there, sliding about right.
+    const farthest = drive.bands[0]?.speed ?? 0;
+    const bandsThen: Array<() => void> = [];
+    for (let y = 0; y < H; y += DRIVE_STRIP) {
+      const h = Math.min(DRIVE_STRIP, H - y);
+      const off = slide(Math.max(farthest, (y + h / 2 - drive.horizon) / near));
+      for (let x = -off; x < W; x += drive.period) ctx.drawImage(drive.base, 0, y, drive.period, h, x, y, drive.period, h);
+    }
+    // The car's own shade on the road under it rides with the car (what was painted under it slides away).
+    const car = this.carOf(this.place);
+    if (car) {
+      const [x0, , x1] = car.occ.box;
+      const y1 = this.wheelsOf(car);
+      bandsThen.push(() => {
+        ctx.save();
+        ctx.filter = 'blur(10px)';
+        ctx.fillStyle = 'rgba(20,16,30,0.55)';
+        ctx.beginPath();
+        ctx.ellipse((x0 + x1) / 2, y1 - 4, (x1 - x0) * 0.5, Math.max(14, (x1 - x0) * 0.05), 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+    for (const b of drive.bands) {
+      // Whole pixels (slide): a band that sits between pixels shimmers against the one in front.
+      const off = slide(b.speed);
+      for (let x = -off; x < W; x += drive.period) ctx.drawImage(b.img, x, b.top);
+    }
+    for (const then of bandsThen) then();
+  }
+
+  private readonly wheels = new WeakMap<Cut, number>();
+
+  /** Where a car card's wheels meet the road: its lowest row that is solid across a fifth of it (its painted shade is thinner). */
+  private wheelsOf(cut: Cut): number {
+    let y = this.wheels.get(cut);
+    if (y !== undefined) return y;
+    const { width: w, height: h } = cut.canvas;
+    const px = cut.canvas.getContext('2d')!.getImageData(0, 0, w, h).data;
+    y = cut.y0 + h;
+    for (let r = h - 1; r >= 0; r--) {
+      let solid = 0;
+      for (let c = 0; c < w; c++) if (px[(r * w + c) * 4 + 3] > 200) solid++;
+      if (solid > w * 0.2) { y = cut.y0 + r; break; }
+    }
+    this.wheels.set(cut, y);
+    return y;
+  }
+
+  /** The car of a drive place: the card named as a car, else the biggest card standing on the road. */
+  private carOf(place: Place): Cut | undefined {
+    const named = (c: Cut) => { const k = c.occ.thing ?? c.occ.key; return `${k} ${place.spec.things.find((t) => t.key === k)?.looks ?? ''}`; };
+    return place.cuts.find((c) => CAR.test(named(c))) ?? [...place.cuts].sort((a, b) => b.canvas.width * b.canvas.height - a.canvas.width * a.canvas.height)[0];
+  }
+
   /** Draws the card's columns [xa, xb) (frame x) in strips, each slid by the floor under it. */
   private drawCard(cut: Cut, xa = cut.x0, xb = cut.x0 + cut.canvas.width, ya = cut.y0, yb = cut.y0 + cut.canvas.height) {
     ctx.save();
@@ -1491,6 +1577,16 @@ class Game {
    * card (its outline, its story change) goes through here, so it moves exactly as the card does.
    */
   private poseCard(cut: Cut) {
+    if (this.place.drive && cut === this.carOf(this.place) && !params.has('still')) {
+      // The car on the road: a small quick bob of the body over the road's seams, and a slow sway.
+      const t = this.time;
+      const bob = Math.sin(t * 13) * 0.8 + Math.sin(t * 5.3) * 1.2 + (Math.sin(t * 1.7) > 0.97 ? -2.5 : 0);
+      const [cx, cy] = [(cut.occ.box[0] + cut.occ.box[2]) / 2, cut.occ.box[3]];
+      ctx.translate(cx, cy + bob);
+      ctx.rotate(Math.sin(t * 2.1) * 0.004);
+      ctx.translate(-cx, -cy);
+      return;
+    }
     const float = this.afloat(cut);
     if (float && !params.has('still')) {
       const t = this.time + (hashSeed(cut.occ.key) % 1000) / 160;
@@ -1939,10 +2035,27 @@ class Game {
     const gone = this.gone();
     this.recut();
     const npcs = this.hots().filter((h) => (h.spec?.role ?? h.thing.role) === 'npc' && !h.mask);
-    const people: Who[] = [...npcs.map((h) => ({ npc: h, y: h.npc?.body.y ?? h.thing.box[3] })), ...[this.hero, ...this.party].map((body) => ({ body, y: body.y }))].sort((a, b) => a.y - b.y);
+    const riding = this.place.spec.kind === 'drive';
+    const people: Who[] = [...npcs.map((h) => ({ npc: h, y: h.npc?.body.y ?? h.thing.box[3] })), ...(riding ? [] : [this.hero, ...this.party]).map((body) => ({ body, y: body.y }))].sort((a, b) => a.y - b.y);
     const fire = this.fireOf(gone);
     this.climbs.length = 0;
-    if (p && backdrop) {
+    if (this.place.drive) {
+      this.drawDrive();
+      for (const hot of this.hots()) {
+        if (!hot.plate || !gone.has(hot.thing.key)) continue;
+        const [x0, y0, x1, y1] = hot.thing.box.map((v, i) => (i < 2 ? Math.max(0, v - 16) : v + 16));
+        ctx.drawImage(hot.plate, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+      }
+      for (const who of people) this.drawWho(who, undefined, 'shadow');
+      for (const cut of this.place.cuts) if (!cut.occ.thing || !gone.has(cut.occ.thing)) this.drawCard(cut);
+      for (const { img, i } of this.changed()) {
+        const cut = this.place.cuts.find((c) => (c.occ.thing ?? c.occ.key) === this.data.story!.changes[i].thing);
+        ctx.save();
+        if (cut) this.poseCard(cut);
+        ctx.drawImage(img, 0, 0, W, H);
+        ctx.restore();
+      }
+    } else if (p && backdrop) {
       // A diorama: the backdrop's floor shears with depth, then every card slides as the floor row it stands on.
       const { above, below } = backdropTransforms(g, p);
       const h = Math.round(g.scale.horizonY);

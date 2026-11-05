@@ -11,6 +11,11 @@ export const Thing = z.object({
 
 export const Place = z.object({
   key: Slug,
+  /**
+   * "drive": the hero rides along a road, seen from the side. The road is the floor, the scenery streams past in
+   * depth bands that loop, the hero sits in the car (unseen) and things are used where they are, without walking.
+   */
+  kind: z.enum(['drive']).optional(),
   shows: z.string().min(10),
   mood: z.string().min(3),
   things: z.array(Thing).min(1).max(10),

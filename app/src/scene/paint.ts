@@ -31,6 +31,9 @@ export function whereIs(layout: Layout, box: Layout['things'][number]): string {
   return `${back < 0.3 ? 'at the back' : back < 0.65 ? 'halfway back' : 'at the front'}, ${across}`;
 }
 
+/** A drive place is seen from the side at car height, and its scenery loops sideways in the page. */
+const DRIVE_PAINT = 'Seen from the side at about car height, like a frame from a driving scene: the road runs level across the whole picture from edge to edge, the car stands on it side on, the scenery beside the road continues past both side edges so it could repeat sideways. Paint it still and sharp, no motion blur or speed lines; the car is empty, no driver.';
+
 export function paintPrompt(world: World, place: Place, layout: Layout, brief?: Brief): string {
   const look = (key: string, fallback: string) => brief?.looks[key] ?? fallback;
   const masses = place.things
@@ -51,7 +54,7 @@ ${[...masses, ...floors].join('\n')}
 
 ${layoutContract(place, layout)}
 
-Seen a little from above, like a stage. Keep the floor areas clear to walk on. No people, ${noAnimals(brief)}, no text or letters, no border.${castNote(place)}${fallsIn(`${place.shows} ${place.mood}`) ? '\nThe rain or snow itself is animated over the picture later: paint no falling streaks, drops or flakes in the air, only what the weather leaves (wet sheen, puddles, snow lying on the ground).' : ''}`;
+${place.kind === 'drive' ? DRIVE_PAINT : 'Seen a little from above, like a stage. Keep the floor areas clear to walk on.'} No people, ${noAnimals(brief)}, no text or letters, no border.${castNote(place)}${fallsIn(`${place.shows} ${place.mood}`) ? '\nThe rain or snow itself is animated over the picture later: paint no falling streaks, drops or flakes in the air, only what the weather leaves (wet sheen, puddles, snow lying on the ground).' : ''}`;
 }
 
 function whereFloor(layout: Layout, f: Layout['floors'][number]): string {

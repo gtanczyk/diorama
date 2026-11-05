@@ -35,6 +35,7 @@ ${extra ? `${extra}
 ` : ''}Design ${places} places that tell this idea${fixed ? ', the room included' : ''}. Rules:
 - 3 to 7 things per place, big enough to see and click; no tiny details.
 - Exits are things you can see (door, path, ladder, boat) and every exit has one back.
+- Only when the idea asks for riding in a car (a drive, a road trip, a ride between districts), one place may have "kind": "drive": the hero rides along a road seen from the side. Its shows is the road and the scenery beside it; its things are the car (a prop, its looks naming the car), road signs on posts that are its exits (each sign naming where it leads) and maybe a radio or a passenger. It works well as a hub with an exit to several places.
 - The world has at least one item to pick up and one npc to talk to.
 - Everything is original: no characters, places or names from existing films, books, games or brands.
 - A place's shows and its props' looks go to a painter whose safety filter refuses single words: calm, plain words (leafless trees, not bare; a swing seat that rests, not hangs on chains; no blood, weapons, graves or bodies).
