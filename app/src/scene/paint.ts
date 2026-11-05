@@ -1,4 +1,5 @@
 import { STYLE_REFERENCE_PROMPT } from '../world/style-reference.ts';
+import { drawers } from '../world/drawings.ts';
 // paint: blockin.png becomes painting.png through one Muse edit.
 import sharp from 'sharp';
 import type { Memo } from '../meta/memo.ts';
@@ -63,20 +64,21 @@ function whereFloor(layout: Layout, f: Layout['floors'][number]): string {
   return whereIs(layout, mid);
 }
 
-/** Children's drawings of the place or of things in it, as more images after the block-in. */
+/** Drawings of the place or of things in it (children's, or an artist's sketches), as more images after the block-in. */
 export type Drawing = { key: string; image: Buffer };
 
-export function drawingsPrompt(place: Place, drawings: Drawing[]): string {
+export function drawingsPrompt(place: Place, drawings: Drawing[], kids = true): string {
   if (drawings.length === 0) return '';
+  const drawn = drawers({ audience: kids ? 'kids' : undefined });
   const which = drawings.map((d, i) => `image ${i + 2} is ${d.key === place.key ? 'this place' : `the ${d.key}`}`);
   return `
 
-The other images are children's drawings on paper: ${which.join(', ')}. Paint what they drew so the children know it at once: their colours, shapes and ideas. A drawing fills its paper, but its thing does not fill the place: paint each at its real size beside the others (a hat is smaller than a log, a person comes up to a door's top). The composition still comes only from the first image; leave out the paper, the table and any written names.`;
+The other images are ${drawn.many} on paper: ${which.join(', ')}. ${kids ? 'Paint what they drew so the children know it at once: their colours, shapes and ideas.' : 'Paint what was drawn so the artist knows it at once: the same shapes, colours, ideas and the same hand and medium.'} A drawing fills its paper, but its thing does not fill the place: paint each at its real size beside the others (a hat is smaller than a log, a person comes up to a door's top). The composition still comes only from the first image; leave out the paper, the table and any written names.`;
 }
 
 /** One Muse edit, scaled back to the layout frame (Muse answers larger than asked). */
 export async function paintPlace(memo: Memo, world: World, place: Place, layout: Layout, blockin: Buffer, brief?: Brief, take = 0, drawings: Drawing[] = [], concept?: Buffer, styleReference?: Buffer): Promise<Buffer> {
-  const prompt = paintPrompt(world, place, layout, brief) + drawingsPrompt(place, drawings)
+  const prompt = paintPrompt(world, place, layout, brief) + drawingsPrompt(place, drawings, world.audience === 'kids')
     + (styleReference ? `\nImage ${drawings.length + 2}: ${STYLE_REFERENCE_PROMPT}` : '')
     + (concept ? '\nThe LAST image is the creator-approved concept for this place. Preserve its distinctive architecture, palette, materials and visual identity. The FIRST image remains the authoritative layout: adapt the approved appearance to those positions and clear walking areas. Do not add characters or extra objects from the concept.' : '');
   const painted = await museEdit(memo, { label: `paint:${place.key}`, prompt, images: [blockin, ...drawings.map((d) => d.image), ...(styleReference ? [styleReference] : []), ...(concept ? [concept] : [])], take });

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { defineCommand, takeOption } from '../registry.ts';
 import { describePerson, describePhoto, framePhoto, normalisePhoto } from '../scene/photo.ts';
 import { designWorld, type Extra } from '../world/design.ts';
-import { drawingFiles, drawingsBrief, drawnIssues, fitPlaces, keepDrawings, KIDS_STYLE, oneHero, readDrawings, readKinds } from '../world/drawings.ts';
+import { drawingFiles, drawingsBrief, drawnIssues, fitPlaces, grownUpDrawings, keepDrawings, KIDS_STYLE, oneHero, readDrawings, readKinds, sketchStyle } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
 import { hearAll, Idea, ideaFromTold, keepTold } from '../world/told.ts';
 import { CreativeChoices } from '../world/idea-review.ts';
@@ -11,7 +11,7 @@ import { CreativeChoices } from '../world/idea-review.ts';
 defineCommand({
   name: 'world',
   usage: 'world <slug> "<idea>"   design a world (world.json) with Muse Spark [--places N] [--photo room.jpg: a real room is the first place] [--hero-photo me.jpg: a real person is the hero] '
-    + '[--drawings DIR: photos of children\'s drawings become the hero, NPCs, items and places] [--told DIR: recordings of them telling the story; without an idea, the idea is written from them] [--kids: a game for 5-7 year olds; on with drawings or recordings] [--language Polish: the game\'s text and voices; with recordings, the language spoken]',
+    + '[--drawings DIR: photos of drawings (children\'s, or a grown-up\'s sketches, which keep their own medium and make no kids\' game) become the hero, NPCs, items and places] [--told DIR: recordings of them telling the story; without an idea, the idea is written from them] [--kids: a game for 5-7 year olds; on with drawings or recordings] [--language Polish: the game\'s text and voices; with recordings, the language spoken]',
   async run(args) {
     const places = Number(takeOption(args, 'places', '4'));
     const photoFile = takeOption(args, 'photo', '');
@@ -41,7 +41,10 @@ export async function designInitialWorld(files: WorldFiles, { places, photoFile 
   // A drawn place over the places asked for goes into a place as a prop: places are what makes a build long.
   const drawn = fitPlaces(await readDrawings(files.memo, files), places);
   for (const d of drawn) console.log(`drawing ${d.file}: ${d.kind} ${d.key}, ${d.looks}`);
-  const kids = kidsFlag || drawn.length > 0 || said.length > 0;
+  // A grown-up's sketches make a world in their own medium, not a kids' game.
+  const sketched = grownUpDrawings(drawn);
+  const drawnStyle = sketched ? sketchStyle(drawn) : KIDS_STYLE;
+  const kids = kidsFlag || (drawn.length > 0 && !sketched) || said.length > 0;
 
   let idea = given;
   // The story says who leads, unless the grown-up already picked a drawing as the hero.
@@ -83,11 +86,11 @@ export async function designInitialWorld(files: WorldFiles, { places, photoFile 
   const characters = drawn.filter(d => d.kind === 'hero' || d.kind === 'npc').map(d => d.key);
   const chooseHero = !!(choices?.answers.length || choices?.note) && characters.length > 1 && !drawn.some(d => readKinds(files)[d.file] === 'hero');
   const asks = [
-    drawn.length ? drawingsBrief(drawn, chosenStyle ?? KIDS_STYLE, chooseHero) : '',
+    drawn.length ? drawingsBrief(drawn, chosenStyle ?? drawnStyle, chooseHero) : '',
     chosenStyle ? `The creator explicitly chose this visual style: ${chosenStyle}. Preserve recognizable shapes and identities from all source drawings.` : '',
     other ? `Write the title and pitch in ${other}, the language of the players; everything else (style, shows, mood, looks, keys) stays in English for the painters.` : '',
     // The game shows a name over each speaker: in the players' language, as they call them.
-    other || kids ? `Add "names": {"<key>": "name"} for the hero and every npc: a short name ${other ? `in ${other} ` : ''}the players would call them by (the name the children gave them, if they gave one; else a short friendly name a child would give).${drawn.length ? ` Name every drawn item and place too, as a child would say it${other ? ` in ${other}` : ''} ("the blue hat", "the mushroom forest").` : ''}` : '',
+    other || kids ? `Add "names": {"<key>": "name"} for the hero and every npc: a short name ${other ? `in ${other} ` : ''}the players would call them by (the name ${kids ? 'the children' : 'the creator'} gave them, if they gave one; else a short ${kids ? 'friendly name a child would give' : 'name that fits the world'}).${drawn.length ? ` Name every drawn item and place too, as ${kids ? 'a child' : 'a player'} would say it${other ? ` in ${other}` : ''} ("the blue hat", "the mushroom forest").` : ''}` : '',
   ].filter(Boolean);
   const extra: Extra | undefined = asks.length ? { brief: asks.join('\n\n'), issues: (w) => {
     if (!chooseHero) return drawnIssues(w, drawn);
@@ -96,7 +99,7 @@ export async function designInitialWorld(files: WorldFiles, { places, photoFile 
   } } : undefined;
   const designed = await designWorld(files.memo, hero ? `${idea}\nThe hero is ${hero.looks}` : idea, places, room, extra);
   if (chooseHero) oneHero(drawn, designed.hero.key);
-  const world = { ...designed, ...(drawn.length && { style: KIDS_STYLE }), ...(chosenStyle && { style: chosenStyle }), ...(hero && { hero }), ...(other && { language: other }), ...(kids && { audience: 'kids' as const }) };
+  const world = { ...designed, ...(drawn.length && { style: drawnStyle }), ...(chosenStyle && { style: chosenStyle }), ...(hero && { hero }), ...(other && { language: other }), ...(kids && { audience: 'kids' as const }) };
   files.write(files.path('world.json'), world);
   if (drawingFiles(files).length) files.write(files.path('drawings.json'), drawn);
   console.log(`${world.title}: ${world.places.map((p) => p.key).join(' · ')}`);

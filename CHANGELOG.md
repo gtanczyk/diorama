@@ -11,6 +11,7 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 - The Studio agent's model can be chosen: `DIORAMA_AGY_MODEL` (Antigravity, e.g. `gemini-4-argon-high`; `agy models` lists them), `DIORAMA_CODEX_MODEL`, `DIORAMA_MUSE_MODEL`, `DIORAMA_AGENT_CLAUDE_MODEL`, or `DIORAMA_AGENT_MODEL` for any agent.
 - The hero's car: a place with `"kind": "drive"` is the car standing at the kerb with the engine running (trembling, exhaust, lights), the hero at the wheel and a board of destinations; every place has the car parked in it to get in, and picking a destination fades to the hero stepping out there. No driving animation (docs/scenes.md, Drive). A `go` through one thing that leads to several places carries `to`.
+- Grown-ups' sketches as input: a drawing Spark reads as a teen's or adult's sketch (pen, pencil, ink, watercolour) no longer makes a kids' game; when every drawing is one, the world keeps the sketches' own medium as its style and painters are told it is the artist's sketch, not a child's.
 - `story_look` (Studio action): sets what the hero says looking at one thing, adding the line where the story has none, without writing the whole story again; kept across rebuilds.
 
 ### Fixed

@@ -1,4 +1,5 @@
 import { STYLE_REFERENCE_PROMPT } from '../world/style-reference.ts';
+import { drawers } from '../world/drawings.ts';
 // The hero and every NPC as one painted figure each: Muse paints them alone on a plain ground, SAM cuts them out.
 import sharp from 'sharp';
 import type { Mask } from '../image/mask.ts';
@@ -76,9 +77,10 @@ Style: ${world.style}
 Nothing they sat or lay on: no bed, headboard, pillow, chair or blanket. Plain flat light grey background, no floor, no shadow, no other people, no props around, no text.`;
 }
 
-/** For a child's drawing: the character they drew, as they drew it, made whole enough to walk. */
+/** For a drawing (a child's, or an artist's sketch): the character as drawn, made whole enough to walk. */
 export function drawingPrompt(world: World, who: Who): string {
-  return `This is a child's drawing on paper. Paint the character in it as a single full-body character for a 2D point-and-click adventure game, so the child who drew it knows it at once: the same colours, the same clothes and features, the same shapes and proportions (a big head stays big), only cleaner and whole: every part coloured in solidly, with clear outlines and no white paper showing through, a finished character, not a sketch. Standing in a relaxed walking-ready pose, seen from the side in three-quarter view, facing to the right, the whole figure visible from the top of the head down to both feet (or paws), centred, about two thirds of the image tall.
+  const drawn = drawers(world);
+  return `This is ${drawn.one} on paper. Paint the character in it as a single full-body character for a 2D point-and-click adventure game, so ${drawn.who} knows it at once: the same colours, the same clothes and features, the same shapes and proportions (a big head stays big), only cleaner and whole: every part coloured in solidly, with clear outlines and no white paper showing through, a finished character, not a sketch. Standing in a relaxed walking-ready pose, seen from the side in three-quarter view, facing to the right, the whole figure visible from the top of the head down to both feet (or paws), centred, about two thirds of the image tall.
 
 Character: ${who.looks}
 Style: ${world.style}

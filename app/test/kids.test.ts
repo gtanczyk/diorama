@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expect, test } from 'vitest';
-import { drawingsBrief, drawnIssues, readKinds, type Drawn } from '../src/world/drawings.ts';
+import { drawingsBrief, drawnIssues, grownUpDrawings, readKinds, sketchStyle, type Drawn } from '../src/world/drawings.ts';
 import { WorldFiles } from '../src/world/files.ts';
 import { World } from '../src/world/schema.ts';
 import { pieces } from '../src/world/told.ts';
@@ -32,9 +32,19 @@ const drawn: Drawn[] = [
 test('every drawing has to be in the world under its key and role; a drawn prop may be an exit', () => {
   expect(drawnIssues(world, drawn)).toEqual([
     '"blue-hat" was drawn as an item: its role must be "item"',
-    'a child drew "mushroom": it must be a thing with role "prop" in one of the places',
+    '"mushroom" was drawn: it must be a thing with role "prop" in one of the places',
   ]);
-  expect(drawnIssues({ ...world, hero: { key: 'someone', looks: 'someone else entirely' } }, drawn.slice(0, 1))).toEqual(['the hero\'s key must be "girl-with-cat" (a child drew the hero)']);
+  expect(drawnIssues({ ...world, hero: { key: 'someone', looks: 'someone else entirely' } }, drawn.slice(0, 1))).toEqual(['the hero\'s key must be "girl-with-cat" (the hero was drawn)']);
+});
+
+test('a grown-up\'s sketches make no kids\' world and keep their own medium', () => {
+  const sketches: Drawn[] = drawn.map((d) => ({ ...d, by: 'grown-up', medium: 'fountain-pen ink hatching with a grey watercolour wash' }));
+  expect(grownUpDrawings(sketches)).toBe(true);
+  expect(grownUpDrawings([...sketches, { ...drawn[0], file: '09-kid.png' }])).toBe(false);
+  expect(grownUpDrawings([])).toBe(false);
+  expect(sketchStyle(sketches)).toContain('fountain-pen ink hatching');
+  expect(drawingsBrief(sketches)).toContain('The artist sketched these');
+  expect(drawingsBrief(drawn)).toContain('The children drew these');
 });
 
 test('the designer brief names each drawing once, with its key', () => {

@@ -8,6 +8,7 @@ import { castFixesFile, readCastFixes } from '../scene/cast-fixes.ts';
 import { SoundPlan } from '../sound/plan.ts';
 import { readStoryFixes, StoryFixes, storyFixesFile, textAt } from '../story/fixes.ts';
 import { Story } from '../story/schema.ts';
+import { kidsWorld } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
 import { applyWorldTexts, languagePlan, planLine, relanguage, translateTexts, worldTexts } from '../world/language.ts';
 import { placeSources, soundPlanFrom } from './sound.ts';
@@ -32,7 +33,7 @@ defineCommand({
 
     if (!plan.same) {
       const texts = worldTexts(world, story);
-      const kids = world.audience === 'kids' || fs.existsSync(files.path('drawings'));
+      const kids = kidsWorld(files, world);
       console.log(`translating ${Object.keys(texts).length} texts from ${plan.from} to ${plan.to}`);
       const translated = await translateTexts(files.memo, texts, plan.from, plan.to, kids);
       const now = applyWorldTexts(world, story, translated, plan.to);

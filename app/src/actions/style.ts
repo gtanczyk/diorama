@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { readCastFixes } from '../scene/cast-fixes.ts';
 import { readCorrections } from '../scene/corrections.ts';
 import { agentBlocked } from '../studio/locks.ts';
+import { kidsWorld } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
 import { Slug } from '../world/schema.ts';
 import { castKeys, planLine, SCOPES, stylePlan } from '../world/style-plan.ts';
@@ -22,7 +23,7 @@ defineAction({
     const fixes = readCastFixes(files);
     return {
       style: world.style,
-      kids: world.audience === 'kids' || fs.existsSync(files.path('drawings')),
+      kids: kidsWorld(files, world),
       places: Object.fromEntries(world.places.map((p) => [p.key, readCorrections(files.place(p.key)).style ?? null])),
       cast: Object.fromEntries(castKeys(world, files).map((k) => [k, fixes[k]?.style ?? null])),
       painted: readStyled(files),
@@ -53,7 +54,7 @@ defineAction({
     if (scope === 'cast' && key && !castKeys(world, files).includes(key)) throw new ActionError(404, `${slug} has no character ${key}: ${castKeys(world, files).join(', ')}`);
     if (scope === 'world' && key) throw new ActionError(400, 'scope world takes no key');
     const plan = stylePlan(files, world, scope, key);
-    const kids = world.audience === 'kids' || fs.existsSync(files.path('drawings'));
+    const kids = kidsWorld(files, world);
     if (!go) {
       return {
         estimate: plan,
