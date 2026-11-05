@@ -51,7 +51,8 @@ const saysBlocked = (why: string) => BLOCKED.test(why);
 /** Fail closed on incomplete observations: an omitted floor is not evidence that it is connected. */
 export function paintedLayoutIssues(place: Place, layout: Layout, seen: PaintedLayout): string[] {
   const issues: string[] = [];
-  if (seen.people) issues.push('unwanted people painted into the background; the game adds its cast separately');
+  // A drive's hero is painted at the wheel of the car: the car's card carries them.
+  if (seen.people && place.kind !== 'drive') issues.push('unwanted people painted into the background; the game adds its cast separately');
   if (Math.abs(seen.horizon - layout.horizon) > 70) issues.push(`camera horizon moved from ${layout.horizon} to ${Math.round(seen.horizon)}`);
   for (const t of place.things.filter((t) => t.role !== 'npc')) {
     const planned = layout.things.find((b) => b.key === t.key);

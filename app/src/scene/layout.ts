@@ -156,11 +156,11 @@ export function closeUpIssues(layout: Layout): string[] {
 
 /** A drive place: a side view of a road that loops sideways, the car standing on it, the signs beside it. */
 const DRIVE_LAYOUT = `
-This place is a drive: the hero rides in the car along the road, seen from the side at about car height, and the scenery will stream past sideways in a loop. So:
-- horizon between 300 and 420; the road runs straight across the whole frame from the left edge to the right edge, level, below the horizon: one floor, the road with its near and far kerb, from x 0 to x ${FRAME.width}, reaching the bottom edge
-- the car stands on the road in the middle third, side on, wheels on the road, about a third of the frame wide
-- road signs on posts stand on the far kerb of the road, spread left and right of the car, not behind it; other things sit in or on the car or at the roadside
-- the scenery beside the road (buildings, palms, sea, hills) runs on past both frame edges, with nothing cut in half at an edge that matters
+This place is a drive: the camera follows the hero's car from just behind and a little above it, looking along a straight road that runs ahead to the horizon; in the game the road and everything beside it stream toward the camera. So:
+- horizon between 330 and 420; the road's vanishing point is at x ${FRAME.width / 2} on the horizon: one floor, the road, a wedge from the whole bottom edge narrowing to that point
+- the car seen from behind stands on the road at the bottom centre, its rear facing us, about 40% of the frame wide, its wheels near the bottom edge
+- road signs (the exits) stand on posts or hang from a gantry over the road, further ahead, left and right of the road, each clearly apart, none hidden behind the car; other things stand at the roadside
+- the scenery beside the road (buildings, palms, lamps, sea) lines both sides and shrinks toward the vanishing point
 
 `;
 

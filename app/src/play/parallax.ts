@@ -170,8 +170,8 @@ export type Layers = {
   critters?: Array<{ file: string; box: [number, number, number, number]; medium: 'water' | 'air'; facing: 1 | -1 }>;
   /** The painted clouds as bands (bottom first) to drift with the wind at their own speeds, cut to `clip` over `box`; `keep`: what stays put in the sky. */
   clouds?: { box: [number, number, number, number]; clip: string; keep?: string; bands: Array<{ file: string; box: [number, number, number, number]; speed: number }> };
-  /** A drive place: the whole backdrop (`base`, drawn row by row, nearer rows faster below `horizon`) and its depth bands, far first, each `period` px wide and repeating, rows top..bottom, moving at `speed` (1 = the nearest road row). */
-  drive?: { period: number; horizon: number; base: string; bands: Array<{ file: string; speed: number; top: number; bottom: number }> };
+  /** A drive place: the road and roadside (`near`, transparent over the far view) streaming toward the camera out of the vanishing point `vp`; `far` stays put. */
+  drive?: { near: string; far: string; vp: [number, number] };
 };
 
 /**

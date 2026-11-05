@@ -32,7 +32,7 @@ List at most 4 problems a player would notice, worst first:
 - missing: a listed thing is not there, or a big part of the scene above is (a tall tower, a castle with two towers, a house on top): key "scene" for that
 - wrong: it is there but does not look like its description
 - flat: it is a plain block or smear instead of a painted object
-- unwanted: people (any person or figure at all${cast.length ? `, even one that looks like ${cast.join(' or ')}: they are added over the picture later, so a painted one would be a double` : ''}), ${paintedAnimals(brief).length ? 'animals other than the listed ones' : 'animals'}, text, letters or a border that should not be there
+- unwanted: people (any person or figure at all${place.kind === 'drive' ? ' other than the hero at the wheel of the car, who belongs there' : ''}${cast.length ? `, even one that looks like ${cast.join(' or ')}: they are added over the picture later, so a painted one would be a double` : ''}), ${paintedAnimals(brief).length ? 'animals other than the listed ones' : 'animals'}, text, letters or a border that should not be there
 For each give the region to repaint as [x0, y0, x1, y1] in pixels and one sentence on what to paint there. Never ask for text or letters. If the painting is fine, give no issues.
 
 Never ask to paint a person in: the game adds its people over the picture.
@@ -42,7 +42,8 @@ Reply with JSON only: {"issues": [{"key": "...", "problem": "missing | wrong | f
   const found = { issues: parsed.issues.filter((i) => !addsPerson(i)) };
   // The critic weighs the whole picture and lets a figure pass when the place's words name one ("a child floats
   // candle boats"); people are asked about on their own, as every one of them is a double or a stranger.
-  const people = await paintedPeople(memo, place.key, painting);
+  // A drive's hero is painted at the wheel on purpose: no one is looked for there.
+  const people = place.kind === 'drive' ? [] : await paintedPeople(memo, place.key, painting);
   const near = (a: number[], b: number[]) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) < 120;
   const extra = people.filter((p) => !found.issues.some((i) => i.problem === 'unwanted' && near(i.region, p.box))).map((p) => ({
     key: 'person', problem: 'unwanted' as const, region: pad(p.box, 24),

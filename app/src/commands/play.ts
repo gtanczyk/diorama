@@ -67,7 +67,7 @@ export function worldData(files: WorldFiles) {
       ...(flats.falls?.length && { falls: flats.falls.map((f) => ({ ...f, file: rel(f.file) })) }),
       ...(flats.streams?.length && { streams: flats.streams.map((f) => ({ ...f, file: rel(f.file), region: rel(f.region) })) }),
       ...(flats.critters?.length && { critters: flats.critters.map((f) => ({ ...f, file: rel(f.file) })) }),
-      ...(flats.drive && { drive: { ...flats.drive, base: rel(flats.drive.base), bands: flats.drive.bands.map((b) => ({ ...b, file: rel(b.file) })) } }),
+      ...(flats.drive && { drive: { ...flats.drive, near: rel(flats.drive.near), far: rel(flats.drive.far) } }),
       ...(flats.clouds && { clouds: { ...flats.clouds, clip: rel(flats.clouds.clip), ...(flats.clouds.keep && { keep: rel(flats.clouds.keep) }), bands: flats.clouds.bands.map((b) => ({ ...b, file: rel(b.file) })) } }),
     };
     // weather.json (diorama weather): what falls here and where water drips, for the page to animate.

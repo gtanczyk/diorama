@@ -77,10 +77,9 @@ type Figure = { img: HTMLImageElement; face?: PaintedFace; faceInfo?: FaceDefini
 const FLOATS = /\b(boat|rowboat|dinghy|skiff|canoe|kayak|raft|ship|barge|punt|gondola|sampan|junk|ferry|trawler|yacht|sailboat)s?\b/i;
 
 /** canvas: the card as the place looks now (story changes on it); base: as painted, whose alpha is the card's shape. */
-/** How fast the nearest road row passes in a drive, px a second. */
-const DRIVE_PX = 620;
-/** The rows the painting under a drive's bands is drawn in, each at its own pace. */
-const DRIVE_STRIP = 12;
+/** A drive's road grows out of its vanishing point by DRIVE_ZOOM every DRIVE_SECONDS (at ?drive=1). */
+const DRIVE_ZOOM = 1.8;
+const DRIVE_SECONDS = 0.75;
 
 type Cut = { occ: Occluder; canvas: HTMLCanvasElement; base: HTMLCanvasElement; x0: number; y0: number; y: number };
 
@@ -114,8 +113,8 @@ type Place = {
   critters?: Critter[];
   clouds?: Clouds;
   far?: { sky?: HTMLImageElement; flats: Array<{ img: HTMLImageElement; box: [number, number, number, number]; d: number }> };
-  /** A drive place (kind "drive"): the backdrop's depth bands streaming past, far first, each `period` wide and repeating. */
-  drive?: { period: number; horizon: number; base: HTMLImageElement; bands: Array<{ img: HTMLImageElement; speed: number; top: number }> };
+  /** A drive place (kind "drive"): the far view that stays, the road and roadside that stream out of the vanishing point. */
+  drive?: { near: HTMLImageElement; far: HTMLImageElement; vp: [number, number] };
   hots: Hot[];
   cuts: Cut[];
   byKey: Map<string, Occluder>;
@@ -557,8 +556,8 @@ class Game {
     let drive: Place['drive'];
     if (spec.kind === 'drive' && entry.layers?.drive) {
       const d = entry.layers.drive;
-      const [base, ...imgs] = await Promise.all([d.base, ...d.bands.map((b) => b.file)].map((f) => loadImage(files(f)).catch(() => undefined)));
-      if (base && imgs.every(Boolean)) drive = { period: d.period, horizon: d.horizon, base, bands: d.bands.map((b, i) => ({ img: imgs[i]!, speed: b.speed, top: b.top })) };
+      const [near, far] = await Promise.all([d.near, d.far].map((f) => loadImage(files(f)).catch(() => undefined)));
+      if (near && far) drive = { near, far, vp: d.vp };
     }
     let water: Place['water'];
     const w = entry.layers?.water;
@@ -623,7 +622,7 @@ class Game {
     const weather = wx && new WeatherFx(wx, g, ripples?.bits, key);
     const reactions = entry.reactions && params.get('reactions') !== '0' ? new ReactionFx(entry.reactions, g, key, matchMedia('(prefers-reduced-motion: reduce)').matches) : undefined;
     // ?glow=0 (or ?still; capture unless ?glow=1) keeps the painted lights as painted, for pixel checks.
-    const glows = (entry.glows?.length || bg) && !params.has('still') && (params.get('glow') ?? (capture ? '0' : '1')) !== '0' ? new GlowFx(entry.glows ?? [], g.frame.height, bg, wet, backdrop ? kept.map((c) => c.occ.box) : []) : undefined;
+    const glows = spec.kind !== 'drive' && (entry.glows?.length || bg) && !params.has('still') && (params.get('glow') ?? (capture ? '0' : '1')) !== '0' ? new GlowFx(entry.glows ?? [], g.frame.height, bg, wet, backdrop ? kept.map((c) => c.occ.box) : []) : undefined;
     const focus = focusScale > 0 || separateScale > 0 ? depth ?? standIn(g, edge, kept) : undefined;
     const surf = water && !params.has('still') ? new Surf(water.tex, water.mask, water.box, backdrop) : undefined;
     const place: Place = { key, spec, g, grid: new WalkGrid(g), bg, backdrop, pivot: pivot(g), edge, far, drive, water, mist, smoke, floats, surf, ...living, light: bg && lightMap(bg, g.frame.width, g.frame.height), shade, depth, focus, wet, hots, cuts: kept, byKey, weather, reactions, glows };
@@ -686,9 +685,9 @@ class Game {
     // Coming over a bridge or up the steps, the hero walks in from the exit's far end (by the frame's edge) to
     // where one stands at it, instead of popping up in the middle of the place.
     const edge = back && arrive && place.spec.kind !== 'drive' ? this.exitEdge(back.via) : undefined;
-    // In a drive the hero sits in the car, unseen: they speak from it.
+    // In a drive the hero is painted at the wheel (the car's card): unseen as a figure, they speak from the car.
     const car = place.spec.kind === 'drive' ? this.carOf(place) : undefined;
-    if (car) [this.hero.x, this.hero.y] = [(car.occ.box[0] + car.occ.box[2]) / 2, car.occ.box[3]];
+    if (car) [this.hero.x, this.hero.y] = [(car.occ.box[0] + car.occ.box[2]) / 2 - (car.occ.box[2] - car.occ.box[0]) * 0.15, car.occ.box[1] + (car.occ.box[3] - car.occ.box[1]) * 0.45];
     if (edge) {
       [this.hero.x, this.hero.y] = edge;
       this.hero.path = this.place.grid.route(edge, arrive!);
@@ -866,9 +865,12 @@ class Game {
       if (this.place.spec.kind !== 'drive' && !(await this.walkTo(sx, sy)) && Math.hypot(this.hero.x - sx, this.hero.y - sy) > this.place.g.cell * 2) return;
       if (this.place.key !== placeKey) return;
       const [x0, , x1] = hot.thing.box;
-      this.hero.facing = (hot.npc?.body.x ?? (x0 + x1) / 2) >= this.hero.x ? 1 : -1;
-      // Three-quarter towards it, the way a painted figure talks to someone.
-      this.hero.yaw = this.hero.facing * Math.PI / 3;
+      // In a drive the hero keeps their eyes on the road.
+      if (this.place.spec.kind !== 'drive') {
+        this.hero.facing = (hot.npc?.body.x ?? (x0 + x1) / 2) >= this.hero.x ? 1 : -1;
+        // Three-quarter towards it, the way a painted figure talks to someone.
+        this.hero.yaw = this.hero.facing * Math.PI / 3;
+      }
       this.emit('use', { thing: key, verb });
       document.body.classList.add('played');
       await this.act(this.actionFor(key, hot, verb));
@@ -1496,25 +1498,29 @@ class Game {
   }
 
   /**
-   * A drive: each depth band of the backdrop slides left at its own pace and repeats, far bands slowly, the road
-   * fast (?drive=N: speed, 0 parked). Bands are drawn far first, so nearer ones cover them.
+   * A drive: the far view stays; the road and the roadside grow out of the vanishing point, one copy taking over
+   * from the next every DRIVE_SECONDS, so what stands beside the road comes nearer, grows and leaves by the sides
+   * (?drive=N: speed, 0 parked).
    */
   private drawDrive() {
     const drive = this.place.drive!;
-    const W = this.place.g.frame.width;
-    const pace = params.has('still') ? 0 : Number(params.get('drive') ?? 1) * DRIVE_PX;
-    const H = this.place.g.frame.height;
-    const near = H - drive.horizon;
-    const slide = (speed: number) => Math.round(((this.time * pace * speed) % drive.period + drive.period) % drive.period);
-    // The whole painting first, in strips of rows, each at its row's pace (as the floor row it is, the sky as the
-    // farthest band): what the bands leave open shows the painting there, sliding about right.
-    const farthest = drive.bands[0]?.speed ?? 0;
+    const pace = params.has('still') ? 0 : Number(params.get('drive') ?? 1) / DRIVE_SECONDS;
+    const phase = ((this.time * pace) % 1 + 1) % 1;
+    const [vx, vy] = drive.vp;
     const bandsThen: Array<() => void> = [];
-    for (let y = 0; y < H; y += DRIVE_STRIP) {
-      const h = Math.min(DRIVE_STRIP, H - y);
-      const off = slide(Math.max(farthest, (y + h / 2 - drive.horizon) / near));
-      for (let x = -off; x < W; x += drive.period) ctx.drawImage(drive.base, 0, y, drive.period, h, x, y, drive.period, h);
-    }
+    ctx.drawImage(drive.far, 0, 0);
+    const grown = (scale: number, alpha: number) => {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(vx, vy);
+      ctx.scale(scale, scale);
+      ctx.drawImage(drive.near, -vx, -vy);
+      ctx.restore();
+    };
+    // The copy coming out of the distance, whole, under the one that has grown past it and fades as it leaves.
+    grown(DRIVE_ZOOM ** (phase - 1), 1);
+    const fade = Math.min(1, Math.max(0, (phase - 0.6) / 0.4));
+    grown(DRIVE_ZOOM ** phase, 1 - fade * fade * (3 - 2 * fade));
     // The car's own shade on the road under it rides with the car (what was painted under it slides away).
     const car = this.carOf(this.place);
     if (car) {
@@ -1529,11 +1535,6 @@ class Game {
         ctx.fill();
         ctx.restore();
       });
-    }
-    for (const b of drive.bands) {
-      // Whole pixels (slide): a band that sits between pixels shimmers against the one in front.
-      const off = slide(b.speed);
-      for (let x = -off; x < W; x += drive.period) ctx.drawImage(b.img, x, b.top);
     }
     for (const then of bandsThen) then();
   }
@@ -2035,6 +2036,7 @@ class Game {
     const gone = this.gone();
     this.recut();
     const npcs = this.hots().filter((h) => (h.spec?.role ?? h.thing.role) === 'npc' && !h.mask);
+    // In a drive the hero is the one painted at the wheel.
     const riding = this.place.spec.kind === 'drive';
     const people: Who[] = [...npcs.map((h) => ({ npc: h, y: h.npc?.body.y ?? h.thing.box[3] })), ...(riding ? [] : [this.hero, ...this.party]).map((body) => ({ body, y: body.y }))].sort((a, b) => a.y - b.y);
     const fire = this.fireOf(gone);

@@ -96,7 +96,7 @@ defineCommand({
         const again = await critique(files.memo, worded(place, words), brief, first);
         // People are looked for on the painting as the game shows it, with every fix in, not only the first one.
         const shown = fs.existsSync(files.place(place.key, 'painting.png')) ? fs.readFileSync(files.place(place.key, 'painting.png')) : first;
-        for (const p of shown === first ? [] : await paintedPeople(files.memo, place.key, shown)) {
+        for (const p of shown === first || place.kind === 'drive' ? [] : await paintedPeople(files.memo, place.key, shown)) {
           again.issues.push({ key: 'person', problem: 'unwanted', region: p.box, fix: `Paint out the ${p.what}: continue what is behind them (planks, water, wall), add nothing new` });
         }
         const had = new Set(found.issues.map((i) => JSON.stringify([i.region, i.fix])));
