@@ -7,6 +7,10 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ## Unreleased
 
+### Added
+
+- The Studio agent's model can be chosen: `DIORAMA_AGY_MODEL` (Antigravity, e.g. `gemini-4-argon-high`; `agy models` lists them), `DIORAMA_CODEX_MODEL`, `DIORAMA_MUSE_MODEL`, `DIORAMA_AGENT_CLAUDE_MODEL`, or `DIORAMA_AGENT_MODEL` for any agent.
+
 ## 0.3.0 — 2026-11-05
 
 ### Added

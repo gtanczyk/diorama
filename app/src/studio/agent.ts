@@ -304,6 +304,15 @@ export const AGENTS = {
   codex: { label: 'Codex', make: () => preapproved(codexLive()) },
   antigravity: { label: 'Antigravity', make: () => antigravity({ command: process.env.DIORAMA_AGY_COMMAND ?? 'agy' }) },
 } satisfies Record<string, { label: string; make(command?: string): CodingAgent }>;
+
+/**
+ * The model the Studio asks an agent for, from DIORAMA_<AGENT>_MODEL (DIORAMA_AGY_MODEL for Antigravity, e.g.
+ * gemini-4-argon-high; `agy models` lists them), else DIORAMA_AGENT_MODEL; unset leaves the agent's own default.
+ */
+export function agentModel(name: AgentName, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const own = { muse: 'DIORAMA_MUSE_MODEL', claude: 'DIORAMA_AGENT_CLAUDE_MODEL', codex: 'DIORAMA_CODEX_MODEL', antigravity: 'DIORAMA_AGY_MODEL' }[name];
+  return env[own]?.trim() || env.DIORAMA_AGENT_MODEL?.trim() || undefined;
+}
 export type AgentName = keyof typeof AGENTS;
 export const isAgentName = (name: string): name is AgentName => Object.hasOwn(AGENTS, name);
 
@@ -400,10 +409,12 @@ export class AgentHub {
     const cwd = fs.existsSync(dir) ? dir : this.opts.root;
     fs.mkdirSync(cwd, { recursive: true });
     const ask = process.env.DIORAMA_AGENT_TOOLS === 'ask';
-    const agent = this.make(this.defaultAgent(slug));
+    const name = this.defaultAgent(slug);
+    const agent = this.make(name);
     const session = createAgentSession({
       agent,
       cwd,
+      model: agentModel(name),
       task: {
         env: withoutProviderCredentials(withoutSecrets(process.env)) as Record<string, string>,
         // genaicode hands the server to Muse as -c overrides, the token through an environment variable, never argv.
@@ -477,6 +488,7 @@ export class AgentHub {
     const from = this.agents(slug).find((a) => a.using)?.label;
     const agent = this.make(name);
     t.session.setAgent(agent);
+    t.session.setModel(agentModel(name));
     t.resumes = !!agent.capabilities.resume;
     t.rebrief();
     this.save(name);
