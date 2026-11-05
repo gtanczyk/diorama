@@ -16,6 +16,7 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ### Fixed
 
+- `playthrough` and `clip` aim at things in frame pixels, so they still find them when the page has lowered its resolution on a slow machine.
 - A grown-up's sketch of a whole place is now that place's camera: it stands in for the block-in like a photo (`places/<key>/sketch.png`), the layout is measured from it and Muse finishes it in the same hand, instead of failing PAINT_LAYOUT_MISMATCH on every take because Muse followed the sketch, not the plan.
 - A sound plan with more one-shots than fit (a world with many exits) keeps the first 24 instead of failing the build.
 - A place whose approved concept keeps pulling the painting off its plan (a second new take asked for) is painted from the block-in alone, instead of failing the composition check take after take.

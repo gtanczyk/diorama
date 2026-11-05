@@ -91,7 +91,9 @@ export function aimPoint(page: Page, step: { use: string; verb?: string; with?: 
     const rect = canvas.getBoundingClientRect();
     const box = game.pageRect(step.use) ?? rect;
     const hits = (x, y) => {
-      const at = game.unzoom((x - rect.left) / rect.width * canvas.width, (y - rect.top) / rect.height * canvas.height);
+      // In frame pixels: the canvas holds fewer when the page lowers its resolution on a slow machine.
+      const frame = game.place.g.frame;
+      const at = game.unzoom((x - rect.left) / rect.width * frame.width, (y - rect.top) / rect.height * frame.height);
       return game.thingAt(...at)?.thing.key === step.use && document.elementFromPoint(x, y) === canvas;
     };
     const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
