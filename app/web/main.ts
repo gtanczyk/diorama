@@ -2790,7 +2790,10 @@ class Game {
     this.board = [];
     if (!where.length) return;
     const W = this.place.g.frame.width;
-    const [rowH, bw, x1, top] = [52, 330, W - 28, 36];
+    // With ?fill=1 the painting can run past the page's edges: the board sits at the page's own top right corner.
+    const r = canvas.getBoundingClientRect();
+    const [visRight, visTop] = fill ? this.unzoom(((Math.min(innerWidth, r.right) - r.left) / r.width) * W, (Math.max(0, -r.top) / r.height) * this.place.g.frame.height) : [W, 0];
+    const [rowH, bw, x1, top] = [52, 330, Math.min(W, visRight) - 28, Math.max(0, visTop) + 36];
     const x0 = x1 - bw;
     ctx.save();
     ctx.fillStyle = 'rgba(12,10,18,0.78)';
@@ -3254,9 +3257,12 @@ class Game {
     const width = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 40;
     const height = lines.length * 28 + (name ? 30 : 22);
     const head = (left + right) / 2;
-    const cx = Math.min(canvas.width - width / 2 - 12, Math.max(width / 2 + 12, head));
+    // With ?fill=1 the canvas can run past the page's edges: the bubble stays on the page's own part of it.
+    const r = canvas.getBoundingClientRect();
+    const [visL, visR, visT] = fill && r.width ? [(Math.max(0, -r.left) / r.width) * canvas.width, ((Math.min(innerWidth, r.right) - r.left) / r.width) * canvas.width, (Math.max(0, -r.top) / r.height) * canvas.height] : [0, canvas.width, 0];
+    const cx = Math.min(visR - width / 2 - 12, Math.max(visL + width / 2 + 12, head));
     const tail = 22;
-    const y = Math.max(name ? 24 : 10, top - height - tail - 6);
+    const y = Math.max(visT + (name ? 24 : 10), top - height - tail - 6);
     const ink = '#2b2118';
     ctx.lineJoin = 'round';
     ctx.lineWidth = 2.5;

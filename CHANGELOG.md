@@ -16,6 +16,7 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ### Fixed
 
+- With `?fill=1` (the painting covering the whole page) a drive place's destination board and the speech bubbles stay on the visible part of the page instead of running off its edge.
 - The hero's car looks the same in every place it is parked in: the car as painted in the drive place, cut out by its mask, goes to each such place's painting as its reference (places painted before it keep theirs until repainted).
 - `playthrough` and `clip` aim at things in frame pixels, so they still find them when the page has lowered its resolution on a slow machine.
 - A grown-up's sketch of a whole place is now that place's camera: it stands in for the block-in like a photo (`places/<key>/sketch.png`), the layout is measured from it and Muse finishes it in the same hand, instead of failing PAINT_LAYOUT_MISMATCH on every take because Muse followed the sketch, not the plan.
