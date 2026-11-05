@@ -2,6 +2,7 @@ import { STYLE_REFERENCE_PROMPT } from '../world/style-reference.ts';
 import { drawers } from '../world/drawings.ts';
 // paint: blockin.png becomes painting.png through one Muse edit.
 import sharp from 'sharp';
+import { VEHICLE_PROMPT } from './vehicle.ts';
 import type { Memo } from '../meta/memo.ts';
 import { museEdit } from '../meta/muse.ts';
 import type { Place, World } from '../world/schema.ts';
@@ -77,10 +78,11 @@ The other images are ${drawn.many} on paper: ${which.join(', ')}. ${kids ? 'Pain
 }
 
 /** One Muse edit, scaled back to the layout frame (Muse answers larger than asked). */
-export async function paintPlace(memo: Memo, world: World, place: Place, layout: Layout, blockin: Buffer, brief?: Brief, take = 0, drawings: Drawing[] = [], concept?: Buffer, styleReference?: Buffer): Promise<Buffer> {
+export async function paintPlace(memo: Memo, world: World, place: Place, layout: Layout, blockin: Buffer, brief?: Brief, take = 0, drawings: Drawing[] = [], concept?: Buffer, styleReference?: Buffer, vehicle?: Buffer): Promise<Buffer> {
   const prompt = paintPrompt(world, place, layout, brief) + drawingsPrompt(place, drawings, world.audience === 'kids')
     + (styleReference ? `\nImage ${drawings.length + 2}: ${STYLE_REFERENCE_PROMPT}` : '')
-    + (concept ? '\nThe LAST image is the creator-approved concept for this place. Preserve its distinctive architecture, palette, materials and visual identity. The FIRST image remains the authoritative layout: adapt the approved appearance to those positions and clear walking areas. Do not add characters or extra objects from the concept.' : '');
-  const painted = await museEdit(memo, { label: `paint:${place.key}`, prompt, images: [blockin, ...drawings.map((d) => d.image), ...(styleReference ? [styleReference] : []), ...(concept ? [concept] : [])], take });
+    + (concept ? `\nImage ${drawings.length + 2 + (styleReference ? 1 : 0)} is the creator-approved concept for this place. Preserve its distinctive architecture, palette, materials and visual identity. The FIRST image remains the authoritative layout: adapt the approved appearance to those positions and clear walking areas. Do not add characters or extra objects from the concept.` : '')
+    + (vehicle ? `\nThe LAST image ${VEHICLE_PROMPT}` : '');
+  const painted = await museEdit(memo, { label: `paint:${place.key}`, prompt, images: [blockin, ...drawings.map((d) => d.image), ...(styleReference ? [styleReference] : []), ...(concept ? [concept] : []), ...(vehicle ? [vehicle] : [])], take });
   return sharp(painted).resize(FRAME.width, FRAME.height, { fit: 'fill' }).png().toBuffer();
 }

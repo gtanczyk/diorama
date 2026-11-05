@@ -8,6 +8,7 @@ import { addsPerson, critique, paintedPeople, repaint } from '../scene/critic.ts
 import { readCorrections, writeCorrections } from '../scene/corrections.ts';
 import { Layout } from '../scene/layout.ts';
 import { paintPlace } from '../scene/paint.ts';
+import { heroVehicle } from '../scene/vehicle.ts';
 import { alignPainting, PaintingLayoutError, paintingLayoutHash } from '../scene/paint-layout.ts';
 import { paintPhoto, placePicture } from '../scene/photo.ts';
 import { restylePlace } from '../scene/restyle.ts';
@@ -119,7 +120,7 @@ defineCommand({
           try {
             first = picture
               ? await paintPhoto(files.memo, world, told, blockin, brief, take, concept, styleReference, picture.kind)
-              : await paintPlace(files.memo, world, told, layout, blockin, brief, take, drawingsIn(files, place), concept, styleReference);
+              : await paintPlace(files.memo, world, told, layout, blockin, brief, take, drawingsIn(files, place), concept, styleReference, await heroVehicle(files, world, place));
             break;
           } catch (error) {
             if (!refusedByFilter(error)) throw error;
