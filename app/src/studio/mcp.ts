@@ -2,6 +2,7 @@
 // this over streamable HTTP at /mcp (Muse Code connects there) and `diorama mcp` over stdio.
 import { actions, describeActions, runAction, type ActionContext } from '../actions/registry.ts';
 import { redact } from '../secrets.ts';
+import { cli } from '../cli.ts';
 
 type Message = { jsonrpc: '2.0'; id?: string | number | null; method?: string; params?: Record<string, unknown> };
 export type Reply = { jsonrpc: '2.0'; id: string | number | null; result?: unknown; error?: { code: number; message: string } };
@@ -10,7 +11,7 @@ const PROTOCOL = '2025-06-18';
 
 export const INSTRUCTIONS = 'Diorama builds painted point-and-click worlds. Every tool here is a Diorama Studio action; the person sees each call '
   + 'in the Studio at once. Long work (world_build, run_step) starts a job: follow it with job_wait. Use ui_focus to show the person the '
-  + 'world or place you are talking about. Keys are never available to you: if setup_status says one is missing, ask the person to run diorama setup.';
+  + 'world or place you are talking about. Keys are never available to you: if setup_status says one is missing, ask the person to run ' + cli('setup') + '.';
 
 export function mcpTools() {
   return describeActions().map((a) => ({

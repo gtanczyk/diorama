@@ -8,7 +8,7 @@ Without a checkout, from npm. Run it in an empty folder: worlds are written to `
 
 ```sh
 mkdir my-worlds && cd my-worlds
-npx -y @gtanczyk/diorama setup     # what this machine still needs; asks for keys, hidden
+npx -y @gtanczyk/diorama setup     # what this machine still needs; asks for keys, hidden, and offers to download Chromium
 npx -y @gtanczyk/diorama doctor    # one live call to each model
 npx -y @gtanczyk/diorama studio    # the GUI
 ```

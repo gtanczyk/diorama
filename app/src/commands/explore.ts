@@ -9,6 +9,7 @@ import { CROP_JS, PROBE_JS, type ProbeHit } from '../qa/probe.ts';
 import { defineCommand, takeOption } from '../registry.ts';
 import { WorldFiles } from '../world/files.ts';
 import { serveWorld } from './play.ts';
+import { cli } from '../cli.ts';
 
 export type Browser = { newPage(o?: object): Promise<Page>; close(): Promise<void> };
 export type Page = {
@@ -26,7 +27,7 @@ export async function chromium(): Promise<{ launch(o?: object): Promise<Browser>
     try {
       return (createRequire(import.meta.url)('playwright') as { chromium: never }).chromium;
     } catch {
-      throw new Error('this command needs Playwright with Chromium: diorama browsers');
+      throw new Error(`this command needs Playwright with Chromium: ${cli('browsers')}`);
     }
   }
 }

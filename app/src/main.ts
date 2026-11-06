@@ -1,11 +1,12 @@
 import './commands/index.ts';
 import { registry } from './registry.ts';
 import { loadSecrets, redact } from './secrets.ts';
+import { cli, cliText } from './cli.ts';
 
 function help() {
-  console.log('diorama: a story prompt becomes painted scenes you can walk in\n\nusage: diorama <command> [args]\n');
+  console.log(`diorama: a story prompt becomes painted scenes you can walk in\n\nusage: ${cli('<command> [args]')}\n`);
   for (const cmd of registry.values()) console.log(`  ${cmd.usage}`);
-  console.log('\nfirst time: diorama setup (keys, what is missing), then diorama studio. Worlds are written to ./worlds here.');
+  console.log(`\nfirst time: ${cli('setup')} (keys, what is missing), then ${cli('studio')}. Worlds are written to ./worlds here.`);
 }
 
 const [name, ...args] = process.argv.slice(2);
@@ -15,7 +16,7 @@ if (!cmd) {
   process.exit(!name || name === 'help' ? 0 : 2);
 }
 if (args.includes('--help') || args.includes('-h')) {
-  console.log(`usage: diorama ${cmd.usage}`);
+  console.log(`usage: ${cli(cmd.usage)}`);
   process.exit(0);
 }
 try {
@@ -23,6 +24,6 @@ try {
   if (name !== 'setup') await loadSecrets();
   await cmd.run(args);
 } catch (error) {
-  console.error(redact(`diorama ${name}: ${error instanceof Error ? error.message : error}`));
+  console.error(redact(`diorama ${name}: ${cliText(error instanceof Error ? error.message : String(error))}`));
   process.exit(1);
 }

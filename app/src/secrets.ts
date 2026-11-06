@@ -7,6 +7,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { cli } from './cli.ts';
 
 /** The keys diorama knows how to keep, with the other names each one is accepted under. */
 export const SECRETS = {
@@ -138,7 +139,7 @@ export class SecretStore {
   async read(): Promise<Record<string, string>> {
     if (!fs.existsSync(this.file)) return {};
     const key = await this.vault.get();
-    if (!key) throw new Error(`credentials.bin exists but its key is missing from the ${this.vault.name}; run diorama setup to store your keys again`);
+    if (!key) throw new Error(`credentials.bin exists but its key is missing from the ${this.vault.name}; run ${cli('setup')} to store your keys again`);
     return open(key, fs.readFileSync(this.file));
   }
 

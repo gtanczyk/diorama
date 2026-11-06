@@ -224,7 +224,9 @@ function Setup() {
   const [checks, setChecks] = useState<Check[] | null>(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  const run = async (name: 'setup_status' | 'setup_check') => {
+  const [setupCommand, setSetupCommand] = useState('diorama setup');
+  useEffect(() => void call<{ setup: string }>('setup_cli').then((c) => setSetupCommand(c.setup)).catch(() => {}), []);
+  const run = async (name: 'setup_status' | 'setup_check' | 'setup_browsers') => {
     setBusy(name);
     setError('');
     try {
@@ -250,7 +252,7 @@ function Setup() {
           <h1>Setup</h1>
         </div>
         <p class="lead">{!checks ? 'Checking this machine…' : blocking.length ? `${blocking.map((c) => c.label).join(' and ')} still ${blocking.length > 1 ? 'need' : 'needs'} you. Everything else is ready or optional.` : `Everything diorama needs is here.${ok < checks.length ? ' The unticked ones are optional.' : ''}`}</p>
-        <p class="note">Keys are typed only in your terminal with <code>diorama setup</code>, hidden, and kept in your system keychain. This page never sees them.</p>
+        <p class="note">Keys are typed only in your terminal with <code>{setupCommand}</code>, hidden, and kept in your system keychain. This page never sees them.</p>
         {error && <p class="error">{error}</p>}
         <div class="row">
           <button type="button" class="primary" disabled={!!busy} title="Look at this computer again: keys, tools, the agent. Free" onClick={() => run('setup_status')}>{busy === 'setup_status' ? 'Checking…' : 'Check again'}</button>
@@ -273,6 +275,7 @@ function Setup() {
                   <div class="fix">
                     <pre>{c.fix.join('\n')}</pre>
                     <Copy text={c.fix.join('\n')} />
+                    {c.id === 'chromium' && <button type="button" class="primary small" disabled={!!busy} title="Download Playwright's Chromium now (~150 MB, once), then check again. Free" onClick={() => run('setup_browsers')}>{busy === 'setup_browsers' ? 'Downloading…' : 'Download'}</button>}
                   </div>
                 )}
               </div>

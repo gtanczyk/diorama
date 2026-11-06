@@ -2,6 +2,8 @@
 import { defineCommand, takeOption } from '../registry.ts';
 import { findVault, NO_VAULT, SECRET_NAMES, SECRETS, SecretStore, type SecretName } from '../secrets.ts';
 import { runChecks, type Check } from '../setup/checks.ts';
+import { installChromium } from './browsers.ts';
+import { cli } from '../cli.ts';
 
 const MARK: Record<Check['state'], string> = { ok: '  ok      ', missing: '  MISSING ', optional: '  -       ', fail: '  FAIL    ' };
 
@@ -15,7 +17,7 @@ export function printChecks(checks: Check[]) {
 /** Reads a line without echoing it. Only from a terminal: a pasted key never lands in shell history or argv. */
 function askHidden(question: string): Promise<string> {
   const stdin = process.stdin;
-  if (!stdin.isTTY) throw new Error('diorama setup reads keys from a terminal only; or set them as environment variables');
+  if (!stdin.isTTY) throw new Error(`${cli('setup')} reads keys from a terminal only; or set them as environment variables`);
   process.stdout.write(question);
   return new Promise((resolve, reject) => {
     let value = '';
@@ -40,6 +42,17 @@ function askHidden(question: string): Promise<string> {
     };
     stdin.on('data', onData);
   });
+}
+
+/** A yes/no question in the terminal; Enter means yes. */
+async function askYes(question: string): Promise<boolean> {
+  const { createInterface } = await import('node:readline/promises');
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return !/^n/i.test((await rl.question(question)).trim());
+  } finally {
+    rl.close();
+  }
 }
 
 async function storeKey(name: SecretName, remove: boolean) {
@@ -75,6 +88,17 @@ defineCommand({
     if (process.stdin.isTTY && missing.length && (await findVault())) {
       console.log('');
       for (const c of missing) await storeKey(c.id as SecretName, false);
+      checks = await runChecks({ live });
+      console.log('');
+      printChecks(checks);
+    }
+    // Chromium is one download: offer it here instead of sending the person off to find another command.
+    if (process.stdin.isTTY && checks.some((c) => c.id === 'chromium' && c.state === 'missing') && (await askYes('\nDownload Chromium for Explore and Playthrough now (~150 MB, once)? [Y/n] '))) {
+      try {
+        await installChromium();
+      } catch (error) {
+        console.log(`Chromium download failed (${error instanceof Error ? error.message : error}); try again with ${cli('browsers')}`);
+      }
       checks = await runChecks({ live });
       console.log('');
       printChecks(checks);

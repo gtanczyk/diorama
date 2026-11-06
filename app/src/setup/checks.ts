@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { blenderState } from '../model/blender.ts';
 import { envValue, findVault, loadSecrets, NO_VAULT, type SecretName } from '../secrets.ts';
+import { cli } from '../cli.ts';
 
 export type Check = {
   id: string;
@@ -22,7 +23,7 @@ function sh(cmd: string, args: string[], timeout = 8000): Promise<string | null>
 
 async function keyCheck(name: SecretName, label: string, required: boolean, what: string, source?: 'env' | 'store'): Promise<Check> {
   const value = envValue(name);
-  if (!value) return { id: name, label, state: required ? 'missing' : 'optional', detail: what, fix: [`diorama setup --key ${name}`] };
+  if (!value) return { id: name, label, state: required ? 'missing' : 'optional', detail: what, fix: [cli(`setup --key ${name}`)] };
   return { id: name, label, state: 'ok', detail: source === 'store' ? 'in your system keychain' : 'from the environment' };
 }
 
@@ -78,7 +79,7 @@ export async function runChecks(opts: { live?: boolean } = {}): Promise<Check[]>
   } catch {}
   checks.push(chromium && fs.existsSync(chromium)
     ? { id: 'chromium', label: 'Chromium for Explore and Playthrough', state: 'ok', detail: 'installed' }
-    : { id: 'chromium', label: 'Chromium for Explore and Playthrough', state: 'missing', detail: 'Explore and the playthrough bot drive a browser.', fix: ['diorama browsers'] });
+    : { id: 'chromium', label: 'Chromium for Explore and Playthrough', state: 'missing', detail: 'Explore and the playthrough bot drive a browser.', fix: [cli('browsers')] });
 
   checks.push(await keyCheck('ELEVENLABS_API_KEY', 'ElevenLabs key', false, 'Optional: sound effects, music and voices. Without it the world plays silent.', sources.ELEVENLABS_API_KEY));
   checks.push(await keyCheck('HF_TOKEN', 'Hugging Face token', false, 'Optional: 3D hero figures (TRELLIS, auto-rig) on ZeroGPU Spaces.', sources.HF_TOKEN));
@@ -103,8 +104,8 @@ export async function runChecks(opts: { live?: boolean } = {}): Promise<Check[]>
 
   const remote = await sh('git', ['remote', 'get-url', 'origin']);
   checks.push(remote
-    ? { id: 'publish', label: 'Publishing', state: 'ok', detail: `git remote ${remote.replace(/\/\/[^@/]+@/, '//')}; diorama publish pushes to gh-pages` }
-    : { id: 'publish', label: 'Publishing', state: 'optional', detail: 'No git remote: diorama export --zip still makes an itch.io upload.' });
+    ? { id: 'publish', label: 'Publishing', state: 'ok', detail: `git remote ${remote.replace(/\/\/[^@/]+@/, '//')}; ${cli('publish <slug>')} pushes to gh-pages` }
+    : { id: 'publish', label: 'Publishing', state: 'optional', detail: `No git remote: ${cli('export <slug> --zip')} still makes an itch.io upload.` });
 
   return checks;
 }

@@ -8,6 +8,8 @@ import { soundQuality } from '../sound/cost.ts';
 import { writeSoundQuality } from '../sound/settings.ts';
 import { blenderEnv, blenderState, writeBlenderSettings } from '../model/blender.ts';
 import { facesState, writeFacesSettings } from '../scene/faces-settings.ts';
+import { installChromium } from '../commands/browsers.ts';
+import { cli } from '../cli.ts';
 
 const audioState = () => ({ quality: soundQuality(), env: process.env.DIORAMA_SOUND ?? null });
 
@@ -84,6 +86,29 @@ defineAction({
   input: z.object({}),
   async run() {
     return runChecks({ live: true });
+  },
+});
+
+defineAction({
+  name: 'setup_cli',
+  reads: true,
+  description: 'The command that runs diorama in a terminal on this machine (diorama, npx @gtanczyk/diorama or npm run diorama --), for hints to the person.',
+  input: z.object({}),
+  async run() {
+    return { command: cli(), setup: cli('setup') };
+  },
+});
+
+let downloading: Promise<unknown> | null = null;
+
+defineAction({
+  name: 'setup_browsers',
+  description: 'Download Chromium for Explore, the playthrough bot and sprites (Playwright, ~150 MB, once), then check the machine again. Ask the person first.',
+  input: z.object({}),
+  async run(_input, ctx) {
+    downloading ??= installChromium([], (line) => /\d%/.test(line) && !/100%/.test(line) ? undefined : ctx.events.publish('log', { stream: 'out', line: `chromium: ${line}` })).finally(() => (downloading = null));
+    await downloading;
+    return runChecks();
   },
 });
 

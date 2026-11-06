@@ -24,6 +24,7 @@ import { bundle, WEB, worldData } from '../commands/play.ts';
 import { WorldFiles } from '../world/files.ts';
 import { snapshotBeforeJob } from './history.ts';
 import { handleMcp } from './mcp.ts';
+import { cli } from '../cli.ts';
 
 export const STUDIO_WEB = fileURLToPath(new URL('../../studio/', import.meta.url));
 const CHAT_CSS = createRequire(import.meta.url).resolve('genaicode/react/styles.css');
@@ -184,7 +185,7 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
   });
 
   // The game and pictures read the world through the Studio's session cookie; a browser that never opened the Studio has none.
-  const NO_SESSION = 'no session: open the Studio link from `diorama studio` in this browser first, or play the world on its own with `diorama play <slug>`';
+  const NO_SESSION = `no session: open the Studio link from \`${cli('studio')}\` in this browser first, or play the world on its own with \`${cli('play <slug>')}\``;
   const server = http.createServer(async (req, res) => {
     const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'cross-origin-resource-policy': 'same-origin' };
     const send = (status: number, type: string, body: string | Buffer, extra: Record<string, string> = {}) => {
@@ -239,7 +240,7 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
       }
 
       if (url.pathname.startsWith('/api/')) {
-        if (!authed) return json(401, { error: 'missing or wrong token: open the link diorama studio printed' });
+        if (!authed) return json(401, { error: `missing or wrong token: open the link ${cli('studio')} printed` });
         if (req.method === 'POST' && !(req.headers['content-type'] ?? '').startsWith('application/json')) return json(415, { error: 'JSON only' });
 
         if (url.pathname === '/api/session' && req.method === 'POST') {
