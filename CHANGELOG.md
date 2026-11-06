@@ -7,6 +7,8 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ## Unreleased
 
+## 0.4.1 — 2026-11-06
+
 ### Fixed
 
 - Setup hints, usage lines and errors show the command that works for how Diorama was started (`npx @gtanczyk/diorama browsers` under npx, `diorama browsers` for a global install, `npm run diorama -- browsers` in a checkout) instead of a bare `diorama` that npx users do not have. `diorama setup` offers to download Chromium on the spot, and the Studio's Setup card for it has a Download button. `DIORAMA_CLI` overrides the shown command.
