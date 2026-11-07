@@ -67,6 +67,12 @@ export const Corrections = z.object({
   take: z.number().int().min(0).optional(),
   /** Where the hero begins in this place (hero_start_set), instead of the front middle of the biggest floor. */
   start: XY.optional(),
+  /**
+   * How tall the hero stands here, against a thing painted in this place (hero_size_set): `times` that thing's painted
+   * height. The place's scale is set from it, over Spark's guess of a person. One world's places can come out ten
+   * times apart (a desk seen whole, people-sized, and a close-up of a mug, props-sized), and the hero with them.
+   */
+  heroSize: z.object({ like: z.string().min(1), times: z.number().positive().max(20) }).optional(),
   /** This place's own painting style over world.json's (style_set with scope place). */
   style: z.string().min(10).optional(),
 });

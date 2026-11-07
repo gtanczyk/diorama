@@ -33,10 +33,15 @@ export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors
    * Floor someone said is floor: brush strokes that add to a floor (the person's, the agent's, the free bridge's)
    * and floor cells the person added. It is walked on whatever thing's mask lies over it.
    */
-  said?: Mask };
+  said?: Mask;
+  /** How tall the hero stands (cast/figures.json), in metres; the scale is for a grown-up. Absent: a grown-up. */
+  heroMetres?: number;
+  /** The hero as tall as `times` this thing's painted height (corrections heroSize): sets the scale. */
+  heroSize?: { like: string; times: number } };
 export type Derived = { geometry: Geometry; grid: Grid; blobs: Blob[]; footprint: Mask; probes: Sample[]; shadows: Shadows };
 
 const { width: W, height: H } = FRAME;
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
 /** The tallest the hero may be: three quarters of the picture. */
 export const NEAR_MAX_PX = Math.round(0.75 * H);
 /** How far (px) a layout light's point may lie outside the thing it belongs to: a glow drawn just off the lamp. */
@@ -362,14 +367,28 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     scale = { horizonY: Math.min(layout.horizon, topY - 40), pxPerY: 0.5, source: 'layout' };
     flag('scale: guessed from the layout horizon');
   }
+  // The person said how tall the hero is here, against a painted thing: the scale follows it (the horizon stays).
+  const heroMetres = input.heroMetres ?? PERSON_M;
+  const like = input.heroSize && things.find((t) => t.key === input.heroSize!.like);
+  const likeBox = like ? maskBox(like.mask) : undefined;
+  if (input.heroSize && !likeBox) flag(`hero size: no thing ${input.heroSize.like} with a mask here; the scale stays`);
+  if (input.heroSize && likeBox) {
+    const footY = likeBox[3];
+    const horizonY = scale.horizonY < footY - 20 ? scale.horizonY : Math.min(layout.horizon, footY - 40, topY - 40);
+    const personAt = (input.heroSize.times * (likeBox[3] - likeBox[1]) * PERSON_M) / heroMetres;
+    scale = { horizonY, pxPerY: round3(personAt / Math.max(1, footY - horizonY)), source: scale.source };
+    log(`scale from the hero's size: ${input.heroSize.times} x ${input.heroSize.like} (${Math.round((likeBox[3] - likeBox[1]) * input.heroSize.times)} px at y ${footY})`);
+  }
 
   // The frame gate: no standing where a good part of the hero would be outside the picture.
   const sized = scale;
+  // The gates are for the hero as tall as it is: a small one (a figurine among props) fits where a grown-up would not.
+  const heroShare = Math.min(1, heroMetres / PERSON_M);
   let framed = 0;
   grid.open.forEach((v, i) => {
     if (!v) return;
     const [x, y] = grid.centre(i);
-    const h = Math.max(8, sized.pxPerY * (y - sized.horizonY));
+    const h = Math.max(8, heroShare * sized.pxPerY * (y - sized.horizonY));
     if (x < 0.1 * h || x > W - 0.1 * h || y < 0.7 * h) {
       grid.open[i] = 0;
       shut[i] = 1;
@@ -378,7 +397,7 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
   });
   // The near gate: in a close-up interior the front rows sit right under the camera, where the hero would be
   // taller than the picture (a bakery at 942 px). Those rows are foreground to look past, not floor to stand on.
-  const tooNear = [...grid.open.keys()].filter((i) => grid.open[i] && sized.pxPerY * (grid.centre(i)[1] - sized.horizonY) > NEAR_MAX_PX);
+  const tooNear = [...grid.open.keys()].filter((i) => grid.open[i] && heroShare * sized.pxPerY * (grid.centre(i)[1] - sized.horizonY) > NEAR_MAX_PX);
   if (tooNear.length && grid.count() - tooNear.length >= 200) {
     tooNear.forEach((i) => (grid.open[i] = 0, shut[i] = 1));
     framed += tooNear.length;

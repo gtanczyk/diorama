@@ -16,6 +16,7 @@ import { closeFaces, placeDepth } from '../scene/occlusion-check.ts';
 import { gridOf } from '../scene/verify.ts';
 import { unionAll } from '../image/raster.ts';
 import { WorldFiles } from '../world/files.ts';
+import { readBodies } from '../scene/cast.ts';
 
 type MasksJson = { things: Record<string, Omit<ThingIn, 'key' | 'mask'>> };
 
@@ -95,6 +96,7 @@ defineCommand({
     const files = new WorldFiles(slug);
     const world = files.world();
     const places = world.places.filter((p) => only.length === 0 || only.includes(p.key));
+    const heroMetres = readBodies(files, fs.existsSync)[world.hero.key]?.height;
     await Promise.all(places.map(async (place) => {
       const at = (...parts: string[]) => files.place(place.key, ...parts);
       // NPCs are drawn by the runtime, not painted: moving one only moves its box (and where the hero talks to it).
@@ -122,7 +124,7 @@ defineCommand({
         console.log(`  ${place.key}: no depth model for walls (${e.message})`);
         return undefined;
       });
-      const out = await derive(files.memo, { place, layout: asPainted, things, floors, painting, plates, carry, lastScale, previousScale, ...(start && { start }), ...(upright && { upright }), ...(said && { said }) }, (line) => console.log(`  ${place.key}: ${line}`));
+      const out = await derive(files.memo, { place, layout: asPainted, things, floors, painting, plates, carry, lastScale, previousScale, ...(start && { start }), ...(upright && { upright }), ...(said && { said }), ...(heroMetres && { heroMetres }), ...(readCorrections(at()).heroSize && { heroSize: readCorrections(at()).heroSize }) }, (line) => console.log(`  ${place.key}: ${line}`));
       // Shadows only with a light: without one the runtime has nothing to darken by.
       const lit = out.shadows.light && maskArea(out.shadows.mask) > 0;
       if (lit) files.write(at('masks', 'shadows.png'), await maskToPng(out.shadows.mask));

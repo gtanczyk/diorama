@@ -172,6 +172,20 @@ defineAction({
 });
 
 defineAction({
+  name: 'hero_size_set',
+  description: 'Say how tall the hero stands in a place, against a thing painted there: times that thing\'s painted height ("about as tall as the candle jar": 1). '
+    + 'Use it when the hero is far too big or small for the place, or differs from place to place in one world (a desk seen whole and a close-up of a mug), '
+    + 'or when only a strip of floor is walkable because the hero would be taller than the picture at the front. Sets the place\'s scale. Kept across rebuilds. No repaint: reruns derive to verify for that place.',
+  input: z.object({ slug: Slug, place: z.string().min(1), like: z.string().min(1), times: z.number().positive().max(20) }),
+  job: true,
+  async run({ slug, place, like, times }, ctx) {
+    return fixPlace(ctx, slug, place, 'derive', `hero size ${times} x ${like}`, (c) => {
+      c.heroSize = { like, times };
+    });
+  },
+});
+
+defineAction({
   name: 'hero_start_set',
   description: 'Set where the hero begins in a place (painting pixels, on walkable floor; the nearest roomy cell of the main floor is used): '
     + 'when the hero starts in front of an NPC or a thing and hides it, or somewhere odd. Kept across rebuilds. No repaint: reruns derive to verify for that place.',

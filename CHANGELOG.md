@@ -10,9 +10,11 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 ### Added
 
 - The Studio's agent header shows the agent's plan limits (Claude Code's 5-hour and weekly, Codex's) once one is near its end, with when it resets, and the terminal warns once. `DIORAMA_AGENT_MAX_COST` and `DIORAMA_AGENT_MAX_TOKENS` cap one world's conversation (docs/studio.md).
+- `hero_size_set` (Studio action): how tall the hero stands in a place, as times a painted thing's height ("about as tall as the candle jar"); it sets the place's scale and is kept across rebuilds. For worlds whose places Spark scales ten times apart (a desk seen whole, a close-up of a mug), where the hero changed size from place to place and a close-up left only a strip of floor to walk.
 
 ### Fixed
 
+- The frame and near-camera gates of `derive` measure the hero at its own height (cast/figures.json), not a grown-up's: a small hero is no longer shut out of the front of a close-up.
 - A candle or lamp no longer flares a bright square over the floor and things around it (a letter beside a candle jar): the flame's animated pixels are only its own near-white warm ones, faded out towards the edge of the box they are taken from.
 - A backdrop behind the cards no longer shows square patches where a big hole was filled (most visible in a lamp's warm light): the smear fill reads coarser levels bilinearly instead of in blocks.
 - An NPC that is a thing (a steaming mug, a candle in a jar) and that the place's words also name is no longer left painted into the background beside the figure the game draws: the people check before and after the critic now looks for the place's NPCs by their looks too.
