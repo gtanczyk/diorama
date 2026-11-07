@@ -7,6 +7,8 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ## Unreleased
 
+## 0.5.0 — 2026-11-07
+
 ### Added
 
 - The Studio's agent header shows the agent's plan limits (Claude Code's 5-hour and weekly, Codex's) once one is near its end, with when it resets, and the terminal warns once. `DIORAMA_AGENT_MAX_COST` and `DIORAMA_AGENT_MAX_TOKENS` cap one world's conversation (docs/studio.md).
