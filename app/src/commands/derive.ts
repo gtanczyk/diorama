@@ -54,7 +54,8 @@ async function walkPicture(painting: Buffer, g: Geometry, footprint: ThingIn['ma
   // The hero's size at three depths, as little figures spread over the floor (far left, middle, near right):
   // stacked boxes in one column read as a path, not as a person.
   const rows = g.walk.map((row, r) => (row.includes('#') ? r : -1)).filter((r) => r >= 0);
-  for (const [q, across] of [[0.1, 0.2], [0.5, 0.5], [0.95, 0.8]] as const) {
+  // No walkable row at all (NO_FLOOR): no figures to draw; verify reports the missing floor.
+  for (const [q, across] of rows.length ? ([[0.1, 0.2], [0.5, 0.5], [0.95, 0.8]] as const) : []) {
     const r = rows[Math.floor(q * (rows.length - 1))];
     const cols = [...g.walk[r]].flatMap((ch, c) => (ch === '#' ? [c] : []));
     // The walkable cell nearest to a quarter, the middle and three quarters of the frame, so they stand apart.

@@ -43,7 +43,7 @@ Reply with JSON only: {"issues": [{"key": "...", "problem": "missing | wrong | f
   // The critic weighs the whole picture and lets a figure pass when the place's words name one ("a child floats
   // candle boats"); people are asked about on their own, as every one of them is a double or a stranger.
   // A drive's hero is painted at the wheel on purpose: no one is looked for there.
-  const people = place.kind === 'drive' ? [] : await paintedPeople(memo, place.key, painting);
+  const people = place.kind === 'drive' ? [] : await paintedPeople(memo, place.key, painting, castLooks(place));
   const near = (a: number[], b: number[]) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) < 120;
   const extra = people.filter((p) => !found.issues.some((i) => i.problem === 'unwanted' && near(i.region, p.box))).map((p) => ({
     key: 'person', problem: 'unwanted' as const, region: pad(p.box, 24),
@@ -51,6 +51,13 @@ Reply with JSON only: {"issues": [{"key": "...", "problem": "missing | wrong | f
   }));
   return { issues: [...found.issues, ...extra].slice(0, 6) };
 }
+
+/**
+ * How the place's NPCs look. A drawn world's NPC is often a thing (a steaming mug, a candle in a jar) that the place's
+ * words also name as part of the scene, so the painter paints it in and the critic, looking for people, lets it pass:
+ * the game then draws its figure beside the painted one, a double. They are looked for by their looks too.
+ */
+export const castLooks = (place: Place) => place.things.filter((t) => t.role === 'npc').map((t) => t.looks ?? t.key.replace(/-/g, ' '));
 
 const PERSON = /\b(child|children|kid|boy|girl|man|woman|men|women|person|people|figure|keeper|seller|vendor|fisherman|sailor|someone|crowd|silhouette)s?\b/i;
 
@@ -63,9 +70,12 @@ export const addsPerson = (i: { problem: string; fix: string }) => i.problem !==
 const People = z.object({ people: z.array(z.object({ what: z.string(), box: z.tuple([z.number(), z.number(), z.number(), z.number()]) })).max(6) });
 
 /** Every person or figure painted in, with a box: none belongs in a background, the game adds its people itself. */
-export async function paintedPeople(memo: Memo, key: string, painting: Buffer): Promise<Array<{ what: string; box: [number, number, number, number] }>> {
+export async function paintedPeople(memo: Memo, key: string, painting: Buffer, cast: string[] = []): Promise<Array<{ what: string; box: [number, number, number, number] }>> {
+  const others = cast.length
+    ? `\nAlso list each of these characters if it is painted in, however it is drawn (as an object, an animal or a creature, standing on or inside something else): ${cast.join('; ')}. The game draws them over the picture itself, so a painted one would be a double. Box only the character, not what it stands on.`
+    : '';
   const prompt = `This is a painted background (${FRAME.width}x${FRAME.height} px) for a 2D adventure. It must show no people at all.
-List every person or human figure painted in it: adults, children, sitting, crouching or far away, a silhouette in a window or a doorway. Not statues, scarecrows, posters or pictures of people.
+List every person or human figure painted in it: adults, children, sitting, crouching or far away, a silhouette in a window or a doorway. Not statues, scarecrows, posters or pictures of people.${others}
 For each give what it is in a few words ("a crouching child in a grey hoodie") and its box [x0, y0, x1, y1] in pixels, tight around the figure.
 Reply with JSON only: {"people": [{"what": "...", "box": [0, 0, 0, 0]}]}`;
   try {

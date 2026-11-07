@@ -158,6 +158,45 @@ async function paintCreatureViews(memo: Memo, key: string, looks: string, painti
     label: `${key}-view-${facing}`, size: SIZE, take, images: [front, back],
     prompt: `The same creature as in both pictures (front and back views), same colours and painted style, now seen exactly from the side in profile, facing to the ${facing} of the picture (${looks}), ${REST}. Same size and position in the frame as the pictures. ${PLAIN}`,
   }).then((png) => (onView?.(facing, png), png));
-  const [left, right] = await Promise.all([side('left'), side('right')]);
-  return { front, back, left, right };
+  const views: Record<ViewName, Buffer> = { front, back, left: front, right: front };
+  [views.left, views.right] = await Promise.all([side('left'), side('right')]);
+  // Muse can leave out or add a part between views (a mug drawn standing on a bottle loses the bottle in front and
+  // keeps it from the side): TRELLIS cannot make one body of that and the model comes out torn. Views that do not
+  // show the same creature as the front are painted again; still not one creature after that, there is no model.
+  for (let round = 0; round < CREATURE_ROUNDS; round++) {
+    const wrong = await checkCreature(memo, key, views, round);
+    const redo = Object.keys(wrong) as ViewName[];
+    if (!redo.length) return views;
+    console.log(`  ${key}: ${redo.map((v) => `${v} view: ${wrong[v]}`).join('; ')}; painting ${redo.length === 1 ? 'it' : 'them'} again`);
+    const t = take + 1 + round;
+    if (wrong.back) (views.back = await edit({
+      label: `${key}-view-back`, size: SIZE, take: t, images: [front],
+      prompt: `The same creature as in the picture (${looks}), with exactly the same parts and nothing more or less, same colours and painted style, in exactly the same pose, seen straight from behind: we see its back, its face is not visible. Same size and position in the frame as the picture. ${PLAIN}`,
+    }), onView?.('back', views.back));
+    await Promise.all((['left', 'right'] as const).filter((f) => wrong[f]).map(async (f) => {
+      views[f] = await edit({
+        label: `${key}-view-${f}`, size: SIZE, take: t, images: [front, views.back],
+        prompt: `The same creature as in both pictures (front and back views), with exactly the same parts as the front and nothing more or less, same colours and painted style, now seen exactly from the side in profile, facing to the ${f} of the picture (${looks}), ${REST}. Same size and position in the frame as the pictures. ${PLAIN}`,
+      });
+      onView?.(f, views[f]);
+    }));
+  }
+  const still = await checkCreature(memo, key, views, CREATURE_ROUNDS);
+  if (Object.keys(still).length) throw new Error(`its 4 sides do not show one creature (${Object.entries(still).map(([v, why]) => `${v}: ${why}`).join('; ')})`);
+  return views;
+}
+
+/** Rounds of repainting creature views that do not match the front. */
+const CREATURE_ROUNDS = 2;
+
+/** Which of the back and side views show a different creature from the front: a part left out or added (what it stands on, legs, a handle), another shape. */
+export async function checkCreature(memo: Memo, key: string, views: Record<ViewName, Buffer>, round = 0): Promise<Partial<Record<ViewName, string>>> {
+  const names: ViewName[] = ['front', 'back', 'left', 'right'];
+  const a = await askSparkJson<Record<string, { ok?: unknown; why?: unknown }>>(memo, {
+    label: `views-creature-check:${key}#${round}`, images: await Promise.all(names.map((v) => small(views[v]))),
+    prompt: 'Four pictures of one creature or living object, meant to be the same body seen from the front, from behind, from its left side and from its right side, so a 3D model can be built from them. '
+      + 'Compare pictures 2, 3 and 4 with picture 1 (the front). One is wrong when it shows a part the front does not, or lacks one the front has (something it stands on or in, a base, a bottle, a stand, legs, arms, a tail, a handle, a hat), or a clearly different body shape or size. Colours, light and the turned view itself are fine. '
+      + `Reply with JSON only: {${names.slice(1).map((v) => `"${v}": {"ok": true or false, "why": "a few words"}`).join(', ')}}`,
+  });
+  return Object.fromEntries(names.slice(1).flatMap((v) => (a[v]?.ok === false ? [[v, String(a[v]?.why ?? 'not the same creature as the front')]] : [])));
 }

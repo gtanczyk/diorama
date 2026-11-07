@@ -149,6 +149,14 @@ async function makeModel(files: WorldFiles, key: string, take: number, given: st
   try {
     views = await paintViews(files.memo, key, who.looks ?? '', painting, take, creature, (name, png) => files.write(out(`${name}.png`), png));
   } catch (error) {
+    // A creature whose sides never showed one body: no model, the painted figure hops as it is (an older model too
+    // was made from such sides, so it goes).
+    const message = error instanceof Error ? error.message : String(error);
+    if (creature && message.startsWith('its 4 sides do not show one creature')) {
+      if (fs.existsSync(out('model.json'))) fs.renameSync(out('model.json'), out('model-rejected.json'));
+      console.log(`${key}: no 3D model: ${message}; the painted figure hops as it is`);
+      return message;
+    }
     // Refused even in calm words: the model made before stays (a changed prompt reran it), else the 2D rig walks.
     if (!refusedByFilter(error)) throw error;
     if (fs.existsSync(out('model.json')) && fs.existsSync(out('model.glb'))) {
