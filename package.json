@@ -1,6 +1,6 @@
 {
   "name": "@gtanczyk/diorama",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Turn a story prompt into playable painted point-and-click scenes with Meta Muse and SAM 3.1",
   "license": "Apache-2.0",
   "repository": {
