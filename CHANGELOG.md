@@ -14,6 +14,7 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ### Fixed
 
+- `voices` speaks every line by default, the hero's looks, uses and locked doors too: a hero heard in conversations and silent everywhere else read as broken. `--essential` keeps to conversations, intro and endings; `--all` is no longer needed.
 - The frame and near-camera gates of `derive` measure the hero at its own height (cast/figures.json), not a grown-up's: a small hero is no longer shut out of the front of a close-up.
 - A candle or lamp no longer flares a bright square over the floor and things around it (a letter beside a candle jar): the flame's animated pixels are only its own near-white warm ones, faded out towards the edge of the box they are taken from.
 - A backdrop behind the cards no longer shows square patches where a big hole was filled (most visible in a lamp's warm light): the smear fill reads coarser levels bilinearly instead of in blocks.

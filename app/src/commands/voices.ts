@@ -14,7 +14,7 @@ import { resumePendingVoices } from '../sound/voices.ts';
 
 defineCommand({
   name: 'voices',
-  usage: 'voices <slug>            cast a voice per character (stock, or designed by ElevenLabs Voice Design for children, teens and the old) and speak every story line, checked by Muse Voice Transcribe; conversations, intro and endings [--all: every line; always for a world for kids, whose players cannot read] [--recast] [--draft: Flash and 2 takes; default final uses Multilingual v2 and up to 3 takes]',
+  usage: 'voices <slug>            cast a voice per character (stock, or designed by ElevenLabs Voice Design for children, teens and the old) and speak every story line, checked by Muse Voice Transcribe; every line the hero and the others say, intro and endings [--essential: only conversations, intro and endings, not the hero\'s looks, uses and locked doors] [--recast] [--draft: Flash and 2 takes; default final uses Multilingual v2 and up to 3 takes]',
   async run(args) {
     // Keep this generation at one quality even if Setup changes while it runs.
     process.env.DIORAMA_SOUND = soundQuality(args);
@@ -27,7 +27,9 @@ defineCommand({
     if (!elevenKey()) return void console.log('no ELEVENLABS_API_KEY: lines stay unspoken');
     const story = Story.parse(files.readJson(files.path('story.json')));
     const guard = await creditGuard(elevenKey(), 'voices');
-    const lines = storyLines(world, story, args.includes('--all') || world.audience === 'kids');
+    // Every line by default: a hero who answers out loud in conversations and is silent looking at things reads as broken.
+    // --essential keeps to conversations, intro and endings (a world for kids always gets every line).
+    const lines = storyLines(world, story, !args.includes('--essential') || world.audience === 'kids');
     const outFile = files.path('voices.json');
     const old = fs.existsSync(outFile) ? Voices.parse(files.readJson(outFile)) : undefined;
     let cast: Cast;
