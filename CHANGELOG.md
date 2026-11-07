@@ -7,6 +7,12 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ## Unreleased
 
+### Fixed
+
+- An NPC that is a thing (a steaming mug, a candle in a jar) and that the place's words also name is no longer left painted into the background beside the figure the game draws: the people check before and after the critic now looks for the place's NPCs by their looks too.
+- A creature's 3D model is no longer built from sides that disagree (a mug painted on a bottle from the side but not from the front), which tore it: the back and side views are checked against the front and painted again up to twice, and if they still disagree there is no model and the painted figure hops as it is.
+- `derive` no longer crashes with `g.walk[r] is not iterable` on a place with no walkable floor; verify reports NO_FLOOR as it should.
+
 ## 0.4.1 — 2026-11-06
 
 ### Fixed
