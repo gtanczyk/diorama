@@ -5,7 +5,7 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { antigravity, claude, codexLive, createAgentSession, detectAgents, museLive, type CodingAgent, withoutProviderCredentials, type AgentSession, type ApprovalDecision, type ApprovalRequest, type SessionState, type SessionTurn } from 'genaicode/agents';
+import { antigravity, claude, codexLive, createAgentSession, detectAgents, museLive, type CodingAgent, withoutProviderCredentials, type AgentSession, type ApprovalDecision, type ApprovalRequest, type SessionState, type SessionTurn, type AgentBudget, type RateLimit } from 'genaicode/agents';
 import { configDir, redact, withoutSecrets } from '../secrets.ts';
 import type { Events } from './events.ts';
 import { History } from './history.ts';
@@ -61,6 +61,22 @@ export function studioTool(request: ApprovalRequest): boolean {
  */
 export const shellTool = (name: string) => /(^|[/_.])(shell|bash|sh|exec|exec_command|repl|js)$/i.test(name);
 
+/** DIORAMA_AGENT_MAX_COST (dollars) and DIORAMA_AGENT_MAX_TOKENS cap each world's conversation; unset, nothing is capped. */
+export function agentBudget(env: NodeJS.ProcessEnv = process.env): AgentBudget | undefined {
+  const cost = Number(env.DIORAMA_AGENT_MAX_COST);
+  const tokens = Number(env.DIORAMA_AGENT_MAX_TOKENS);
+  const budget: AgentBudget = { ...(cost > 0 && { maxCostUsd: cost }), ...(tokens > 0 && { maxTokens: Math.floor(tokens) }) };
+  return Object.keys(budget).length ? budget : undefined;
+}
+
+/** An agent's plan limit close to running out or used up, in words for the feed; null while it is fine. */
+export function limitText(limit: RateLimit): string | null {
+  if (limit.status === 'ok') return null;
+  const used = limit.usedPercent === undefined ? '' : ` (${Math.round(limit.usedPercent)}% used)`;
+  const resets = limit.resetsAt === undefined ? '' : `, resets ${new Date(limit.resetsAt).toLocaleString()}`;
+  return `${limit.name ? `${limit.name} ` : ''}${limit.window} limit ${limit.status === 'exceeded' ? 'reached' : 'nearly used up'}${used}${resets}`;
+}
+
 /** Turns a session snapshot into what the page may see: secrets blanked. */
 const safe = (state: SessionState): SessionState => JSON.parse(redact(JSON.stringify(state))) as SessionState;
 
@@ -109,6 +125,8 @@ class Talk {
   /** Tools announced already: a running tool is announced when it starts and must not be again once it settles. */
   private tools = new Set<string>();
   private ended = new Set<number>();
+  /** Plan limits announced already, by limit and state, so a warning shows once. */
+  private limits = new Set<string>();
 
   /**
    * The Studio's tools as the Studio saw them called (arguments, outcome). Some agents report a tool call by
@@ -214,6 +232,13 @@ class Talk {
 
   /** The feed (Activity, the terminal) gets the gist: what was said, each tool, refusals, how a turn ended. */
   private announce(state: SessionState) {
+    for (const limit of state.rateLimits ?? []) {
+      const key = `${limit.name ?? ''}/${limit.window}/${limit.status}`;
+      const text = limitText(limit);
+      if (!text || this.limits.has(key)) continue;
+      this.limits.add(key);
+      this.publish('limit', { text });
+    }
     for (const turn of state.turns) {
       if (!this.seen.has(turn.id)) {
         this.seen.set(turn.id, 0);
@@ -416,6 +441,7 @@ export class AgentHub {
       agent,
       cwd,
       model: agentModel(name),
+      budget: agentBudget(),
       task: {
         env: withoutProviderCredentials(withoutSecrets(process.env)) as Record<string, string>,
         // genaicode hands the server to Muse as -c overrides, the token through an environment variable, never argv.

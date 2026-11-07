@@ -58,6 +58,7 @@ function describe(e: StudioEvent, verbose: boolean): string | null {
     case 'agent.message': return `agent: ${String(e.text).slice(0, 200)}`;
     case 'agent.turn.end': return e.status === 'completed' ? null : `agent stopped: ${e.error ?? e.status}`;
     case 'agent.error': return `agent error: ${e.text}`;
+    case 'agent.limit': return `agent ${e.text}`;
     case 'agent.agent': return `agent is now ${e.label}`;
     case 'log': return verbose || e.stream === 'err' ? `  ${e.line}` : null;
     default: return null;

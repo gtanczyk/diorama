@@ -54,7 +54,7 @@
     "@meta-sam/parser": "^0.1.0",
     "@preact/signals": "^2.11.3",
     "esbuild": "^0.25.0",
-    "genaicode": "^2.28.1",
+    "genaicode": "^2.29.0",
     "onnxruntime-web": "^1.31.1",
     "playwright": "^1.63.0",
     "preact": "^10.29.8",
