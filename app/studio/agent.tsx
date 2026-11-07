@@ -1,6 +1,6 @@
 // The Muse Code panel: genaicode's own chat (genaicode/react), fed the session state the Studio server keeps
 // for this world. The page holds no agent and no key: it sends what the person types and answers approvals.
-import { AgentChat, type ChatNotice, type SessionState, type SessionTurn } from 'genaicode/react';
+import { AgentChat, limitChips, type ChatNotice, type SessionState, type SessionTurn } from 'genaicode/react';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, fileUrl, token } from './api.ts';
@@ -309,6 +309,8 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
               </select>
             )}
             <span class="grow" />
+            {/* The agent's plan limits and the conversation's budget, once near their end or reported. */}
+            {!replay && state && limitChips(state).map((chip) => <span key={chip.key} class="gc-chip gc-limit" data-level={chip.level} title={chip.title}>{chip.text}</span>)}
             {replay
               ? <span class="live on">{replayDone ? 'replay done' : 'replay'}</span>
               : <span class={`live ${live ? 'on' : ''}`}>{running ? 'working…' : live ? 'ready' : 'reconnecting'}</span>}

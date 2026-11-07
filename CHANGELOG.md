@@ -7,6 +7,10 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ## Unreleased
 
+### Added
+
+- The Studio's agent header shows the agent's plan limits (Claude Code's 5-hour and weekly, Codex's) once one is near its end, with when it resets, and the terminal warns once. `DIORAMA_AGENT_MAX_COST` and `DIORAMA_AGENT_MAX_TOKENS` cap one world's conversation (docs/studio.md).
+
 ### Fixed
 
 - A candle or lamp no longer flares a bright square over the floor and things around it (a letter beside a candle jar): the flame's animated pixels are only its own near-white warm ones, faded out towards the edge of the box they are taken from.
