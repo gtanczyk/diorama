@@ -19,8 +19,10 @@ import { pasteInside } from './plates.ts';
 export const BACKDROP_GROW = 14;
 
 /**
- * Fills the masked pixels from their surroundings: a pyramid of averages of the known pixels,
- * read back from the finest level that has any. Smooth, never sharp; fine for a strip of a few px.
+ * Fills the masked pixels from their surroundings: a pyramid of averages of the known pixels (pull), then each
+ * level's empty cells read from the next coarser level, bilinearly (push), down to the hole's pixels. Smooth,
+ * never sharp. Read back nearest-cell, a big hole came out in square blocks of the coarse levels (64 px and more),
+ * which a tone correction carried into the backdrop as square patches round a lamp's light.
  * With `known`, only those pixels feed the fill.
  */
 export function smearFill(rgb: Uint8Array, W: number, H: number, hole: Mask, known?: Mask): Uint8Array {
@@ -46,18 +48,38 @@ export function smearFill(rgb: Uint8Array, W: number, H: number, hole: Mask, kno
     }
     levels.push(next);
   }
-  const out = rgb.slice();
-  for (let i = 0; i < W * H; i++) {
-    if (!hole.bits[i]) continue;
-    let [x, y] = [i % W, Math.floor(i / W)];
-    for (const l of levels) {
-      const j = y * l.w + x;
-      if (l.weight[j] > 0) {
-        for (let c = 0; c < 3; c++) out[i * 3 + c] = l.sum[j * 3 + c] / l.weight[j];
-        break;
-      }
-      [x, y] = [x >> 1, y >> 1];
+  // Each level as colours: its own average where it has known pixels, else read from the level above it.
+  const colours = levels.map((l) => new Float32Array(l.w * l.h * 3));
+  const filled = levels.map((l) => Uint8Array.from(l.weight, (v) => (v > 0 ? 1 : 0)));
+  const sample = (k: number, fx: number, fy: number, out: Float32Array, at: number) => {
+    const l = levels[k];
+    const col = colours[k];
+    const x = Math.max(0, Math.min(l.w - 1, fx));
+    const y = Math.max(0, Math.min(l.h - 1, fy));
+    const [x0, y0] = [Math.floor(x), Math.floor(y)];
+    const [x1, y1] = [Math.min(l.w - 1, x0 + 1), Math.min(l.h - 1, y0 + 1)];
+    const [ax, ay] = [x - x0, y - y0];
+    for (let c = 0; c < 3; c++) {
+      const top = col[(y0 * l.w + x0) * 3 + c] * (1 - ax) + col[(y0 * l.w + x1) * 3 + c] * ax;
+      const bottom = col[(y1 * l.w + x0) * 3 + c] * (1 - ax) + col[(y1 * l.w + x1) * 3 + c] * ax;
+      out[at + c] = top * (1 - ay) + bottom * ay;
     }
+  };
+  for (let k = levels.length - 1; k >= 1; k--) {
+    const l = levels[k];
+    for (let j = 0; j < l.w * l.h; j++) {
+      if (filled[k][j]) for (let c = 0; c < 3; c++) colours[k][j * 3 + c] = l.sum[j * 3 + c] / l.weight[j];
+      else if (k < levels.length - 1) sample(k + 1, ((j % l.w) + 0.5) / 2 - 0.5, (Math.floor(j / l.w) + 0.5) / 2 - 0.5, colours[k], j * 3);
+    }
+  }
+  const out = rgb.slice();
+  if (levels.length === 1) return out;
+  const px = new Float32Array(3);
+  for (let i = 0; i < W * H; i++) {
+    // A known pixel in the hole (with `known`) keeps its own colour.
+    if (!hole.bits[i] || base.weight[i] > 0) continue;
+    sample(1, ((i % W) + 0.5) / 2 - 0.5, (Math.floor(i / W) + 0.5) / 2 - 0.5, px, 0);
+    for (let c = 0; c < 3; c++) out[i * 3 + c] = Math.round(px[c]);
   }
   return out;
 }

@@ -9,6 +9,8 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ### Fixed
 
+- A candle or lamp no longer flares a bright square over the floor and things around it (a letter beside a candle jar): the flame's animated pixels are only its own near-white warm ones, faded out towards the edge of the box they are taken from.
+- A backdrop behind the cards no longer shows square patches where a big hole was filled (most visible in a lamp's warm light): the smear fill reads coarser levels bilinearly instead of in blocks.
 - An NPC that is a thing (a steaming mug, a candle in a jar) and that the place's words also name is no longer left painted into the background beside the figure the game draws: the people check before and after the critic now looks for the place's NPCs by their looks too.
 - A creature's 3D model is no longer built from sides that disagree (a mug painted on a bottle from the side but not from the front), which tore it: the back and side views are checked against the front and painted again up to twice, and if they still disagree there is no model and the painted figure hops as it is.
 - `derive` no longer crashes with `g.walk[r] is not iterable` on a place with no walkable floor; verify reports NO_FLOOR as it should.

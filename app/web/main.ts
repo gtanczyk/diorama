@@ -2935,9 +2935,15 @@ class Game {
     const img = c.getImageData(0, 0, w, h);
     const d = img.data;
     const ramp = (v: number, a: number, b: number) => Math.max(0, Math.min(1, (v - a) / (b - a)));
+    // Only the flame's own pixels: near white-hot and strongly warm. Wood or paper lit warm by it (a letter by a
+    // candle) passed a looser test, and the whole box flared over them as a bright square. Faded to nothing at
+    // the box's edge, so what still passes never ends on a straight line.
     for (let i = 0; i < d.length; i += 4) {
       const luma = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
-      d[i + 3] = Math.round(255 * ramp(luma, 140, 215) * ramp(d[i] - d[i + 2], 40, 100));
+      const k = i / 4;
+      const [u, v] = [((k % w) + 0.5) / w * 2 - 1, (Math.floor(k / w) + 0.5) / h * 2 - 1];
+      const edge = Math.max(0, 1 - (u * u + v * v)) ** 0.5;
+      d[i + 3] = Math.round(255 * ramp(luma, 170, 235) * ramp(d[i] - d[i + 2], 70, 130) * edge);
     }
     c.putImageData(img, 0, 0);
     return { canvas, x0, y0 };
