@@ -124,7 +124,7 @@ defineCommand({
         console.log(`  ${place.key}: no depth model for walls (${e.message})`);
         return undefined;
       });
-      const out = await derive(files.memo, { place, layout: asPainted, things, floors, painting, plates, carry, lastScale, previousScale, ...(start && { start }), ...(upright && { upright }), ...(said && { said }), ...(heroMetres && { heroMetres }), ...(readCorrections(at()).heroSize && { heroSize: readCorrections(at()).heroSize }) }, (line) => console.log(`  ${place.key}: ${line}`));
+      const out = await derive(files.memo, { place, layout: asPainted, things, floors, painting, plates, carry, lastScale, previousScale, ...(start && { start }), ...(upright && { upright }), ...(said && { said }), ...(heroMetres && { heroMetres }), ...(readCorrections(at()).heroSize && { heroSize: readCorrections(at()).heroSize }), placedNpcs: Object.keys(readCorrections(at()).things).filter((k) => readCorrections(at()).things[k]?.at) }, (line) => console.log(`  ${place.key}: ${line}`));
       // Shadows only with a light: without one the runtime has nothing to darken by.
       const lit = out.shadows.light && maskArea(out.shadows.mask) > 0;
       if (lit) files.write(at('masks', 'shadows.png'), await maskToPng(out.shadows.mask));

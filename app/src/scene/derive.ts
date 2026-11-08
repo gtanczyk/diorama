@@ -37,7 +37,9 @@ export type DeriveIn = { place: Place; layout: Layout; things: ThingIn[]; floors
   /** How tall the hero stands (cast/figures.json), in metres; the scale is for a grown-up. Absent: a grown-up. */
   heroMetres?: number;
   /** The hero as tall as `times` this thing's painted height (corrections heroSize): sets the scale. */
-  heroSize?: { like: string; times: number } };
+  heroSize?: { like: string; times: number };
+  /** Npcs the person stood somewhere (npc_move): they stay there, however small the depth makes them. */
+  placedNpcs?: string[] };
 export type Derived = { geometry: Geometry; grid: Grid; blobs: Blob[]; footprint: Mask; probes: Sample[]; shadows: Shadows };
 
 const { width: W, height: H } = FRAME;
@@ -440,7 +442,12 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
       // regatta) is drawn by the game standing on air: it steps onto the nearest floor the hero reaches.
       const onFloor = t.role === 'npc' ? npcOnFloor(laid, grid, reached, sized) : undefined;
       if (onFloor) log(`${t.key}: stood where nothing is walkable (${Math.round(l.x)}, ${Math.round(l.footY)}); moved onto the floor at (${Math.round((onFloor[0] + onFloor[2]) / 2)}, ${Math.round(onFloor[3])})`);
-      const box = onFloor ?? laid;
+      const standing = onFloor ?? laid;
+      // An npc laid out deep in the scene (a dragon at the back of its cave) is drawn a few dozen px tall, a speck
+      // the player barely sees (notebook-monsters): it steps forward until a grown-up there is NPC_MIN_PX tall.
+      const forward = t.role === 'npc' && !input.placedNpcs?.includes(t.key) ? npcInSight(standing, grid, reached, sized, l.metres) : undefined;
+      if (forward) log(`${t.key}: stood far back at (${Math.round((standing[0] + standing[2]) / 2)}, ${Math.round(standing[3])}), where the game draws it tiny; stepped forward to (${Math.round((forward[0] + forward[2]) / 2)}, ${Math.round(forward[3])})`);
+      const box = forward ?? standing;
       return { key: t.key, role: t.role, box, stand: spot((box[0] + box[2]) / 2, box[3]), coarse: true };
     }
     const own = blobs.filter((b) => b.thing === t.key);
@@ -542,6 +549,29 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     flagged,
   };
   return { geometry, grid, blobs, footprint, probes, shadows };
+}
+
+/** The least a grown-up standing where an npc stands is drawn tall (px): smaller, the npc reads as a speck. */
+export const NPC_MIN_PX = Math.round(0.12 * H);
+
+/**
+ * An npc's box when it stands so deep in the scene that the game draws it tiny (it sizes everyone by the scale at
+ * their feet, whatever box the layout gave them: a 2.8 m dragon 50 px below the horizon came out 59 px tall): moved
+ * toward the camera, at the same x, to the reachable roomy cell nearest the depth where a grown-up is NPC_MIN_PX
+ * tall. Undefined when it is near enough already or no floor in front of it brings it nearer.
+ */
+export function npcInSight(box: [number, number, number, number], grid: Grid, reached: Uint8Array, scale: { horizonY: number; pxPerY: number }, metres = PERSON_M, min = NPC_MIN_PX): [number, number, number, number] | undefined {
+  const before = box[3] - scale.horizonY;
+  if (before <= 0 || scale.pxPerY * before >= min) return undefined;
+  const x = (box[0] + box[2]) / 2;
+  const i = nearestRoomy(grid, x, scale.horizonY + min / scale.pxPerY, reached);
+  if (i === undefined) return undefined;
+  const [gx, gy] = grid.centre(i);
+  if (gy - scale.horizonY <= 1.05 * before) return undefined;
+  // The box is what the game draws there (it is the npc's click and hide area): its height by the scale, its shape kept.
+  const h = (metres / PERSON_M) * scale.pxPerY * (gy - scale.horizonY);
+  const w = (h * (box[2] - box[0])) / Math.max(1, box[3] - box[1]);
+  return [gx - w / 2, gy - h, gx + w / 2, gy];
 }
 
 /**
