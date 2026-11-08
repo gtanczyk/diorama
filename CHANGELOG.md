@@ -7,6 +7,10 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ## Unreleased
 
+### Fixed
+
+- A figure with only one leg showing (a sailor sitting side-on in a quick sketch) no longer fails its rig with `Cannot read properties of undefined (reading '3')` and slides as one cut-out: the far leg walks behind the near one as its twin.
+
 ## 0.5.0 — 2026-11-07
 
 ### Added

@@ -238,6 +238,12 @@ export async function rigFigure(memo: Memo, key: string, painting: Buffer, style
     });
     far = components(far)[0] ?? far;
   }
+  // Only one leg shows (a sailor sitting side-on, one leg tucked behind the other): the far leg is the near one's
+  // twin, hidden behind it, so the walk still has two legs to swing.
+  if (!maskArea(far)) {
+    far = { ...near, bits: near.bits.slice() };
+    issues.push('one leg showing: the far leg walks behind it as its twin');
+  }
   // Each boot belongs to the leg it touches most.
   const touching = (legMask: Mask, f: Mask) => overlap(dilate(legMask, 4), f);
   const [nearBoot, farBoot] = feet.length === 2 && touching(near, feet[1]) > touching(near, feet[0]) ? [feet[1], feet[0]] : [feet[0] ?? emptyMask(W, Hh), feet[1] ?? emptyMask(W, Hh)];  // barefoot: no boots at all
