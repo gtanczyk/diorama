@@ -65,6 +65,9 @@ defineCommand({
         else console.log(`  ${place.key}: ${c.thing}: SAM found no clear shape in its change plate; the outline keeps the painted one`);
         console.log(`${place.key}: ${c.thing} once ${c.when.join(', ')}: ${c.looks}`);
       }));
+      // Awaited below; marked as watched now, so a carry-off plate that fails first sets the place aside instead of
+      // this one's later failure crashing the whole build as an unhandled rejection (notebook-monsters, 2026-11-08).
+      changed.catch(() => {});
       if (!keys.length) {
         await changed;
         return ran(at(), 'plates', carry?.old ?? painted);

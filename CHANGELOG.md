@@ -9,6 +9,7 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ### Fixed
 
+- A build no longer dies with `[DOMException [TimeoutError]: The operation was aborted due to timeout]` when Muse times out on both a plate and a story-change plate of one place: the place is set aside and the other places go on.
 - A place is no longer set aside at masks with `The operation was aborted due to timeout` when SAM is slow because several worlds build at once: one SAM try may take 150 s (was 60 s) before it is asked again.
 - A world from a child's drawing keeps the medium it was drawn in (oil pastel, watercolour, pencil) as its style, with the strokes, smudges and paper showing through, instead of the wax crayon and felt-tip look every kids' world got.
 - A figure with only one leg showing (a sailor sitting side-on in a quick sketch) no longer fails its rig with `Cannot read properties of undefined (reading '3')` and slides as one cut-out: the far leg walks behind the near one as its twin.
