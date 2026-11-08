@@ -13,6 +13,7 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ### Fixed
 
+- Places with several figures standing still run smoothly again: a still figure's ground shadow is worked out every 6th frame instead of every frame (hackathon-night's fair street went from 21 to 9 ms a frame, 60 fps on a Mac).
 - The voice check reads a clock time and a percent sign as they are said: a transcript writing "20:59" as "2059" or "three percent" as "3%" no longer gets the line rejected after 3 takes.
 - Cast shadows no longer throw `getImageData ... is not of type 'long'` every frame while the game is starting: the shadow constants were set after `await game.start()`, so the first frames read them as undefined (an automated playthrough of hackathon-night never left its first place).
 - A stretched yawn, roar or growl in a line ("Yaaawn...", "Rooaaar!", "Grrr") counts as an acted sound in the voice check, so the line is no longer rejected after 3 takes when the transcriber writes it as "Yo".

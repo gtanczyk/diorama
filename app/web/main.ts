@@ -2707,6 +2707,12 @@ class Game {
     const { g, depth, shade, wet } = this.place;
     const sun = depth && sunFor(g, depth, light, x, y, h);
     if (!depth || !sun) return undefined;
+    // A figure standing still casts the same blurred shadow frame after frame: its cells are worked out again only
+    // every GROUND_REUSE frames (a breath or a sway does not show through the blur). Five figures standing on
+    // hackathon-night's fair street spent 17 ms of every frame here, the game ran at 30-48 fps.
+    const still = keep && `${this.place.spec.key} ${Math.round(x)} ${Math.round(y)} ${Math.round(h)} ${light.dir} ${light.length} ${[...this.gone()].join()}`;
+    const cached = keep && this.groundCache.get(keep.who);
+    if (cached && cached.key === still && this.frame - cached.frame < GROUND_REUSE) return this.drawGround(cached, x, y, h, alpha, light, [sx, sy]);
     const sil = given ?? this.silhouette(sc, w, hh, ox, oy, perM);
     if (keep) this.silhouettes.set(keep.who, { ...keep, sil, frame: this.frame });
     // Where it can fall: past the flat shadow's reach (a drop lengthens it), wide as the figure, inside the frame.
@@ -2743,8 +2749,22 @@ class Game {
       [out.data[o], out.data[o + 1], out.data[o + 2], out.data[o + 3]] = [0x12, 0x18, 0x30, Math.round(a * 255)];
       any = true;
     }
-    if (!any) return [x + sx, y + sy, x + sx, y + sy];
-    if (!keepAttached(out, Math.floor(x / S) - x0, Math.floor(y / S) - y0, Math.max(2, Math.round(h * 0.04 / S)), Math.round(h * 0.15 / S))) return undefined;
+    const ground: Ground = { key: still || '', frame: this.frame, out: any && keepAttached(out, Math.floor(x / S) - x0, Math.floor(y / S) - y0, Math.max(2, Math.round(h * 0.04 / S)), Math.round(h * 0.15 / S)) ? out : any ? null : 'none', x0, y0, S };
+    if (keep) this.groundCache.set(keep.who, ground);
+    return this.drawGround(ground, x, y, h, alpha, light, [sx, sy]);
+  }
+
+  /** Shadow cells of each figure standing still, by figure (see groundShadow). */
+  private groundCache = new WeakMap<object, Ground>();
+
+  /** Lays one figure's worked-out shadow cells on the ground, blurred: the drawing half of groundShadow. */
+  private drawGround({ out, x0, y0, S }: Ground, x: number, y: number, h: number, alpha: number, light: NonNullable<Geometry['light']>, [sx, sy]: [number, number]): Rect | undefined {
+    if (out === 'none') return [x + sx, y + sy, x + sx, y + sy];
+    if (!out) return undefined;
+    const [bw, bh] = [out.width, out.height];
+    const [x1, y1] = [x0 + bw, y0 + bh];
+    const gc = this.groundCanvas;
+    if (gc.width < bw || gc.height < bh) Object.assign(gc, { width: Math.max(gc.width, bw), height: Math.max(gc.height, bh) });
     const gx = gc.getContext('2d')!;
     gx.clearRect(0, 0, gc.width, gc.height);
     gx.putImageData(out, 0, 0);
@@ -3581,6 +3601,11 @@ function drawFigure(c: CanvasRenderingContext2D, h: number, colour: string) {
 const SHADOW_CELLS = 80;
 /** Rows of a figure's silhouette the cast shadow is read from. */
 const SIL_ROWS = 160;
+/** Frames a still figure's ground shadow is reused for before it is worked out again. */
+const GROUND_REUSE = 6;
+/** A figure's shadow cells on the ground: null when they do not touch its feet, 'none' when nothing is in shadow. */
+type Ground = { key: string; frame: number; out: ImageData | null | 'none'; x0: number; y0: number; S: number };
+
 const game = new Game();
 // ?sound=0 plays silent; m mutes.
 const mixer = params.get('sound') === '0' ? undefined : new Mixer(game as unknown as Listened, files);
