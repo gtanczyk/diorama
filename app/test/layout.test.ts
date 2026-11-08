@@ -99,3 +99,18 @@ test('a stall standing across the only path to the back floor is caught; a bridg
   expect(across).toEqual(expect.arrayContaining([expect.stringMatching(/^floor market-path-walk is cut off by wooden-stall/)]));
   expect(layoutIssues(layout({ horizon: 360, floors, things: things({ x: 250, footY: 700 }) }), market)).toEqual([]);
 });
+
+test('open water laid out as a floor is caught; a deck, jetty or river bank is not', async () => {
+  const { waterFloorIssues } = await import('../src/scene/layout.ts');
+  const sea = layout({ floors: [
+    { key: 'water', is: 'turquoise paper waves around the boat', colour: '#1f8fa8', outline: [[0, 896], [0, 320], [1200, 320], [1200, 896]] },
+    { key: 'deck', is: 'wide flat deck and cockpit of the big sailboat', colour: '#b98a55', outline: [[380, 580], [780, 580], [780, 740], [380, 740]] },
+  ] });
+  expect(waterFloorIssues(sea)).toEqual([expect.stringContaining('floor water is open water')]);
+  expect(layoutIssues(sea, place)).toEqual(expect.arrayContaining([expect.stringContaining('floor water is open water')]));
+  const shore = layout({ floors: [
+    { key: 'jetty', is: 'wooden jetty out over the sea', colour: '#a67847', outline: [[0, 896], [0, 400], [1200, 400], [1200, 896]] },
+    { key: 'river-bank', is: 'grassy bank of the river', colour: '#556644', outline: [[0, 500], [200, 400], [400, 500]] },
+  ] });
+  expect(waterFloorIssues(shore)).toEqual([]);
+});

@@ -435,7 +435,13 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     const thing = things.find((m) => m.key === t.key);
     if (!thing) {
       const l = layout.things.find((b) => b.key === t.key)!;
-      return { key: t.key, role: t.role, box: [l.x - l.width / 2, l.footY - l.height, l.x + l.width / 2, l.footY], stand: spot(l.x, l.footY), coarse: true };
+      const laid: [number, number, number, number] = [l.x - l.width / 2, l.footY - l.height, l.x + l.width / 2, l.footY];
+      // An npc the layout set where the painting has no floor (a rival in the sky over a sea painted lower than planned,
+      // regatta) is drawn by the game standing on air: it steps onto the nearest floor the hero reaches.
+      const onFloor = t.role === 'npc' ? npcOnFloor(laid, grid, reached, sized) : undefined;
+      if (onFloor) log(`${t.key}: stood where nothing is walkable (${Math.round(l.x)}, ${Math.round(l.footY)}); moved onto the floor at (${Math.round((onFloor[0] + onFloor[2]) / 2)}, ${Math.round(onFloor[3])})`);
+      const box = onFloor ?? laid;
+      return { key: t.key, role: t.role, box, stand: spot((box[0] + box[2]) / 2, box[3]), coarse: true };
     }
     const own = blobs.filter((b) => b.thing === t.key);
     const box = maskBox(thing.mask) ?? [0, 0, 0, 0];
@@ -536,4 +542,23 @@ export async function derive(memo: Memo, input: DeriveIn, log: (line: string) =>
     flagged,
   };
   return { geometry, grid, blobs, footprint, probes, shadows };
+}
+
+/**
+ * An npc's box when its feet are on no floor the hero reaches: moved to the nearest reachable roomy cell, sized for
+ * the depth there by the scale; undefined when it already stands on (or within two cells of) such floor.
+ */
+export function npcOnFloor(box: [number, number, number, number], grid: Grid, reached: Uint8Array, scale: { horizonY: number }): [number, number, number, number] | undefined {
+  const x = (box[0] + box[2]) / 2;
+  const foot = box[3];
+  const i = nearestRoomy(grid, x, foot, reached);
+  if (i === undefined) return undefined;
+  const [gx, gy] = grid.centre(i);
+  if (Math.hypot(gx - x, gy - foot) <= 2 * CELL) return undefined;
+  const before = foot - scale.horizonY;
+  const after = gy - scale.horizonY;
+  const k = before > 0 && after > 0 ? after / before : 1;
+  const w = (box[2] - box[0]) * k;
+  const h = (box[3] - box[1]) * k;
+  return [gx - w / 2, gy - h, gx + w / 2, gy];
 }

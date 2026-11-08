@@ -47,7 +47,7 @@ export function layoutIssues(layout: Layout, place: Place, reach = true): string
     if (Math.min(...floor.outline.map(([, y]) => y)) < layout.horizon) issues.push(`floor ${floor.key} rises above the horizon at ${layout.horizon}`);
     if (i === 0 && Math.max(...floor.outline.map(([, y]) => y)) < H - 30) issues.push(`floor ${floor.key} is listed first, so it must reach the bottom edge (y >= ${H - 30})`);
   });
-  if (reach) issues.push(...reachIssues(layout, place), ...closeUpIssues(layout));
+  if (reach) issues.push(...waterFloorIssues(layout), ...reachIssues(layout, place), ...closeUpIssues(layout));
   for (const thing of place.things) if (!layout.things.some((t) => t.key === thing.key)) issues.push(`${thing.key} is missing`);
   for (const t of layout.things) {
     if (!place.things.some((thing) => thing.key === t.key)) issues.push(`${t.key} is not a thing of ${place.key}`);
@@ -56,6 +56,18 @@ export function layoutIssues(layout: Layout, place: Place, reach = true): string
     if (!inside) issues.push(`${t.key}: keep the box mostly inside the frame`);
   }
   return issues;
+}
+
+const WATER = /\b(water|waves?|sea|ocean|lake|river|pond|surf|stream|lagoon)\b/i;
+const ON_WATER = /\b(deck|cockpit|bridge|jetty|pier|pontoon|dock|quay|wharf|boardwalk|raft|ice|frozen|stepping|stones?|beach|shore|sand|shallows?|ford|path|ledge|planks?|gangway|breakwater|slipway|bank|embankment|promenade|riverside|lakeside|seafront|esplanade|towpath|island|rocks?|wall|garden|meadow|field|road|street|lawn|grass|grassy|ground|yard|square|plaza)\b/i;
+
+/**
+ * Open water laid out as a floor: the painter paints it as waves and the hero walks over them (regatta's sea, where
+ * the whole sea round the boat was a floor and the deck a small second one). Boats and buoys sit at a floor's edge.
+ */
+export function waterFloorIssues(layout: Layout): string[] {
+  return layout.floors.filter((f) => WATER.test(`${f.key.replace(/-/g, ' ')} ${f.is}`) && !ON_WATER.test(`${f.key.replace(/-/g, ' ')} ${f.is}`))
+    .map((f) => `floor ${f.key} is open water ("${f.is}"): nobody walks on it. Make the floors the deck, jetty, pontoon, quay or beach, and set the boats, buoys and people in the water right against such a floor's edge`);
 }
 
 /** Quarter-size floor masks: enough to tell which floors touch. */
@@ -175,7 +187,7 @@ Things (use these keys): ${place.things.map((t) => `${t.key} (${t.role}: ${t.loo
 Give:
 - horizon: y of the horizon, or of where the back wall meets the floor (120 to 520)
 - sky and ground: the main colour above and below it
-- floors: 1 to 4 walkable areas below the horizon as outlines, nearest first; the first reaches the bottom edge; every other floor touches one listed before it (a bridge, steps or a path across water or a drop is a floor too), so the hero can walk everywhere; leave room to walk around things
+- floors: 1 to 4 walkable areas below the horizon as outlines, nearest first; the first reaches the bottom edge; every other floor touches one listed before it (a bridge, steps or a path across water or a drop is a floor too), so the hero can walk everywhere; leave room to walk around things; open water (the sea, waves, a lake, a river) is never a floor: on the water the hero walks on a boat's deck, a jetty, a pontoon or a quay, and a boat, buoy or swimmer that is an exit or a person sits right against that floor's edge, the floor running up to it
 - things: every thing as a box standing on the floor: x (centre), footY (where it touches the floor), width, height in px, metres (real height), colour (main colour), shape (its silhouette: block = a box, stall, cupboard; low = bench, table, boat, cart, bed; post = lamp, pole, sign, column; tree; arch = door, gate, archway, window, tunnel; round = barrel, pot, rock, bush, well; steps = stairs or steps; flat = lies on the floor: rug, water, tracks); nearer things sit lower and are bigger; exits sit at the edge of a floor; every exit, item and person stands on a floor; leave a way round every big thing, and never stand one across the only way to a floor
 - lights: up to 6 visible sources (lamps, fires, windows) with x, y, colour
 ${place.kind === 'drive' ? DRIVE_LAYOUT : ''}Reply with JSON only:
