@@ -19,7 +19,7 @@ export const Drawn = z.object({
   looks: z.string().min(3),
   /** Who drew it, as Spark sees it: a grown-up's sketch makes no kids' game and keeps its own medium (absent = a child). */
   by: z.enum(['child', 'grown-up']).optional(),
-  /** A grown-up's sketch: its medium and hand, as the world's style ("fountain-pen ink hatching, grey watercolour wash"). */
+  /** Its medium and hand, as the world's style: a grown-up's ("fountain-pen ink hatching, grey watercolour wash") or a child's ("oil pastel on white paper"). */
   medium: z.string().optional(),
 });
 export type Drawn = z.infer<typeof Drawn>;
@@ -99,8 +99,18 @@ export function readKinds(files: WorldFiles): Record<string, Kind> {
 /** A kids' world looks like this, so a character painted from a drawing before the world exists is the one the game uses. */
 export const KIDS_STYLE = "the children's own drawings come alive: wax crayon and felt-tip texture, solidly coloured, bold simple rounded shapes with thick dark outlines, bright clean colours, soft sunny light, friendly and readable at a glance";
 
+/**
+ * The style of a world from children's drawings, in the medium they drew with: an oil-pastel dinosaur stays thick waxy
+ * pastel strokes with paper showing through, not the crayon and felt-tip look every kids' world got before.
+ */
+export function kidsStyle(drawn: Drawn[]): string {
+  const media = [...new Set(drawn.filter((d) => d.by !== 'grown-up').map((d) => d.medium?.trim()).filter((m): m is string => !!m && !/^(wax )?crayons?$|felt[- ]?tip/i.test(m)))];
+  if (!media.length) return KIDS_STYLE;
+  return `the children's own drawings come alive: ${media.join(' and ')}, the same strokes, smudges and colours as the drawings, the paper's texture showing through the colour in places, bold simple readable shapes with dark outlines, warm light, friendly and readable at a glance`;
+}
+
 const KIND_TEXT = `- by: "child" when a young child drew it (crayon, felt-tip, simple flat shapes) or "grown-up" for a sketch by a teen or an adult (confident pen, pencil, ink, marker, watercolour or digital lines, perspective, hatching, notes)
-- medium: for a grown-up's sketch, its medium and look in a dozen words, as a painter's style ("fountain-pen ink hatching with a grey and ochre watercolour wash on cream paper"); "" for a child's
+- medium: for a grown-up's sketch, its medium and look in a dozen words, as a painter's style ("fountain-pen ink hatching with a grey and ochre watercolour wash on cream paper"); for a child's, its medium and look in a few words ("oil pastel, thick waxy strokes and smudges on white paper", "watercolour and pencil", "wax crayon")
 - kind: "character" (someone: a person, an animal, a creature), "item" (a small thing to pick up and carry), "prop" (a big thing that stays in a place) or "place" (a whole scene: a landscape, a room, a house with its surroundings)
 - key: a kebab-case English name for it ("green-dragon", "blue-hat", "mushroom-forest")
 - looks: what was drawn, as a description a painter can follow: shape, every colour, clothes, face, what it holds. Describe the drawing kindly as the real thing it shows (a "green dragon with orange wings and a round light-green belly", not "scribbles"). For a character or a thing, only it, not the sun, sky or ground drawn around it. For a place: what it shows front to back.
@@ -116,7 +126,7 @@ Reply with JSON only: {"by": "child | grown-up", "medium": "...", "kind": "...",
   for (let attempt = 1; attempt <= 3; attempt++) {
     const answer = await askSparkJson<{ by?: string; medium?: string; kind?: string; key?: string; looks?: string }>(memo, { label: `drawing:${file}#${attempt}`, prompt: ask, images: [image], personal: true });
     const by = answer?.by === 'grown-up' || answer?.by === 'adult' ? 'grown-up' as const : 'child' as const;
-    const medium = by === 'grown-up' && answer?.medium?.trim() ? answer.medium.trim() : undefined;
+    const medium = answer?.medium?.trim() || undefined;
     const parsed = Drawn.safeParse({ file, kind: answer?.kind === 'character' ? 'npc' : answer?.kind, key: answer?.key, looks: answer?.looks, by, ...(medium && { medium }) });
     if (parsed.success) return parsed.data;
     ask = `${prompt}\n\nYour last answer was:\n${JSON.stringify(answer)}\n\nFix: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`;

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expect, test } from 'vitest';
-import { drawingsBrief, drawnIssues, grownUpDrawings, readKinds, sketchStyle, type Drawn } from '../src/world/drawings.ts';
+import { drawingsBrief, drawnIssues, grownUpDrawings, KIDS_STYLE, kidsStyle, readKinds, sketchStyle, type Drawn } from '../src/world/drawings.ts';
 import { WorldFiles } from '../src/world/files.ts';
 import { World } from '../src/world/schema.ts';
 import { pieces } from '../src/world/told.ts';
@@ -104,4 +104,13 @@ test('doctor --now says when Meta or the network is too slow for a live build', 
   expect(liveVerdict({ spark: 5000, 'muse paint': 20000, 'muse edit': 25000, sam: 3000 })).toMatch(/^fast enough/);
   expect(liveVerdict({ spark: 5000, 'muse paint': 90000, 'muse edit': 25000, sam: 65000 })).toBe('SLOW: muse paint, sam. A live build may take 30+ min: play a world built beforehand, or build with fewer drawings and places');
   expect(liveVerdict({ spark: 5000 })).toMatch(/^SLOW: muse paint, muse edit, sam/);
+});
+
+test("a child's drawing keeps its own medium as the world's style; crayon or none keeps the kids' style", () => {
+  const dino: Drawn = { file: 'a.png', kind: 'hero', key: 'anoti', looks: 'a brown dinosaur', by: 'child', medium: 'oil pastel, thick waxy strokes on white paper' };
+  expect(kidsStyle([dino])).toContain('oil pastel, thick waxy strokes on white paper');
+  expect(kidsStyle([dino])).not.toContain('felt-tip');
+  expect(kidsStyle([{ ...dino, medium: undefined }])).toBe(KIDS_STYLE);
+  expect(kidsStyle([{ ...dino, medium: 'wax crayon' }])).toBe(KIDS_STYLE);
+  expect(kidsStyle([{ ...dino, by: 'grown-up' }])).toBe(KIDS_STYLE);
 });

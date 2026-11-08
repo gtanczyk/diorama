@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { defineCommand, takeOption } from '../registry.ts';
 import { describePerson, describePhoto, framePhoto, normalisePhoto } from '../scene/photo.ts';
 import { designWorld, type Extra } from '../world/design.ts';
-import { drawingFiles, drawingsBrief, drawnIssues, fitPlaces, grownUpDrawings, keepDrawings, KIDS_STYLE, oneHero, readDrawings, readKinds, sketchStyle } from '../world/drawings.ts';
+import { drawingFiles, drawingsBrief, drawnIssues, fitPlaces, grownUpDrawings, keepDrawings, kidsStyle, oneHero, readDrawings, readKinds, sketchStyle } from '../world/drawings.ts';
 import { WorldFiles } from '../world/files.ts';
 import { hearAll, Idea, ideaFromTold, keepTold } from '../world/told.ts';
 import { CreativeChoices } from '../world/idea-review.ts';
@@ -43,7 +43,7 @@ export async function designInitialWorld(files: WorldFiles, { places, photoFile 
   for (const d of drawn) console.log(`drawing ${d.file}: ${d.kind} ${d.key}, ${d.looks}`);
   // A grown-up's sketches make a world in their own medium, not a kids' game.
   const sketched = grownUpDrawings(drawn);
-  const drawnStyle = sketched ? sketchStyle(drawn) : KIDS_STYLE;
+  const drawnStyle = sketched ? sketchStyle(drawn) : kidsStyle(drawn);
   const kids = kidsFlag || (drawn.length > 0 && !sketched) || said.length > 0;
 
   let idea = given;
