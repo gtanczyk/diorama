@@ -7,7 +7,7 @@ import { backdropTransforms, backEdge, cardY, flatDisparities, flatsUnderFloats,
 import { WalkGrid, type Point } from '../src/play/path.ts';
 import { behindWeight, FOCUS_BLUR, focusMask, planeDepth, RIM_ALPHA, RIM_COLOUR, RIM_WIDTH, SEPARATE_ALPHA, SEPARATE_BLUR, SEPARATE_SHIFT } from '../src/play/focus.ts';
 import { frontMask } from '../src/play/depth-occlusion.ts';
-import { catchers, decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth } from '../src/play/shadow.ts';
+import { catchers, decodeDepth, DEPTH_SCALE, shadowAt, sunFor, thingShadows, type Depth, type Silhouette } from '../src/play/shadow.ts';
 import { CYCLE, pose, sheetCell, type PartName, type Rig } from '../src/play/rig.ts';
 import { actions, activeChanges, apply, hiddenThings, hintFor, holds, lockOn, pickDialogue, pickInteraction, speakerOf, startState, useFor, type Action, type State } from '../src/story/engine.ts';
 import type { Story } from '../src/story/schema.ts';
@@ -2455,6 +2455,9 @@ class Game {
     const modelDensity=Math.max(1,Math.min(4,this.zoom()));
     try {
       modelCanvas = model?.draw({ phase, walking, yaw, px: h*modelDensity, frame:this.frame, time: this.time, talk, face: params.get('lipsync') === '0' ? undefined : faceAt(articulation, faceTime, figure?.faceInfo?.seed) });
+      // The WebGL canvas is copied once into a 2D one: the shadow, the shade, the depth cut and the body each draw the
+      // figure, and every draw of a WebGL canvas into a 2D one waits for the GPU (anoti's creatures: 4 waits a frame).
+      if (modelCanvas && model) modelCanvas = this.snapModel(model, modelCanvas);
     } catch (error) {
       console.warn('3D figure failed; using its 2D figure:', error);
       model?.dispose();
@@ -2572,7 +2575,7 @@ class Game {
         ctx.ellipse(x, y, h * 0.07, Math.max(1.5, h * 0.014), 0, 0, Math.PI * 2);
         ctx.fill();
       }
-      const rect = cast > 0 ? this.castShadow(x, y, h, unit / 1.62, light!, cast * light!.strength, paintRaw, [sx, sy]) : undefined;
+      const rect = cast > 0 ? this.castShadow(x, y, h, unit / 1.62, light!, cast * light!.strength, paintRaw, [sx, sy], model ?? figure) : undefined;
       ctx.restore();
       return rect ?? [x + sx, y + sy, x + sx, y + sy];
     }
@@ -2624,10 +2627,17 @@ class Game {
    * The figure's silhouette laid on the floor away from the light: its feet stay put and its head lands
    * length * h along dir. Drawn soft, at the painting's own shadow strength. ctx is already shifted for parallax.
    */
-  private castShadow(x: number, y: number, h: number, perM: number, light: NonNullable<Geometry['light']>, alpha: number, paint: (c: CanvasRenderingContext2D) => number, [sx, sy]: [number, number]): Rect {
+  private castShadow(x: number, y: number, h: number, perM: number, light: NonNullable<Geometry['light']>, alpha: number, paint: (c: CanvasRenderingContext2D) => number, [sx, sy]: [number, number], who?: object): Rect {
     const sc = this.shadowCanvas;
     const [w, hh] = [Math.ceil(h * 1.4), Math.ceil(h * 1.25)];
     const [ox, oy] = [w / 2, Math.ceil(h * 1.15)];
+    // A live 3D figure's silhouette is read back from the GPU, a wait every frame: a ground shadow keeps the last
+    // one for a frame (half the waits; a pose a frame old does not show in a blurred shadow).
+    const kept = who && this.place.depth && this.silhouettes.get(who);
+    if (kept && kept.frame === this.frame - 1 && kept.w === w && kept.hh === hh) {
+      const onGround = this.groundShadow(x, y, h, perM, light, alpha, sc, w, hh, ox, oy, kept.half, [sx, sy], kept.sil);
+      if (onGround) return onGround;
+    }
     // Sized once for the tallest person the place can hold: resizing a canvas mid-walk stalls a frame.
     if (sc.width < w || sc.height < hh) {
       const most = personPx(this.place.g, this.place.g.frame.height);
@@ -2644,7 +2654,7 @@ class Game {
     c.fillStyle = '#121830';
     c.fillRect(0, 0, sc.width, sc.height);
     c.globalCompositeOperation = 'source-over';
-    const onGround = this.place.depth && this.groundShadow(x, y, h, perM, light, alpha, sc, w, hh, ox, oy, half, [sx, sy]);
+    const onGround = this.place.depth && this.groundShadow(x, y, h, perM, light, alpha, sc, w, hh, ox, oy, half, [sx, sy], undefined, who && { who, w, hh, half });
     if (onGround) return onGround;
     const [dx, dy] = light.dir;
     const n = Math.hypot(dx, dy) || 1;
@@ -2664,28 +2674,51 @@ class Game {
 
   private groundCanvas = document.createElement('canvas');
 
+  private silhouettes = new Map<object, { sil: Silhouette; frame: number; w: number; hh: number; half: number }>();
+
+  /** The figure in the shadow canvas as an alpha silhouette, shrunk for a tall figure. */
+  private silhouette(sc: HTMLCanvasElement, w: number, hh: number, ox: number, oy: number, perM: number): Silhouette {
+    // The silhouette is read back from the GPU every frame: a tall figure's is read shrunk to about SIL_ROWS rows
+    // (whole-figure readbacks were half of anoti's frame time), the shadow is blurred anyway.
+    const f = Math.max(1, hh / SIL_ROWS);
+    const [sw, sh] = [Math.max(1, Math.round(w / f)), Math.max(1, Math.round(hh / f))];
+    const small = this.silCanvas;
+    if (small.width < sw || small.height < sh) Object.assign(small, { width: Math.max(small.width, sw), height: Math.max(small.height, sh) });
+    const sx2 = small.getContext('2d', { willReadFrequently: true })!;
+    sx2.clearRect(0, 0, sw, sh);
+    sx2.drawImage(sc, 0, 0, w, hh, 0, 0, sw, sh);
+    const px = sx2.getImageData(0, 0, sw, sh).data;
+    const sil: Silhouette = { alpha: new Uint8ClampedArray(sw * sh), w: sw, h: sh, ox: ox / f, oy: oy / f, perM: perM / f };
+    for (let i = 0; i < sw * sh; i++) sil.alpha[i] = px[i * 4 + 3];
+    return sil;
+  }
+
+
   /**
    * The cast shadow laid on the ground as the depth map shapes it (src/play/shadow.ts): each ground pixel
    * asks whether the figure stands between it and the sun. Worked out at the depth map's half resolution
    * and drawn up soft. Painted shadow and water take it away. Undefined: no sun found here, use the flat one.
    */
-  private groundShadow(x: number, y: number, h: number, perM: number, light: NonNullable<Geometry['light']>, alpha: number, sc: HTMLCanvasElement, w: number, hh: number, ox: number, oy: number, half: number, [sx, sy]: [number, number]): Rect | undefined {
+  private groundShadow(x: number, y: number, h: number, perM: number, light: NonNullable<Geometry['light']>, alpha: number, sc: HTMLCanvasElement, w: number, hh: number, ox: number, oy: number, half: number, [sx, sy]: [number, number], given?: Silhouette, keep?: { who: object; w: number; hh: number; half: number }): Rect | undefined {
     const { g, depth, shade, wet } = this.place;
     const sun = depth && sunFor(g, depth, light, x, y, h);
     if (!depth || !sun) return undefined;
-    const px = sc.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, w, hh).data;
-    const sil = { alpha: new Uint8ClampedArray(w * hh), w, h: hh, ox, oy, perM };
-    for (let i = 0; i < w * hh; i++) sil.alpha[i] = px[i * 4 + 3];
+    const sil = given ?? this.silhouette(sc, w, hh, ox, oy, perM);
+    if (keep) this.silhouettes.set(keep.who, { ...keep, sil, frame: this.frame });
     // Where it can fall: past the flat shadow's reach (a drop lengthens it), wide as the figure, inside the frame.
     const n = Math.hypot(light.dir[0], light.dir[1]) || 1;
     const reach = h * Math.max(1, light.length) * 2.2;
     const [ex, ey] = [x + (light.dir[0] / n) * reach, y + (light.dir[1] / n) * reach];
     const pad = half + h * 0.15;
-    const S = DEPTH_SCALE;
+    // One shadow cell per depth cell for a small figure; a tall one near the camera gets coarser cells, about
+    // SHADOW_CELLS over its height (the shadow is blurred anyway). Cells grow with the height squared and the
+    // attachment fill's hop with it, so per-depth-cell shadows of a 600 px dinosaur and a 3 m long-neck took
+    // the game to 14 fps (anoti).
+    const S = DEPTH_SCALE * Math.max(1, Math.floor(h / (SHADOW_CELLS * DEPTH_SCALE)));
     const x0 = Math.max(0, Math.floor((Math.min(x, ex) - pad) / S));
     const y0 = Math.max(0, Math.floor((Math.min(y, ey) - pad) / S));
-    const x1 = Math.min(depth.w, Math.ceil((Math.max(x, ex) + pad) / S));
-    const y1 = Math.min(depth.h, Math.ceil((Math.max(y, ey) + pad) / S));
+    const x1 = Math.min(Math.ceil(depth.w * DEPTH_SCALE / S), Math.ceil((Math.max(x, ex) + pad) / S));
+    const y1 = Math.min(Math.ceil(depth.h * DEPTH_SCALE / S), Math.ceil((Math.max(y, ey) + pad) / S));
     if (x1 <= x0 || y1 <= y0) return undefined;
     const gc = this.groundCanvas;
     const [bw, bh] = [x1 - x0, y1 - y0];
@@ -2695,7 +2728,7 @@ class Game {
     const on = this.catchesOf(this.gone());
     let any = false;
     for (let r = y0; r < y1; r++) for (let c = x0; c < x1; c++) {
-      const [fx, fy] = [c * S + S / 2, r * S + S / 2];
+      const [fx, fy] = [Math.min(c * S + S / 2, W - 1), Math.min(r * S + S / 2, g.frame.height - 1)];
       let a = shadowAt(depth, sun, sil, fx, fy, on);
       if (a <= 0) continue;
       const i = Math.round(fy) * W + Math.round(fx);
@@ -2711,14 +2744,14 @@ class Game {
     const gx = gc.getContext('2d')!;
     gx.clearRect(0, 0, gc.width, gc.height);
     gx.putImageData(out, 0, 0);
-    const [dark, blur] = [Math.min(0.85, alpha * 1.35), `blur(${Math.max(0.8, h * 0.004 * (1 + light.length)).toFixed(1)}px)`];
+    const [dark, blur] = [Math.min(0.85, alpha * 1.35), `blur(${Math.max(0.8, S * 0.4, h * 0.004 * (1 + light.length)).toFixed(1)}px)`];
     ctx.save();
     ctx.globalAlpha = dark;
     ctx.filter = blur;
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(gc, 0, 0, bw, bh, x0 * S, y0 * S, bw * S, bh * S);
     ctx.restore();
-    this.climb(gc, [x0 * S, y0 * S, bw, bh], y, dark, blur, [sx, sy]);
+    this.climb(gc, [x0 * S, y0 * S, bw, bh], y, dark, blur, [sx, sy], S);
     return [x0 * S + sx, y0 * S + sy, x1 * S + sx, y1 * S + sy];
   }
 
@@ -2825,7 +2858,22 @@ class Game {
     ctx.restore();
   }
 
-  private climbs: Array<{ canvas: HTMLCanvasElement; box: [number, number, number, number]; dark: number; blur: string; shift: [number, number] }> = [];
+  private silCanvas = document.createElement('canvas');
+  private modelSnaps = new Map<Figure3D, { canvas: HTMLCanvasElement; frame: number }>();
+
+  /** This frame's picture of a 3D figure, as a 2D canvas (made once a frame, see drawPerson). */
+  private snapModel(model: Figure3D, gl: HTMLCanvasElement): HTMLCanvasElement {
+    let snap = this.modelSnaps.get(model);
+    if (!snap) this.modelSnaps.set(model, snap = { canvas: document.createElement('canvas'), frame: -1 });
+    if (snap.frame === this.frame && snap.canvas.width === gl.width && snap.canvas.height === gl.height) return snap.canvas;
+    if (snap.canvas.width !== gl.width || snap.canvas.height !== gl.height) Object.assign(snap.canvas, { width: gl.width, height: gl.height });
+    const c = snap.canvas.getContext('2d')!;
+    c.clearRect(0, 0, gl.width, gl.height);
+    c.drawImage(gl, 0, 0);
+    snap.frame = this.frame;
+    return snap.canvas;
+  }
+  private climbs: Array<{ canvas: HTMLCanvasElement; box: [number, number, number, number]; dark: number; blur: string; shift: [number, number]; scale: number }> = [];
   private climbPool: HTMLCanvasElement[] = [];
   private climbMask = document.createElement('canvas');
 
@@ -2833,8 +2881,7 @@ class Game {
    * Keeps the part of a person's shadow (src: bw x bh cells of DEPTH_SCALE px from frame (x, y)) that falls on
    * the things standing behind them: the shadow layer lies under the cards, so this part goes back on top.
    */
-  private climb(src: HTMLCanvasElement, [x, y, bw, bh]: [number, number, number, number], feetY: number, dark: number, blur: string, shift: [number, number]) {
-    const S = DEPTH_SCALE;
+  private climb(src: HTMLCanvasElement, [x, y, bw, bh]: [number, number, number, number], feetY: number, dark: number, blur: string, shift: [number, number], S = DEPTH_SCALE) {
     const gone = this.gone();
     const behind = this.place.cuts.filter((c) => !c.occ.front && c.y < feetY - 2 && !(c.occ.thing && gone.has(c.occ.thing)) && c.x0 < x + bw * S && c.x0 + c.canvas.width > x && c.y0 < y + bh * S && c.y0 + c.canvas.height > y);
     if (!behind.length) return;
@@ -2851,12 +2898,11 @@ class Game {
     cc.globalCompositeOperation = 'destination-in';
     cc.drawImage(m, 0, 0, bw, bh, 0, 0, bw, bh);
     cc.globalCompositeOperation = 'source-over';
-    this.climbs.push({ canvas, box: [x, y, bw, bh], dark, blur, shift });
+    this.climbs.push({ canvas, box: [x, y, bw, bh], dark, blur, shift, scale: S });
   }
 
   private drawClimbs() {
-    const S = DEPTH_SCALE;
-    for (const { canvas, box: [x, y, bw, bh], dark, blur, shift } of this.climbs) {
+    for (const { canvas, box: [x, y, bw, bh], dark, blur, shift, scale: S } of this.climbs) {
       ctx.save();
       ctx.translate(...shift);
       ctx.globalAlpha = dark;
@@ -3916,6 +3962,11 @@ function idleWarp(c: CanvasRenderingContext2D, paint: (c: CanvasRenderingContext
   c.drawImage(bent, 0, 0, W, H, -W / 2 / density, -(H - foot) / density, W / density, H / density);
   return half + Math.abs(sway) * h;
 }
+
+/** About how many shadow cells span a figure's height: finer is invisible under the blur and costs the frame rate. */
+const SHADOW_CELLS = 80;
+/** Rows of a figure's silhouette the cast shadow is read from. */
+const SIL_ROWS = 160;
 
 /**
  * A cast shadow starts at the feet. Cells of it that no chain from the feet reaches (hopping gaps up to `gap`
