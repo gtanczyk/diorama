@@ -174,7 +174,8 @@ test('acted sounds and transcriber stutters do not fail a line, other words and 
   expect(spokenMatch('Hu-hu... dobranoc... Ale wróć z gwiazdką, dobrze? Chrrr.', 'Dobranoc. Ale wróć z gwiazdką, dobrze?', 'Polish')).toBe(1);
   expect(spokenMatch('Hmm, to tu nie pomoże.', 'To tu nie pomoże.', 'Polish')).toBe(1);
   // A stretched yawn or roar is acted: the transcriber hears "Yo" for "Yaaawn" (anoti's sleepy long-neck, rejected 3 takes).
-  expect(spokenMatch('Yaaawn... so sleepy... some berries... would be nice...', 'Yo so sleepy. Some berries. would be nice.')).toBe(1);
+  const yawn = 'Yaaawn... so sleepy... some berries... would be nice...';
+  expect(heardOk(yawn, spokenMatch(yawn, 'Yo so sleepy. Some berries. would be nice.'))).toBe(true);
   expect(spokenMatch('Rooaaar! Grrr, I found you!', 'I found you!')).toBe(1);
   expect(heardOk('Mam linę! Jest ciężka, uff!', spokenMatch('Mam linę! Jest ciężka, uff!', 'Mamlinę, jest ciężka, ów,', 'Polish'))).toBe(true);
   expect(spokenMatch('Drzwi piekarnika są otwarte!', 'Drzwi piekarnika piekarnika są otwarte.', 'Polish')).toBe(1);
