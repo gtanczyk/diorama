@@ -46,6 +46,13 @@ Keep the connected walking surfaces, their joins and their frame-edge exits in t
  */
 const BLOCKED = /\b(no|not|never|without|cannot|can't|cant|isn't|doesn't|don't|nothing)\b|\bn't\b|water|sea\b|river|gap|drop|cliff|ledge|railing|fence|wall|barrier|block|obstruct|cut off|cut-off|sever|broken|break|missing|absent|unreach|inaccessib|isolat|separat|float|detach|disconnect|across|beyond|away from|moved|shifted|displaced|only (by|via|through)|too (steep|far|high|small|narrow)/i;
 export const CONTRADICTED = "(Spark's note names nothing in the way)";
+/**
+ * A narrow trail or a flight of steps painted thinner or along another line than its planned strip, or a floor that
+ * now ends at its exit's door or a cliff face instead of the frame edge: every place's exits are things, so while the
+ * floor still joins and every item and exit has an approach, the route is there (valdoren had all three places set
+ * aside for it). Derive and verify measure the walk on the painting itself and send real breaks to repair.
+ */
+export const ROUTE_KEPT = '(the floor joins and every item and exit still has an approach)';
 const saysBlocked = (why: string) => BLOCKED.test(why);
 
 /** Fail closed on incomplete observations: an omitted floor is not evidence that it is connected. */
@@ -68,14 +75,17 @@ export function paintedLayoutIssues(place: Place, layout: Layout, seen: PaintedL
     if (w < 0.45 || w > 2.2 || h < 0.45 || h > 2.2) issues.push(`${t.key}: painted size differs too much from its planned box; ${s.why}`);
     if (t.role !== 'prop' && !s.approach) issues.push(`${t.key}: no usable approach on connected ground; ${s.why}${saysBlocked(s.why) ? '' : ` ${CONTRADICTED}`}`);
   }
+  const reached = place.things.filter((t) => t.role === 'item' || t.role === 'exit')
+    .every((t) => seen.things.filter((s) => s.key === t.key).length === 1 && seen.things.some((s) => s.key === t.key && s.box && s.approach));
   for (const f of layout.floors) {
     const matches = seen.floors.filter((s) => s.key === f.key);
     if (matches.length !== 1) { issues.push(`${f.key}: comparison must inspect this floor exactly once`); continue; }
     const s = matches[0];
-    if (s.coverage < 0.6) issues.push(`${f.key}: only ${Math.round(s.coverage * 100)}% of its planned area is walkable ground; ${s.why}`);
+    const kept = reached && s.connected && s.coverage >= 0.25 ? ` ${ROUTE_KEPT}` : '';
+    if (s.coverage < 0.6) issues.push(`${f.key}: only ${Math.round(s.coverage * 100)}% of its planned area is walkable ground; ${s.why}${kept}`);
     if (!s.connected) issues.push(`${f.key}: its planned connection to the main floor is broken; ${s.why}${saysBlocked(s.why) ? '' : ` ${CONTRADICTED}`}`);
     const edge = f.outline.some(([x, y]) => x <= 1 || x >= FRAME.width - 1 || y <= 1 || y >= FRAME.height - 1);
-    if (edge && !s.reachesEdges) issues.push(`${f.key}: the planned route no longer reaches its frame edge; ${s.why}${saysBlocked(s.why) ? '' : ` ${CONTRADICTED}`}`);
+    if (edge && !s.reachesEdges) issues.push(`${f.key}: the planned route no longer reaches its frame edge; ${s.why}${kept || (saysBlocked(s.why) ? '' : ` ${CONTRADICTED}`)}`);
   }
   return issues;
 }
@@ -99,7 +109,7 @@ const REPAIRS = 1;
  * every painting; failing on it left new worlds with no painting at all). What breaks play still repaints: a
  * floor gone, cut off or not reaching its exit, a story thing missing or out of reach, people painted in.
  */
-export const softIssue = (issue: string) => /^camera horizon moved|: moved from its planned box|: painted size differs too much/.test(issue) || issue.endsWith(CONTRADICTED);
+export const softIssue = (issue: string) => /^camera horizon moved|: moved from its planned box|: painted size differs too much/.test(issue) || issue.endsWith(CONTRADICTED) || issue.endsWith(ROUTE_KEPT);
 
 export type LayoutAttempt = { seen: PaintedLayout; issues: string[] };
 export class PaintingLayoutError extends Error {

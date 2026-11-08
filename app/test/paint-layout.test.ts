@@ -69,6 +69,17 @@ test('harbour regression: displaced can, broken stairs and camera fail despite e
   expect(paintedLayoutIssues(place, layout, passing())).toEqual([]);
 });
 
+test('a thinner trail or a floor ending at its exit is drift while every item and exit keeps an approach', () => {
+  const s = passing(); s.floors[1] = { ...s.floors[1], coverage: 0.35, reachesEdges: false, why: 'narrower stairs, shifted left' };
+  const issues = paintedLayoutIssues(place, layout, s);
+  expect(issues).toEqual(expect.arrayContaining([expect.stringContaining('steps: only 35%')]));
+  expect(issues.every(softIssue)).toBe(true);
+  const unreached = passing(); unreached.floors[1] = s.floors[1]; unreached.things[2] = { ...unreached.things[2], approach: false, why: 'stairs cut off by a gap' };
+  expect(paintedLayoutIssues(place, layout, unreached).filter((i) => !softIssue(i))).toEqual(expect.arrayContaining([expect.stringContaining('steps: only 35%')]));
+  const gone = passing(); gone.floors[1] = { ...s.floors[1], coverage: 0.1 };
+  expect(paintedLayoutIssues(place, layout, gone).some((i) => !softIssue(i))).toBe(true);
+});
+
 test('source binding allows removing a decorative click target, but not moving story targets or changing pixels', () => {
   const hash = paintingLayoutHash(place, layout, plan, original);
   expect(paintingLayoutHash({ ...place, things: place.things.filter((t) => t.key !== 'boat') }, layout, plan, original)).toBe(hash);
