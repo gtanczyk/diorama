@@ -24,15 +24,17 @@ const OFFLINE_TRIES = 9;
 /**
  * How long one try may take before it is given up and tried again. Without a limit a stalled request waits for the
  * HTTP client's own 300 s: on the Mac one backdrop edit took 343 s where it takes 10 to 20. Muse paints in 10-25 s,
- * SAM answers in 1-6 s, Spark thinks for up to ~100 s.
+ * SAM answers in 1-6 s alone, Spark thinks for up to ~100 s.
  */
-function patience(route: string, body: unknown): number {
+export function patience(route: string, body: unknown): number {
   // An edit from several pictures (a place painted from its sketch, concept and style) takes longer, more so with
   // a few painting at once: 90 s cut every one of 8 such paints off three times, 270-300 s each where one patient
   // try takes 40-120 s (lantern-stranger, lost-friends-maze). A dropped try is asked again from the back of the queue.
   if (route.startsWith('/images/')) return ((body as { images?: unknown[] } | null)?.images?.length ?? 0) > 1 ? 180_000 : 90_000;
   const model = (body as { model?: string } | null)?.model ?? '';
-  return model.startsWith('sam') ? 60_000 : 240_000;
+  // SAM with three worlds building at once answered in 60-115 s (notebook-monsters, 2026-11-08): at 60 s every try of
+  // a place's cut-outs was dropped four times over and the place was set aside at masks.
+  return model.startsWith('sam') ? 150_000 : 240_000;
 }
 
 /**
