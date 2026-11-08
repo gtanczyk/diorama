@@ -534,7 +534,7 @@ export const lineId = (line: Line) => `line-${inputHash(line.speaker, line.text)
 export const heardOk = (line: string, match: number) => match >= 0.9 || (match >= 0.7 && (1 - match) * letters(withoutSounds(line)).length <= 2.01);
 
 /** Laughs, sighs and calls: no word a transcriber writes down the way the line spells it. */
-const SOUND = /^(?:c?h+r+(?:s+h+)?|(?:h+[aeiouy]+h*)+|(?:[aeiouy]+h+)+|a+w+|o+w+|u+g+h+|e+w+|h+m+|m+h*m*|m+|u+h*m+|e+r+m*|h+u+h+|h+e+h+|p+s+t+|s+h+|t+s+k+|z+|w+h+e+e+|y+a+y+|w+o+w+|o+o+h*|a+r+g+h+|o+j+(?:e+j+)?|a+c+h+|o+c+h+|e+c+h+|u+f+|h+y+h+y+)$/;
+const SOUND = /^(?:c?h+r+(?:s+h+)?|(?:h+[aeiouy]+h*)+|(?:[aeiouy]+h+)+|a+w+|o+w+|u+g+h+|e+w+|h+m+|m+h*m*|m+|u+h*m+|e+r+m*|h+u+h+|h+e+h+|p+s+t+|s+h+|t+s+k+|z+|w+h+e+e+|y+a+y+|w+o+w+|o+o+h*|a+r+g+h+|o+j+(?:e+j+)?|a+c+h+|o+c+h+|e+c+h+|u+f+|h+y+h+y+|y+a+w+n+|r+o+a+r+|g+r+r+|r+a+w+r+)$/;
 export function soundsOnly(text: string): boolean {
   const words = text.normalize('NFC').toLowerCase().split(/[^\p{L}]+/u).filter(Boolean);
   return words.length > 0 && words.every((w) => SOUND.test(w));
