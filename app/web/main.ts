@@ -3576,6 +3576,11 @@ function drawFigure(c: CanvasRenderingContext2D, h: number, colour: string) {
   c.stroke(body);
 }
 
+// Set before the game starts: its first frames draw shadows while `await game.start()` below is still running.
+/** About how many shadow cells span a figure's height: finer is invisible under the blur and costs the frame rate. */
+const SHADOW_CELLS = 80;
+/** Rows of a figure's silhouette the cast shadow is read from. */
+const SIL_ROWS = 160;
 const game = new Game();
 // ?sound=0 plays silent; m mutes.
 const mixer = params.get('sound') === '0' ? undefined : new Mixer(game as unknown as Listened, files);
@@ -3967,10 +3972,6 @@ function idleWarp(c: CanvasRenderingContext2D, paint: (c: CanvasRenderingContext
   return half + Math.abs(sway) * h;
 }
 
-/** About how many shadow cells span a figure's height: finer is invisible under the blur and costs the frame rate. */
-const SHADOW_CELLS = 80;
-/** Rows of a figure's silhouette the cast shadow is read from. */
-const SIL_ROWS = 160;
 
 /**
  * A cast shadow starts at the feet. Cells of it that no chain from the feet reaches (hopping gaps up to `gap`

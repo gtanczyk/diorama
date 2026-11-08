@@ -13,6 +13,7 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ### Fixed
 
+- Cast shadows no longer throw `getImageData ... is not of type 'long'` every frame while the game is starting: the shadow constants were set after `await game.start()`, so the first frames read them as undefined (an automated playthrough of hackathon-night never left its first place).
 - A stretched yawn, roar or growl in a line ("Yaaawn...", "Rooaaar!", "Grrr") counts as an acted sound in the voice check, so the line is no longer rejected after 3 takes when the transcriber writes it as "Yo".
 - An NPC the layout puts deep in the scene (a dragon at the back of its cave) is no longer drawn a few dozen pixels tall: derive steps it forward until a grown-up standing there would be at least an eighth of the picture tall. An NPC the person moved with `npc_move` stays where they put it.
 - The 3D model step no longer fails the build with `ENOENT ... -painting.png` when the cast step set an NPC aside as a stand-in: that NPC is skipped until cast paints it.
