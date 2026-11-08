@@ -16,6 +16,7 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ### Fixed
 
+- A rustle like "Hrrsh..." in a line counts as an acted sound, so a voice take is no longer rejected when the transcriber leaves it out.
 - A painted trail or flight of steps thinner or off its planned strip, or a floor ending at its exit or a cliff face rather than the frame edge, no longer sets a place aside while the floor still joins and every item and exit has an approach (all three places of a new world were set aside for it).
 - `voices` speaks every line by default, the hero's looks, uses and locked doors too: a hero heard in conversations and silent everywhere else read as broken. `--essential` keeps to conversations, intro and endings; `--all` is no longer needed.
 - The frame and near-camera gates of `derive` measure the hero at its own height (cast/figures.json), not a grown-up's: a small hero is no longer shut out of the front of a close-up.

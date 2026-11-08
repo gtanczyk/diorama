@@ -175,6 +175,7 @@ test('acted sounds and transcriber stutters do not fail a line, other words and 
   expect(spokenMatch('Hmm, to tu nie pomoże.', 'To tu nie pomoże.', 'Polish')).toBe(1);
   expect(heardOk('Mam linę! Jest ciężka, uff!', spokenMatch('Mam linę! Jest ciężka, uff!', 'Mamlinę, jest ciężka, ów,', 'Polish'))).toBe(true);
   expect(spokenMatch('Drzwi piekarnika są otwarte!', 'Drzwi piekarnika piekarnika są otwarte.', 'Polish')).toBe(1);
+  expect(spokenMatch('Hrrsh... leaves... whisper... my nose itches... cannot think...', 'Leaves whisper, my nose itches. Cannot think.', 'English')).toBe(1);
   expect(spokenMatch('Puk puk!', 'Puk.', 'Polish')).toBeLessThan(1);
   expect(spokenMatch('Mam trzy skarby', 'Mam dwa skarby', 'Polish')).toBeLessThan(0.9);
   expect(spokenMatch('Hu-hu!', '', 'Polish')).toBe(0);
