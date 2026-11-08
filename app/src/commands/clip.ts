@@ -323,13 +323,14 @@ export function renderAudio(cues: Cue[], total: number, out: string, dir: string
 
 defineCommand({
   name: 'clip',
-  usage: 'clip <slug>  a short clip for X: plays the shortest ending, cuts it round the clicks with each place coming apart and the world\'s own sound (film/clip.mp4, film/clip-1080x1350.mp4, film/clip-still-N.jpg) [--seconds 38] [--music file] [--no-explode] [--zoom] [--caption "Send me your sketch."] [--port 4198] [--keep]',
+  usage: 'clip <slug>  a short clip for X: plays the shortest ending, cuts it round the clicks with each place coming apart and the world\'s own sound (film/clip.mp4, film/clip-1080x1350.mp4, film/clip-still-N.jpg) [--seconds 38] [--music file] [--no-explode] [--zoom] [--caption "Send me your sketch."] [--port 4198] [--keep] [--ending KEY: play the route to this ending instead]',
   async run(args) {
     // The whole clip, explodes and end card included; the story shots get what those leave (never less than ~2.4 s a place).
     const seconds = Number(takeOption(args, 'seconds', '38'));
     const musicArg = takeOption(args, 'music', '');
     const port = Number(takeOption(args, 'port', '4198'));
     const text = takeOption(args, 'caption', 'Send me your sketch.');
+    const ending = takeOption(args, 'ending', '');
     const explode = !args.includes('--no-explode');
     const zoom = args.includes('--zoom');
     const keep = args.includes('--keep');
@@ -341,8 +342,9 @@ defineCommand({
     const report = checkStory(world, files.readJson(files.path('story.json')));
     if (report.issues.length || !report.story) throw new Error(`story.json does not check out:\n- ${report.issues.join('\n- ')}`);
     const story: Story = report.story;
-    const route = [...report.routes].sort((a, b) => a.actions.length - b.actions.length)[0];
-    if (!route) throw new Error(`${slug} has no route to an ending`);
+    // The shortest ending by default; --ending picks the one worth showing (the gate opening, not the shortcut).
+    const route = [...report.routes].filter((r) => !ending || r.ending === ending).sort((a, b) => a.actions.length - b.actions.length)[0];
+    if (!route) throw new Error(ending ? `${slug} has no route to ending "${ending}" (endings: ${report.routes.map((r) => r.ending).join(', ')})` : `${slug} has no route to an ending`);
     const log = (s: string) => console.log(s);
 
     // The game take runs to the last change of place; the last place is recorded on its own.

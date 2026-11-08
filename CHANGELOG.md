@@ -15,6 +15,7 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ### Added
 
+- `diorama clip <slug> --ending KEY`: the clip plays the route to that ending instead of the shortest one (the gate opening rather than the shortcut).
 - The Studio's agent header shows the agent's plan limits (Claude Code's 5-hour and weekly, Codex's) once one is near its end, with when it resets, and the terminal warns once. `DIORAMA_AGENT_MAX_COST` and `DIORAMA_AGENT_MAX_TOKENS` cap one world's conversation (docs/studio.md).
 - `hero_size_set` (Studio action): how tall the hero stands in a place, as times a painted thing's height ("about as tall as the candle jar"); it sets the place's scale and is kept across rebuilds. For worlds whose places Spark scales ten times apart (a desk seen whole, a close-up of a mug), where the hero changed size from place to place and a close-up left only a strip of floor to walk.
 
