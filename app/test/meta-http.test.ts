@@ -6,8 +6,8 @@ test('a SAM try waits long enough for a busy Meta side', () => {
   expect(patience('/responses', { model: 'sam-3.1' })).toBeGreaterThanOrEqual(120_000);
 });
 
-test('Muse and Spark keep their limits', () => {
+test('Muse edits wait for a busy Meta side, Spark keeps its limit', () => {
   expect(patience('/images/edits', { images: ['a', 'b'] })).toBe(180_000);
-  expect(patience('/images/edits', { images: ['a'] })).toBe(90_000);
+  expect(patience('/images/edits', { images: ['a'] })).toBe(150_000);
   expect(patience('/responses', { model: 'spark' })).toBe(240_000);
 });

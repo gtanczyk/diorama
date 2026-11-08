@@ -30,7 +30,9 @@ export function patience(route: string, body: unknown): number {
   // An edit from several pictures (a place painted from its sketch, concept and style) takes longer, more so with
   // a few painting at once: 90 s cut every one of 8 such paints off three times, 270-300 s each where one patient
   // try takes 40-120 s (lantern-stranger, lost-friends-maze). A dropped try is asked again from the back of the queue.
-  if (route.startsWith('/images/')) return ((body as { images?: unknown[] } | null)?.images?.length ?? 0) > 1 ? 180_000 : 90_000;
+  // One-picture edits (plates, backdrops) with three or four worlds building took 50-76 s and often over 90 s
+  // (notebook-monsters, 2026-11-08): at 90 s all five plates of a place were cut off four times and it was set aside.
+  if (route.startsWith('/images/')) return ((body as { images?: unknown[] } | null)?.images?.length ?? 0) > 1 ? 180_000 : 150_000;
   const model = (body as { model?: string } | null)?.model ?? '';
   // SAM with three worlds building at once answered in 60-115 s (notebook-monsters, 2026-11-08): at 60 s every try of
   // a place's cut-outs was dropped four times over and the place was set aside at masks.
