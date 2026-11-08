@@ -223,7 +223,7 @@ export class Answers {
 }
 
 /** The ending as a paper card over the dimmed scene: its title, its text, what the hero carried, and a way to play again. */
-export function showEnding(ending: { title: string; text: string } | undefined, carried: ItemLook[]) {
+export function showEnding(ending: { title: string; text: string } | undefined, carried: ItemLook[], credits?: { url: string; label?: string }) {
   const root = document.getElementById('ending')!;
   root.hidden = !ending;
   if (!ending) return root.replaceChildren();
@@ -243,7 +243,9 @@ export function showEnding(ending: { title: string; text: string } | undefined, 
     url.searchParams.delete('place');
     location.href = url.toString();
   };
-  card.append(el('div', 'over', words.end), el('h1', '', ending.title), el('p', '', ending.text), ...(icons.childElementCount ? [icons] : []), again);
+  // The world's credits page (world.json credits), opened beside the game so the ending stays.
+  const link = credits && Object.assign(el('a', 'credits', credits.label ?? words.credits), { href: credits.url, target: '_blank', rel: 'noopener' });
+  card.append(el('div', 'over', words.end), el('h1', '', ending.title), el('p', '', ending.text), ...(icons.childElementCount ? [icons] : []), again, ...(link ? [link] : []));
   root.replaceChildren(card);
   card.animate([{ opacity: 0, transform: 'translateY(16px) scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 700, easing: 'ease-out' });
 }

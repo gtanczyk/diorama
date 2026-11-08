@@ -1070,7 +1070,7 @@ class Game {
     // Drawn once per ending, so the card's entrance plays once.
     if ((ending?.key ?? '') !== this.endingShown) {
       this.endingShown = ending?.key ?? '';
-      showEnding(ending, this.state.items.map((k) => this.itemLook(k)));
+      showEnding(ending, this.state.items.map((k) => this.itemLook(k)), this.data.world.credits);
     }
   }
 

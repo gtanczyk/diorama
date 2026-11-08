@@ -127,10 +127,12 @@ export async function exportWorld(slug: string, out: string, home?: string, url?
   fs.writeFileSync(path.join(out, 'main.js'), await bundle(true));
   let page = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
   page = page.replace('<body>', '<body data-shipped>');
-  if (home) page = page.replace('<div id="soundless"', `<a id="home" href="${esc(home)}">← Diorama</a>\n<div id="soundless"`);
-  page = page.replace('<title>Diorama</title>', await sharePreview(files, out, url));
   // The page's language follows the world's, so browsers and screen readers read a Polish world as Polish.
   const lang = langCode(files.world().language);
+  if (home) page = page.replace('<div id="soundless"', `<a id="home" href="${esc(home)}">← Diorama</a>\n<div id="soundless"`);
+  const credits = files.world().credits;
+  if (credits) page = page.replace('<div id="soundless"', `<a id="credits" href="${esc(credits.url)}">${esc(credits.label ?? (lang === 'pl' ? 'Twórcy' : 'Credits'))}</a>\n<div id="soundless"`);
+  page = page.replace('<title>Diorama</title>', await sharePreview(files, out, url));
   if (lang) page = page.replace('<html lang="en">', `<html lang="${lang}">`);
   fs.writeFileSync(path.join(out, 'index.html'), page);
 }

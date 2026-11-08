@@ -37,6 +37,8 @@ export const World = z.object({
   audience: z.enum(['kids']).optional(),
   /** What the players call the hero and each npc, in the world's language ("Smok Zielek" in a Polish world); else a name made from the key. */
   names: z.record(z.string(), z.string().min(1).max(40)).optional(),
+  /** A page that credits the people behind the world (a jam's entrant list, a thank-you page); the ending card and an exported copy link to it. A relative url is read from where the world is served. */
+  credits: z.object({ url: z.string().min(1), label: z.string().min(1).max(60).optional() }).optional(),
 });
 
 export type World = z.infer<typeof World>;

@@ -7,6 +7,10 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ## Unreleased
 
+### Added
+
+- A world can name a credits page in `world.json` (`"credits": { "url": "builders.html", "label": "All 368 builders" }`): the ending card links to it, and an exported copy shows it as a corner link beside the home link.
+
 ### Fixed
 
 - A stretched yawn, roar or growl in a line ("Yaaawn...", "Rooaaar!", "Grrr") counts as an acted sound in the voice check, so the line is no longer rejected after 3 takes when the transcriber writes it as "Yo".
