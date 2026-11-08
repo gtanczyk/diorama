@@ -263,3 +263,10 @@ test('a laugh is no words to transcribe: its first clean take is used, flagged, 
   expect(soundsOnly('Hee hee, got you!')).toBe(false);
   expect(soundsOnly('Do widzenia.')).toBe(false);
 });
+
+test('a clock time and a percent sign match a transcript that writes them another way', () => {
+  expect(spokenMatch('20:59. Okay. Okay. Move.', '2059. Okay, okay, move.')).toBe(1);
+  expect(spokenMatch("Mine's at three percent.", 'mines at 3%.')).toBe(1);
+  expect(spokenMatch('It is 8:00 now.', 'It is eight now.')).toBe(1);
+  expect(spokenMatch('20:59. Move.', '2100. Move.')).toBeLessThan(0.6);
+});

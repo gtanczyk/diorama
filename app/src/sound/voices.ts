@@ -441,13 +441,27 @@ export function spokenMatch(line: string, heard: string, language?: string): num
   // Laughs, hoots and snores in a line ("Hu-hu... dobranoc... Chrrr.") are acted, but the transcriber writes them
   // down rarely and never the same way: 4 lines of one world were rejected after 3 takes for them alone. Only the
   // words are compared. A word written twice in a row that the line has once is a transcriber stutter.
-  const said = spokenText(withoutSounds(line), language);
-  const raw = spokenText(withoutSounds(heard), language);
+  const said = spokenText(clockAndPercent(withoutSounds(line), line, language), language);
+  const raw = spokenText(clockAndPercent(withoutSounds(heard), line, language), language);
   const got = [raw, withoutStutter(raw, said)];
   const want = numberWords(said, language);
   const best = Math.max(...got.map((g) => heardMatch(said, g)));
   if (want.length && got.every((g) => want.join(' ') !== numberWords(g, language).join(' '))) return Math.min(best, 0.5);
   return best;
+}
+
+/**
+ * A clock time and a percent sign read as said: "20:59" is "20 59" (hours, then minutes; ":00" is the hour alone),
+ * and a transcript that wrote that time as "2059" is read the same way when the line has it. "3%" is "3 percent".
+ * Three lines of hackathon-night ("20:59. Okay. Okay. Move.", "Mine's at three percent.") were rejected after 3 takes
+ * because "2059" was read as two thousand fifty-nine and "%" was dropped.
+ */
+export function clockAndPercent(text: string, line: string, language?: string): string {
+  const percent = languageKey(language ?? 'English') === 'pl' ? 'procent' : 'percent';
+  const times = [...line.matchAll(/(?<![\d:])(\d{1,2}):(\d{2})(?![\d:])/g)].map((m) => [m[1], m[2]] as const);
+  let out = text;
+  for (const [h, m] of times) out = out.replace(new RegExp(`(?<![\\d:])${h}:?${m}(?![\\d:])`, 'g'), m === '00' ? h : `${h} ${m}`);
+  return out.replace(/(\d)\s*%/g, `$1 ${percent}`);
 }
 
 /** The text without words that are only a sound (see soundsOnly); a line of sounds alone stays as it is. */
