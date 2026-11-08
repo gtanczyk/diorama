@@ -56,7 +56,11 @@ defineCommand({
     const story = fs.existsSync(files.path('story.json')) ? Story.parse(files.readJson(files.path('story.json'))) : undefined;
     // Everyone the sprites plan needs, and whoever the person asked to animate (cast_animate, cast/fixes.json).
     const asked = Object.entries(readCastFixes(files)).filter(([, f]) => f.animate).map(([k]) => k);
-    const keys = keyArg ? [keyArg] : [...new Set([...(await planSprites(files, story)).map((p) => p.key), ...asked])];
+    const planned = keyArg ? [keyArg] : [...new Set([...(await planSprites(files, story)).map((p) => p.key), ...asked])];
+    // A figure the cast step set aside (no painting: the game draws a stand-in) has nothing to build a body from; it
+    // used to fail the whole step with ENOENT (anoti: the turtle and the long-neck timed out at cast). Cast retries them.
+    const keys = keyArg ? planned : planned.filter((key) => fs.existsSync(files.path('cast', `${key}-painting.png`)));
+    for (const key of planned) if (!keys.includes(key)) console.log(`${key}: not painted yet (a stand-in), no 3D model; diorama cast paints it`);
     for (const key of keys) if (Object.keys(options).length) saveAnimationSettings(files, key, animationSettings(files, key, options));
     await buildModels(files, keys, take, given, !!keyArg);
     console.log(`calls sent: muse ${files.memo.sent.muse}, space ${files.memo.sent.space}`);

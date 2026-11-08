@@ -9,6 +9,7 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ### Fixed
 
+- The 3D model step no longer fails the build with `ENOENT ... -painting.png` when the cast step set an NPC aside as a stand-in: that NPC is skipped until cast paints it.
 - A build no longer dies with `[DOMException [TimeoutError]: The operation was aborted due to timeout]` when Muse times out on both a plate and a story-change plate of one place: the place is set aside and the other places go on.
 - A place is no longer set aside at masks with `The operation was aborted due to timeout` when SAM is slow because several worlds build at once: one SAM try may take 150 s (was 60 s) before it is asked again. The same goes for plates and backdrops: a one-picture Muse edit may take 150 s (was 90 s).
 - A world from a child's drawing keeps the medium it was drawn in (oil pastel, watercolour, pencil) as its style, with the strokes, smudges and paper showing through, instead of the wax crayon and felt-tip look every kids' world got.
