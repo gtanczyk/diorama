@@ -2441,9 +2441,13 @@ class Game {
     const g = this.place.g;
     // Size comes from where the person stands on the floor and how tall they are (a cat, a child); on stairs
     // the feet sit on the tread under them.
-    const unit = personPx(g, y);
-    const h = unit * ((figure?.height ?? 1.62) / 1.62);
+    const standY = y;
     y = foot ?? stepFootY(g, x, y);
+    // A figure taller than the painting above its feet (a 3 m long-neck near the camera) is drawn smaller, head
+    // in the frame: the camera never cuts anyone's head off (anoti's long-neck lost its head at the fern forest).
+    const metres = figure?.height ?? 1.62;
+    const unit = Math.min(personPx(g, standY), (y - g.frame.height * 0.02) / 1.06 * 1.62 / metres);
+    const h = unit * (metres / 1.62);
     const articulation = talk === 'speak' ? mixer?.mouth(this.speech) ?? mouthAt(undefined, undefined) : mouthAt(undefined, undefined);
     const faceTime = performance.now() / 1000;
     // Older NPCs may have only a talking sheet. While walking, use their rig/model/cut-out instead.

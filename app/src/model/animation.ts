@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { z } from 'zod';
 import { hasModelTexture } from './glb.ts';
 import type { WorldFiles } from '../world/files.ts';
+import { readDrawn } from '../world/drawings.ts';
 
 const Texture = z.enum(['views', 'model']);
 const Frames = z.union([z.literal(8), z.literal(16), z.literal(32)]);
@@ -19,7 +20,10 @@ export function animationSettings(files: WorldFiles, key: string, patch: Partial
   const automatic = patch.texture === undefined && patch.frames === undefined && (!saved || saved.automatic) && !legacy;
   const glbFile = files.path('cast', key, 'model', 'model.glb');
   const glb = candidate ?? (fs.existsSync(glbFile) ? fs.readFileSync(glbFile) : undefined);
-  const texture = automatic ? glb && hasModelTexture(glb) ? 'model' : 'views' : patch.texture ?? saved?.texture ?? 'views';
+  // A character someone drew walks in sheets painted in the drawing's medium: TRELLIS's own texture is smooth and
+  // loses the strokes (anoti's oil-pastel dinosaur walked as a glossy figurine).
+  const drawn = readDrawn(files).some((d) => d.key === key && (d.kind === 'hero' || d.kind === 'npc' || d.kind === 'player'));
+  const texture = automatic ? glb && hasModelTexture(glb) && !drawn ? 'model' : 'views' : patch.texture ?? saved?.texture ?? 'views';
   const changedMode = patch.texture !== undefined && patch.texture !== saved?.texture;
   const frames = automatic ? texture === 'model' ? 16 : 8 : patch.frames ?? (changedMode ? texture === 'model' ? 16 : 8 : saved?.frames ?? (texture === 'model' ? 16 : 8));
   // Automatic UV starts with the rig's own weights. A historical coat override remains respected.

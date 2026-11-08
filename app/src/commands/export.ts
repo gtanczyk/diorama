@@ -22,7 +22,22 @@ function langCode(language?: string): string | undefined {
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** The link preview (X, Facebook, chats): the world's title and pitch, and a 1200x630 picture: the world's own og.jpg when it has one, else its first painted place. */
+/** The hero's cut-out standing in the right part of a 1200x630 card, feet near the bottom, with a soft shadow under it. */
+export async function heroOnCard(card: Buffer, cutout: Buffer): Promise<Buffer> {
+  const trimmed = await sharp(cutout).trim({ threshold: 1 }).png().toBuffer().catch(() => cutout);
+  const meta = await sharp(trimmed).metadata();
+  const h = 540;
+  const w = Math.min(560, Math.round(((meta.width ?? h) / (meta.height ?? h)) * h));
+  const figure = await sharp(trimmed).resize(w, h, { fit: 'inside' }).png().toBuffer();
+  const fm = await sharp(figure).metadata();
+  const [fw, fh] = [fm.width ?? w, fm.height ?? h];
+  const left = Math.round(1200 * 0.7 - fw / 2);
+  const top = 630 - fh - 24;
+  const shadow = Buffer.from(`<svg width="1200" height="630"><defs><filter id="b"><feGaussianBlur stdDeviation="10"/></filter></defs><ellipse cx="${left + fw / 2}" cy="${top + fh - 6}" rx="${fw * 0.36}" ry="${Math.max(10, fh * 0.035)}" fill="#121830" fill-opacity="0.45" filter="url(#b)"/></svg>`);
+  return sharp(card).composite([{ input: shadow, left: 0, top: 0 }, { input: figure, left: Math.max(0, left), top: Math.max(0, top) }]).png().toBuffer();
+}
+
+/** The link preview (X, Facebook, chats): the world's title and pitch, and a 1200x630 picture: the world's own og.jpg when it has one, else its first painted place with the hero in it. */
 async function sharePreview(files: WorldFiles, out: string, url?: string): Promise<string> {
   const world = files.world();
   const title = `${world.title} · Diorama`;
@@ -34,7 +49,12 @@ async function sharePreview(files: WorldFiles, out: string, url?: string): Promi
   const tags = [`<title>${esc(title)}</title>`, `<meta name="description" content="${esc(pitch)}">`, `<meta property="og:type" content="website">`, `<meta property="og:title" content="${esc(title)}">`, `<meta property="og:description" content="${esc(pitch)}">`];
   if (base) tags.push(`<meta property="og:url" content="${esc(base)}">`);
   if (source) {
-    await sharp(source).resize(1200, 630, { fit: 'cover', position: 'attention' }).jpeg({ quality: 85, mozjpeg: true }).toFile(path.join(out, 'og.jpg'));
+    const card = await sharp(source).resize(1200, 630, { fit: 'cover', position: 'attention' }).png().toBuffer();
+    // A painted place alone (an empty nest) does not say whose world it is: the hero stands in it, unless the
+    // world brought its own og.jpg.
+    const hero = files.path('cast', `${world.hero.key}.png`);
+    const withHero = source !== own && fs.existsSync(hero) ? await heroOnCard(card, fs.readFileSync(hero)) : card;
+    await sharp(withHero).jpeg({ quality: 85, mozjpeg: true }).toFile(path.join(out, 'og.jpg'));
     // Crawlers want an absolute address; the stamp makes X fetch a new picture after a re-export.
     const image = `${base}og.jpg?v=${Date.now().toString(36)}`;
     tags.push(`<meta property="og:image" content="${esc(image)}">`, '<meta property="og:image:width" content="1200">', '<meta property="og:image:height" content="630">', `<meta property="og:image:alt" content="${esc(world.title)}, a playable paper diorama world">`, '<meta name="twitter:card" content="summary_large_image">', `<meta name="twitter:image" content="${esc(image)}">`);

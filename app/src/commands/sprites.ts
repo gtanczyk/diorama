@@ -1,6 +1,8 @@
 // diorama sprites <slug> [key]: walk and talk sprite sheets drawn by Muse over the rigged model's poses,
 // only those the world and its story use (src/model/plan.ts).
+import { readDrawn } from '../world/drawings.ts';
 import fs from 'node:fs';
+import sharp from 'sharp';
 import { bindExistingAnimation, bindAnimation } from '../scene/animation-source.ts';
 import path from 'node:path';
 import { gestureIndex } from '../play/gestures.ts';
@@ -85,7 +87,8 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
   const who = [world.hero, ...world.places.flatMap((p) => p.things)].find((w) => w.key === key);
   const looks = who ? fixedLooks(files, who).looks : '';
   // A world given another style names it, so the sheets follow the restyled character, not the gouache they were made for.
-  const style = readStyled(files).from ? castStyle(files, world, key) : undefined;
+  // A restyled world, or one made from drawings (its style is the drawings' medium, not the default gouache).
+  const style = readStyled(files).from || readDrawn(files).length ? castStyle(files, world, key) : undefined;
   const modelDir = files.path('cast', key, 'model');
   const projected: AnimationSettings = { ...settings, texture: 'views', frames: 8 };
   // An older model's views were fitted on the whole silhouette only: the guides would show the profile's face twice.
@@ -117,31 +120,34 @@ async function drawCharacter(files: WorldFiles, plan: CharacterPlan, take: numbe
     const refsFor = (f: Facing, painted?: Buffer) => [f.startsWith('back') ? view('back') : view('front'), painted ?? view('right')];
     const painted: Record<string, Buffer> = {};
     const walk = async (f: Facing, refs: Buffer[]) => {
-      type Take = Awaited<ReturnType<typeof cutSheet>> & { painted: Buffer; n: number };
+      type Take = Awaited<ReturnType<typeof cutSheet>> & { painted: Buffer; n: number; faded: number[] };
       const takes: Take[] = [];
       let n = take;
       const another = async () => {
         const p = await paintSheet(files.memo, key, f, looks, shown[f][(n - take) % shown[f].length], refs, n, 0, style);
         // Always measured against the textured guide: that is the look a traced sheet keeps.
-        takes.push({ ...(await cutSheet(guides[f], p)), painted: p, n: n++ });
+        const cut = await cutSheet(guides[f], p);
+        takes.push({ ...cut, painted: p, n: n++, faded: await fadedFrames(cut.sheet) });
       };
       const traced = (t: Take) => mean(t.same) > TRACED;
       // A take that left the pose (Muse turned some frames to another facing) is worst, then traced takes;
       // among drawn takes the legs that follow best win, among traced ones the least traced.
-      const rank = (t: Take) => (mean(t.iou) < POSE_OK ? 0 : traced(t) ? 1 : 2);
+      // A take with frames gone grey (Muse drained the colour from a few cells) flickers as it walks: below traced.
+      // Before any pose ranking: a creature's guide is often never matched closely, so every take may be 0 there.
+      const rank = (t: Take) => (t.faded.length ? 0 : 3) + (mean(t.iou) < POSE_OK ? 0 : traced(t) ? 1 : 2);
       const pick = () => takes.reduce((a, b) => {
         if (rank(a) !== rank(b)) return rank(b) > rank(a) ? b : a;
         return traced(a) ? (mean(b.same) < mean(a.same) ? b : a) : (mean(b.legs) > mean(a.legs) ? b : a);
       });
       await another();
-      for (let t = 1; t <= RETAKES && rank(pick()) < 2; t++) await another();
+      for (let t = 1; t <= RETAKES && rank(pick()) < 5; t++) await another();
       for (let t = 1; t < tries && Math.min(...pick().legs) < LEGS_OK; t++) await another();
       const best = pick();
       painted[f] = best.painted;
       files.write(out(`painted-${f}.png`), best.painted);
       files.write(out(`${f}.png`), best.sheet);
       facings[f] = { sheet: `${f}.png`, yaw: FACINGS[f], stand: best.stand, off: best.off, iou: best.iou, legs: best.legs, same: best.same };
-      console.log(`${key} walk ${f}: take ${best.n + 1} (${['textured', 'clay', 'flat'][(best.n - take) % 3]} guide, ${takes.length} painted), pose IoU ${mean(best.iou).toFixed(3)}, legs ${mean(best.legs).toFixed(3)} (worst ${Math.min(...best.legs)}), same ${mean(best.same).toFixed(3)}${best.off.length ? `, off the walk: cell ${best.off.join(', ')}` : ''}${traced(best) ? '  <- Muse kept the 3D look, try --take' : mean(best.iou) < POSE_OK ? '  <- frames left the pose, try --take' : ''}`);
+      console.log(`${key} walk ${f}: take ${best.n + 1} (${['textured', 'clay', 'flat'][(best.n - take) % 3]} guide, ${takes.length} painted), pose IoU ${mean(best.iou).toFixed(3)}, legs ${mean(best.legs).toFixed(3)} (worst ${Math.min(...best.legs)}), same ${mean(best.same).toFixed(3)}${best.off.length ? `, off the walk: cell ${best.off.join(', ')}` : ''}${best.faded.length ? `  <- frames ${best.faded.join(', ')} lost their colour, try --take` : ''}${traced(best) ? '  <- Muse kept the 3D look, try --take' : mean(best.iou) < POSE_OK ? '  <- frames left the pose, try --take' : ''}`);
     };
     await walk(first, [view('front'), view('right')]);
     await Promise.all(plan.walk.filter((f) => f !== first).map((f) => walk(f, refsFor(f, painted[first]))));
@@ -229,4 +235,29 @@ export async function drawModelCharacter(files: WorldFiles, plan: CharacterPlan,
   const { elevation: _elevation, ...layout } = grid;
   files.write(out('sprites.json'), { ...layout, facings, talk, lines: plan.lines });
   console.log(`${plan.key}: UV sprites · ${settings.frames} walk frames + standing · ${Object.keys(talk).length} talk sheets`);
+}
+
+/**
+ * Cells of a cut walk sheet whose colour faded: the mean chroma of their figure under 60% of the sheet's
+ * median cell (anoti's oil-pastel dinosaur walked three of eight frames in grey).
+ */
+export async function fadedFrames(sheet: Buffer): Promise<number[]> {
+  const { data, info } = await sharp(sheet).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const [cw, ch] = [info.width / SHEET.cols, info.height / SHEET.rows];
+  const chroma: number[] = [];
+  for (let cell = 0; cell < SHEET.cols * SHEET.rows; cell++) {
+    const [x0, y0] = [Math.floor((cell % SHEET.cols) * cw), Math.floor(Math.floor(cell / SHEET.cols) * ch)];
+    let sum = 0;
+    let n = 0;
+    for (let y = y0; y < y0 + ch; y += 2) for (let x = x0; x < x0 + cw; x += 2) {
+      const i = (Math.floor(y) * info.width + Math.floor(x)) * 4;
+      if (data[i + 3] < 200) continue;
+      sum += Math.max(data[i], data[i + 1], data[i + 2]) - Math.min(data[i], data[i + 1], data[i + 2]);
+      n++;
+    }
+    chroma.push(n > 50 ? sum / n : NaN);
+  }
+  const known = chroma.filter((c) => !Number.isNaN(c)).sort((a, b) => a - b);
+  const median = known[Math.floor(known.length / 2)] ?? 0;
+  return chroma.flatMap((c, i) => (median > 25 && c < median * 0.6 ? [i] : []));
 }

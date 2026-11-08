@@ -124,8 +124,10 @@ export function paintSheet(memo: Memo, key: string, facing: Facing, looks: strin
   return museEdit(memo, {
     label: `${key}-${talk ? 'talk' : 'sprites'}-${facing}`, take, size: `${SHEET.width}x${SHEET.height}`, images: [guide, ...refs],
     prompt: `The first image is only a rough 3D pose guide for ${what}. ` +
-      `Draw this sheet again from scratch as a hand-painted 2D game sprite sheet of the character in the other pictures (${looks}): same face, hair, headwear, clothes, patches, boots and colours, ${style ? `in their style: ${style}` : 'in their painterly gouache style'}. ` +
-      `Each frame: exactly the same position, size, facing and body pose as the guide (same leg, arm and hand positions), but clean anatomy: one face, natural hands, natural boots that keep their shape, smooth readable clothing folds, no patchy textures, no 3D or CG look. ` +
+      `Draw this sheet again from scratch as a hand-painted 2D game sprite sheet of the character in the other pictures (${looks}): same face, hair, headwear, clothes, patches, footwear and colours, ${style ? `in their style: ${style}` : 'in their painterly gouache style'}. ` +
+      // Said for people, "boots" and "clothing folds" dressed an oil-pastel dinosaur in a vest and boots (anoti).
+      'Only what the character wears in those pictures: an animal or a creature that wears nothing there stays bare, with its own skin, claws and feet. ' +
+      `Each frame: exactly the same position, size, facing and body pose as the guide (same leg, arm and hand positions), but clean anatomy: one face, natural hands or paws, feet or footwear that keep their shape, smooth readable shapes, no patchy textures, no 3D or CG look. ` +
       // A thing the model's views left standing at the feet is fused to a boot in the guide: a plank or a case swinging with the leg.
       'Anything in the guide that lies on the ground or sticks out flat from the feet (a slab, a plank, a box, a case) is not part of the character: leave it out. ' +
       'Plain flat light grey background, no ground shadows, nothing on the ground, nothing else.',
