@@ -2,7 +2,7 @@
 
 ## Setup
 
-Node 22 or newer and a Meta Model API key:
+Node 22 or newer and a Meta Model API key (SAM 3.1 cuts every painting; planning and painting can switch to Claude, Gemini or OpenRouter, see below):
 
 Without a checkout, from npm. Run it in an empty folder: worlds are written to `./worlds` there.
 
@@ -50,7 +50,7 @@ Every call sent is logged with its price in `worlds/<slug>/memo/calls.jsonl` (Me
 - Studio Setup → Audio → Audio quality selects Final (the default) or Draft for future sound and voice generation in all worlds. It is saved in `~/.config/diorama/sound.json` and also used by CLI commands. `DIORAMA_SOUND` overrides the saved choice; `--final` / `--draft` override both for a command. Existing recordings need Voices and Sound rerun; changing quality does not rewrite dialogue.
 - `DIORAMA_SPARK_VIA`: which model answers Spark's asks. `meta` (default); `claude` (Anthropic API, `DIORAMA_ANTHROPIC_API_KEY`, model `DIORAMA_CLAUDE_MODEL`, default `claude-sonnet-5-5`); `openrouter:<model id>` (any chat model, `OPENROUTER_API_KEY`).
 - `DIORAMA_IMAGE_VIA`: which model paints. `meta` (Muse Image, default); `gemini-flash`, `gemini-lite`, `nano-banana`, `gemini-pro` (Gemini image models: straight from Google with `GEMINI_API_KEY` or `GOOGLE_API_KEY`, otherwise through OpenRouter), or any OpenRouter image model id. Pictures come back at Muse's size, so every later step works the same. SAM 3.1 always cuts.
-- Answers from another model are kept under their own memo keys and logged with `via`; Setup counts them apart from Meta's bill. Switching back to Meta finds the Meta answers again. A world meant for the hackathon demo stays on Meta (the default).
+- Answers from another model are kept under their own memo keys and logged with `via`; Setup counts them apart from Meta's bill. Switching back to Meta finds the Meta answers again.
 
 ## Playing and sharing a world
 

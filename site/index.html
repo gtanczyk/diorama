@@ -6,10 +6,10 @@
 <title>Diorama</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M3 27 L3 12 L16 4 L29 12 L29 27 Z' fill='%2324365a'/%3E%3Cpath d='M3 27 L9 18 L14 22 L20 14 L29 27 Z' fill='%23efe6d6'/%3E%3Cpath d='M3 27 L12 23 L19 26 L29 21 L29 27 Z' fill='%235b8fd6'/%3E%3Ccircle cx='22' cy='10' r='2.6' fill='%23ffd23a'/%3E%3C/svg%3E">
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="Diorama turns a sketch or a sentence into a paper diorama world you can walk around in, built with Meta's Muse and SAM models.">
+<meta name="description" content="Diorama turns a sketch or a sentence into a paper diorama world you can walk around in. Works with the models you choose: Meta's Muse and SAM, Claude, Gemini, and coding agents like Claude Code, Codex and Antigravity.">
 <meta name="theme-color" content="#0f1a2e">
 <meta property="og:title" content="Diorama: draw it, walk into it">
-<meta property="og:description" content="A sketch or one sentence in, a playable paper diorama world out. Built at the Meta AI Global Hackathon.">
+<meta property="og:description" content="A sketch or one sentence in, a playable paper diorama world out. Pick your own models and agent.">
 <meta property="og:image" content="https://grzegorz.tanczyk.pl/diorama/media/og.jpg?v=2">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -291,7 +291,7 @@ footer a { color: var(--foam); }
     <div class="dio" aria-hidden="true"><div class="box"></div></div>
     <canvas class="rain" aria-hidden="true"></canvas>
     <div class="intro" data-from="0" data-to="0.13">
-      <span class="label">Meta AI Global Hackathon · 2026</span>
+      <span class="label">A world builder that runs on your computer</span>
       <h1 id="hero-title">Draw it. <em>Walk into it.</em></h1>
       <p class="lede">Diorama turns a sketch or a single sentence into a small paper diorama world you can play in the browser.</p>
       <span class="scroll-hint">Scroll, and the painting comes apart</span>
@@ -377,28 +377,28 @@ footer a { color: var(--foam); }
   <div class="wrap section">
     <div class="section-head">
       <span class="label">How a world is built</span>
-      <h2 id="how-title">Meta's models make it. Code checks it is playable.</h2>
-      <p class="prose">Models do the creative work. Code measures and checks every result, so what comes out can be played, not only looked at. Each step writes plain files, and a typical four-place world takes about 17 minutes and some 200 Meta model calls.</p>
+      <h2 id="how-title">Models make it. Code checks it is playable.</h2>
+      <p class="prose">Generative models do the creative work, and you choose which ones. Code measures and checks every result, so what comes out can be played, not only looked at. Each step writes plain files, and a typical four-place world takes about 17 minutes and some 200 model calls.</p>
     </div>
     <ol class="steps">
-      <li class="step"><span class="who">Muse Spark</span><h3>World and story</h3><p>Places, a cast, items, locks and endings, with every ending checked to be reachable.</p></li>
-      <li class="step"><span class="who">Muse Spark · Muse Image</span><h3>Layout and paint</h3><p>A shaded plan sketch for each place, painted over by Muse. A critic marks what is wrong and only those regions get repainted.</p></li>
+      <li class="step"><span class="who">Planner</span><h3>World and story</h3><p>Places, a cast, items, locks and endings, with every ending checked to be reachable.</p></li>
+      <li class="step"><span class="who">Planner · Painter</span><h3>Layout and paint</h3><p>A shaded plan sketch for each place, painted over by the painter model. A critic marks what is wrong and only those regions get repainted.</p></li>
       <li class="step"><span class="who">SAM 3.1</span><h3>Cut-outs</h3><p>Every thing and floor cut out of the painting. Things the hero can take are painted out of a clean plate.</p></li>
       <li class="step"><span class="who">Code · depth</span><h3>The stage</h3><p>Floor, scale, occlusion, stairs and light measured from masks and depth. Cards, far flats, water, rain.</p></li>
-      <li class="step"><span class="who">Muse Image · 3D</span><h3>Cast</h3><p>The hero and characters painted, cut out, turned into 3D models and drawn back as sprites in the world's style.</p></li>
+      <li class="step"><span class="who">Painter · 3D</span><h3>Cast</h3><p>The hero and characters painted, cut out, turned into 3D models and drawn back as sprites in the world's style.</p></li>
       <li class="step"><span class="who">Sound</span><h3>Sound and voices</h3><p>Ambience, footsteps, music, and a fitting voice for every character.</p></li>
       <li class="step"><span class="who">Code · bots</span><h3>Verify</h3><p>Every place is walked and used by a bot. A place that fails is repaired automatically or handed to the agent.</p></li>
     </ol>
 
     <div class="section-head" style="margin-top:24px">
-      <span class="label">Meta models at work</span>
+      <span class="label">Pick your models</span>
     </div>
     <div class="models">
-      <div class="model"><h3>Muse Spark</h3><p>Designs the world and story, reads the sketches, lays out each place, critiques paintings, names what to cut out, judges playthroughs.</p></div>
-      <div class="model"><h3>Muse Image</h3><p>Paints each place over its plan sketch, repaints flagged regions, paints the cast, their walk and talk sheets, and the item icons.</p></div>
-      <div class="model"><h3>SAM 3.1</h3><p>Cuts the painting into things, floors, stairs and water. The masks become the walk grid, occlusion and pick-ups.</p></div>
-      <div class="model"><h3>Muse Voice Transcribe</h3><p>Hears an idea said aloud, and listens to every voiced line to catch a take that does not say it.</p></div>
-      <div class="model"><h3>Muse Code</h3><p>The Studio's agent. Click a thing on the stage, say what should change, and it fixes the world with you.</p></div>
+      <div class="model"><h3>Planner and critic</h3><p>Designs the world and story, reads the sketches, lays out each place, critiques paintings, judges playthroughs. Muse Spark, Claude Sonnet, or any chat model on OpenRouter.</p></div>
+      <div class="model"><h3>Painter</h3><p>Paints each place over its plan sketch, repaints flagged regions, paints the cast, their walk and talk sheets, and the item icons. Muse Image, Gemini image models (Nano Banana included), or any image model on OpenRouter.</p></div>
+      <div class="model"><h3>Cut-outs</h3><p>SAM 3.1 cuts the painting into things, floors, stairs and water. The masks become the walk grid, occlusion and pick-ups.</p></div>
+      <div class="model"><h3>Listening</h3><p>Muse Voice Transcribe hears an idea said aloud, and listens to every voiced line to catch a take that does not say it.</p></div>
+      <div class="model"><h3>Studio agent</h3><p>Click a thing on the stage, say what should change, and the agent fixes the world with you. Muse Code, Claude Code, Codex or Antigravity, and you can hand a conversation from one to another.</p></div>
     </div>
     <p class="also">Also used: Depth Anything V2 for shadows and parallax, ElevenLabs for voices and effects, MusicGen for music, TRELLIS for the characters' 3D models.</p>
   </div>
@@ -480,7 +480,7 @@ footer a { color: var(--foam); }
     <div class="section-head">
       <span class="label">How to use it</span>
       <h2 id="make-title">Make your own world.</h2>
-      <p class="prose">Diorama runs on your computer: a command-line tool and a Studio app in the browser. You need <strong>Node 22+</strong>, <strong>ffmpeg</strong> and a <strong>Meta Model API key</strong>. ElevenLabs (sound) and Hugging Face (3D characters) keys are optional.</p>
+      <p class="prose">Diorama runs on your computer: a command-line tool and a Studio app in the browser. You need <strong>Node 22+</strong>, <strong>ffmpeg</strong> and a <strong>Meta Model API key</strong> for the cut-outs. Anthropic, Gemini or OpenRouter keys let Claude plan and Gemini paint instead of Muse; ElevenLabs (sound) and Hugging Face (3D characters) keys are optional.</p>
     </div>
     <ol class="steps">
       <li class="step"><h3>Set up</h3><p>In an empty folder. Nothing to clone or install: it checks this machine and asks for your keys, typed hidden and stored encrypted.</p><code class="cmd">mkdir my-worlds &amp;&amp; cd my-worlds
@@ -500,7 +500,7 @@ npx -y @gtanczyk/diorama setup</code></li>
     <h2 id="notes-title" class="label" style="font-family:var(--mono);font-size:12px">Notes</h2>
     <div class="note">
       <p><strong>About the sketches.</strong> No child drew the three storm sketches. They were generated with Muse Image to look like crayon drawings, then given to Diorama as input together with one paragraph of story. After the build, a few spots in the world were touched up by hand for the clip.</p>
-      <p><strong>About the project.</strong> Diorama was written during the Meta AI Global Hackathon, from the kickoff on 26 October 2026. It runs locally as a command-line tool and a Studio app, and exports each world as a static web page.</p>
+      <p><strong>About the project.</strong> Diorama runs locally as a command-line tool and a Studio app, works with the models and coding agents you choose, and exports each world as a static web page. Paper Boat Storm was built with Muse Spark, Muse Image and SAM 3.1.</p>
     </div>
   </div>
 </section>

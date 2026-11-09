@@ -6,13 +6,13 @@
 
 **Type one sentence. Walk around in the painted game it becomes.**
 
-Diorama is a local tool that turns a story idea into a small point-and-click adventure: painted places, a hero and characters who walk and talk, things to pick up and use, sound and voices, and endings that are checked to be reachable. Meta's models do the creative work; code measures and checks every result, so what comes out is playable, not only pretty. Every step writes plain files, and every fix you make survives the next rebuild.
+Diorama is a local tool that turns a story idea into a small point-and-click adventure: painted places, a hero and characters who walk and talk, things to pick up and use, sound and voices, and endings that are checked to be reachable. Generative models do the creative work, and you pick which ones: Meta's Muse and SAM, Anthropic's Claude, Google's Gemini, or any model on OpenRouter for the steps that can switch, and Muse Code, Claude Code, Codex or Antigravity as the Studio's agent. Code measures and checks every result, so what comes out is playable, not only pretty. Every step writes plain files, and every fix you make survives the next rebuild.
 
 **[See it on grzegorz.tanczyk.pl/diorama](https://grzegorz.tanczyk.pl/diorama/)**: the one-pager, and [Paper Boat Storm](https://grzegorz.tanczyk.pl/diorama/paper-boat-storm/), a world built from three sketches that you can play in the browser.
 
 ## Quick start
 
-You need Node 22+, `ffmpeg` and a Meta Model API key. Make an empty folder and run Diorama there with `npx`. Nothing to clone; your worlds are saved in `./worlds`.
+You need Node 22+, `ffmpeg` and a Meta Model API key (SAM 3.1 cuts every painting; see [Models](#models) for what else can switch). Make an empty folder and run Diorama there with `npx`. Nothing to clone; your worlds are saved in `./worlds`.
 
 ```sh
 mkdir my-worlds && cd my-worlds
@@ -59,27 +59,29 @@ More in [docs/setup.md](docs/setup.md): optional keys (ElevenLabs for sound, Hug
 <tr><td colspan="3"><b>Midnight Crust</b>: <i>"A night-shift baker in a tiny Kraków bakery must find the lost sourdough starter before the morning rush, helped by a grumpy tram driver."</i></td></tr>
 </table>
 
-Each is a four-place world built from that one sentence: about 17 minutes of steps and some 200 Meta model calls, with no hand edits.
+Each is a four-place world built from that one sentence: about 17 minutes of steps and some 200 model calls (Muse Spark, Muse Image and SAM 3.1 for these two), with no hand edits.
 
-## Meta models at work
+## Models
 
-| Model | What it does in Diorama |
-| --- | --- |
-| **Muse Spark** | Designs the world and the story, lays out each place as a shaded plan sketch (a perspective floor, a silhouette per thing, lights and shadows), critiques paintings, names what to cut out, plans the sound, judges playthroughs |
-| **Muse Image** | Paints each place over its plan sketch, keeping every shape where it stands, repaints only the regions the critic flags, paints the cast, their walk and talk sheets and inventory icons |
-| **SAM 3.1** | Cuts every thing, floor, stair, puddle and patch of water out of the painting; the masks become the walk grid, occlusion and pick-ups |
-| **Muse Voice Transcribe** | Hears an idea you say aloud, and listens to every voiced line to catch a take that does not say it |
-| **Muse Code** | The Studio's agent: it fixes a world with you through the same actions as the GUI |
+Diorama gives each job to a model you choose. Planning, painting and the agent can each go to another provider; Studio Setup (or an environment variable where you start it) makes the pick, and each model's answers are cached under their own keys, so switching back costs nothing.
 
-Also used: Depth Anything V2 (ONNX, on the CPU) for shadows and parallax, ElevenLabs for voices and effects, MusicGen (open weights, run locally) for music, and TRELLIS with Make-It-Animatable on Hugging Face for the characters' 3D models.
+| Job | What it does | Models it can use |
+| --- | --- | --- |
+| **Planner and critic** | Designs the world and the story, lays out each place as a shaded plan sketch, critiques paintings, names what to cut out, plans the sound, judges playthroughs | Muse Spark (default), Claude Sonnet 5.5 (Anthropic API), or any chat model on OpenRouter: `DIORAMA_SPARK_VIA=meta \| claude \| openrouter:<model>` |
+| **Painter** | Paints each place over its plan sketch, repaints only the regions the critic flags, paints the cast, their walk and talk sheets and inventory icons | Muse Image (default), Gemini 3.1 Flash Image, Flash Lite Image, Nano Banana 2.1 or Gemini 3 Pro Image (straight from Google or through OpenRouter), or any OpenRouter image model: `DIORAMA_IMAGE_VIA=meta \| gemini-flash \| gemini-lite \| nano-banana \| gemini-pro \| <model id>` |
+| **Cut-outs** | Cuts every thing, floor, stair, puddle and patch of water out of the painting; the masks become the walk grid, occlusion and pick-ups | SAM 3.1 |
+| **Speech to text** | Hears an idea you say aloud, and listens to every voiced line to catch a take that does not say it | Muse Voice Transcribe (other adapters plug in behind one interface) |
+| **Studio agent** | Builds and fixes a world with you through the same actions as the GUI, over MCP | Muse Code, Claude Code, Codex or Antigravity, switchable mid-conversation: `DIORAMA_AGENT=muse \| claude \| codex \| antigravity` |
+
+Cut-outs and speech to text go to Meta today, so a Meta Model API key is still needed to build. Also used: Depth Anything V2 (ONNX, on the CPU) for shadows and parallax, ElevenLabs for voices and effects, MusicGen (open weights, run locally) for music, and TRELLIS with Make-It-Animatable on Hugging Face for the characters' 3D models. Keys and switches: [docs/setup.md](docs/setup.md).
 
 ## How a place is made
 
-<p align="center"><img src="docs/images/how-a-place-is-made.gif" width="720" alt="One place being made: Muse Spark's block-in, Muse Image's painting, SAM 3.1's cut-outs, the depth map, the measured walk grid, and the hero walking in it"></p>
+<p align="center"><img src="docs/images/how-a-place-is-made.gif" width="720" alt="One place being made: the planner's block-in, the painting, SAM 3.1's cut-outs, the depth map, the measured walk grid, and the hero walking in it"></p>
 
-1. **world, story**: Spark turns the sentence into places, a cast, items, locks and endings, and checks every ending can be reached. NPC progress uses simple story flags and conditional dialogue; optional walks and event-triggered travel follow that progress.
-2. **layout, paint**: Spark lays out each place and names each thing's silhouette; the layout becomes a shaded sketch (`blockin.png`, what Muse sees) and a named plan (`plan.png`, what Studio shows); Muse paints over the sketch; a Spark critic marks what is wrong and Muse repaints only those regions.
-3. **masks, plates**: SAM 3.1 cuts out every thing and floor; Muse paints the place without the things the hero can take.
+1. **world, story**: the planner turns the sentence into places, a cast, items, locks and endings, and checks every ending can be reached. NPC progress uses simple story flags and conditional dialogue; optional walks and event-triggered travel follow that progress.
+2. **layout, paint**: the planner lays out each place and names each thing's silhouette; the layout becomes a shaded sketch (`blockin.png`, what the painter sees) and a named plan (`plan.png`, what Studio shows); the painter paints over the sketch; a critic marks what is wrong and only those regions are repainted.
+3. **masks, plates**: SAM 3.1 cuts out every thing and floor; the painter paints the place without the things the hero can take.
 4. **derive, backdrop, weather, reactions**: code measures floor, scale, occlusion, stairs and light from the masks and the depth map; the place becomes a little stage with cards, far flats, moving water, rain and drips. The planner chooses subtle material-specific reactions, triggered by footsteps, entering floor regions and physical object interactions.
 5. **cast, model, sprites**: the hero and characters are painted, cut out, turned into 3D models and drawn back as sprite sheets in the world's style.
 6. **sound, voices**: ambience, loops, footsteps and music; a fitting voice for every character.
@@ -115,9 +117,9 @@ Model answers are memoised by a hash of their inputs, so running a step again wi
 - [Sound and voices](docs/sound.md)
 - [Releasing and the changelog](docs/releasing.md) ([CHANGELOG.md](CHANGELOG.md))
 
-## Built at the Meta AI Global Hackathon
+## Built on
 
-Everything in this repository was written during the hackathon, from the kickoff on 26 October 2026; the commit log is the history. Earlier work is used only as declared dependencies in `package.json`, including [genaicode](https://github.com/gtanczyk/genaicode), the author's own open-source package that gives the Studio its agent chat panel.
+Diorama uses [genaicode](https://github.com/gtanczyk/genaicode), the author's own open-source package, for the Studio's agent chat panel and for driving the coding agents. Other dependencies are listed in `package.json`.
 
 ## License
 

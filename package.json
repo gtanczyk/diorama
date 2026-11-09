@@ -1,7 +1,7 @@
 {
   "name": "@gtanczyk/diorama",
   "version": "0.5.0",
-  "description": "Turn a story prompt into playable painted point-and-click scenes with Meta Muse and SAM 3.1",
+  "description": "Turn a story prompt or a sketch into playable painted point-and-click scenes, with the image models and coding agents you choose (Muse, SAM 3.1, Claude, Gemini, Codex, Antigravity)",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -15,6 +15,9 @@
     "meta",
     "muse",
     "sam",
+    "claude",
+    "gemini",
+    "agents",
     "cli"
   ],
   "type": "module",
