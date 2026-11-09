@@ -12,7 +12,7 @@ Diorama is a local tool that turns a story idea into a small point-and-click adv
 
 ## Quick start
 
-You need Node 22+, `ffmpeg` and a Meta Model API key (SAM 3.1 cuts every painting; see [Models](#models) for what else can switch). Make an empty folder and run Diorama there with `npx`. Nothing to clone; your worlds are saved in `./worlds`.
+You need Node 22+, `ffmpeg` and API keys for the models you pick (see [Models](#models)); `setup` tells you which ones your pick needs. Make an empty folder and run Diorama there with `npx`. Nothing to clone; your worlds are saved in `./worlds`.
 
 ```sh
 mkdir my-worlds && cd my-worlds
