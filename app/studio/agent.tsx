@@ -169,7 +169,8 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
   const [error, setError] = useState('');
   const [offers, setOffers] = useState<Offer[]>([]);
   const loadOffers = () => fetch(`/api/agent/${slug}/agents`, { headers: auth }).then((r) => r.json()).then(setOffers).catch(() => {});
-  useEffect(() => void (replay || loadOffers()), [slug]);
+  // Again when the session's agent changes: a failover moves the conversation without a pick here.
+  useEffect(() => void (replay || loadOffers()), [slug, liveState?.agent]);
   const current = offers.find((o) => o.using);
   const running = state?.status === 'running';
   // Before the first message the agent is a choice; after it, the conversation is handed over instead.

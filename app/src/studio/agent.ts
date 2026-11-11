@@ -5,7 +5,7 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { antigravity, claude, codexLive, createAgentSession, detectAgents, museLive, type CodingAgent, withoutProviderCredentials, type AgentSession, type ApprovalDecision, type ApprovalRequest, type SessionState, type SessionTurn, type AgentBudget, type RateLimit } from 'genaicode/agents';
+import { antigravity, claude, codexLive, createAgentSession, describeFailover, detectAgents, museLive, type CodingAgent, withoutProviderCredentials, type AgentSession, type ApprovalDecision, type ApprovalRequest, type SessionState, type SessionTurn, type AgentBudget, type RateLimit } from 'genaicode/agents';
 import { configDir, redact, withoutSecrets } from '../secrets.ts';
 import type { Events } from './events.ts';
 import { History } from './history.ts';
@@ -136,6 +136,8 @@ class Talk {
    */
   private calls: Call[] = [];
   readonly listeners = new Set<() => void>();
+  /** Called once for each failover in the conversation: the session moved a turn to `to` because `from` ran out. */
+  onFailover?: (from: string, to: string) => void;
 
   /** The conversation before this session (earlier agents, before the Studio restarted), shown above it. */
   readonly past: SessionTurn[];
@@ -263,6 +265,10 @@ class Talk {
         }
         if (entry.kind === 'approval' && entry.decision === 'deny') this.publish('blocked', { kind: entry.request.kind, summary: entry.request.summary ?? entry.request.kind });
         if (entry.kind === 'error') this.publish('error', { text: entry.message });
+        if (entry.kind === 'failover') {
+          this.publish('failover', { from: entry.from, to: entry.to, kind: entry.failure.kind, text: describeFailover(entry.from, entry.to, entry.failure) });
+          this.onFailover?.(entry.from, entry.to);
+        }
       }
       // Entries still streaming are announced once they settle.
       const settled = turn.entries.findIndex((e, i) => i >= from && ((e.kind === 'text' && e.streaming) || (e.kind === 'tool' && !e.done) || (e.kind === 'approval' && !e.decision)));
@@ -345,6 +351,20 @@ export type AgentName = keyof typeof AGENTS;
 export const isAgentName = (name: string): name is AgentName => Object.hasOwn(AGENTS, name);
 
 /**
+ * The agents a world's conversation moves to when its agent runs out (plan limit, sign-in, missing CLI, crash), in
+ * order: DIORAMA_AGENT_FALLBACK=claude,codex, else Setup's choice. Empty: no failover, the turn just fails.
+ */
+export function agentFallback(saved: unknown, env: NodeJS.ProcessEnv = process.env): AgentName[] {
+  const wanted = env.DIORAMA_AGENT_FALLBACK?.trim() ? env.DIORAMA_AGENT_FALLBACK.split(',') : Array.isArray(saved) ? saved : [];
+  return [...new Set(wanted.map((n) => String(n).trim()).filter(isAgentName))];
+}
+
+/** `agent` with `model` for turns that name none: after a failover the session drops the last agent's model. */
+export function withModel(agent: CodingAgent, model: string | undefined): CodingAgent {
+  return model ? { ...agent, run: (task) => agent.run({ ...task, model: task.model ?? model }) } : agent;
+}
+
+/**
  * The world's earlier turns from its session logs (studio/sessions/*.jsonl, one per Studio session), oldest first,
  * the last `limit` of them. Each keeps its last recorded state; one cut off by a restart shows as ended. Their ids
  * are negative, so they never meet a live turn's.
@@ -415,19 +435,26 @@ export class AgentHub {
 
   /** The agent last picked in the Studio, for new conversations (~/.config/diorama/studio.json). */
   private static prefs = () => path.join(configDir(), 'studio.json');
-  private saved(): string | undefined {
+  private stored(): { agent?: string; fallback?: unknown } {
     try {
-      return (JSON.parse(fs.readFileSync(AgentHub.prefs(), 'utf8')) as { agent?: string }).agent;
+      return JSON.parse(fs.readFileSync(AgentHub.prefs(), 'utf8')) as { agent?: string; fallback?: unknown };
     } catch {
-      return undefined;
+      return {};
     }
   }
-  private save(name: AgentName) {
+  private saved(): string | undefined {
+    return this.stored().agent;
+  }
+  private save(change: { agent?: AgentName; fallback?: AgentName[] }) {
     try {
       fs.mkdirSync(path.dirname(AgentHub.prefs()), { recursive: true });
-      const old = fs.existsSync(AgentHub.prefs()) ? JSON.parse(fs.readFileSync(AgentHub.prefs(), 'utf8')) : {};
-      fs.writeFileSync(AgentHub.prefs(), `${JSON.stringify({ ...old, agent: name }, null, 2)}\n`);
+      fs.writeFileSync(AgentHub.prefs(), `${JSON.stringify({ ...this.stored(), ...change }, null, 2)}\n`);
     } catch {}
+  }
+
+  /** The failover agents (`agentFallback`), each asking for its own model. */
+  private fallback(): CodingAgent[] {
+    return agentFallback(this.stored().fallback).map((name) => withModel(this.make(name), agentModel(name)));
   }
 
   private talk(slug: string): Talk {
@@ -447,6 +474,9 @@ export class AgentHub {
       artifacts: { store: artifacts.store },
       model: agentModel(name),
       budget: agentBudget(),
+      fallback: this.fallback(),
+      // The agent taking over starts its own session: it gets the brief and the conversation, then the request.
+      failoverPrompt: (prompt) => `${AGENT_BRIEF(slug)}${earlier(dir)}\n\nPerson: ${prompt}`,
       task: {
         env: withoutProviderCredentials(withoutSecrets(process.env)) as Record<string, string>,
         // genaicode hands the server to Muse as -c overrides, the token through an environment variable, never argv.
@@ -471,8 +501,23 @@ export class AgentHub {
     });
     t = new Talk(slug, session, dir, this.events, artifacts);
     t.resumes = !!agent.capabilities.resume;
+    t.onFailover = (from, to) => this.failedOver(slug, from, to);
     this.talks.set(slug, t);
     return t;
+  }
+
+  /** After a failover: the new agent was briefed by `failoverPrompt`, and the conversation file says who took over. */
+  private failedOver(slug: string, from: string, to: string) {
+    const t = this.talks.get(slug);
+    if (!t) return;
+    const label = (agent: string) => {
+      const name = (Object.keys(AGENTS) as AgentName[]).find((n) => this.make(n).name === agent);
+      return name ? AGENTS[name].label : agent;
+    };
+    const next = this.fallback().find((a) => a.name === to);
+    t.resumes = !!next?.capabilities.resume;
+    t.briefed = true;
+    t.handedOver(label(from), label(to));
   }
 
   private make(name: AgentName): CodingAgent {
@@ -505,12 +550,24 @@ export class AgentHub {
     const names = Object.keys(AGENTS) as AgentName[];
     const found = detectAgents(names.map((n) => this.make(n)));
     const pick = this.defaultAgent();
-    return { env: process.env.DIORAMA_AGENT ?? null, agents: names.map((name, i) => ({ name, label: AGENTS[name].label, installed: !!found[i]?.path, default: name === pick })) };
+    return {
+      env: process.env.DIORAMA_AGENT ?? null,
+      fallbackEnv: process.env.DIORAMA_AGENT_FALLBACK?.trim() || null,
+      fallback: agentFallback(this.stored().fallback),
+      agents: names.map((name, i) => ({ name, label: AGENTS[name].label, installed: !!found[i]?.path, default: name === pick })),
+    };
   }
 
   /** Setup's choice of the agent new worlds start with. */
   setDefault(name: AgentName) {
-    this.save(name);
+    this.save({ agent: name });
+  }
+
+  /** Setup's choice of the failover agents, in order; every open conversation takes it from its next turn. */
+  setFallback(names: AgentName[]) {
+    this.save({ fallback: [...new Set(names)] });
+    const agents = this.fallback();
+    for (const t of this.talks.values()) t.session.setFallback(agents);
   }
 
   /** Switches this world's conversation to another agent; it starts a fresh session, the transcript stays. */
@@ -523,7 +580,7 @@ export class AgentHub {
     t.session.setModel(agentModel(name));
     t.resumes = !!agent.capabilities.resume;
     t.rebrief();
-    this.save(name);
+    this.save({ agent: name });
     if (from && from !== AGENTS[name].label && (t.past.length || t.session.get().turns.length)) t.handedOver(from, AGENTS[name].label);
     t.publish('agent', { name, label: AGENTS[name].label });
   }

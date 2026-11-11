@@ -102,10 +102,18 @@ export async function askAgent(slug: string, text: string, gist?: string): Promi
   if (!res.ok) throw new ApiError(res.status, ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `could not send (${res.status})`);
 }
 
-export type AgentDefaults = { env: string | null; agents: Array<{ name: string; label: string; installed: boolean; default: boolean }> };
-/** Setup: the agent new worlds start with; `name` sets it. */
-export async function agentDefault(name?: string): Promise<AgentDefaults> {
-  const res = await fetch('/api/agent-default', { method: name ? 'POST' : 'GET', headers: headers(), ...(name && { body: JSON.stringify({ name }) }) });
+export type AgentDefaults = {
+  env: string | null;
+  /** DIORAMA_AGENT_FALLBACK where the Studio was started; it overrides `fallback`. */
+  fallbackEnv: string | null;
+  /** The agents a conversation moves to when its agent runs out, in order. */
+  fallback: string[];
+  agents: Array<{ name: string; label: string; installed: boolean; default: boolean }>;
+};
+/** Setup: the agent new worlds start with; `name` sets it, `{ fallback }` the agents that take over when it runs out. */
+export async function agentDefault(change?: string | { fallback: string[] }): Promise<AgentDefaults> {
+  const payload = typeof change === 'string' ? { name: change } : change;
+  const res = await fetch('/api/agent-default', { method: payload ? 'POST' : 'GET', headers: headers(), ...(payload && { body: JSON.stringify(payload) }) });
   if (!res.ok) throw new ApiError(res.status, ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `could not reach the Studio (${res.status})`);
   return (await res.json()) as AgentDefaults;
 }

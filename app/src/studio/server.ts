@@ -247,15 +247,22 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
           return send(200, 'application/json', '{"ok":true}', { 'set-cookie': `${COOKIE}=${cookie}; HttpOnly; SameSite=Strict; Path=/` });
         }
         if (url.pathname === '/api/actions' && req.method === 'GET') return json(200, describeActions());
-        // Setup: which agent new worlds start with.
+        // Setup: which agent new worlds start with, and which ones take over when it runs out.
         if (url.pathname === '/api/agent-default' && !asAgent) {
           if (req.method === 'GET') return json(200, agents.defaults());
           if (req.method === 'POST') {
             const { value, error } = await body();
             if (error) return json(error[0], { error: error[1] });
-            const name = String((value as { name?: unknown } | undefined)?.name ?? '');
-            if (!isAgentName(name)) return json(400, { error: 'no such agent' });
-            agents.setDefault(name);
+            const { name, fallback } = (value ?? {}) as { name?: unknown; fallback?: unknown };
+            if (fallback !== undefined) {
+              const names = Array.isArray(fallback) ? fallback.map(String) : [];
+              if (!Array.isArray(fallback) || !names.every(isAgentName)) return json(400, { error: 'no such agent' });
+              agents.setFallback(names);
+              return json(200, agents.defaults());
+            }
+            const pick = String(name ?? '');
+            if (!isAgentName(pick)) return json(400, { error: 'no such agent' });
+            agents.setDefault(pick);
             return json(200, agents.defaults());
           }
         }
