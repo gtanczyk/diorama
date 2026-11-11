@@ -166,6 +166,8 @@ table.things select { padding: 4px 6px; }
 .budget { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; }
 .budget .prices { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .budget label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.budget .fallback { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 13px; color: var(--muted); }
+.budget .fallback label { flex-direction: row; align-items: center; gap: 6px; color: var(--text); }
 .chat { scroll-behavior: smooth; }
 .chat li.thinking { color: var(--faint); font-size: 13px; animation: pulse 1.6s ease-in-out infinite; }
 .chat li.steps-card { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border-left: 2px solid var(--line-strong); }

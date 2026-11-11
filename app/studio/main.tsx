@@ -332,6 +332,16 @@ function DefaultAgent() {
         {select('spark', 'Thinking (Spark)', 'Who plans, locates and judges: Muse Spark, or Claude. Answers are kept per model, so switching back costs nothing')}
         {select('image', 'Painting', 'Who paints places, cast and icons: Muse Image, or a Gemini image model. SAM 3.1 always cuts. The hackathon demo stays on Muse')}
       </div>
+      <div class="fallback" title={d.fallbackEnv ? `Set by DIORAMA_AGENT_FALLBACK=${d.fallbackEnv} where the Studio was started` : 'When the agent runs out (plan limit, signed out, not installed, crashed), the request goes to the first of these it has not tried, briefed with the conversation, and the world stays with it. None ticked: the turn just fails'}>
+        <span>If it runs out, hand over to</span>
+        {d.agents.map((a) => (
+          <label>
+            <input type="checkbox" checked={d.fallback.includes(a.name)} disabled={!!d.fallbackEnv || (!a.installed && !d.fallback.includes(a.name))}
+              onChange={(e) => void agentDefault({ fallback: e.currentTarget.checked ? [...d.fallback, a.name] : d.fallback.filter((n) => n !== a.name) }).then(setD).catch((x) => setError(x.message))} />
+            {d.fallback.length > 1 && d.fallback.includes(a.name) ? `${d.fallback.indexOf(a.name) + 1}. ` : ''}{a.label}{a.installed ? '' : ' (not installed)'}
+          </label>
+        ))}
+      </div>
       {error && <span class="error">{error}</span>}
     </div>
   );
