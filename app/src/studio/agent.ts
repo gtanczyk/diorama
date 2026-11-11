@@ -597,8 +597,8 @@ export class AgentHub {
   }
 
   /** What the agent published, as the HTTP answer the page frames. */
-  artifact(slug: string, id: string) {
-    return (this.talks.get(slug)?.artifacts ?? new WorldArtifacts(path.join(this.opts.root, slug), this.opts.root)).response(id);
+  artifact(slug: string, id: string, range?: string) {
+    return (this.talks.get(slug)?.artifacts ?? new WorldArtifacts(path.join(this.opts.root, slug), this.opts.root)).response(id, range);
   }
 
   /** Every change of a world's conversation, for the page's live view. */

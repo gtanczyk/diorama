@@ -372,9 +372,9 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
       const published = /^\/artifacts\/([a-z][a-z0-9-]*)\/([0-9a-f]{32})$/.exec(url.pathname);
       if (published) {
         if (!cookieOk) return send(401, 'text/plain', NO_SESSION);
-        const found = agents.artifact(published[1], published[2]);
+        const found = agents.artifact(published[1], published[2], req.headers.range);
         if (!found) return send(404, 'text/plain', 'not found');
-        return send(200, found.headers['content-type'], found.body, { ...found.headers, 'x-frame-options': 'SAMEORIGIN' });
+        return send(found.status, found.headers['content-type'], found.body, { ...found.headers, 'x-frame-options': 'SAMEORIGIN' });
       }
       if (url.pathname.startsWith('/files/')) {
         if (!cookieOk) return send(401, 'text/plain', NO_SESSION);

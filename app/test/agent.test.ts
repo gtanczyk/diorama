@@ -144,6 +144,10 @@ test('what the agent publishes shows in the conversation and is served sandboxed
   expect(shown.headers.get('content-security-policy')).toContain("default-src 'none'");
   expect(shown.headers.get('x-frame-options')).toBe('SAMEORIGIN');
   expect(await shown.text()).toContain('<h1>Cost</h1>');
+  // A player asks for a part of a recording.
+  const part = await fetch(url, { headers: { cookie, range: 'bytes=0-3' } });
+  expect(part.status).toBe(206);
+  expect(await part.text()).toBe('<h1>');
   expect((await fetch(`${studio.url}artifacts/harbour/${'0'.repeat(32)}`, { headers: { cookie } })).status).toBe(404);
 
   // A new Studio on the same worlds still opens the card: the copy under studio/artifacts.

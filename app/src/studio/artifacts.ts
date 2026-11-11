@@ -2,7 +2,7 @@
 // store, one per world, with a copy on disk so a card in the conversation still opens after a restart.
 import fs from 'node:fs';
 import path from 'node:path';
-import { artifactResponse, createArtifactStore, type Artifact, type ArtifactStore } from 'genaicode/agents';
+import { artifactResponse, createArtifactStore, type Artifact, type ArtifactResponse, type ArtifactStore } from 'genaicode/agents';
 
 const ID = /^[0-9a-f]{32}$/;
 
@@ -30,16 +30,16 @@ export class WorldArtifacts {
   }
 
   /** The HTTP answer for an artifact, with genaicode's headers that keep the page in a sandbox of its own. */
-  response(id: string): { headers: Record<string, string>; body: Buffer } | undefined {
+  response(id: string, range?: string): ArtifactResponse | undefined {
     if (!ID.test(id)) return undefined;
     const live = this.store.read(id);
-    if (live) return artifactResponse(live.artifact, live.body);
+    if (live) return artifactResponse(live.artifact, live.body, { range });
     try {
       const artifact = JSON.parse(fs.readFileSync(path.join(this.folder(), `${id}.json`), 'utf8')) as Artifact;
-      const kind = (['html', 'image', 'text', 'file'] as const).find((k) => k === artifact.kind);
+      const kind = (['html', 'image', 'audio', 'video', 'text', 'file'] as const).find((k) => k === artifact.kind);
       if (!kind || typeof artifact.mimeType !== 'string' || typeof artifact.title !== 'string') return undefined;
       // Whatever the file on disk claims, the answer is sandboxed by its kind's policy.
-      return artifactResponse({ ...artifact, id, kind }, fs.readFileSync(path.join(this.folder(), `${id}.bin`)));
+      return artifactResponse({ ...artifact, id, kind }, fs.readFileSync(path.join(this.folder(), `${id}.bin`)), { range });
     } catch {
       return undefined;
     }
