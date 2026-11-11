@@ -231,7 +231,7 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
         const batch = Array.isArray(value) ? value : [value];
         const world = Slug.safeParse(url.searchParams.get('world'));
         const ctx: ActionContext = { by: 'agent', root, jobs, events, ...(world.success && { onPersonSays: (listener: (text: string) => void) => agents.onPersonSays(world.data, listener) }) };
-        const replies = (await Promise.all(batch.map((m) => handleMcp(m as Parameters<typeof handleMcp>[0], ctx, world.success ? world.data : undefined, world.success ? (name, args) => agents.called(world.data, name, args) : undefined)))).filter(Boolean);
+        const replies = (await Promise.all(batch.map((m) => handleMcp(m as Parameters<typeof handleMcp>[0], ctx, world.success ? world.data : undefined, world.success ? (name, args) => agents.called(world.data, name, args) : undefined, world.success ? [agents.artifactTool(world.data)] : [])))).filter(Boolean);
         if (!replies.length) {
           res.writeHead(202, headers);
           return res.end();
@@ -359,6 +359,15 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
         if (rest === 'world-data.json') return json(200, worldData(new WorldFiles(slug, root)));
         if (rest.startsWith('files/')) url.pathname = `/files/${slug}/${rest.slice('files/'.length)}`;
         else return send(404, 'text/plain', 'not found');
+      }
+      // What the agent published, in a frame of the conversation. genaicode's headers sandbox it: an origin of
+      // its own, no network. The id is unguessable; the cookie keeps it to this browser as well.
+      const published = /^\/artifacts\/([a-z][a-z0-9-]*)\/([0-9a-f]{32})$/.exec(url.pathname);
+      if (published) {
+        if (!cookieOk) return send(401, 'text/plain', NO_SESSION);
+        const found = agents.artifact(published[1], published[2]);
+        if (!found) return send(404, 'text/plain', 'not found');
+        return send(200, found.headers['content-type'], found.body, { ...found.headers, 'x-frame-options': 'SAMEORIGIN' });
       }
       if (url.pathname.startsWith('/files/')) {
         if (!cookieOk) return send(401, 'text/plain', NO_SESSION);
