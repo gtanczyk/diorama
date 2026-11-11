@@ -118,3 +118,43 @@ test('Codex gets the Studio\'s tools pre-approved, on top of whatever else the t
   agent.run({ prompt: 'hi', cwd: '.', extraArgs: ['--x'] } as never);
   expect(seen[0]).toEqual(['--x', '-c', 'mcp_servers.diorama.default_tools_approval_mode="approve"']);
 });
+
+test('what the agent publishes shows in the conversation and is served sandboxed, also after a restart', async () => {
+  const mcp = (body: object) => fetch(`${studio.url}mcp?world=harbour`, { method: 'POST', headers: { authorization: `Bearer ${studio.agentToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, ...body }) }).then((r) => r.json());
+  const listed = await mcp({ method: 'tools/list' });
+  expect(listed.result.tools.map((t: { name: string }) => t.name)).toContain('publish_artifact');
+  const published = await mcp({ method: 'tools/call', params: { name: 'publish_artifact', arguments: { title: 'Build cost', content: '<h1>Cost</h1><script>parent.x = 1</script>', format: 'html' } } });
+  expect(published.result.isError).toBe(false);
+  fs.writeFileSync(path.join(root, 'harbour', '.env'), 'KEY=secret');
+  const refused = await mcp({ method: 'tools/call', params: { name: 'publish_artifact', arguments: { title: 'Keys', path: '.env' } } });
+  expect(refused.result.isError).toBe(true);
+
+  const state = await (await fetch(`${studio.url}api/agent/harbour`, { headers: { authorization: `Bearer ${studio.token}` } })).json();
+  const entry = state.turns.flatMap((t: { entries: Array<{ kind: string }> }) => t.entries).find((e: { kind: string }) => e.kind === 'artifact');
+  expect(entry.artifact).toMatchObject({ title: 'Build cost', kind: 'html', version: 1 });
+
+  const url = `${studio.url}artifacts/harbour/${entry.artifact.id}`;
+  // Only the browser the Studio is open in: the session cookie, as for a world's files.
+  expect((await fetch(url)).status).toBe(401);
+  const session = await post('api/session', {});
+  const cookie = session.headers.get('set-cookie')!.split(';')[0];
+  const shown = await fetch(url, { headers: { cookie } });
+  expect(shown.status).toBe(200);
+  expect(shown.headers.get('content-security-policy')).toContain('sandbox allow-scripts');
+  expect(shown.headers.get('content-security-policy')).toContain("default-src 'none'");
+  expect(shown.headers.get('x-frame-options')).toBe('SAMEORIGIN');
+  expect(await shown.text()).toContain('<h1>Cost</h1>');
+  expect((await fetch(`${studio.url}artifacts/harbour/${'0'.repeat(32)}`, { headers: { cookie } })).status).toBe(404);
+
+  // A new Studio on the same worlds still opens the card: the copy under studio/artifacts.
+  const again = await startStudio({ root, muse: MUSE });
+  try {
+    const next = await fetch(`${again.url}api/session`, { method: 'POST', headers: { authorization: `Bearer ${again.token}`, 'content-type': 'application/json' }, body: '{}' });
+    const kept = await fetch(`${again.url}artifacts/harbour/${entry.artifact.id}`, { headers: { cookie: next.headers.get('set-cookie')!.split(';')[0] } });
+    expect(kept.status).toBe(200);
+    expect(kept.headers.get('content-security-policy')).toContain('sandbox allow-scripts');
+    expect(await kept.text()).toContain('<h1>Cost</h1>');
+  } finally {
+    await again.close();
+  }
+});

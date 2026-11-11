@@ -11,6 +11,8 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 - Opt-in agent failover: pick agents under Setup's "If it runs out, hand over to" (or `DIORAMA_AGENT_FALLBACK=claude,codex`), and a turn whose agent hits its plan limit, is signed out, missing or crashes goes to the next one, briefed with the conversation; the world stays with it (docs/studio.md).
 
+- The agent can show you things in the conversation, not only tell: a report, a comparison or a picture appears as a card that opens a preview (genaicode artifacts). A page it writes runs in a sandbox of its own, with no network and no access to the Studio.
+
 - The README, the npm description and the one-pager now say which models and agents each job can use (Muse, SAM 3.1, Claude, Gemini, OpenRouter; Muse Code, Claude Code, Codex, Antigravity) instead of presenting Diorama as Meta-only.
 
 - A world can name a credits page in `world.json` (`"credits": { "url": "builders.html", "label": "All 368 builders" }`): the ending card links to it, and an exported copy shows it as a corner link beside the home link.
