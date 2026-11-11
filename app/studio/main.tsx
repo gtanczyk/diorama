@@ -306,6 +306,8 @@ function DefaultAgent() {
   const [d, setD] = useState<AgentDefaults | null>(null);
   const [m, setM] = useState<Models | null>(null);
   const [error, setError] = useState('');
+  // One fallback change at a time: each one is built from the list the last one returned.
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
     void agentDefault().then(setD).catch((e) => setError(e.message));
     void call<Models>('models_get').then((x) => setM(showModels(x))).catch((e) => setError(e.message));
@@ -336,8 +338,12 @@ function DefaultAgent() {
         <span>If it runs out, hand over to</span>
         {d.agents.map((a) => (
           <label>
-            <input type="checkbox" checked={d.fallback.includes(a.name)} disabled={!!d.fallbackEnv || (!a.installed && !d.fallback.includes(a.name))}
-              onChange={(e) => void agentDefault({ fallback: e.currentTarget.checked ? [...d.fallback, a.name] : d.fallback.filter((n) => n !== a.name) }).then(setD).catch((x) => setError(x.message))} />
+            <input type="checkbox" checked={d.fallback.includes(a.name)} disabled={saving || !!d.fallbackEnv || (!a.installed && !d.fallback.includes(a.name))}
+              onChange={(e) => {
+                setSaving(true);
+                void agentDefault({ fallback: e.currentTarget.checked ? [...d.fallback, a.name] : d.fallback.filter((n) => n !== a.name) })
+                  .then(setD).catch((x) => setError(x.message)).finally(() => setSaving(false));
+              }} />
             {d.fallback.length > 1 && d.fallback.includes(a.name) ? `${d.fallback.indexOf(a.name) + 1}. ` : ''}{a.label}{a.installed ? '' : ' (not installed)'}
           </label>
         ))}
