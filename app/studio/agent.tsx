@@ -12,6 +12,7 @@ import { Icon } from './icons.tsx';
 /** What each Studio tool does, as the person would say it. */
 export const SAYS: Record<string, string> = {
   world_export: 'Make a zip',
+  publish_artifact: 'Show you something',
   world_publish: 'Publish a link',
   picture_view: 'Look at your picture',
   world_list: 'List worlds', world_status: 'World status', place_status: 'Look at a place', job_list: 'List jobs',
@@ -282,6 +283,7 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
         onApprove={(id, decision) => void post('approval', { id, decision })}
         formatToolName={(name) => (name.startsWith('mcp__diorama__') ? SAYS[name.slice(14)] ?? name.slice(14).replace(/_/g, ' ') : name)}
         foldSteps
+        artifactUrl={(artifact) => `/artifacts/${slug}/${artifact.id}?v=${artifact.version}`}
         renderPrompt={(text) => shownPrompt(text, slug)}
         notices={notices}
         renderAfterTurn={(turn: SessionTurn, index: number) => {

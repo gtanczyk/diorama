@@ -22,10 +22,13 @@ export function mcpTools() {
   }));
 }
 
+/** A tool that is not a Studio action (genaicode's publish_artifact): listed and called beside them. */
+export type ExtraTool = { name: string; description: string; inputSchema: Record<string, unknown>; call(args: Record<string, unknown>): Promise<unknown> };
+
 /** Answers one JSON-RPC message; null for a notification. */
 /** `world`: the world the calling agent session is about; a tool call that leaves out `slug` gets it. */
 /** `seen`: told of each tool call (name, arguments) and, through the function it returns, of how it ended. */
-export async function handleMcp(message: Message, ctx: ActionContext, world?: string, seen?: (name: string, args: Record<string, unknown>) => (ok: boolean, result: unknown) => void): Promise<Reply | null> {
+export async function handleMcp(message: Message, ctx: ActionContext, world?: string, seen?: (name: string, args: Record<string, unknown>) => (ok: boolean, result: unknown) => void, extra: readonly ExtraTool[] = []): Promise<Reply | null> {
   if (message.id === undefined || message.id === null) return null;
   const id = message.id;
   const ok = (result: unknown): Reply => ({ jsonrpc: '2.0', id, result });
@@ -40,9 +43,17 @@ export async function handleMcp(message: Message, ctx: ActionContext, world?: st
     case 'ping':
       return ok({});
     case 'tools/list':
-      return ok({ tools: mcpTools() });
+      return ok({ tools: [...mcpTools(), ...extra.map(({ name, description, inputSchema }) => ({ name, description, inputSchema }))] });
     case 'tools/call': {
       const name = String(message.params?.name ?? '');
+      const other = extra.find((tool) => tool.name === name);
+      if (other) {
+        try {
+          return ok({ content: [{ type: 'text', text: String(await other.call({ ...((message.params?.arguments ?? {}) as Record<string, unknown>) })) }], isError: false });
+        } catch (error) {
+          return ok({ content: [{ type: 'text', text: redact(error instanceof Error ? error.message : String(error)) }], isError: true });
+        }
+      }
       if (!actions.has(name)) return { jsonrpc: '2.0', id, error: { code: -32602, message: `no tool ${name}` } };
       try {
         const args = { ...((message.params?.arguments ?? {}) as Record<string, unknown>) };

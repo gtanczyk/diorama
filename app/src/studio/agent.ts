@@ -9,6 +9,7 @@ import { antigravity, claude, codexLive, createAgentSession, detectAgents, museL
 import { configDir, redact, withoutSecrets } from '../secrets.ts';
 import type { Events } from './events.ts';
 import { History } from './history.ts';
+import { WorldArtifacts } from './artifacts.ts';
 import { NPC_STORY_GUIDANCE } from '../story/npc-guidance.ts';
 import { cli } from '../cli.ts';
 
@@ -27,6 +28,7 @@ When a job seems slow or the person asks what it is doing, call job_inspect for 
 To fix a place use the fix tools, which are kept across rebuilds: mask_fix (a better SAM phrase, the real box, or the kind of a thing), floor_cells, mask_brush, stand_set, repaint_region (costs a Muse edit), paint_words (how the place, its things and floors are described to the painter); corrections_get shows what is fixed already, corrections_clear takes fixes back. When asked to go through the person's notes, read feedback_pending, fix each one and close it with feedback_done in one sentence. Check budget before a rebuild of many places.
 When the person wants the game in another language ("make it English", "po polsku"), call world_language: it translates the title, names and the whole story in one pass and casts and records the voices again as native speakers; first without go, tell them what it redoes and what the voices cost, then call it with go true once they agree (voices false when they only want the text now). Never translate it line by line with story_text, and never say the language cannot be changed.
 When the person wants the game to look different (more realistic, watercolour, like a picture book, less cartoon), call style_set with the style in a few words (medium, palette, light; scope place or cast for only one place or the characters): first without go, tell them what it repaints and about what it costs, then call it with go true once they agree. It repaints each picture keeping where everything is, so masks and their fixes still fit; children's drawings stay the reference; history_undo takes it back. Never write world.json's style by hand.
+When something is better seen than described (a comparison of places, a report on what a build cost, a table of the story's stages), show it with publish_artifact: one self-contained HTML page, a picture or a Markdown text, which the person opens from the conversation; the game itself is never an artifact, show that with ui_focus and play_reload.
 Before a risky change, say what you will do; history_undo can take back a job. Respect locks. Keys are never yours: if a key is missing, ask the person to run \`${cli('setup')}\` in a terminal.
 Read files freely to find out why something failed, but do not edit world files or run commands that change them: make every change through the diorama MCP tools, so the person sees it live, can undo it, and it survives the next build (a hand edit is overwritten by the next build). When no single tool makes the change the person asks for, do not stop at "there is no tool": find the nearest way with the tools you have (several story_text calls, a story_redo with their wish, a run_step) and offer it with what it costs, using ask_person; mention the missing tool only as a side note, so it can be added later. Refuse only what would need a hand edit or would throw away their work. Start from world_status, place_status, place_view, job_wait, corrections_get and feedback_pending: place_view shows you a place as a picture (layer walk, masks or painting), which files and the shell cannot. Reach for the shell only when no Studio tool answers the question.
 When a build fails for another reason (a step that broke, a service that did not answer), the Studio wakes you with the error and the job's last lines: job_inspect it, give a service error (HTTP 5xx, a timeout, a busy Space) one job_retry, which picks up at the failed step, and fix anything else with that step's own tool; never retry the same error twice, tell the person instead. A character the 3D service left in 2D (cast_status: the 3D service did not answer) still plays with its 2D rig; cast_animate tries its model again once the service is back. When a build leaves places not playable, repair them one by one: place_status lists each error with its playbook (where to look, the fix tools in order, the last resort), and place_view shows you the walkable floor with the 60 px cells floor_cells takes, the gaps to bridge and the spots off the floor. An unreached patch where nothing is floor (a wall, the sky) is taken back, not bridged: corrections_clear the fix that made it, or mask_brush erase. Try the tools in that order; each fix rebuilds only that place, so read place_status again after its job ends. After three fixes that did not change the error, do not repeat one that failed: look again with place_view and take a different path (mask_brush by hand, floor_cells, thing_remove, corrections_clear); the fix tools refuse an exact repeat, and after six they keep repaints and relayouts for the person. If the new path fails too, tell the person briefly what you tried and what you would do next. Ask before the last resort, except one repaint_region per place.
@@ -138,7 +140,7 @@ class Talk {
   /** The conversation before this session (earlier agents, before the Studio restarted), shown above it. */
   readonly past: SessionTurn[];
 
-  constructor(readonly slug: string, readonly session: AgentSession, private readonly dir: string, private readonly events: Events) {
+  constructor(readonly slug: string, readonly session: AgentSession, private readonly dir: string, private readonly events: Events, readonly artifacts: WorldArtifacts) {
     this.past = pastTurns(dir);
     const id = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
     this.log = path.join(dir, 'studio', 'sessions', `${id}-${randomBytes(2).toString('hex')}.jsonl`);
@@ -437,9 +439,12 @@ export class AgentHub {
     const ask = process.env.DIORAMA_AGENT_TOOLS === 'ask';
     const name = this.defaultAgent(slug);
     const agent = this.make(name);
+    const artifacts = new WorldArtifacts(dir, this.opts.root);
     const session = createAgentSession({
       agent,
       cwd,
+      // The publish tool is served by the Studio's own MCP server (see server.ts), so only the store goes in.
+      artifacts: { store: artifacts.store },
       model: agentModel(name),
       budget: agentBudget(),
       task: {
@@ -464,7 +469,7 @@ export class AgentHub {
         return `${AGENT_BRIEF(slug)}${earlier(dir)}\n\nPerson: ${prompt}`;
       },
     });
-    t = new Talk(slug, session, dir, this.events);
+    t = new Talk(slug, session, dir, this.events, artifacts);
     t.resumes = !!agent.capabilities.resume;
     this.talks.set(slug, t);
     return t;
@@ -527,6 +532,16 @@ export class AgentHub {
   state(slug: string): SessionState | null {
     const t = this.talks.get(slug) ?? (pastTurns(path.join(this.opts.root, slug), 1).length ? this.talk(slug) : undefined);
     return t ? safe(t.shown(t.session.get())) : null;
+  }
+
+  /** The publish_artifact tool of a world's conversation, for the MCP server. */
+  artifactTool(slug: string) {
+    return this.talk(slug).artifacts.store.tool();
+  }
+
+  /** What the agent published, as the HTTP answer the page frames. */
+  artifact(slug: string, id: string) {
+    return (this.talks.get(slug)?.artifacts ?? new WorldArtifacts(path.join(this.opts.root, slug), this.opts.root)).response(id);
   }
 
   /** Every change of a world's conversation, for the page's live view. */
