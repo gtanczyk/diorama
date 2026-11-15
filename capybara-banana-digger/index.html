@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gniotek, bananowy kopacz · Diorama</title>
+<meta name="description" content="Kapibara Gniotek uwielbia kopać banany, ale w miękkiej ziemi znajduje też dziwne skarby. Pomóż mu porozmawiać z bananowym stworkiem, zebrać znaleziska i odkryć, skąd się to wszystko bierze!">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Gniotek, bananowy kopacz · Diorama">
+<meta property="og:description" content="Kapibara Gniotek uwielbia kopać banany, ale w miękkiej ziemi znajduje też dziwne skarby. Pomóż mu porozmawiać z bananowym stworkiem, zebrać znaleziska i odkryć, skąd się to wszystko bierze!">
+<meta property="og:image" content="og.jpg?v=mwi5g4pb">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Gniotek, bananowy kopacz, a playable paper diorama world">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="og.jpg?v=mwi5g4pb">
+<meta name="twitter:title" content="Gniotek, bananowy kopacz · Diorama">
+<meta name="twitter:description" content="Kapibara Gniotek uwielbia kopać banany, ale w miękkiej ziemi znajduje też dziwne skarby. Pomóż mu porozmawiać z bananowym stworkiem, zebrać znaleziska i odkryć, skąd się to wszystko bierze!">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M3 27 L3 12 L16 4 L29 12 L29 27 Z' fill='%2324365a'/%3E%3Cpath d='M3 27 L9 18 L14 22 L20 14 L29 27 Z' fill='%23efe6d6'/%3E%3Cpath d='M3 27 L12 23 L19 26 L29 21 L29 27 Z' fill='%235b8fd6'/%3E%3Ccircle cx='22' cy='10' r='2.6' fill='%23ffd23a'/%3E%3C/svg%3E">
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0b0e; color: #e8e2d6; font: 15px/1.35 Georgia, serif; overflow: hidden; }
+  #stage { position: absolute; inset: 0; display: grid; place-items: center; }
+  /* Fills the window on the long side, so a 1080p recording gets the game 1080 px tall, not its 896 px canvas. */
+  canvas { width: min(100vw, calc(100vh * 1200 / 896)); height: auto; aspect-ratio: 1200 / 896; image-rendering: auto; touch-action: manipulation; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+  /* ?fill=1: the picture covers the page, no black bands; the game slides it so the hero stays on the page. */
+  body.fill canvas { width: max(100vw, calc(100vh * 1200 / 896)); }
+  #bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 14px; background: linear-gradient(transparent, #000a); font-size: 14px; pointer-events: none; display: flex; justify-content: space-between; }
+  #bar .hint { opacity: 0.6; }
+  /* A shared copy (export) is for players: the world's name only, and the key list fades once the game is under way. */
+  body[data-shipped] #bar { gap: 24px; }
+  body[data-shipped] #bar #hover { display: none; }
+  body[data-shipped] #bar .hint { transition: opacity 1.2s; }
+  body[data-shipped].played #bar .hint { opacity: 0; }
+  /* A finger has no hover and no keys: the bar's hints only cover the picture. */
+  @media (hover: none) { #bar { display: none; } }
+  /* Held upright, a phone shows the game a third of its height: it asks to be turned, once, and can be told no. */
+  #turn { position: fixed; inset: 0; z-index: 10; display: none; place-items: center; align-content: center; gap: 18px; padding: 24px; background: #0b0b0ef2; text-align: center; font-size: 20px; }
+  #turn button { padding: 8px 18px; color: #e8e2d6; background: none; border: 1.5px solid #e8e2d688; border-radius: 10px; font-size: 15px; text-align: center; }
+  @media (hover: none) and (orientation: portrait) { #turn:not([hidden]) { display: grid; } }
+  /* The HTML over the game sits in the canvas's own 1200 x 896 frame, scaled with it, so it lines up with the picture at any window size and in recordings. */
+  #hud { position: absolute; left: 0; top: 0; width: 1200px; height: 896px; transform-origin: 0 0; pointer-events: none; }
+  #hud > * { pointer-events: auto; }
+  /* What only shows (a toast, a flying icon, the held cursor) never takes a click, even faded out over the answers. */
+  #hud > .toast, #hud > .flying, #hud > .held-cursor, #hud > #handover { pointer-events: none; }
+  :root { --paper: #f3e8cf; --paper-hi: #fbf4e2; --ink: #2b2118; --glow: #ffe7a8; --clay: #c9774a; }
+  #inventory { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 10px 14px 10px 10px; background: var(--paper); border: 2.5px solid var(--ink); border-radius: 18px; box-shadow: 0 5px 0 #2b211840, 0 12px 28px #0006; transition: opacity .3s, left .3s, transform .3s; }
+  #inventory[hidden] { display: none; }
+  /* In a talk the bag steps out of the answers' way: small, faint, top left (below the turn badge when there is one). */
+  #inventory.quiet { opacity: .6; left: 22px; top: 22px; bottom: auto; transform: scale(.7); transform-origin: 0 0; }
+  #hud:has(#player:not([hidden])) #inventory.quiet { top: 80px; }
+  #inventory .bag { width: 46px; display: flex; justify-content: center; border-right: 2px dashed #2b211855; padding-right: 6px; }
+  #inventory .slots { display: flex; gap: 8px; }
+  #inventory .slot { width: 72px; height: 72px; padding: 0; display: grid; place-items: center; background: #e7d8b6; border: 2px solid #2b211866; border-radius: 14px; transition: transform .15s; }
+  #inventory .slot:hover { transform: translateY(-4px); background: #efe1c0; border-color: var(--ink); }
+  #inventory .slot.held { background: var(--glow); border: 3px solid var(--clay); box-shadow: 0 0 0 4px #ffd37a88; transform: translateY(-6px); }
+  #inventory .slot.arriving img { visibility: hidden; }
+  #inventory .slot img { width: 58px; height: 58px; object-fit: contain; filter: drop-shadow(0 2px 1px #2b211855); }
+  #inventory .slot .name { color: var(--ink); font-size: 12px; text-align: center; padding: 4px; }
+  .held-cursor { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 5; display: flex; flex-direction: column; align-items: flex-start; }
+  .held-cursor[hidden] { display: none; }
+  .held-cursor img { width: 52px; height: 52px; object-fit: contain; margin: -10px 0 0 -10px; filter: drop-shadow(0 3px 2px #0007); }
+  .held-cursor img[hidden] { display: none; }
+  .held-cursor .label { margin: 2px 0 0 12px; padding: 4px 10px; background: #2b2118e8; color: var(--paper); border-radius: 9px; font-size: 15px; white-space: nowrap; }
+  .flying { position: fixed; z-index: 6; pointer-events: none; object-fit: contain; }
+  .toast { position: absolute; left: 50%; bottom: 122px; transform: translateX(-50%); padding: 6px 14px; background: #2b2118e8; color: var(--paper); border-radius: 10px; font-size: 17px; opacity: 0; pointer-events: none; }
+  /* The answers: one paper panel at the bottom centre, in the eye line under the speakers, where the bag sits when nobody talks. */
+  #talk { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; width: min(600px, 90%); box-sizing: border-box; padding: 12px 14px 10px; background: #f3e8cff2; border: 2.5px solid var(--ink); border-radius: 20px; box-shadow: 0 5px 0 #2b211840, 0 14px 34px #0009; }
+  #talk[hidden] { display: none; }
+  #talk .who { display: flex; align-items: center; gap: 10px; margin-top: -40px; }
+  #talk .face { width: 56px; height: 56px; border-radius: 50%; background: #e9c46a; border: 2.5px solid var(--ink); overflow: hidden; }
+  #talk .face img { width: 140%; margin: 0 0 0 -20%; display: block; }
+  #talk .tag { padding: 2px 10px; background: var(--paper-hi); border: 2px solid var(--ink); border-radius: 9px; color: var(--ink); font-weight: bold; font-size: 15px; }
+  #talk .answer { display: flex; align-items: center; gap: 12px; padding: 10px 14px; color: var(--ink); background: var(--paper-hi); border: 2px solid var(--ink); border-radius: 14px; box-shadow: 0 4px 0 #2b211840; font-size: 19px; transition: transform .12s; }
+  #talk .answer:hover { background: var(--glow); border-color: var(--clay); transform: translateY(-2px); }
+  body.pad #talk .answer.focus, #talk.lit .answer.focus { background: var(--glow); border: 3px solid var(--clay); box-shadow: 0 0 0 4px #ffd37a88, 0 4px 0 #2b211840; transform: scale(1.02); }
+  #talk .leave { color: #2b2118a0; font-size: 13px; text-align: center; }
+  #talk .leave .pads, #talk .leave .taps, body.pad #talk .leave .keys { display: none; }
+  body.pad #talk .leave .pads { display: inline; }
+  @media (hover: none) { #talk .leave .keys, body.pad #talk .leave .pads { display: none; } #talk .leave .taps { display: inline; } }
+  body.talking #bar .hint { visibility: hidden; }
+  body.pad #ending .again { box-shadow: 0 0 0 4px #ffd37a88, 0 4px 0 #2b211840; }
+  #player { position: absolute; left: 18px; top: 18px; padding: 6px 16px 6px 12px; display: flex; align-items: center; gap: 10px; background: var(--paper); border: 3px solid var(--player); border-radius: 999px; color: var(--ink); font-weight: bold; font-size: 22px; box-shadow: 0 4px 0 #2b211840; pointer-events: none; }
+  #player::before { content: ''; width: 22px; height: 22px; border-radius: 50%; background: var(--player); }
+  #player[hidden], #handover[hidden] { display: none; }
+  #soundless { position: fixed; top: 14px; right: 14px; z-index: 6; padding: 8px 14px; background: #2b2118e8; color: #f3e8cf; border: 2px solid #e9c46a; border-radius: 12px; font-size: 16px; pointer-events: none; animation: soundless 1.6s ease-in-out infinite alternate; }
+  #soundless[hidden] { display: none; }
+  @keyframes soundless { to { border-color: #e9c46a33; } }
+  #handover { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); padding: 22px 48px; background: var(--player); color: #fff; border: 5px solid #fff; border-radius: 28px; font-size: 64px; font-weight: bold; text-shadow: 0 3px 0 #0005; box-shadow: 0 10px 30px #0008; pointer-events: none; }
+  #talk .key { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border: 2px solid var(--ink); border-radius: 7px; background: var(--paper); font-size: 14px; }
+  button { font: inherit; cursor: pointer; text-align: left; }
+  #ending { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at center, #0006, #000b); padding: 24px; }
+  #ending[hidden] { display: none; }
+  #ending .card { max-width: 560px; padding: 28px 36px 26px; text-align: center; color: var(--ink); background: var(--paper-hi); border: 3px solid var(--ink); border-radius: 22px; box-shadow: 0 7px 0 #2b211855, 0 24px 60px #000a; }
+  #ending .over { font-size: 14px; letter-spacing: .2em; text-transform: uppercase; color: var(--clay); margin-bottom: 6px; }
+  #ending h1 { font-weight: normal; font-size: 40px; line-height: 1.1; margin: 0 0 12px; }
+  #ending p { font-size: 19px; line-height: 1.45; margin: 0 0 16px; }
+  #ending .carried { display: flex; justify-content: center; gap: 8px; margin-bottom: 18px; }
+  #ending .carried img { width: 52px; height: 52px; object-fit: contain; padding: 4px; background: #e7d8b6; border-radius: 12px; }
+  #ending .again { padding: 9px 20px; background: var(--glow); border: 2.5px solid var(--clay); border-radius: 12px; box-shadow: 0 4px 0 #2b211840; color: var(--ink); font-size: 17px; text-align: center; }
+  /* While the world's pictures come in: three paper sheets fold up into a little stage, with a count of the pieces under it. */
+  #loading { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; align-content: center; gap: 22px; background: radial-gradient(ellipse at 50% 40%, #1b2236, #0b0b0e 70%); text-align: center; transition: opacity .6s; }
+  #loading.done { opacity: 0; pointer-events: none; }
+  #loading .stage { position: relative; width: 150px; height: 104px; perspective: 500px; }
+  #loading .sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 74px; border: 2.5px solid #2b2118; border-radius: 10px 10px 4px 4px; transform-origin: 50% 100%; animation: unfold 2.4s ease-in-out infinite; }
+  #loading .sheet:nth-child(1) { background: #3d5a8a; clip-path: polygon(0 40%, 18% 18%, 34% 34%, 52% 6%, 70% 30%, 86% 14%, 100% 32%, 100% 100%, 0 100%); }
+  #loading .sheet:nth-child(2) { background: #6c90b8; height: 52px; left: 10px; right: 10px; clip-path: polygon(0 30%, 25% 0, 50% 30%, 75% 0, 100% 30%, 100% 100%, 0 100%); animation-delay: .15s; }
+  #loading .sheet:nth-child(3) { background: #c99a5b; height: 28px; left: 20px; right: 20px; border-radius: 6px 6px 4px 4px; animation-delay: .3s; }
+  #loading .lamp { position: absolute; right: 26px; top: 6px; width: 14px; height: 14px; border-radius: 50%; background: #ffe7a8; box-shadow: 0 0 18px 6px #ffd37a88; animation: lamp 1.2s ease-in-out infinite alternate; }
+  @keyframes unfold { 0%, 12% { transform: rotateX(-88deg); } 38%, 78% { transform: rotateX(0); } 100% { transform: rotateX(-88deg); } }
+  @keyframes lamp { from { opacity: .45; } to { opacity: 1; } }
+  #loading .what { font-size: 22px; color: #f3e8cf; }
+  #loading .count { font: 12px/1 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; color: #e8e2d699; }
+  #loading .bar { width: 180px; height: 4px; border-radius: 2px; background: #e8e2d622; overflow: hidden; }
+  #loading .bar i { display: block; height: 100%; width: 0; background: #e9c46a; transition: width .3s; }
+  #loading.failed .stage, #loading.failed .bar { display: none; }
+  /* A way back to the page the world was shared from (diorama export --home <url>). */
+  #home { position: fixed; top: 12px; right: 12px; z-index: 7; padding: 5px 12px; color: #f3e8cf; background: #0b0b0e99; border: 1.5px solid #e8e2d644; border-radius: 999px; font-size: 14px; text-decoration: none; opacity: .7; transition: opacity .2s; }
+  #home:hover { opacity: 1; border-color: #e9c46a; }
+</style>
+</head>
+<body data-shipped>
+<div id="stage"><canvas id="view" width="1200" height="896"></canvas></div>
+<div id="hud"><div id="inventory" hidden></div><div id="talk" hidden></div><div id="player" hidden></div><div id="handover" hidden></div><div id="ending" hidden></div></div>
+<div id="turn"><svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true"><rect x="20" y="8" width="24" height="42" rx="4" fill="none" stroke="#e8e2d6" stroke-width="3"/><path d="M14 52 a22 22 0 0 0 36 0" fill="none" stroke="#e9c46a" stroke-width="3"/><path d="M46 46 l4 6 l-7 1" fill="none" stroke="#e9c46a" stroke-width="3" stroke-linejoin="round"/></svg><div>Turn your phone sideways to play.</div><button type="button" onclick="this.parentElement.hidden = true">Play upright anyway</button></div>
+<div id="soundless" hidden></div>
+<div id="loading" role="status"><div class="stage" aria-hidden="true"><div class="sheet"></div><div class="sheet"></div><div class="sheet"></div><div class="lamp"></div></div><div class="what">Unfolding the diorama…</div><div class="bar"><i></i></div><div class="count"></div></div>
+<div id="bar"><span id="where"></span><span id="hover"></span><span class="hint">click to walk or use, double click to hurry · right click or long press to look or put back · WASD or arrows walk (Shift hurries), E uses · 1-9 items · g grid · m sound</span></div>
+<script type="module" src="main.js"></script>
+</body>
+</html>
