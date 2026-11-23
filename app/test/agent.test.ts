@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { startStudio, type Studio } from '../src/studio/server.ts';
 import type { StudioEvent } from '../src/studio/events.ts';
+import { questionAnswers } from '../src/studio/agent.ts';
 
 const MUSE = fileURLToPath(new URL('./fixtures/fake-muse.mjs', import.meta.url));
 let studio: Studio;
@@ -64,6 +65,16 @@ test('the next message resumes the same Muse session and sends only the new text
 test('the agent cannot post to its own conversation', async () => {
   const res = await fetch(`${studio.url}api/agent/harbour/say`, { method: 'POST', headers: { authorization: `Bearer ${studio.agentToken}`, 'content-type': 'application/json' }, body: '{"text":"hi"}' });
   expect(res.status).toBe(404);
+});
+
+test('a question card answer goes to the session as answers; a malformed one is refused', async () => {
+  expect(questionAnswers({ style: ['Pixel art'], other: [] })).toEqual({ style: ['Pixel art'], other: [] });
+  expect(questionAnswers({ style: 'Pixel art' })).toBeUndefined();
+  expect(questionAnswers([['x']])).toBeUndefined();
+  expect((await post('api/agent/harbour/approval', { id: 'q1', answers: { style: 'Pixel art' } })).status).toBe(400);
+  const closed = await post('api/agent/harbour/approval', { id: 'q1', answers: { style: ['Pixel art'] } });
+  expect(closed.status).toBe(409);
+  expect(await closed.json()).toEqual({ error: 'that question is no longer open' });
 });
 
 test('only the Studio\'s own MCP tools run without asking: a path with "diorama" in it is not one', async () => {
