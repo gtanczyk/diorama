@@ -5,7 +5,7 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { antigravity, claude, codexLive, createAgentSession, describeFailover, detectAgents, museLive, type CodingAgent, withoutProviderCredentials, type AgentSession, type ApprovalDecision, type ApprovalRequest, type SessionState, type SessionTurn, type AgentBudget, type RateLimit } from 'genaicode/agents';
+import { antigravity, claude, codexLive, createAgentSession, describeFailover, detectAgents, museLive, type CodingAgent, withoutProviderCredentials, type AgentSession, type ApprovalDecision, type ApprovalRequest, type QuestionAnswers, type SessionState, type SessionTurn, type AgentBudget, type RateLimit } from 'genaicode/agents';
 import { configDir, redact, withoutSecrets } from '../secrets.ts';
 import type { Events } from './events.ts';
 import { History } from './history.ts';
@@ -69,6 +69,15 @@ export function agentBudget(env: NodeJS.ProcessEnv = process.env): AgentBudget |
   const tokens = Number(env.DIORAMA_AGENT_MAX_TOKENS);
   const budget: AgentBudget = { ...(cost > 0 && { maxCostUsd: cost }), ...(tokens > 0 && { maxTokens: Math.floor(tokens) }) };
   return Object.keys(budget).length ? budget : undefined;
+}
+
+/** A question card's answers as the page sent them: question id to picked or typed strings, within genaicode's limits. */
+export function questionAnswers(value: unknown): QuestionAnswers | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value);
+  if (entries.length > 8) return undefined;
+  const ok = entries.every(([key, given]) => key.length <= 500 && Array.isArray(given) && given.length <= 21 && given.every((item) => typeof item === 'string' && item.length <= 10_000));
+  return ok ? (Object.fromEntries(entries) as QuestionAnswers) : undefined;
 }
 
 /** An agent's plan limit close to running out or used up, in words for the feed; null while it is fine. */
@@ -263,7 +272,8 @@ class Talk {
             setTimeout(() => this.session.send(NUDGE), 0);
           }
         }
-        if (entry.kind === 'approval' && entry.decision === 'deny') this.publish('blocked', { kind: entry.request.kind, summary: entry.request.summary ?? entry.request.kind });
+        // A skipped question is the person's choice, not a blocked step.
+        if (entry.kind === 'approval' && entry.decision === 'deny' && entry.request.kind !== 'question') this.publish('blocked', { kind: entry.request.kind, summary: entry.request.summary ?? entry.request.kind });
         if (entry.kind === 'error') this.publish('error', { text: entry.message });
         if (entry.kind === 'failover') {
           this.publish('failover', { from: entry.from, to: entry.to, kind: entry.failure.kind, text: describeFailover(entry.from, entry.to, entry.failure) });
@@ -657,6 +667,11 @@ export class AgentHub {
 
   answer(slug: string, id: string, decision: ApprovalDecision) {
     if (!this.talks.get(slug)?.session.approve(id, decision)) throw new Error('that question is no longer open');
+  }
+
+  /** Answers a question card of the agent (Claude's AskUserQuestion, Codex in Plan mode). */
+  reply(slug: string, id: string, answers: QuestionAnswers) {
+    if (!this.talks.get(slug)?.session.answer(id, answers)) throw new Error('that question is no longer open');
   }
 
   stopAll() {

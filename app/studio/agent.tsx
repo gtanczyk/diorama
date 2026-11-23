@@ -282,6 +282,7 @@ export function AgentPanel({ slug, replay, speed = 1, jobs = [], notices, afterT
         onSend={send}
         onStop={() => void post('stop')}
         onApprove={(id, decision) => void post('approval', { id, decision })}
+        onAnswer={(id, answers) => void post('approval', { id, answers })}
         formatToolName={(name) => (name.startsWith('mcp__diorama__') ? SAYS[name.slice(14)] ?? name.slice(14).replace(/_/g, ' ') : name)}
         foldSteps
         artifactUrl={(artifact) => `/artifacts/${slug}/${artifact.id}?v=${artifact.version}`}

@@ -19,7 +19,7 @@ import { Events, type StudioEvent } from './events.ts';
 import { Jobs, type Job } from './jobs.ts';
 import { repairPrompt, wantsRepair } from './repair.ts';
 import { readBudget } from '../actions/budget.ts';
-import { AgentHub, isAgentName } from './agent.ts';
+import { AgentHub, isAgentName, questionAnswers } from './agent.ts';
 import { bundle, WEB, worldData } from '../commands/play.ts';
 import { WorldFiles } from '../world/files.ts';
 import { snapshotBeforeJob } from './history.ts';
@@ -297,7 +297,7 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
           if (verb && req.method === 'POST') {
             const { value, error } = await body();
             if (error) return json(error[0], { error: error[1] });
-            const input = (value ?? {}) as { text?: unknown; id?: unknown; decision?: unknown; name?: unknown };
+            const input = (value ?? {}) as { text?: unknown; id?: unknown; decision?: unknown; answers?: unknown; name?: unknown };
             try {
               if (verb === 'say') {
                 if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > 8000) return json(400, { error: 'say something (up to 8000 characters)' });
@@ -308,6 +308,13 @@ export async function startStudio(opts: { port?: number; root?: string; cwd?: st
                 agents.use(slug, input.name);
               }
               else {
+                if (input.answers !== undefined) {
+                  // A question card: the options the person picked or typed, per question.
+                  const answers = questionAnswers(input.answers);
+                  if (!answers) return json(400, { error: 'answers map question ids to lists of strings' });
+                  agents.reply(slug, String(input.id), answers);
+                  return json(200, { ok: true });
+                }
                 if (input.decision !== 'approve' && input.decision !== 'deny') return json(400, { error: 'decision is approve or deny' });
                 agents.answer(slug, String(input.id), input.decision);
               }
