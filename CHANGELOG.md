@@ -7,6 +7,8 @@ merging it publishes to npm. See [docs/releasing.md](docs/releasing.md).
 
 ## Unreleased
 
+## 0.7.0 — 2026-11-23
+
 ### Added
 
 - When Claude Code (or Codex in Plan mode) asks you to choose, the Studio shows its question as a card with the options and a field for your own answer; your pick goes straight back to the running turn instead of a yes/no permission prompt.
